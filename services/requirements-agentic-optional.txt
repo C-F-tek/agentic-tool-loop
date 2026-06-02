@@ -1,0 +1,15 @@
+# Optional public packages for a stronger OpenWebUI agentic loop.
+# These are not imported by default by the patched code; install when you want
+# token budgeting, schema validation, retry policies, or faster JSON handling.
+
+# Token counting/budgeting before sending history/tool results to local models.
+tiktoken
+
+# Strict validation for planner decisions and tool envelopes.
+jsonschema
+
+# Retry/backoff wrapper for transient Ollama/FastAPI/network failures.
+tenacity
+
+# Optional faster JSON serialization for very large artifacts.
+orjson
