@@ -1,0 +1,75 @@
+{
+  "kind": "qwen_agent_merge_patch_report",
+  "created_at": "2026-05-24 15:27:59",
+  "source_diff_file": "C:\\Users\\carmi\\AI\\lab-patches\\master-working-tree-to-lab.diff",
+  "patch_file": "C:\\Users\\carmi\\AI\\qwen-agent-workspace\\patches\\merge-from-main.patch",
+  "touched_files": [
+    "Tools/validation/TOOL_CONTEXT.md",
+    "Tools/validation/dispatch.py",
+    "Tools/validation/provider_mesh/TOOL_CONTEXT.md",
+    "Tools/validation/runtime_tool/run_file_backed_transport_contract_smoke/cli.py",
+    "docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md",
+    "ia_carmine/CONTEXT_INDEX.md",
+    "ia_carmine/TOOL_CONTEXT.md",
+    "ia_carmine/_shared/agent_runtime_tool_broker_execution.py",
+    "ia_carmine/_shared/file_backed_transport.py",
+    "ia_carmine/_shared/provider_ollama_report.py",
+    "ia_carmine/_shared/provider_replight.py",
+    "ia_carmine/_shared/provider_tool_loop.py",
+    "ia_carmine/_shared/provider_work_verification.py",
+    "ia_carmine/context/heap_context_memory_reload/dynamic_gpu1_context.py",
+    "ia_carmine/dispatch.py",
+    "ia_carmine/product/heap_final_proposals/artifacts.py",
+    "ia_carmine/product/heap_final_proposals/cli.py",
+    "ia_carmine/product/heap_final_proposals/rendering.py",
+    "ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md",
+    "ia_carmine/providers/provider_mesh/local_provider_probe/cli.py",
+    "ia_carmine/providers/provider_mesh/ollama_gpu0_peer_report/cli.py",
+    "ia_carmine/providers/provider_mesh/openvino_npu_model_probe/cli.py",
+    "ia_carmine/runtime/heap_context_closure/TOOL_CONTEXT.md",
+    "ia_carmine/runtime/heap_context_closure/commands.py",
+    "ia_carmine/runtime/heap_context_closure/launcher.py",
+    "ia_carmine/runtime/heap_gate/gpu1_closure_packet.py",
+    "ia_carmine/runtime/heap_gate/provider_block_contract.py",
+    "ia_carmine/runtime/heap_gate/provider_commands.py",
+    "ia_carmine/runtime/heap_gate/provider_context.py",
+    "ia_carmine/runtime/provider_runtime_blackboard/broker_bridge/cli.py",
+    "ia_carmine/runtime/runtime_tool/agent_broker/cli.py",
+    "ia_carmine/runtime/runtime_tool/broker/executor.py"
+  ],
+  "check": {
+    "ok": true,
+    "patch_file": "C:\\Users\\carmi\\AI\\qwen-agent\\patches\\20260524-152759-agent.patch",
+    "check_passed": false,
+    "check": {
+      "check_passed": false,
+      "patch_file": "C:\\Users\\carmi\\AI\\lab-patches\\_runtime\\last_checked_patch.diff",
+      "check": {
+        "returncode": 128,
+        "stdout": "",
+        "stderr": "error: corrupt patch at C:/Users/carmi/AI/lab-patches/_runtime/last_checked_patch.diff:1683\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": " M Tools/validation/TOOL_CONTEXT.md\n M Tools/validation/dispatch.py\n M Tools/validation/provider_mesh/TOOL_CONTEXT.md\n M Tools/validation/runtime_tool/run_file_backed_transport_contract_smoke/cli.py\n M docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md\n M ia_carmine/CONTEXT_INDEX.md\n M ia_carmine/TOOL_CONTEXT.md\n M ia_carmine/_shared/agent_runtime_tool_broker_execution.py\n M ia_carmine/_shared/file_backed_transport.py\n M ia_carmine/_shared/provider_ollama_report.py\n M ia_carmine/_shared/provider_replight.py\n M ia_carmine/_shared/provider_tool_loop.py\n M ia_carmine/_shared/provider_work_verification.py\n M ia_carmine/context/heap_context_memory_reload/dynamic_gpu1_context.py\n M ia_carmine/dispatch.py\n M ia_carmine/product/heap_final_proposals/artifacts.py\n M ia_carmine/product/heap_final_proposals/cli.py\n M ia_carmine/product/heap_final_proposals/rendering.py\n M ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md\n M ia_carmine/providers/provider_mesh/local_provider_probe/cli.py\n M ia_carmine/providers/provider_mesh/ollama_gpu0_peer_report/cli.py\n M ia_carmine/providers/provider_mesh/openvino_npu_model_probe/cli.py\n M ia_carmine/runtime/heap_context_closure/commands.py\n M ia_carmine/runtime/heap_context_closure/launcher.py\n M ia_carmine/runtime/heap_gate/gpu1_closure_packet.py\n M ia_carmine/runtime/heap_gate/provider_block_contract.py\n M ia_carmine/runtime/heap_gate/provider_commands.py\n M ia_carmine/runtime/heap_gate/provider_context.py\n M ia_carmine/runtime/provider_runtime_blackboard/broker_bridge/cli.py\n M ia_carmine/runtime/runtime_tool/agent_broker/cli.py\n M ia_carmine/runtime/runtime_tool/broker/executor.py\n?? ia_carmine/runtime/heap_context_closure/TOOL_CONTEXT.md\n",
+        "stderr": ""
+      },
+      "diff_stat": {
+        "returncode": 0,
+        "stdout": " Tools/validation/TOOL_CONTEXT.md                   |   1 -\n Tools/validation/dispatch.py                       |   7 +-\n Tools/validation/provider_mesh/TOOL_CONTEXT.md     |   3 +-\n .../cli.py                                         |  68 ++++++++++++--\n docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md              |   5 --\n ia_carmine/CONTEXT_INDEX.md                        |  18 ++--\n ia_carmine/TOOL_CONTEXT.md                         |  13 +--\n .../_shared/agent_runtime_tool_broker_execution.py |  58 ++++++++++--\n ia_carmine/_shared/file_backed_transport.py        | 100 ++++++++++++++++++++-\n ia_carmine/_shared/provider_ollama_report.py       |  31 +------\n ia_carmine/_shared/provider_replight.py            |  17 ++--\n ia_carmine/_shared/provider_tool_loop.py           |  40 ++++++++-\n ia_carmine/_shared/provider_work_verification.py   |  17 ++--\n .../dynamic_gpu1_context.py                        |  11 ++-\n ia_carmine/dispatch.py                             |  17 +---\n .../product/heap_final_proposals/artifacts.py      |  33 +++++--\n ia_carmine/product/heap_final_proposals/cli.py     |   2 +-\n .../product/heap_final_proposals/rendering.py      |   5 +-\n ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md |  13 +--\n .../provider_mesh/local_provider_probe/cli.py      |  87 ++++++++++++++++--\n .../provider_mesh/ollama_gpu0_peer_report/cli.py   |  47 ++++++++--\n .../provider_mesh/openvino_npu_model_probe/cli.py  |  42 ++++++++-\n .../runtime/heap_context_closure/commands.py       |   3 +\n .../runtime/heap_context_closure/launcher.py       |   7 +-\n .../runtime/heap_gate/gpu1_closure_packet.py       |   2 +-\n .../runtime/heap_gate/provider_block_contract.py   |   6 +-\n ia_carmine/runtime/heap_gate/provider_commands.py  |  26 ++++--\n ia_carmine/runtime/heap_gate/provider_context.py   |   8 +-\n .../broker_bridge/cli.py                           |  49 ++++++++--\n .../runtime/runtime_tool/agent_broker/cli.py       |   2 +\n ia_carmine/runtime/runtime_tool/broker/executor.py |  48 +++++++++-\n 31 files changed, 618 insertions(+), 168 deletions(-)\n",
+        "stderr": ""
+      },
+      "note": "patch_check saved the patch for /lab/apply_checked_patch and does not modify the worktree."
+    },
+    "applied": false,
+    "diff_stat": {
+      "returncode": 0,
+      "stdout": " Tools/validation/TOOL_CONTEXT.md                   |   1 -\n Tools/validation/dispatch.py                       |   7 +-\n Tools/validation/provider_mesh/TOOL_CONTEXT.md     |   3 +-\n .../cli.py                                         |  68 ++++++++++++--\n docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md              |   5 --\n ia_carmine/CONTEXT_INDEX.md                        |  18 ++--\n ia_carmine/TOOL_CONTEXT.md                         |  13 +--\n .../_shared/agent_runtime_tool_broker_execution.py |  58 ++++++++++--\n ia_carmine/_shared/file_backed_transport.py        | 100 ++++++++++++++++++++-\n ia_carmine/_shared/provider_ollama_report.py       |  31 +------\n ia_carmine/_shared/provider_replight.py            |  17 ++--\n ia_carmine/_shared/provider_tool_loop.py           |  40 ++++++++-\n ia_carmine/_shared/provider_work_verification.py   |  17 ++--\n .../dynamic_gpu1_context.py                        |  11 ++-\n ia_carmine/dispatch.py                             |  17 +---\n .../product/heap_final_proposals/artifacts.py      |  33 +++++--\n ia_carmine/product/heap_final_proposals/cli.py     |   2 +-\n .../product/heap_final_proposals/rendering.py      |   5 +-\n ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md |  13 +--\n .../provider_mesh/local_provider_probe/cli.py      |  87 ++++++++++++++++--\n .../provider_mesh/ollama_gpu0_peer_report/cli.py   |  47 ++++++++--\n .../provider_mesh/openvino_npu_model_probe/cli.py  |  42 ++++++++-\n .../runtime/heap_context_closure/commands.py       |   3 +\n .../runtime/heap_context_closure/launcher.py       |   7 +-\n .../runtime/heap_gate/gpu1_closure_packet.py       |   2 +-\n .../runtime/heap_gate/provider_block_contract.py   |   6 +-\n ia_carmine/runtime/heap_gate/provider_commands.py  |  26 ++++--\n ia_carmine/runtime/heap_gate/provider_context.py   |   8 +-\n .../broker_bridge/cli.py                           |  49 ++++++++--\n .../runtime/runtime_tool/agent_broker/cli.py       |   2 +\n ia_carmine/runtime/runtime_tool/broker/executor.py |  48 +++++++++-\n 31 files changed, 618 insertions(+), 168 deletions(-)\n",
+      "stderr": ""
+    },
+    "agent_report_file": "C:\\Users\\carmi\\AI\\qwen-agent\\reports\\20260524-152759-patch.json"
+  },
+  "applied": null,
+  "compile": null,
+  "diff_stat_after": null
+}

@@ -1,5 +1,7 @@
 # Local runtimes and dependencies
-venvs/
+venvs/**
+!venvs/
+!venvs/README.md
 .venv/
 env/
 node_modules/
@@ -42,12 +44,29 @@ openwebui/**
 
 # Agentic loop runtime artifacts
 qwen-agent-workspace/
-executor-runs/
-payloads/
-logs/
-lab-patches/
-qwen-context/
-qwen-agent/
+!qwen-agent-workspace/
+!qwen-agent-workspace/README.md
+executor-runs/**
+!executor-runs/
+!executor-runs/README.md
+payloads/**
+!payloads/
+!payloads/README.md
+logs/**
+!logs/
+!logs/README.md
+lab-patches/**
+!lab-patches/
+!lab-patches/README.md
+qwen-context/**
+!qwen-context/
+!qwen-context/README.md
+qwen-agent/**
+!qwen-agent/
+!qwen-agent/README.md
+code-interpreter-workdir/**
+!code-interpreter-workdir/
+!code-interpreter-workdir/README.md
 **/agent-jobs/
 **/tool-results/
 **/planner-stream/
@@ -62,16 +81,15 @@ qwen-agent/
 **/final_answer.*
 
 # Generated cache, indexes, RAG and knowledge packs
-cache/
-state/
-knowledge-sync/
-knowledge-md/
-knowledge-md-parts/
-knowledge-small-md/
-knowledge-tiny-md/
-knowledge-code-packs/
-knowledge-upload-batches/
-knowledge-bad-md/
+cache/**
+!cache/
+!cache/README.md
+state/**
+!state/
+!state/README.md
+knowledge-*/**
+!knowledge-*/
+!knowledge-*/README.md
 *.sqlite
 *.sqlite3
 *.db
@@ -81,8 +99,12 @@ knowledge-bad-md/
 *.sqlite-wal
 
 # Model stores and runtime backends
-models-*/
-ovms-*/
+models-*/**
+!models-*/
+!models-*/README.md
+ovms-*/**
+!ovms-*/
+!ovms-*/README.md
 *.onnx
 *.bin
 *.safetensors

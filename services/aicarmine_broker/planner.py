@@ -755,10 +755,39 @@ def _compact_tool_manifest_for_prompt(tool_manifest: list[dict[str, Any]]) -> li
 
 def _native_tools_schema_for_planner(tools_schema: list[dict[str, Any]]) -> list[dict[str, Any]]:
     native_schema = copy.deepcopy(tools_schema)
+    contract_description_keys = (
+        "requires_one_of",
+        "conditional_required",
+        "source_requirements",
+        "sqlite_window_contract",
+        "default_allowed",
+        "violation",
+    )
     for item in native_schema:
         function = item.get("function") if isinstance(item, dict) else {}
         if isinstance(function, dict):
-            function.pop("argument_contract", None)
+            argument_contract = function.pop("argument_contract", None)
+            if isinstance(argument_contract, dict) and argument_contract:
+                compact_contract = {
+                    key: argument_contract.get(key)
+                    for key in contract_description_keys
+                    if argument_contract.get(key) not in (None, "", [], {})
+                }
+                if compact_contract:
+                    contract_text = json.dumps(
+                        compact_contract,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        default=str,
+                    )
+                    if len(contract_text) > 1800:
+                        contract_text = contract_text[:1800] + "...[contract clipped]"
+                    description = str(function.get("description") or "").strip()
+                    function["description"] = (
+                        f"{description}\nInternal argument contract: {contract_text}"
+                        if description
+                        else f"Internal argument contract: {contract_text}"
+                    )
     return native_schema
 
 
@@ -7663,6 +7692,33 @@ Non usare vulkan_helper come tool ordinario di navigazione: se una chiamata tool
 """
 
 
+def _planner_system_for_current_mode() -> str:
+    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+        return _PLANNER_SYSTEM
+    return _PLANNER_SYSTEM.replace(
+        "Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt shell o token di ruolo.",
+        (
+            "Quando scegli un tool devi usare solo native tool_calls del backend, "
+            "non JSON testuale con action=tool. Per final o block rispondi con "
+            "un singolo JSON valido. Non usare markdown, testo libero, marker, "
+            "prompt shell o token di ruolo."
+        ),
+    ).replace(
+        "Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.",
+        (
+            "Il backend espone native tool_calls: per qualunque tool call devi usare "
+            "message.tool_calls. Non simulare tool_call in prosa, nel content, in tag "
+            "<tool_call> o come JSON testuale."
+        ),
+    ).replace(
+        "Azioni consentite: tool, final, block.",
+        (
+            "Azioni testuali consentite quando non usi native tool_calls: final, block. "
+            "L'azione tool nel content non e' consentita in native tool mode."
+        ),
+    )
+
+
 def planner_decision(
     job_id: str,
     state: dict[str, Any],
@@ -7769,14 +7825,14 @@ def planner_decision(
         }
     prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
 
+    planner_system_prompt = _planner_system_for_current_mode()
     planner_payload = {
         "model": PLANNER_MODEL,
         "stream": False,
         "keep_alive": OLLAMA_KEEP_ALIVE,
         "think": False,
-        "format": "json",
         "messages": [
-            {"role": "system", "content": _PLANNER_SYSTEM},
+            {"role": "system", "content": planner_system_prompt},
             {"role": "user",
              "content": json.dumps(user_payload, ensure_ascii=False, indent=2, default=str)},
         ],
@@ -7788,6 +7844,8 @@ def planner_decision(
     }
     if AGENTIC_PLANNER_NATIVE_TOOLS:
         planner_payload["tools"] = _native_tools_schema_for_planner(TOOLS_SCHEMA)
+    else:
+        planner_payload["format"] = "json"
 
     prompt_capture: dict[str, Any] = {
         "ok": False,
@@ -7873,14 +7931,29 @@ def planner_decision(
                 decision["planner_stream_meta"] = stream_meta
             return decision
     if AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS and not native_calls:
+        raw_text_for_native_mode = str(response.get("response") or response.get("partial_content") or "")
+        decoded_text_decision = _parse_strict_json_object(raw_text_for_native_mode)
+        if isinstance(decoded_text_decision, dict):
+            action = str(decoded_text_decision.get("action") or "").strip().lower()
+            if action in {"final", "done", "complete", "completed", "block", "blocked", "need_user", "needs_user"}:
+                decision = _normalize_final_answer_lines(decoded_text_decision)
+                decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
+                decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
+                decision["native_tool_calls_seen"] = 0
+                decision["native_tool_text_decision_allowed"] = action
+                if prompt_context_continuation_required:
+                    decision["prompt_context_continuation_required"] = prompt_context_continuation_required
+                if stream_meta:
+                    decision["planner_stream_meta"] = stream_meta
+                return decision
         return {
             "action": "block",
-            "reason": "planner_native_tools_unsupported",
+            "reason": "planner_native_tool_call_required",
             "final_answer": (
-                "Planner native tool mode is required, but Ollama did not return "
-                "message.tool_calls. No prompt fallback was used."
+                "Planner native tool mode is required for tool execution, but Ollama "
+                "did not return message.tool_calls. JSON-text tool fallback was not used."
             ),
-            "raw_planner_text": str(response.get("response") or response.get("partial_content") or "")[:12000],
+            "raw_planner_text": raw_text_for_native_mode[:12000],
         }
 
     # --- degenerate output ---

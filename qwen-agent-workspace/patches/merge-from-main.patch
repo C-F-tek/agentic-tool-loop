@@ -1,0 +1,1683 @@
+diff --git a/Tools/validation/TOOL_CONTEXT.md b/Tools/validation/TOOL_CONTEXT.md
+index cfa69b1a..d819974a 100644
+--- a/Tools/validation/TOOL_CONTEXT.md
++++ b/Tools/validation/TOOL_CONTEXT.md
+@@ -102,7 +102,6 @@ check_gpu0_companion_contract
+ check_openvino_peer_topology_contract
+ run_openvino_peer_topology_contract_smoke
+ run_npu_micro_task_companion_smoke
+-legacy_run_ollama_tool_gateway_smoke
+ run_gpu_planner_json_contract_smoke
+ run_gpu_runner_provider_error_smoke
+ ```
+diff --git a/Tools/validation/dispatch.py b/Tools/validation/dispatch.py
+index 0d305681..15d55a8a 100644
+--- a/Tools/validation/dispatch.py
++++ b/Tools/validation/dispatch.py
+@@ -89,7 +89,6 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "run_npu_runtime_tool_execution_smoke": "Tools.validation.runtime_tool.npu_runtime_tool_execution_smoke.cli:main",
+     "run_npu_runtime_tool_fallback_smoke": "Tools.validation.runtime_tool.npu_runtime_tool_fallback_smoke.cli:main",
+     "run_npu_tool_request_contract_smoke": "Tools.validation.provider_mesh.npu_tool_request_contract_smoke.cli:main",
+-    "legacy_run_ollama_tool_gateway_smoke": "Tools.validation.provider_mesh.ollama_tool_gateway_smoke.cli:main",
+     "run_ollama_sdk_adapter_smoke": "Tools.validation.provider_mesh.ollama_sdk_adapter_smoke.cli:main",
+     "run_openvino_peer_topology_contract_smoke": "Tools.validation.provider_mesh.openvino_peer_topology_contract_smoke.cli:main",
+     "run_operator_product_launcher_smoke": "Tools.validation.workflow_run.operator_product_launcher_smoke.cli:main",
+@@ -204,11 +203,7 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "test_proposal_gate": "Tools.validation.heap_final_proposals.test_proposal_gate.cli:main",
+ }
+ 
+-LEGACY_NON_RUN_UNICA_VALIDATION_COMMANDS: frozenset[str] = frozenset(
+-    {
+-        "legacy_run_ollama_tool_gateway_smoke",
+-    }
+-)
++LEGACY_NON_RUN_UNICA_VALIDATION_COMMANDS: frozenset[str] = frozenset()
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+diff --git a/Tools/validation/provider_mesh/TOOL_CONTEXT.md b/Tools/validation/provider_mesh/TOOL_CONTEXT.md
+index 951d4dcc..2cfb7d88 100644
+--- a/Tools/validation/provider_mesh/TOOL_CONTEXT.md
++++ b/Tools/validation/provider_mesh/TOOL_CONTEXT.md
+@@ -9,7 +9,7 @@
+ - Validate GPU0 companion contracts.
+ - Validate OpenVINO peer topology reports.
+ - Validate NPU companion and review reports.
+-- Validate Ollama gateway reports.
++- Validate current Ollama SDK adapter and provider-lane reports.
+ - Validate the canonical `ollama-python` SDK adapter and GPU0 Ollama/Vulkan peer contract.
+ - Validate provider result parsing.
+ - Validate observable peer activity contracts.
+@@ -23,7 +23,6 @@ python -m Tools.validation check_gpu0_companion_contract ...
+ python -m Tools.validation check_openvino_peer_topology_contract ...
+ python -m Tools.validation run_openvino_peer_topology_contract_smoke ...
+ python -m Tools.validation run_npu_micro_task_companion_smoke ...
+-python -m Tools.validation legacy_run_ollama_tool_gateway_smoke ...
+ python -m Tools.validation run_ollama_sdk_adapter_smoke ...
+ python -m Tools.validation run_gpu_planner_json_contract_smoke ...
+ python -m Tools.validation check_provider_result_parsing ...
+diff --git a/Tools/validation/runtime_tool/run_file_backed_transport_contract_smoke/cli.py b/Tools/validation/runtime_tool/run_file_backed_transport_contract_smoke/cli.py
+index 0f95873e..4810d359 100644
+--- a/Tools/validation/runtime_tool/run_file_backed_transport_contract_smoke/cli.py
++++ b/Tools/validation/runtime_tool/run_file_backed_transport_contract_smoke/cli.py
+@@ -21,12 +21,22 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
+         errors.append(message)
+ 
+ 
++def extract_first_tool(data: dict[str, object]) -> str:
++    requests = data.get("tool_requests")
++    if not isinstance(requests, list) or not requests:
++        return ""
++    first = requests[0]
++    return str(first.get("tool") or "") if isinstance(first, dict) else ""
++
++
+ def build_report(repo_root: Path) -> dict[str, object]:
+     from ia_carmine._shared.file_backed_transport import (
+         INLINE_TEXT_MAX_CHARS,
+         MAX_FILE_WINDOW_CHARS,
+         artifact_ref,
+         validate_runtime_payload_manifest,
++        write_json_artifact,
++        write_transport_manifest,
+     )
+     from ia_carmine._shared.provider_ollama_report import build_ollama_probe_report
+     from ia_carmine.runtime.provider_runtime_blackboard.cli import parse_payload
+@@ -324,6 +334,9 @@ def build_report(repo_root: Path) -> dict[str, object]:
+         _fake_ollama_report_context(repo_root, prompt="prompt", response_text=big_response)
+     )
+     response_ref = response_report.get("response_text_ref")
++    short_response = build_ollama_probe_report(
++        _fake_ollama_report_context(repo_root, prompt="prompt", response_text="ok")
++    )
+     require(
+         response_report.get("response_text_chars") == len(big_response)
+         and response_report.get("response_text_sha256")
+@@ -334,6 +347,12 @@ def build_report(repo_root: Path) -> dict[str, object]:
+         "large provider response report must contain ref/hash/tail metadata and not the response body",
+         errors,
+     )
++    require(
++        "response_text" not in short_response
++        and bool(short_response.get("response_text_ref", {}).get("sha256")),
++        "short provider response report must also be artifact-backed",
++        errors,
++    )
+ 
+     manifest_file = smoke_dir / "manifest_artifact.txt"
+     manifest_file.write_text("manifest validator body", encoding="utf-8")
+@@ -345,7 +364,13 @@ def build_report(repo_root: Path) -> dict[str, object]:
+     )
+     good_manifest = smoke_dir / "manifest_good.json"
+     good_manifest.write_text(
+-        json.dumps({"schema_version": 1, "kind": "ia_carmine_runtime_payload_manifest", "artifact_refs": [good_ref]}, indent=2)
++        json.dumps({
++            "schema_version": 1,
++            "kind": "ia_carmine_runtime_payload_manifest",
++            "job_id": "file-backed-smoke",
++            "run_dir": str(smoke_dir.relative_to(repo_root)).replace("\\", "/"),
++            "artifact_refs": [good_ref],
++        }, indent=2)
+         + "\n",
+         encoding="utf-8",
+     )
+@@ -353,7 +378,13 @@ def build_report(repo_root: Path) -> dict[str, object]:
+     bad_ref["bytes"] = int(bad_ref.get("bytes") or 0) + 1
+     bad_manifest = smoke_dir / "manifest_bad.json"
+     bad_manifest.write_text(
+-        json.dumps({"schema_version": 1, "kind": "ia_carmine_runtime_payload_manifest", "artifact_refs": [bad_ref]}, indent=2)
++        json.dumps({
++            "schema_version": 1,
++            "kind": "ia_carmine_runtime_payload_manifest",
++            "job_id": "file-backed-smoke",
++            "run_dir": str(smoke_dir.relative_to(repo_root)).replace("\\", "/"),
++            "artifact_refs": [bad_ref],
++        }, indent=2)
+         + "\n",
+         encoding="utf-8",
+     )
+@@ -518,6 +549,27 @@ def build_report(repo_root: Path) -> dict[str, object]:
+         "broker bridge must hydrate file-backed broker_request payloads and preserve tool/args/native flag",
+         errors,
+     )
++    request_packet_ref = write_json_artifact(
++        repo_root, smoke_dir, name="broker_request_packet",
++        payload={"schema_version": 1, "kind": "agent_runtime_tool_requests", "tool_requests": [hydrated_request]},
++        kind="provider_runtime_broker_request_packet", producer="file_backed_transport_contract_smoke",
++    )
++    broker_manifest = smoke_dir / "broker_payload_manifest.json"
++    write_transport_manifest(
++        repo_root, broker_manifest, job_id="broker-retry-smoke", run_dir=smoke_dir,
++        refs=[request_packet_ref], extra={"broker": {"request_packet_ref": request_packet_ref}},
++    )
++    broker_manifest_data, _, broker_manifest_transport, broker_manifest_errors = load_requests_data(
++        repo_root,
++        SimpleNamespace(request_data=None, request_packet=None, request_json="", request_file="", payload_file=str(broker_manifest)),
++    )
++    require(
++        broker_manifest_transport == "payload_file"
++        and not broker_manifest_errors
++        and extract_first_tool(broker_manifest_data) == "runtime_file_refs",
++        "broker payload_file manifest must hydrate retryable request packet with tool/args",
++        errors,
++    )
+ 
+     large_request_data, _, _, large_request_errors = load_requests_data(
+         repo_root,
+@@ -526,6 +578,7 @@ def build_report(repo_root: Path) -> dict[str, object]:
+             request_packet=None,
+             request_json='{"body":"' + ("x" * (INLINE_TEXT_MAX_CHARS + 1)) + '"}',
+             request_file="",
++            payload_file="",
+         ),
+     )
+     sqlite_args = {"content": "memory body"}
+@@ -602,7 +655,7 @@ def build_report(repo_root: Path) -> dict[str, object]:
+         "npu_gpu_deep_review_auditor",
+         "build_openvino_gpu0_workload_report",
+     }
+-    required_legacy = {
++    legacy_names = old_legacy | {
+         "legacy_ollama_tool_gateway",
+         "legacy_gpu_deep_planning_review",
+         "legacy_gpu_deep_planning_supervised",
+@@ -611,11 +664,12 @@ def build_report(repo_root: Path) -> dict[str, object]:
+         "legacy_build_openvino_gpu0_workload_report",
+     }
+     require(
+-        required_legacy.issubset(set(LEGACY_NON_RUN_UNICA_COMMANDS))
+-        and old_legacy.isdisjoint(set(TOOL_MAIN_TARGETS))
+-        and "legacy_run_ollama_tool_gateway_smoke" in set(LEGACY_NON_RUN_UNICA_VALIDATION_COMMANDS)
++        legacy_names.isdisjoint(set(TOOL_MAIN_TARGETS))
++        and not set(LEGACY_NON_RUN_UNICA_COMMANDS)
++        and not set(LEGACY_NON_RUN_UNICA_VALIDATION_COMMANDS)
++        and "legacy_run_ollama_tool_gateway_smoke" not in set(VALIDATION_TOOL_MAIN_TARGETS)
+         and "run_ollama_tool_gateway_smoke" not in set(VALIDATION_TOOL_MAIN_TARGETS),
+-        "legacy gateway/deep-planning commands must move behind legacy_* names",
++        "legacy gateway/deep-planning commands must be absent from live dispatchers",
+         errors,
+     )
+     docs_phrase = "HTTP/API coordinates"
+diff --git a/docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md b/docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md
+index e6c255b1..6914c81c 100644
+--- a/docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md
++++ b/docs/IA_UNIVERSE_MODEL_TO_CODE_MAP.md
+@@ -283,13 +283,9 @@ Tools/validation/heap_provider/
+ ## Main tool commands
+ 
+ ```powershell
+-python -m ia_carmine.cli legacy_ollama_tool_gateway ...
+ python -m ia_carmine.cli provider_mesh_runtime ...
+ python -m ia_carmine.cli run_local_provider_probe ...
+ python -m ia_carmine.cli check_local_resource_lanes ...
+-python -m ia_carmine.cli legacy_gpu_deep_planning_supervised ...
+-python -m ia_carmine.cli legacy_gpu_deep_planning_review ...
+-python -m ia_carmine.cli legacy_gpu_npu_parallel_orchestrator ...
+ python -m ia_carmine.cli build_ollama_gpu0_peer_report ...
+ python -m ia_carmine.cli build_gpu0_companion_task_lane ...
+ python -m ia_carmine.cli run_gpu0_peer_companion_worker ...
+@@ -307,7 +303,6 @@ python -m Tools.npu run_dual_ai_pipeline ...
+ ## Validation commands
+ 
+ ```powershell
+-python -m Tools.validation legacy_run_ollama_tool_gateway_smoke ...
+ python -m Tools.validation run_openvino_peer_topology_contract_smoke ...
+ python -m Tools.validation check_openvino_peer_topology_contract ...
+ python -m Tools.validation check_gpu0_companion_contract ...
+diff --git a/ia_carmine/CONTEXT_INDEX.md b/ia_carmine/CONTEXT_INDEX.md
+index 1b863af7..b8405035 100644
+--- a/ia_carmine/CONTEXT_INDEX.md
++++ b/ia_carmine/CONTEXT_INDEX.md
+@@ -6,15 +6,15 @@ the nearest package family before editing runtime code.
+ | Family | Context file |
+ | --- | --- |
+ | Shared helpers | `ia_carmine/_shared/TOOL_CONTEXT.md` |
+-| Runtime run command | `ia_carmine/runtime/runtime/run/TOOL_CONTEXT.md` |
+-| Runtime heap gate | `ia_carmine/runtime/runtime/heap_gate/TOOL_CONTEXT.md` |
+-| Runtime heap closure | `ia_carmine/runtime/runtime/heap_context_closure/` |
+-| Runtime heap exchange | `ia_carmine/runtime/runtime/heap_exchange/TOOL_CONTEXT.md` |
+-| Runtime heap provider contracts | `ia_carmine/runtime/runtime/heap_provider/` |
+-| Runtime tool broker/registry | `ia_carmine/runtime/runtime/runtime_tool/` |
+-| Runtime universe | `ia_carmine/runtime/runtime/runtime_universe/` |
+-| Runtime provider blackboard | `ia_carmine/runtime/runtime/provider_runtime_blackboard/TOOL_CONTEXT.md` |
+-| Runtime contractor universe | `ia_carmine/runtime/runtime/contractor_universe/TOOL_CONTEXT.md` |
++| Runtime run command | `ia_carmine/runtime/run/TOOL_CONTEXT.md` |
++| Runtime heap gate | `ia_carmine/runtime/heap_gate/TOOL_CONTEXT.md` |
++| Runtime heap closure | `ia_carmine/runtime/heap_context_closure/` |
++| Runtime heap exchange | `ia_carmine/runtime/heap_exchange/TOOL_CONTEXT.md` |
++| Runtime heap provider contracts | `ia_carmine/runtime/heap_provider/` |
++| Runtime tool broker/registry | `ia_carmine/runtime/runtime_tool/` |
++| Runtime universe | `ia_carmine/runtime/runtime_universe/` |
++| Runtime provider blackboard | `ia_carmine/runtime/provider_runtime_blackboard/TOOL_CONTEXT.md` |
++| Runtime contractor universe | `ia_carmine/runtime/contractor_universe/TOOL_CONTEXT.md` |
+ | Memory | `ia_carmine/memory/agent_memory/` |
+ | Context reload, packs and internal RAG | `ia_carmine/context/` |
+ | Provider mesh | `ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md` |
+diff --git a/ia_carmine/TOOL_CONTEXT.md b/ia_carmine/TOOL_CONTEXT.md
+index c1900875..5134cff8 100644
+--- a/ia_carmine/TOOL_CONTEXT.md
++++ b/ia_carmine/TOOL_CONTEXT.md
+@@ -125,11 +125,6 @@ Use these for provider lanes and hardware-specific diagnostics.
+ Representative tools:
+ 
+ ```text
+-legacy_gpu_deep_planning_supervised
+-legacy_gpu_deep_planning_review
+-legacy_gpu_npu_parallel_orchestrator
+-legacy_npu_gpu_deep_review_auditor
+-legacy_ollama_tool_gateway
+ provider_mesh_runtime
+ run_local_provider_probe
+ check_local_resource_lanes
+@@ -138,11 +133,9 @@ build_openvino_hardware_governance_report
+ ```
+ 
+ The historical gateway/deep-planning/orchestrator names are no longer exposed
+-under their old public command names. Their `legacy_*` dispatcher aliases are
+-marked `LEGACY_NON_RUN_UNICA_COMMANDS` in `ia_carmine/dispatch.py`. They remain
+-inspectable compatibility surfaces, but current run-unica evidence must flow
+-through `run`, `heap_context_closure`, `gpu1_dynamic_context_pack` and native
+-broker tool-call artifacts.
++as public dispatcher commands. Current run-unica evidence must flow through
++`run`, `heap_context_closure`, `gpu1_dynamic_context_pack` and native broker
++tool-call artifacts.
+ 
+ `check_local_resource_lanes` is a resource/provider preflight, not a static
+ source inspection. Its `provider_execution_performed=false` field only means no
+diff --git a/ia_carmine/_shared/agent_runtime_tool_broker_execution.py b/ia_carmine/_shared/agent_runtime_tool_broker_execution.py
+index 9e0d140f..da6b43f2 100644
+--- a/ia_carmine/_shared/agent_runtime_tool_broker_execution.py
++++ b/ia_carmine/_shared/agent_runtime_tool_broker_execution.py
+@@ -9,6 +9,8 @@ from datetime import datetime
+ from pathlib import Path
+ from time import perf_counter
+ 
++from ia_carmine._shared.file_backed_transport import artifact_ref
++
+ 
+ def now_iso() -> str:
+     return datetime.now().isoformat(timespec="seconds")
+@@ -23,10 +25,18 @@ class TimedCommandResult:
+     started_at: str
+     finished_at: str
+     elapsed_seconds: float
++    stdout_ref: dict | None = None
++    stderr_ref: dict | None = None
++    stdout_chars: int = 0
++    stderr_chars: int = 0
+ 
+ 
+ def execute_command_timed(
+-    command: list[str], repo_root: Path, timeout_seconds: int
++    command: list[str],
++    repo_root: Path,
++    timeout_seconds: int,
++    output_dir: Path | None = None,
++    name: str = "command",
+ ) -> TimedCommandResult:
+     started_at = now_iso()
+     start = perf_counter()
+@@ -39,24 +49,38 @@ def execute_command_timed(
+             timeout=timeout_seconds,
+             check=False,
+         )
++        stdout_text = completed.stdout or ""
++        stderr_text = completed.stderr or ""
++        stdout_ref, stderr_ref = _write_io_refs(repo_root, output_dir, name, stdout_text, stderr_text)
+         return TimedCommandResult(
+             returncode=completed.returncode,
+-            stdout_tail=completed.stdout[-12000:],
+-            stderr_tail=completed.stderr[-12000:],
++            stdout_tail=stdout_text[-12000:],
++            stderr_tail=stderr_text[-12000:],
+             error="",
+             started_at=started_at,
+             finished_at=now_iso(),
+             elapsed_seconds=round(max(0.0, perf_counter() - start), 3),
++            stdout_ref=stdout_ref,
++            stderr_ref=stderr_ref,
++            stdout_chars=len(stdout_text),
++            stderr_chars=len(stderr_text),
+         )
+     except subprocess.TimeoutExpired as exc:
++        stdout_text = str(exc.stdout or "")
++        stderr_text = str(exc.stderr or "")
++        stdout_ref, stderr_ref = _write_io_refs(repo_root, output_dir, name, stdout_text, stderr_text)
+         return TimedCommandResult(
+             returncode=124,
+-            stdout_tail=exc.stdout or "",
+-            stderr_tail=exc.stderr or "",
++            stdout_tail=stdout_text[-12000:],
++            stderr_tail=stderr_text[-12000:],
+             error=f"TimeoutExpired: {timeout_seconds}s",
+             started_at=started_at,
+             finished_at=now_iso(),
+             elapsed_seconds=round(max(0.0, perf_counter() - start), 3),
++            stdout_ref=stdout_ref,
++            stderr_ref=stderr_ref,
++            stdout_chars=len(stdout_text),
++            stderr_chars=len(stderr_text),
+         )
+     except Exception as exc:  # noqa: BLE001 - broker report must capture failure.
+         return TimedCommandResult(
+@@ -67,4 +91,28 @@ def execute_command_timed(
+             started_at=started_at,
+             finished_at=now_iso(),
+             elapsed_seconds=round(max(0.0, perf_counter() - start), 3),
++            stdout_ref={},
++            stderr_ref={},
++            stdout_chars=0,
++            stderr_chars=0,
+         )
++
++
++def _write_io_refs(
++    repo_root: Path,
++    output_dir: Path | None,
++    name: str,
++    stdout_text: str,
++    stderr_text: str,
++) -> tuple[dict, dict]:
++    if output_dir is None:
++        return {}, {}
++    output_dir.mkdir(parents=True, exist_ok=True)
++    stdout_path = output_dir / f"{name}_stdout.txt"
++    stderr_path = output_dir / f"{name}_stderr.txt"
++    stdout_path.write_text(stdout_text, encoding="utf-8")
++    stderr_path.write_text(stderr_text, encoding="utf-8")
++    return (
++        artifact_ref(stdout_path, repo_root, kind="tool_stdout", producer="agent_runtime_tool_broker", ref_id=f"{name}_stdout"),
++        artifact_ref(stderr_path, repo_root, kind="tool_stderr", producer="agent_runtime_tool_broker", ref_id=f"{name}_stderr"),
++    )
+diff --git a/ia_carmine/_shared/file_backed_transport.py b/ia_carmine/_shared/file_backed_transport.py
+index e9465eaa..e688ea46 100644
+--- a/ia_carmine/_shared/file_backed_transport.py
++++ b/ia_carmine/_shared/file_backed_transport.py
+@@ -155,6 +155,60 @@ def write_large_text_evidence(
+     }
+ 
+ 
++def prefixed_text_evidence_fields(prefix: str, evidence: dict[str, Any]) -> dict[str, Any]:
++    """Return JSON coordination fields for a file-backed text artifact."""
++    return {
++        f"{prefix}_ref": evidence.get("ref") or {},
++        f"{prefix}_chars": evidence.get("chars", 0),
++        f"{prefix}_sha256": evidence.get("sha256", ""),
++        f"{prefix}_tail": evidence.get("tail", ""),
++        f"{prefix}_tail_chars": evidence.get("tail_chars", 0),
++        f"{prefix}_full_text_in_json": False,
++    }
++
++
++def write_text_evidence_fields(
++    repo_root: Path,
++    output_dir: Path,
++    *,
++    prefix: str,
++    name: str,
++    text: str,
++    kind: str,
++    producer: str,
++    suffix: str = ".txt",
++) -> dict[str, Any]:
++    """Materialize text and return strict ref/tail fields for runtime JSON."""
++    evidence = write_large_text_evidence(
++        repo_root,
++        output_dir,
++        name=name,
++        text=text,
++        kind=kind,
++        producer=producer,
++        suffix=suffix,
++    )
++    fields = prefixed_text_evidence_fields(prefix, evidence)
++    fields[f"{prefix}_transport"] = "artifact_ref" if evidence.get("ref") else "empty"
++    return fields
++
++
++def text_from_ref_or_tail(repo_root: Path, payload: dict[str, Any], prefix: str) -> str:
++    """Load full text from ref, falling back to legacy inline text then tail."""
++    ref = payload.get(f"{prefix}_ref")
++    if isinstance(ref, dict):
++        ref_path = str(ref.get("path") or "").strip()
++        if ref_path:
++            try:
++                return read_text_windows_safe(resolve_path(repo_root, ref_path))
++            except Exception:
++                pass
++    inline = payload.get(prefix)
++    if isinstance(inline, str) and inline:
++        return inline
++    return str(payload.get(f"{prefix}_tail") or "")
++
++
+ def write_json_artifact(
+     repo_root: Path,
+     output_dir: Path,
+@@ -258,8 +312,9 @@ def validate_runtime_payload_manifest(repo_root: Path, manifest_path: str | Path
+     """Validate file-backed manifest refs, checksums and chunk order."""
+     errors: list[str] = []
+     warnings: list[str] = []
++    manifest_file = resolve_path(repo_root, manifest_path)
+     try:
+-        manifest = read_json_windows_safe(resolve_path(repo_root, manifest_path))
++        manifest = read_json_windows_safe(manifest_file)
+     except Exception as exc:  # noqa: BLE001 - report-only validator helper.
+         return {
+             "passed": False,
+@@ -267,6 +322,22 @@ def validate_runtime_payload_manifest(repo_root: Path, manifest_path: str | Path
+             "warnings": [],
+         }
+ 
++    if manifest.get("schema_version") != 1:
++        errors.append("manifest_schema_version_not_1")
++    if manifest.get("kind") != "ia_carmine_runtime_payload_manifest":
++        errors.append("manifest_kind_not_ia_carmine_runtime_payload_manifest")
++    job_id = str(manifest.get("job_id") or "").strip()
++    if not job_id:
++        errors.append("manifest_job_id_missing")
++    run_dir_value = str(manifest.get("run_dir") or "").strip()
++    if not run_dir_value:
++        errors.append("manifest_run_dir_missing")
++        run_dir = manifest_file.parent
++    else:
++        run_dir = resolve_path(repo_root, run_dir_value)
++        if not is_path_inside(run_dir, repo_root):
++            errors.append("manifest_run_dir_outside_repo")
++
+     refs = manifest.get("artifact_refs")
+     if not isinstance(refs, list) or not refs:
+         errors.append("manifest_artifact_refs_missing")
+@@ -283,11 +354,18 @@ def validate_runtime_payload_manifest(repo_root: Path, manifest_path: str | Path
+         if not rel_path:
+             errors.append(f"artifact_ref_{index}_path_missing")
+             continue
++        raw_path = Path(rel_path)
++        if raw_path.is_absolute():
++            errors.append(f"artifact_ref_{rel_path}_absolute_path_forbidden")
+         if not kind:
+             errors.append(f"artifact_ref_{rel_path}_kind_missing")
+         if not source or source == "unknown":
+             errors.append(f"artifact_ref_{rel_path}_source_missing")
+         artifact_path = resolve_path(repo_root, rel_path)
++        if not is_path_inside(artifact_path, repo_root):
++            errors.append(f"artifact_ref_{rel_path}_outside_repo")
++        elif run_dir_value and not is_path_inside(artifact_path, run_dir):
++            errors.append(f"artifact_ref_{rel_path}_outside_run_dir")
+         if not artifact_path.is_file():
+             errors.append(f"artifact_ref_{rel_path}_missing")
+             continue
+@@ -328,6 +406,26 @@ def validate_runtime_payload_manifest(repo_root: Path, manifest_path: str | Path
+             for key in ("chunk_id", "kind", "path", "source", "bytes", "sha256"):
+                 if chunk.get(key) in (None, ""):
+                     errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_{key}_missing")
++            chunk_rel_path = str(chunk.get("path") or "").strip()
++            if not chunk_rel_path:
++                continue
++            if Path(chunk_rel_path).is_absolute():
++                errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_absolute_path_forbidden")
++            chunk_target = resolve_path(repo_root, chunk_rel_path)
++            if not is_path_inside(chunk_target, repo_root):
++                errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_outside_repo")
++                continue
++            if run_dir_value and not is_path_inside(chunk_target, run_dir):
++                errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_outside_run_dir")
++            if not chunk_target.is_file():
++                errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_missing")
++                continue
++            expected_chunk_bytes = int(chunk.get("bytes") or 0)
++            expected_chunk_sha = str(chunk.get("sha256") or "").strip()
++            if chunk_target.stat().st_size != expected_chunk_bytes:
++                errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_bytes_mismatch")
++            if file_sha256(chunk_target) != expected_chunk_sha:
++                errors.append(f"chunk_{chunk.get('chunk_id') or '?'}_sha256_mismatch")
+ 
+     return {"passed": not errors, "errors": errors, "warnings": warnings}
+ 
+diff --git a/ia_carmine/_shared/provider_ollama_report.py b/ia_carmine/_shared/provider_ollama_report.py
+index 9300592d..a0d468e7 100644
+--- a/ia_carmine/_shared/provider_ollama_report.py
++++ b/ia_carmine/_shared/provider_ollama_report.py
+@@ -6,9 +6,8 @@ from pathlib import Path
+ from typing import Any
+ 
+ from ia_carmine._shared.file_backed_transport import (
+-    INLINE_TEXT_MAX_CHARS,
+     text_sha256,
+-    write_large_text_evidence,
++    write_text_evidence_fields,
+ )
+ 
+ _REPORT_KEYS = (
+@@ -93,44 +92,22 @@ def _response_text_fields(ctx: dict[str, Any], text: str) -> dict[str, Any]:
+     response_text = str(ctx.get("response_text") or "")
+     partial_json = ctx.get("partial_json")
+     repo_root = Path(str(ctx.get("repo_root") or ".")).resolve()
+-    fields: dict[str, Any] = {
+-        "response_text_chars": len(response_text),
+-        "response_text_sha256": text_sha256(response_text),
+-        "response_text_tail": response_text[-4000:] if response_text else "",
+-        "response_text_tail_chars": min(len(response_text), 4000),
+-        "response_text_full_text_in_json": len(response_text) <= INLINE_TEXT_MAX_CHARS,
+-        "response_text_transport": "inline_small_control",
+-    }
+-    if len(response_text) <= INLINE_TEXT_MAX_CHARS:
+-        fields["response_text"] = response_text
+-        return fields
+-
+     base_dir = (
+         Path(str(partial_json)).resolve().parent
+         if partial_json
+         else repo_root / "output" / "validation"
+     )
+-    evidence = write_large_text_evidence(
++    fields = write_text_evidence_fields(
+         repo_root,
+         base_dir / "provider_response_artifacts",
++        prefix="response_text",
+         name="provider_ollama_response",
+         text=response_text,
+         kind="provider_ollama_response_text",
+         producer="provider_ollama_probe",
+         suffix=".md",
+     )
+-    fields.update(
+-        {
+-            "response_text_ref": evidence.get("ref") or {},
+-            "response_text_tail": evidence.get("tail") or fields["response_text_tail"],
+-            "response_text_tail_chars": evidence.get(
+-                "tail_chars", fields["response_text_tail_chars"]
+-            ),
+-            "response_text_full_text_in_json": False,
+-            "response_text_transport": "artifact_ref",
+-            "raw_response_chars": len(text.strip()),
+-        }
+-    )
++    fields["raw_response_chars"] = len(text.strip())
+     return fields
+ 
+ 
+diff --git a/ia_carmine/_shared/provider_replight.py b/ia_carmine/_shared/provider_replight.py
+index 163ef27d..740855d9 100644
+--- a/ia_carmine/_shared/provider_replight.py
++++ b/ia_carmine/_shared/provider_replight.py
+@@ -1,7 +1,9 @@
+ from __future__ import annotations
+ 
++from pathlib import Path
+ from typing import Any
+ 
++from ia_carmine._shared.file_backed_transport import text_from_ref_or_tail
+ from ia_carmine._shared.provider_tool_loop import ollama_tool_call_tool_names
+ from ia_carmine._shared.provider_work_verification import provider_work_status
+ 
+@@ -41,13 +43,14 @@ def provider_replight_fields(
+         or default_model
+         or ""
+     ).strip()
+-    response_text = str(
+-        report.get("response_text")
+-        or report.get("provider_heap_delta_text")
+-        or report.get("tool_result_summary")
+-        or report.get("micro_task_result_summary")
+-        or ""
+-    ).strip()
++    repo_root = Path(str(report.get("repo_root") or ".")).resolve()
++    response_text = text_from_ref_or_tail(repo_root, report, "response_text").strip()
++    if not response_text:
++        response_text = text_from_ref_or_tail(repo_root, report, "provider_heap_delta_text").strip()
++    if not response_text:
++        response_text = str(
++            report.get("tool_result_summary") or report.get("micro_task_result_summary") or ""
++        ).strip()
+     generated_phrase = _first_sentence(response_text)
+     prompt_tokens = _int_first(
+         report.get("prompt_token_count"),
+diff --git a/ia_carmine/_shared/provider_tool_loop.py b/ia_carmine/_shared/provider_tool_loop.py
+index a31dec32..1e2c65af 100644
+--- a/ia_carmine/_shared/provider_tool_loop.py
++++ b/ia_carmine/_shared/provider_tool_loop.py
+@@ -8,6 +8,7 @@ import sys
+ import time
+ from pathlib import Path
+ from typing import Any
++from ia_carmine._shared.file_backed_transport import write_text_evidence_fields
+ from ia_carmine.providers.ollama.tool_calls import (
+     normalize_ollama_tool_calls as normalize_ollama_sdk_tool_calls,
+ )
+@@ -305,14 +306,45 @@ def openvino_tool_loop_report(
+     report["available_devices"] = payload.get("devices") or []
+     if payload.get("errors"):
+         report["errors"].extend(str(item) for item in payload.get("errors") or [])
+-    report["provider_heap_delta_text"] = str(payload.get("provider_heap_delta_text") or "")
+-    report["response_text"] = str(payload.get("provider_heap_delta_text") or payload.get("response_text") or "")
++    provider_delta = str(payload.get("provider_heap_delta_text") or "")
++    response_text = str(payload.get("provider_heap_delta_text") or payload.get("response_text") or "")
++    evidence_dir = repo_root / "output" / "validation" / "provider_tool_loop_artifacts"
++    report.update(write_text_evidence_fields(
++        repo_root,
++        evidence_dir,
++        prefix="provider_heap_delta_text",
++        name=f"openvino_{device}_provider_heap_delta",
++        text=provider_delta,
++        kind="provider_heap_delta_text",
++        producer="provider_tool_loop",
++        suffix=".md",
++    ))
++    report.update(write_text_evidence_fields(
++        repo_root,
++        evidence_dir,
++        prefix="response_text",
++        name=f"openvino_{device}_response_text",
++        text=response_text,
++        kind="provider_response_text",
++        producer="provider_tool_loop",
++        suffix=".md",
++    ))
+     parsed = payload.get("parsed") if isinstance(payload.get("parsed"), dict) else {}
+     tool_calls = parsed.get("tool_calls") if isinstance(parsed.get("tool_calls"), list) else []
+     structured_call = payload.get("structured_call") if isinstance(payload.get("structured_call"), dict) else {}
+-    report["structured_tool_call_text"] = str(payload.get("structured_text") or "")
++    structured_text = str(payload.get("structured_text") or "")
++    report.update(write_text_evidence_fields(
++        repo_root,
++        evidence_dir,
++        prefix="structured_tool_call_text",
++        name=f"openvino_{device}_structured_tool_call_text",
++        text=structured_text,
++        kind="provider_structured_tool_call_text",
++        producer="provider_tool_loop",
++        suffix=".txt",
++    ))
+     report["structured_tool_call_payload"] = structured_call
+-    structured_decision = str(structured_call.get("decision") or "").strip() or ("call_tool" if "call_tool" in report["structured_tool_call_text"] else "")
++    structured_decision = str(structured_call.get("decision") or "").strip() or ("call_tool" if "call_tool" in structured_text else "")
+     if not structured_decision and structured_call.get("tool"):
+         structured_decision = "call_tool"
+     if not tool_calls and structured_decision == "call_tool" and structured_call.get("tool"):
+diff --git a/ia_carmine/_shared/provider_work_verification.py b/ia_carmine/_shared/provider_work_verification.py
+index 1014bd14..1a5e50dd 100644
+--- a/ia_carmine/_shared/provider_work_verification.py
++++ b/ia_carmine/_shared/provider_work_verification.py
+@@ -1,7 +1,9 @@
+ from __future__ import annotations
+ 
++from pathlib import Path
+ from typing import Any
+ 
++from ia_carmine._shared.file_backed_transport import text_from_ref_or_tail
+ from ia_carmine._shared.provider_work_rejections import (
+     MIN_GPU1_WORK_TOKENS,
+     gpu0_ollama_rejection_reason,
+@@ -364,13 +366,14 @@ def _generic_status(report: dict[str, Any]) -> dict[str, Any]:
+ 
+ 
+ def _response_text(report: dict[str, Any]) -> str:
+-    return str(
+-        report.get("response_text")
+-        or report.get("provider_heap_delta_text")
+-        or report.get("tool_result_summary")
+-        or report.get("micro_task_result_summary")
+-        or ""
+-    ).strip()
++    repo_root = Path(str(report.get("repo_root") or ".")).resolve()
++    text = text_from_ref_or_tail(repo_root, report, "response_text").strip()
++    if text:
++        return text
++    text = text_from_ref_or_tail(repo_root, report, "provider_heap_delta_text").strip()
++    if text:
++        return text
++    return str(report.get("tool_result_summary") or report.get("micro_task_result_summary") or "").strip()
+ 
+ 
+ def _useful_output(report: dict[str, Any]) -> bool:
+diff --git a/ia_carmine/context/heap_context_memory_reload/dynamic_gpu1_context.py b/ia_carmine/context/heap_context_memory_reload/dynamic_gpu1_context.py
+index 4ed9bf52..592f9168 100644
+--- a/ia_carmine/context/heap_context_memory_reload/dynamic_gpu1_context.py
++++ b/ia_carmine/context/heap_context_memory_reload/dynamic_gpu1_context.py
+@@ -285,6 +285,11 @@ def _write_payload_manifest(
+     )
+     manifest_path = payload_dir / "manifest.json"
+     refs = [request_ref, context_summary_ref, chunks_manifest_ref, *artifact_refs.values()]
++    provider_input_refs = [
++        ref.get("path")
++        for ref in [request_ref, context_summary_ref, chunks_manifest_ref, *artifact_refs.values()]
++        if isinstance(ref, dict) and ref.get("path")
++    ]
+     write_transport_manifest(
+         repo_root,
+         manifest_path,
+@@ -302,9 +307,9 @@ def _write_payload_manifest(
+             },
+             "heap": {"pointer_refs": [], "revision_refs": []},
+             "providers": {
+-                "gpu1": {"role": "primary_planner", "input_refs": [request_ref.get("path")]},
+-                "gpu0": {"role": "packet_review_only", "input_refs": []},
+-                "npu": {"role": "packet_review_only", "input_refs": []},
++                "gpu1": {"role": "primary_planner", "input_refs": provider_input_refs},
++                "gpu0": {"role": "packet_review_only", "input_refs": provider_input_refs},
++                "npu": {"role": "packet_review_only", "input_refs": provider_input_refs},
+             },
+             "broker": {"tool_request_refs": [], "tool_result_refs": []},
+             "output": {"report_path": "", "documents_dir": "", "stdout_path": "", "stderr_path": ""},
+diff --git a/ia_carmine/dispatch.py b/ia_carmine/dispatch.py
+index 4b11ba41..14a6d4ea 100644
+--- a/ia_carmine/dispatch.py
++++ b/ia_carmine/dispatch.py
+@@ -59,7 +59,6 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "semantic_evidence_chunks": "ia_carmine.context.agent_context.semantic_evidence_chunks.cli:main",
+     "shared_toolbox_bundle": "ia_carmine.context.agent_context.shared_toolbox_bundle.cli:main",
+     "heap_final_proposals": "ia_carmine.product.heap_final_proposals.cli:main",
+-    "legacy_ollama_tool_gateway": "ia_carmine.providers.provider_mesh.ollama_tool_gateway.cli:main",
+     "operator_product_gui": "ia_carmine.product.operator_product_core.view.cli:main",
+     "heap_context_memory_reload": "ia_carmine.context.heap_context_memory_reload.cli:main",
+     "agent_review_prepare_pr": "ia_carmine.product.agent_review.review_pr_cli:main",
+@@ -70,9 +69,6 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "provider_runtime_validation_bridge": "ia_carmine.runtime.provider_runtime_blackboard.validation_bridge.cli:main",
+     "build_provider_runtime_heap_from_peer_reports": "ia_carmine.runtime.provider_runtime_blackboard.peer_reports.cli:main",
+     "megalithic_review_refinement": "ia_carmine.product.repository_product.megalithic_review_refinement.cli:main",
+-    "legacy_gpu_deep_planning_review": "ia_carmine.providers.provider_mesh.gpu_deep_planning_review.cli:main",
+-    "legacy_gpu_deep_planning_supervised": "ia_carmine.providers.provider_mesh.gpu_deep_planning_supervised.cli:main",
+-    "legacy_gpu_npu_parallel_orchestrator": "ia_carmine.providers.provider_mesh.gpu_npu_parallel_orchestrator.cli:main",
+     "run": "ia_carmine.runtime.run.cli:main",
+     "heap_context_closure": "ia_carmine.runtime.heap_context_closure.cli:main",
+     "run_heap_code_execution_tool": "ia_carmine.runtime.heap_runtime.code_execution_tool.cli:main",
+@@ -81,7 +77,6 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "run_heap_virtual_dev_environment": "ia_carmine.runtime.heap_runtime.virtual_dev_environment.cli:main",
+     "generic_write": "ia_carmine.runtime.runtime_tool.generic_write.cli:main",
+     "megalithic_repo_review": "ia_carmine.product.repository_product.megalithic_repo_review.cli:main",
+-    "legacy_npu_gpu_deep_review_auditor": "ia_carmine.providers.provider_mesh.npu_gpu_deep_review_auditor.cli:main",
+     "pipeline_dry_run_matrix": "ia_carmine.product.pipeline.dry_run_matrix.cli:main",
+     "repository_update_suggestions": "ia_carmine.product.repository_product.repository_update_suggestions.cli:main",
+     "run_parallel_artifact_pipeline": "ia_carmine.product.pipeline.artifact_runner.cli:main",
+@@ -98,7 +93,6 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "ensure_ollama_role_models": "ia_carmine.providers.ollama.role_models:main",
+     "ensure_openvino_npu_model": "ia_carmine.providers.provider_mesh.openvino_npu_model_probe.cli:main",
+     "ensure_provider_role_coexistence": "ia_carmine.providers.provider_mesh.provider_role_coexistence.cli:main",
+-    "legacy_build_openvino_gpu0_workload_report": "ia_carmine.providers.provider_mesh.openvino_gpu0_workload_report.cli:main",
+     "build_openvino_hardware_governance_report": "ia_carmine.providers.provider_mesh.openvino_hardware_governance_report.cli:main",
+     "build_patch_plan_quality_product_report": "ia_carmine.product.patch_product.patch_plan_quality_product_report.cli:main",
+     "build_review_pr_prepare_args": "ia_carmine.product.repository_product.review_pr_prepare_args.cli:main",
+@@ -158,16 +152,7 @@ TOOL_MAIN_TARGETS: dict[str, str] = {
+     "runtime_hardware_capability": "ia_carmine.providers.provider_mesh.hardware_capability.cli:main",
+ }
+ 
+-LEGACY_NON_RUN_UNICA_COMMANDS: frozenset[str] = frozenset(
+-    {
+-        "legacy_ollama_tool_gateway",
+-        "legacy_gpu_deep_planning_review",
+-        "legacy_gpu_deep_planning_supervised",
+-        "legacy_gpu_npu_parallel_orchestrator",
+-        "legacy_npu_gpu_deep_review_auditor",
+-        "legacy_build_openvino_gpu0_workload_report",
+-    }
+-)
++LEGACY_NON_RUN_UNICA_COMMANDS: frozenset[str] = frozenset()
+ 
+ 
+ def _dispatcher() -> ToolDispatcher:
+diff --git a/ia_carmine/product/heap_final_proposals/artifacts.py b/ia_carmine/product/heap_final_proposals/artifacts.py
+index 6ba8ddc2..cc720100 100644
+--- a/ia_carmine/product/heap_final_proposals/artifacts.py
++++ b/ia_carmine/product/heap_final_proposals/artifacts.py
+@@ -11,6 +11,7 @@ from ia_carmine.product.heap_final_proposals.common import (
+     read_text,
+     repo_rel,
+ )
++from ia_carmine._shared.file_backed_transport import text_from_ref_or_tail
+ 
+ PROVIDER_REPORT_LANES = {"gpu1_planner", "gpu0_peer", "npu_micro_task_auditor"}
+ PROVIDER_REPORT_SKIP_KINDS = {
+@@ -203,7 +204,10 @@ def list_proposals(run_dir: Path) -> list[dict[str, Any]]:
+                 "npu_micro_task_piece": data.get("npu_micro_task_piece", []),
+                 "npu_workload_audit": data.get("npu_workload_audit", {}),
+                 "anchored_source_candidates": data.get("anchored_source_candidates", []),
+-                "response_text": data.get("response_text", ""),
++                "response_text_ref": data.get("response_text_ref", {}),
++                "response_text_chars": data.get("response_text_chars", 0),
++                "response_text_sha256": data.get("response_text_sha256", ""),
++                "response_text_tail": data.get("response_text_tail", ""),
+             }
+         )
+     return proposals
+@@ -233,7 +237,10 @@ def list_provider_reports(run_dir: Path) -> list[dict[str, Any]]:
+                 "passed": data.get("passed"),
+                 "provider_execution_performed": provider_report_execution_performed(data),
+                 "provider_work_verified": provider_report_execution_performed(data),
+-                "response_text": data.get("response_text", ""),
++                "response_text_ref": data.get("response_text_ref", {}),
++                "response_text_chars": data.get("response_text_chars", 0),
++                "response_text_sha256": data.get("response_text_sha256", ""),
++                "response_text_tail": data.get("response_text_tail", ""),
+                 "npu_device_workload": data.get("npu_device_workload"),
+                 "warnings": data.get("warnings", []),
+                 "errors": data.get("errors", []),
+@@ -344,18 +351,28 @@ def flatten_quality_blockers(
+     return list(dict.fromkeys(blockers))
+ 
+ 
+-def proposal_text_for_review(proposal: dict[str, Any], max_chars: int | None) -> str:
++def proposal_text_for_review(
++    proposal: dict[str, Any],
++    max_chars: int | None,
++    repo_root: Path | None = None,
++) -> str:
+     md_path = proposal.get("markdown_path")
+     if isinstance(md_path, Path) and md_path.exists():
+         return read_text(md_path, limit=max_chars)
+-    text = str(proposal.get("response_text") or "")
++    text = (
++        text_from_ref_or_tail(repo_root, proposal, "response_text")
++        if repo_root is not None
++        else str(proposal.get("response_text_tail") or "")
++    )
+     if max_chars is not None and len(text) > max_chars:
+         return text[:max_chars] + "\n...[truncated]\n"
+     return text
+ 
+ 
+ def collect_gpu0_reviews(
+-    proposals: list[dict[str, Any]], provider_reports: list[dict[str, Any]]
++    proposals: list[dict[str, Any]],
++    provider_reports: list[dict[str, Any]],
++    repo_root: Path | None = None,
+ ) -> list[dict[str, Any]]:
+     reviews: list[dict[str, Any]] = []
+     for proposal in proposals:
+@@ -376,7 +393,11 @@ def collect_gpu0_reviews(
+                     "source": source,
+                     "passed": provider.get("passed"),
+                     "provider_execution_performed": provider.get("provider_execution_performed"),
+-                    "summary": str(provider.get("response_text") or "")[:1200],
++                    "summary": (
++                        text_from_ref_or_tail(repo_root, provider, "response_text")
++                        if repo_root is not None
++                        else str(provider.get("response_text_tail") or "")
++                    )[:1200],
+                     "warnings": provider.get("warnings") or [],
+                 }
+             )
+diff --git a/ia_carmine/product/heap_final_proposals/cli.py b/ia_carmine/product/heap_final_proposals/cli.py
+index 8d116449..5fc97c3c 100644
+--- a/ia_carmine/product/heap_final_proposals/cli.py
++++ b/ia_carmine/product/heap_final_proposals/cli.py
+@@ -75,7 +75,7 @@ def main() -> int:
+     proposals = _load_gated_proposals(repo_root, run_dir)
+     provider_reports = list_provider_reports(run_dir)
+     blockers = flatten_quality_blockers(report, proposals, startup_manifest)
+-    gpu0_reviews = collect_gpu0_reviews(proposals, provider_reports)
++    gpu0_reviews = collect_gpu0_reviews(proposals, provider_reports, repo_root)
+     npu_audits = collect_npu_audits(proposals, provider_reports)
+     action_list = build_action_list(blockers, proposals, startup_manifest)
+     product_causality = compute_product_causality(
+diff --git a/ia_carmine/product/heap_final_proposals/rendering.py b/ia_carmine/product/heap_final_proposals/rendering.py
+index 26ca694a..6c56d12b 100644
+--- a/ia_carmine/product/heap_final_proposals/rendering.py
++++ b/ia_carmine/product/heap_final_proposals/rendering.py
+@@ -8,6 +8,7 @@ from typing import Any
+ 
+ from ia_carmine.product.heap_final_proposals.artifacts import proposal_text_for_review
+ from ia_carmine.product.heap_final_proposals.common import repo_rel
++from ia_carmine._shared.file_backed_transport import text_from_ref_or_tail
+ 
+ 
+ def render_startup_section(repo_root: Path, startup_manifest: dict[str, Any]) -> list[str]:
+@@ -205,7 +206,7 @@ def _append_provider_reports(
+                     f"- Python: `{workload.get('python_exe')}`",
+                 ]
+             )
+-        summary = str(provider.get("response_text") or "").strip()
++        summary = text_from_ref_or_tail(repo_root, provider, "response_text").strip()
+         if summary:
+             lines.extend(["", summary[:1600], ""])
+ 
+@@ -234,7 +235,7 @@ def _append_full_proposals(
+             lines.extend(["Anchored source candidates:"])
+             lines.extend(f"- `{item}`" for item in anchored[:20])
+             lines.append("")
+-        lines.extend(["```markdown", proposal_text_for_review(proposal, max_proposal_chars), "```", ""])
++        lines.extend(["```markdown", proposal_text_for_review(proposal, max_proposal_chars, repo_root), "```", ""])
+ 
+ 
+ def _append_context_refs(
+diff --git a/ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md b/ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md
+index 1a92859d..9e49ef3b 100644
+--- a/ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md
++++ b/ia_carmine/providers/provider_mesh/TOOL_CONTEXT.md
+@@ -61,12 +61,7 @@ python -m ia_carmine.cli check_local_resource_lanes ...
+ python -m ia_carmine.cli runtime_hardware_capability ...
+ python -m ia_carmine.cli build_analysis_input_bundle ...
+ python -m ia_carmine.cli peer_exchange_packet ...
+-python -m ia_carmine.cli legacy_gpu_deep_planning_supervised ...
+-python -m ia_carmine.cli legacy_gpu_deep_planning_review ...
+ python -m ia_carmine.cli replay_gpu_planner_json_contract ...
+-python -m ia_carmine.cli legacy_gpu_npu_parallel_orchestrator ...
+-python -m ia_carmine.cli legacy_npu_gpu_deep_review_auditor ...
+-python -m ia_carmine.cli legacy_ollama_tool_gateway ...
+ python -m ia_carmine.cli build_ollama_gpu0_peer_report ...
+ python -m ia_carmine.cli ensure_ollama_role_models ...
+ python -m ia_carmine.cli ensure_openvino_npu_model ...
+@@ -82,10 +77,8 @@ python -m ia_carmine.cli build_gpu_repair_failure_recommendation ...
+ 
+ The old public names for GPU deep planning, GPU/NPU orchestration, NPU review,
+ Ollama gateway and OpenVINO GPU0 workload reports are removed from the primary
+-dispatcher. Their `legacy_*` aliases are non-run-unica surfaces unless
+-explicitly promoted. Current run-unica provider evidence is driven by the
+-dynamic GPU1 context pack, native broker tool calls and typed GPU1/GPU0/NPU
+-reports.
++dispatcher. Current run-unica provider evidence is driven by the dynamic GPU1
++context pack, native broker tool calls and typed GPU1/GPU0/NPU reports.
+ 
+ ## Guardrails
+ 
+@@ -143,7 +136,6 @@ GPU0 Ollama/Vulkan companion task lane report
+ GPU0 Ollama/Vulkan peer report
+ NPU microtask companion report
+ triple provider role coexistence report
+-Ollama gateway reports
+ hardware capability reports
+ repair recommendation reports
+ ```
+@@ -174,7 +166,6 @@ python -m ia_carmine.cli provider_runtime_validation_bridge ...
+ Relevant validation areas:
+ 
+ ```powershell
+-python -m Tools.validation legacy_run_ollama_tool_gateway_smoke ...
+ python -m Tools.validation check_runtime_hardware_delegation_contract ...
+ python -m Tools.validation run_ollama_sdk_adapter_smoke ...
+ python -m Tools.validation check_openvino_peer_topology_contract ...
+diff --git a/ia_carmine/providers/provider_mesh/local_provider_probe/cli.py b/ia_carmine/providers/provider_mesh/local_provider_probe/cli.py
+index 459df4d6..280520c5 100644
+--- a/ia_carmine/providers/provider_mesh/local_provider_probe/cli.py
++++ b/ia_carmine/providers/provider_mesh/local_provider_probe/cli.py
+@@ -18,7 +18,10 @@ if str(repo_root_for_import) not in sys.path:
+ from ia_carmine._shared.provider_ollama_probe import run_ollama_probe
+ from ia_carmine._shared.provider_probe_paths import ensure_repo_imports
+ from ia_carmine._shared.provider_work_verification import provider_work_status
+-from ia_carmine._shared.file_backed_transport import write_text_artifact
++from ia_carmine._shared.file_backed_transport import (
++    write_text_artifact,
++    write_text_evidence_fields,
++)
+ 
+ 
+ def _option_supplied(argv: list[str], option: str) -> bool:
+@@ -177,7 +180,19 @@ def mirror_single_provider_lane(report: dict[str, Any], lane_report: dict[str, A
+         "provider_device_verified",
+         "provider_execution_performed",
+         "provider_loaded",
+-        "response_text",
++        "response_text_ref",
++        "response_text_chars",
++        "response_text_sha256",
++        "response_text_tail",
++        "response_text_tail_chars",
++        "response_text_full_text_in_json",
++        "response_text_transport",
++        "provider_heap_delta_text_ref",
++        "provider_heap_delta_text_chars",
++        "provider_heap_delta_text_sha256",
++        "provider_heap_delta_text_tail",
++        "provider_heap_delta_text_tail_chars",
++        "provider_heap_delta_text_full_text_in_json",
+         "raw_response_chars",
+         "text_preview",
+         "target_files",
+@@ -250,6 +265,54 @@ def mirror_single_provider_lane(report: dict[str, Any], lane_report: dict[str, A
+     return report
+ 
+ 
++def _compact_text_fields(
++    repo_root: Path,
++    output_dir: Path,
++    payload: dict[str, Any],
++    *,
++    name: str,
++) -> dict[str, Any]:
++    compact = dict(payload)
++    text_keys = (
++        "response_text",
++        "provider_heap_delta_text",
++        "gpu0_raw_response_text",
++        "request_prompt",
++        "raw_preview",
++    )
++    for key in text_keys:
++        if key not in compact:
++            continue
++        text = str(compact.pop(key) or "")
++        compact.update(write_text_evidence_fields(
++            repo_root,
++            output_dir / "provider_report_artifacts",
++            prefix=key,
++            name=f"{name}_{key}",
++            text=text,
++            kind=f"local_provider_probe_{key}",
++            producer="local_provider_probe",
++            suffix=".md",
++        ))
++    nested = compact.get("openvino_native_tool_loop")
++    if isinstance(nested, dict):
++        compact["openvino_native_tool_loop"] = _compact_text_fields(
++            repo_root,
++            output_dir,
++            nested,
++            name=f"{name}_openvino_native_tool_loop",
++        )
++    child = compact.get("child")
++    if isinstance(child, dict):
++        compact["child"] = _compact_text_fields(
++            repo_root,
++            output_dir,
++            child,
++            name=f"{name}_child",
++        )
++    return compact
++
++
+ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+     ensure_repo_imports(repo_root)
+     from ia_carmine._shared.provider_tool_loop import build_heap_patch_proposal_prompt  # noqa: PLC0415
+@@ -362,6 +425,20 @@ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+         if str(item.get("provider_compute_device") or "").strip()
+     ]
+ 
++    partial_output = Path(args.output)
++    if not partial_output.is_absolute():
++        partial_output = repo_root / partial_output
++    safe_lane_reports = [
++        _compact_text_fields(
++            repo_root,
++            partial_output.parent,
++            item,
++            name=f"lane_report_{index}_{item.get('lane') or 'unknown'}",
++        )
++        for index, item in enumerate(lane_reports)
++        if isinstance(item, dict)
++    ]
++
+     report = {
+         "schema_version": 1,
+         "kind": "local_provider_probe",
+@@ -387,13 +464,13 @@ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+         "cpu_provider_fallback_performed": any(
+             item.get("cpu_provider_fallback_performed") for item in lane_reports
+         ),
+-        "lane_reports": lane_reports,
++        "lane_reports": safe_lane_reports,
+         "provider_result_report": provider_report,
+         "canonical_run_provider_evidence": bool(args.canonical_run_provider_evidence),
+         "canonical_run_fingerprint": str(args.canonical_run_fingerprint or ""),
+     }
+-    if args.run_ollama and len(lane_reports) == 1 and isinstance(lane_reports[0], dict):
+-        return mirror_single_provider_lane(report, lane_reports[0])
++    if args.run_ollama and len(safe_lane_reports) == 1 and isinstance(safe_lane_reports[0], dict):
++        return mirror_single_provider_lane(report, safe_lane_reports[0])
+     return report
+ 
+ def main() -> int:
+diff --git a/ia_carmine/providers/provider_mesh/ollama_gpu0_peer_report/cli.py b/ia_carmine/providers/provider_mesh/ollama_gpu0_peer_report/cli.py
+index 4b6c4443..04b432d4 100644
+--- a/ia_carmine/providers/provider_mesh/ollama_gpu0_peer_report/cli.py
++++ b/ia_carmine/providers/provider_mesh/ollama_gpu0_peer_report/cli.py
+@@ -14,7 +14,11 @@ REPO_ROOT_FOR_IMPORT = Path(__file__).resolve().parents[4]
+ if str(REPO_ROOT_FOR_IMPORT) not in sys.path:
+     sys.path.insert(0, str(REPO_ROOT_FOR_IMPORT))
+ 
+-from ia_carmine._shared.file_backed_transport import write_large_text_evidence
++from ia_carmine._shared.file_backed_transport import (
++    read_text_windows_safe,
++    write_large_text_evidence,
++    write_text_evidence_fields,
++)
+ from ia_carmine._shared.provider_ollama_probe import run_ollama_probe
+ from ia_carmine.providers.ollama.role_models import (
+     start_gpu0_vulkan_server,
+@@ -278,7 +282,7 @@ def render_markdown(report: dict[str, Any]) -> str:
+         "",
+         "## Structured Decision",
+         "",
+-        str(report.get("response_text") or ""),
++        str(report.get("response_text_tail") or ""),
+     ]
+     if report.get("free_text_evidence"):
+         lines.extend(["", "## Free Text Evidence", "", str(report.get("free_text_evidence") or "")])
+@@ -298,6 +302,20 @@ def resolve_path(repo_root: Path, value: str) -> Path:
+     return path.resolve()
+ 
+ 
++def _report_response_text(repo_root: Path, report: dict[str, Any]) -> str:
++    text = str(report.get("response_text") or "").strip()
++    if text:
++        return text
++    ref = report.get("response_text_ref") if isinstance(report.get("response_text_ref"), dict) else {}
++    ref_path = str(ref.get("path") or "").strip()
++    if ref_path:
++        try:
++            return read_text_windows_safe(resolve_path(repo_root, ref_path))
++        except Exception:
++            pass
++    return str(report.get("response_text_tail") or "")
++
++
+ def _leader_block_id(leader_packet: dict[str, Any]) -> str:
+     packet = extract_gpu1_closure_decision_packet(leader_packet)
+     value = str(packet.get("gpu1_block_id") or "").strip()
+@@ -399,7 +417,8 @@ def main() -> int:
+         gpu0_vulkan_policy_verified=_gpu0_vulkan_policy_verified(gpu0_server),
+         unload_model=not args.defer_unload,
+     )
+-    raw_response_text = str(report.get("response_text") or "")
++    output_parent = resolve_path(repo_root, args.output).parent
++    raw_response_text = _report_response_text(repo_root, report)
+     gpu0_secondary = parse_gpu0_secondary_response(
+         raw_response_text,
+         fallback_block_id=_leader_block_id(leader_packet),
+@@ -407,7 +426,16 @@ def main() -> int:
+         fallback_packet_fingerprint=str(gpu1_packet.get("packet_fingerprint") or ""),
+     )
+     gpu0_secondary = bind_gpu0_secondary_to_gpu1_packet(gpu0_secondary, leader_packet)
+-    report["gpu0_raw_response_text"] = raw_response_text
++    report.update(write_text_evidence_fields(
++        repo_root,
++        output_parent / "provider_response_artifacts",
++        prefix="gpu0_raw_response_text",
++        name="gpu0_raw_response_text",
++        text=raw_response_text,
++        kind="gpu0_raw_response_text",
++        producer="ollama_gpu0_peer_report",
++        suffix=".md",
++    ))
+     report["gpu1_closure_decision_packet"] = gpu1_packet
+     report["gpu1_closure_decision_packet_present"] = bool(gpu1_packet)
+     report["gpu1_closure_decision_packet_valid"] = gpu1_decision_packet_valid(gpu1_packet)
+@@ -418,7 +446,16 @@ def main() -> int:
+     )
+     report["gpu0_one_execution_per_packet"] = True
+     report.update(gpu0_secondary)
+-    report["response_text"] = gpu0_secondary_decision_text(gpu0_secondary)
++    report.update(write_text_evidence_fields(
++        repo_root,
++        output_parent / "provider_response_artifacts",
++        prefix="response_text",
++        name="gpu0_secondary_decision_text",
++        text=gpu0_secondary_decision_text(gpu0_secondary),
++        kind="gpu0_secondary_decision_text",
++        producer="ollama_gpu0_peer_report",
++        suffix=".md",
++    ))
+     runtime_log = _runtime_log_evidence(gpu0_server)
+     device_identity = _gpu0_device_identity(gpu0_server)
+     workload_verified = _gpu0_workload_verified(report, runtime_log, gpu0_server, device_identity)
+diff --git a/ia_carmine/providers/provider_mesh/openvino_npu_model_probe/cli.py b/ia_carmine/providers/provider_mesh/openvino_npu_model_probe/cli.py
+index 23d5c64f..9a099361 100644
+--- a/ia_carmine/providers/provider_mesh/openvino_npu_model_probe/cli.py
++++ b/ia_carmine/providers/provider_mesh/openvino_npu_model_probe/cli.py
+@@ -9,7 +9,11 @@ from datetime import datetime
+ from pathlib import Path
+ from typing import Any
+ 
+-from ia_carmine._shared.file_backed_transport import write_large_text_evidence
++from ia_carmine._shared.file_backed_transport import (
++    text_sha256,
++    write_large_text_evidence,
++    write_text_evidence_fields,
++)
+ from ia_carmine._shared.openvino_model_discovery import discover_openvino_tool_model_dir
+ from ia_carmine._shared.provider_replight import provider_replight_fields
+ from ia_carmine._shared.provider_work_verification import provider_work_status
+@@ -62,7 +66,13 @@ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+     child = _run_child(repo_root, python_exe, args, model_dir) if not errors else {}
+     child_errors = child.get("errors") if isinstance(child.get("errors"), list) else []
+     errors.extend(str(item) for item in child_errors)
+-    output_text = str(child.get("response_text") or child.get("provider_heap_delta_text") or "")
++    output_text = str(
++        child.get("response_text_tail")
++        or child.get("provider_heap_delta_text_tail")
++        or child.get("response_text")
++        or child.get("provider_heap_delta_text")
++        or ""
++    )
+     tool_calls = child.get("tool_calls") if isinstance(child.get("tool_calls"), list) else []
+     if not tool_calls and "semantic_evidence_chunks" in str(child.get("structured_text") or ""):
+         tool_calls = [{
+@@ -86,6 +96,16 @@ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+         producer="openvino_npu_model_probe",
+         suffix=".md",
+     )
++    response_fields = write_text_evidence_fields(
++        repo_root,
++        _resolve(repo_root, args.output).parent / "provider_response_artifacts",
++        prefix="response_text",
++        name="openvino_npu_response_text",
++        text=output_text,
++        kind="openvino_npu_response_text",
++        producer="openvino_npu_model_probe",
++        suffix=".md",
++    )
+     report = {
+         "schema_version": 1,
+         "kind": "openvino_npu_model_probe",
+@@ -104,7 +124,7 @@ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+         "health_check_passed": device_verified,
+         "workload_performed": performed,
+         "useful_output_produced": bool(output_text.strip() or child.get("tool_calls")),
+-        "response_text": output_text,
++        **response_fields,
+         "request_prompt_ref": prompt_evidence.get("ref") or {},
+         "request_prompt_chars": prompt_evidence.get("chars", 0),
+         "request_prompt_sha256": prompt_evidence.get("sha256", ""),
+@@ -129,7 +149,7 @@ def build_report(repo_root: Path, args: argparse.Namespace) -> dict[str, Any]:
+         "native_tool_loop_performed": performed,
+         "native_tool_call_count": len(tool_calls),
+         "tool_calls": tool_calls,
+-        "child": child,
++        "child": _compact_child_payload(child),
+     }
+     report.update(provider_work_status(lane="npu_micro_task_auditor", report=report, default_role="npu_auditor"))
+     report.update(provider_replight_fields(
+@@ -261,6 +281,20 @@ def _child_main() -> int:
+     return 0 if result.get("performed") else 2
+ 
+ 
++def _compact_child_payload(payload: dict[str, Any]) -> dict[str, Any]:
++    compact = dict(payload)
++    for key in ("provider_heap_delta_text", "response_text", "structured_text"):
++        text = str(compact.pop(key, "") or "")
++        if not text:
++            continue
++        compact[f"{key}_chars"] = len(text)
++        compact[f"{key}_sha256"] = text_sha256(text)
++        compact[f"{key}_tail"] = text[-4000:]
++        compact[f"{key}_tail_chars"] = min(len(text), 4000)
++        compact[f"{key}_full_text_in_json"] = False
++    return compact
++
++
+ def _resolve(repo_root: Path, value: str) -> Path:
+     path = Path(value)
+     return path if path.is_absolute() else repo_root / path
+diff --git a/ia_carmine/runtime/heap_context_closure/TOOL_CONTEXT.md b/ia_carmine/runtime/heap_context_closure/TOOL_CONTEXT.md
+new file mode 100644
+index 00000000..9db6c347
+--- /dev/null
++++ b/ia_carmine/runtime/heap_context_closure/TOOL_CONTEXT.md
+@@ -0,0 +1,24 @@
++# Heap Context Closure Runtime
++
++`heap_context_closure` is the file-backed launcher for run-unica heap closure.
++
++Current contract:
++
++- The launcher materializes the augmented operator request as a run artifact and forwards that artifact with `--request-file`.
++- HTTP/API and child-process arguments coordinate work; large request, context, provider prompt and report bodies live on filesystem artifacts.
++- Startup context, dynamic GPU1 context pack, RAG hard surfaces and runtime refs are blockers when missing or invalid.
++- Provider output JSON must carry refs, hashes and bounded tails; full text belongs in provider/composer artifacts.
++- Broker tool execution evidence must pass through broker request/result artifacts, not prose or in-memory packet state.
++
++Primary command:
++
++```powershell
++python -m ia_carmine.cli heap_context_closure --repo-root . --request-file <request.md> ...
++```
++
++Related surfaces:
++
++- `ia_carmine/runtime/run/TOOL_CONTEXT.md`
++- `ia_carmine/runtime/heap_gate/TOOL_CONTEXT.md`
++- `ia_carmine/runtime/provider_runtime_blackboard/TOOL_CONTEXT.md`
++- `ia_carmine/runtime/runtime_tool/TOOL_CONTEXT.md`
+diff --git a/ia_carmine/runtime/heap_context_closure/commands.py b/ia_carmine/runtime/heap_context_closure/commands.py
+index ffcf7442..f85794ee 100644
+--- a/ia_carmine/runtime/heap_context_closure/commands.py
++++ b/ia_carmine/runtime/heap_context_closure/commands.py
+@@ -8,6 +8,9 @@ from ia_carmine.product.operator_product_core.cli_contract import HeapRuntimeFla
+ 
+ 
+ def request_args(state: dict[str, Any]) -> list[str]:
++    request_file = str(state.get("heap_request_file") or "").strip()
++    if request_file:
++        return ["--request-file", request_file]
+     request_file = str(state.get("operator_request_file") or "").strip()
+     if request_file:
+         return ["--request-file", request_file]
+diff --git a/ia_carmine/runtime/heap_context_closure/launcher.py b/ia_carmine/runtime/heap_context_closure/launcher.py
+index 08aa3a51..371ab1ea 100644
+--- a/ia_carmine/runtime/heap_context_closure/launcher.py
++++ b/ia_carmine/runtime/heap_context_closure/launcher.py
+@@ -98,10 +98,11 @@ def _write_heap_request(args: Any, state: dict[str, Any]) -> None:
+         revision_context_payload=state["revision_context_payload"],
+         revision_context_max_tasks=args.revision_context_max_tasks,
+     )
++    heap_request_file = state["run_dir"] / "heap_augmented_request.md"
++    heap_request_file.write_text(heap_request, encoding="utf-8")
+     state["heap_request"] = heap_request
+-    state["request_transport"] = "inline_cli"
+-    if state.get("operator_request_file"):
+-        state["request_transport"] = "operator_request_file"
++    state["heap_request_file"] = heap_request_file
++    state["request_transport"] = "heap_augmented_request_file"
+ def _empty_result(passed: bool = True, returncode: int | None = 0) -> dict[str, Any]:
+     return {
+         "passed": passed,
+diff --git a/ia_carmine/runtime/heap_gate/gpu1_closure_packet.py b/ia_carmine/runtime/heap_gate/gpu1_closure_packet.py
+index 92b23cf0..59cdcac8 100644
+--- a/ia_carmine/runtime/heap_gate/gpu1_closure_packet.py
++++ b/ia_carmine/runtime/heap_gate/gpu1_closure_packet.py
+@@ -118,7 +118,7 @@ def build_gpu1_closure_decision_packet(
+ 
+ 
+ def packet_from_report(report: dict[str, Any], *, source: str = "") -> dict[str, Any]:
+-    text = str(report.get("response_text") or "")
++    text = str(report.get("response_text") or report.get("response_text_tail") or "")
+     target_files = report.get("target_files") if isinstance(report.get("target_files"), list) else []
+     reject_reasons = [
+         report.get("gpu1_primary_block_reason"),
+diff --git a/ia_carmine/runtime/heap_gate/provider_block_contract.py b/ia_carmine/runtime/heap_gate/provider_block_contract.py
+index 126a39ab..f68dc711 100644
+--- a/ia_carmine/runtime/heap_gate/provider_block_contract.py
++++ b/ia_carmine/runtime/heap_gate/provider_block_contract.py
+@@ -79,7 +79,11 @@ def operational_provider_activity(
+     lane: str,
+     provider_report: dict[str, Any],
+ ) -> tuple[bool, str]:
+-    response_text = str(provider_report.get("response_text") or "").strip()
++    response_text = str(
++        provider_report.get("response_text")
++        or provider_report.get("response_text_tail")
++        or ""
++    ).strip()
+     selected_model = str(provider_report.get("selected_model") or "").strip()
+     tool_call_count = _safe_int(provider_report.get("native_tool_call_count"))
+     tool_calls = provider_report.get("tool_calls") if isinstance(provider_report.get("tool_calls"), list) else []
+diff --git a/ia_carmine/runtime/heap_gate/provider_commands.py b/ia_carmine/runtime/heap_gate/provider_commands.py
+index bc736acd..d9449ac4 100644
+--- a/ia_carmine/runtime/heap_gate/provider_commands.py
++++ b/ia_carmine/runtime/heap_gate/provider_commands.py
+@@ -123,7 +123,7 @@ class RuntimeGateProviderCommandsMixin:
+             report_data["standalone_default_fields_ignored_reason"] = (
+                 "canonical_run_provider_evidence_fingerprint_verified"
+             )
+-        response_text = str(report_data.get("response_text") or "").strip()
++        response_text = self.provider_report_response_text(report_data).strip()
+         selected_model = str(report_data.get("selected_model") or "").strip()
+         lane_reports = report_data.get("lane_reports")
+         if isinstance(lane_reports, list):
+@@ -139,11 +139,10 @@ class RuntimeGateProviderCommandsMixin:
+                         or lane_report.get("model")
+                         or selected_model
+                     ).strip()
+-                    response_text = str(
+-                        lane_report.get("response_text")
+-                        or lane_report.get("text_preview")
+-                        or response_text
+-                    ).strip()
++                    response_text = (
++                        self.provider_report_response_text(lane_report).strip()
++                        or str(lane_report.get("text_preview") or response_text).strip()
++                    )
+                     if not report_data.get("target_files") and lane_report.get("target_files"):
+                         report_data["target_files"] = lane_report.get("target_files")
+                     if (
+@@ -209,7 +208,13 @@ class RuntimeGateProviderCommandsMixin:
+                         "product_blocked_reason",
+                         "provider_work_verified",
+                         "provider_rejection_reason",
+-                        "response_text",
++                        "response_text_ref",
++                        "response_text_chars",
++                        "response_text_sha256",
++                        "response_text_tail",
++                        "response_text_tail_chars",
++                        "response_text_full_text_in_json",
++                        "response_text_transport",
+                         "raw_response_chars",
+                         "heap_delta_text_present",
+                         "heap_delta_text_required",
+@@ -347,7 +352,12 @@ class RuntimeGateProviderCommandsMixin:
+             "provider_rejection_reason": report_data.get("provider_rejection_reason"),
+             "device_workload_execution_performed": device_workload_execution,
+             "report_kind": report_data.get("kind"),
+-            "response_text": response_text,
++            "response_text_ref": report_data.get("response_text_ref", {}),
++            "response_text_chars": report_data.get("response_text_chars", len(response_text)),
++            "response_text_sha256": report_data.get("response_text_sha256", ""),
++            "response_text_tail": report_data.get("response_text_tail", response_text[-4000:]),
++            "response_text_tail_chars": report_data.get("response_text_tail_chars", min(len(response_text), 4000)),
++            "response_text_full_text_in_json": False,
+             "tool_calls": tool_calls,
+             "textual_tool_calls": textual_tool_calls,
+             "rejected_non_native_tool_calls": rejected_non_native_tool_calls,
+diff --git a/ia_carmine/runtime/heap_gate/provider_context.py b/ia_carmine/runtime/heap_gate/provider_context.py
+index 19f7ee29..f5e308b9 100644
+--- a/ia_carmine/runtime/heap_gate/provider_context.py
++++ b/ia_carmine/runtime/heap_gate/provider_context.py
+@@ -71,18 +71,18 @@ class RuntimeGateProviderContextMixin:
+         return ""
+ 
+     def provider_report_response_text(self, report: dict[str, Any]) -> str:
+-        text = str(report.get("response_text") or "").strip()
+-        if text:
+-            return text
+         ref = report.get("response_text_ref") if isinstance(report.get("response_text_ref"), dict) else {}
+         ref_path = str(ref.get("path") or "").strip()
+         if ref_path:
+             try:
+                 return read_text_windows_safe(resolve_path(self.repo_root, ref_path)).strip()
+-            except Exception as exc:  # noqa: BLE001 - surface as warning and fall back to tail.
++            except Exception as exc:  # noqa: BLE001
+                 self.warnings.append(
+                     f"provider_response_ref_read_failed:{ref_path}:{type(exc).__name__}: {exc}"
+                 )
++        text = str(report.get("response_text") or "").strip()
++        if text:
++            return text
+         return str(report.get("response_text_tail") or "").strip()
+ 
+     def provider_role_decisions(self) -> dict[str, str]:
+diff --git a/ia_carmine/runtime/provider_runtime_blackboard/broker_bridge/cli.py b/ia_carmine/runtime/provider_runtime_blackboard/broker_bridge/cli.py
+index d5141c6c..9c0d0282 100644
+--- a/ia_carmine/runtime/provider_runtime_blackboard/broker_bridge/cli.py
++++ b/ia_carmine/runtime/provider_runtime_blackboard/broker_bridge/cli.py
+@@ -25,9 +25,12 @@ from ia_carmine.runtime.provider_runtime_blackboard.common import resolve_output
+ from ia_carmine.runtime.runtime_tool.broker.executor import build_report as build_broker_report
+ from ia_carmine.runtime.runtime_tool.broker.markdown import render_markdown as render_broker_markdown
+ from ia_carmine._shared.file_backed_transport import (
++    artifact_ref,
+     file_sha256,
+     read_json_windows_safe,
+     resolve_path as resolve_transport_path,
++    write_json_artifact,
++    write_transport_manifest,
+ )
+ from Tools.validation._shared.report_utils import write_json_report, write_text_report
+ 
+@@ -149,7 +152,7 @@ def run_broker(
+     *,
+     repo_root: Path,
+     stamp: str,
+-    request_packet: dict[str, Any],
++    request_packet_file: Path,
+     tool_output_dir: Path,
+     broker_output: Path,
+     broker_markdown: Path,
+@@ -158,8 +161,8 @@ def run_broker(
+ ) -> tuple[int, str, str, dict[str, Any]]:
+     broker_args = Namespace(
+         repo_root=str(repo_root),
+-        request_data=request_packet,
+-        request_file="",
++        request_data=None,
++        request_file=repo_rel(repo_root, request_packet_file),
+         request_json="",
+         tool_output_dir=repo_rel(repo_root, tool_output_dir),
+         stamp=stamp,
+@@ -418,6 +421,35 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
+     tool_output_dir = bridge_dir / "tool_outputs"
+ 
+     packet = build_request_packet(repo_root, args.stamp, pending)
++    packet_ref = write_json_artifact(
++        repo_root,
++        bridge_dir,
++        name="request_packet",
++        payload=packet,
++        kind="provider_runtime_broker_request_packet",
++        producer="provider_runtime_broker_bridge",
++    )
++    packet_file = resolve_transport_path(repo_root, str(packet_ref.get("path") or ""))
++    manifest_path = bridge_dir / "request_payload_manifest.json"
++    write_transport_manifest(
++        repo_root,
++        manifest_path,
++        job_id=args.stamp,
++        run_dir=bridge_dir,
++        refs=[packet_ref],
++        extra={
++            "input": {"request_packet_path": packet_ref.get("path")},
++            "broker": {"request_packet_ref": packet_ref},
++            "read_order": ["request_packet"],
++        },
++    )
++    manifest_ref = artifact_ref(
++        manifest_path,
++        repo_root,
++        kind="ia_carmine_runtime_payload_manifest",
++        producer="provider_runtime_broker_bridge",
++        ref_id="provider_runtime_broker_payload_manifest",
++    )
+     returncode = 0
+     stdout_tail = ""
+     stderr_tail = ""
+@@ -428,7 +460,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
+         returncode, stdout_tail, stderr_tail, broker_report = run_broker(
+             repo_root=repo_root,
+             stamp=args.stamp,
+-            request_packet=packet,
++            request_packet_file=packet_file,
+             tool_output_dir=tool_output_dir,
+             broker_output=broker_output,
+             broker_markdown=broker_markdown,
+@@ -455,14 +487,19 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
+         "kind": "provider_runtime_broker_bridge",
+         "generated_at": now_iso(),
+         "stamp": args.stamp,
++        "job_id": args.stamp,
+         "passed": not errors,
+         "errors": errors,
+         "warnings": [],
+         "dry_run": bool(args.dry_run),
+         "pending_broker_request_count": len(pending),
+         "broker_result_event_count": len(broker_result_events),
+-        "request_packet": "",
+-        "request_transport": "in_memory",
++        "request_packet": packet_ref.get("path") or "",
++        "request_packet_ref": packet_ref,
++        "request_payload_manifest": manifest_ref.get("path") or "",
++        "request_payload_manifest_ref": manifest_ref,
++        "payload_file": manifest_ref.get("path") or "",
++        "request_transport": "payload_file",
+         "broker_report": repo_rel(repo_root, broker_output),
+         "broker_markdown": repo_rel(repo_root, broker_markdown),
+         "tool_output_dir": repo_rel(repo_root, tool_output_dir),
+diff --git a/ia_carmine/runtime/runtime_tool/agent_broker/cli.py b/ia_carmine/runtime/runtime_tool/agent_broker/cli.py
+index 791e2ac4..1150752c 100644
+--- a/ia_carmine/runtime/runtime_tool/agent_broker/cli.py
++++ b/ia_carmine/runtime/runtime_tool/agent_broker/cli.py
+@@ -38,6 +38,8 @@ def main() -> int:
+     parser.add_argument("--repo-root", default=".")
+     parser.add_argument("--request-file", default="")
+     parser.add_argument("--request-json", default="")
++    parser.add_argument("--payload-file", default="")
++    parser.add_argument("--job-id", default="")
+     parser.add_argument("--tool-output-dir", default=None)
+     parser.add_argument("--stamp", default=None)
+     parser.add_argument("--timeout-seconds", type=int, default=240)
+diff --git a/ia_carmine/runtime/runtime_tool/broker/executor.py b/ia_carmine/runtime/runtime_tool/broker/executor.py
+index 04c56996..dd35e1f0 100644
+--- a/ia_carmine/runtime/runtime_tool/broker/executor.py
++++ b/ia_carmine/runtime/runtime_tool/broker/executor.py
+@@ -11,8 +11,10 @@ from typing import Any
+ from ia_carmine._shared.file_backed_transport import (
+     INLINE_TEXT_MAX_CHARS,
+     should_materialize_inline,
++    validate_runtime_payload_manifest,
+     write_json_artifact,
+     write_text_artifact,
++    read_json_windows_safe,
+ )
+ from ia_carmine._shared.agent_runtime_tool_broker_execution import execute_command_timed
+ from Tools.validation._shared.report_utils import read_json_report
+@@ -78,6 +80,38 @@ def infer_request_source(requests_data: dict[str, Any], request_path: Path | Non
+ def load_requests_data(
+     repo_root: Path, args: argparse.Namespace
+ ) -> tuple[dict[str, Any], Path | None, str, list[str]]:
++    if getattr(args, "payload_file", ""):
++        payload_path = resolve_path(repo_root, args.payload_file)
++        try:
++            payload_data = read_json_windows_safe(payload_path)
++        except Exception as exc:  # noqa: BLE001
++            return {}, payload_path, "payload_file", [
++                f"payload_file_unreadable:{type(exc).__name__}:{exc}"
++            ]
++        if payload_data.get("kind") == "ia_carmine_runtime_payload_manifest":
++            validation = validate_runtime_payload_manifest(repo_root, payload_path)
++            if not validation.get("passed"):
++                return {}, payload_path, "payload_file", [
++                    "payload_manifest_invalid:" + ",".join(
++                        str(item) for item in validation.get("errors", [])[:6]
++                    )
++                ]
++            broker = payload_data.get("broker") if isinstance(payload_data.get("broker"), dict) else {}
++            request_ref = (
++                broker.get("request_packet_ref")
++                if isinstance(broker.get("request_packet_ref"), dict)
++                else {}
++            )
++            request_path = str(
++                request_ref.get("path")
++                or (payload_data.get("input") or {}).get("request_packet_path")
++                or ""
++            ).strip()
++            if not request_path:
++                return {}, payload_path, "payload_file", ["payload_manifest_missing_request_packet"]
++            request_packet_path = resolve_path(repo_root, request_path)
++            return read_json_report(request_packet_path), request_packet_path, "payload_file", []
++        return payload_data, payload_path, "payload_file", []
+     request_data = getattr(args, "request_data", None)
+     if isinstance(request_data, dict):
+         return request_data, None, "in_memory", []
+@@ -216,7 +250,13 @@ def execute_tool_request(
+             timeout_seconds=timeout_seconds,
+         )
+     else:
+-        timed = execute_command_timed(command, repo_root, timeout_seconds)
++        timed = execute_command_timed(
++            command,
++            repo_root,
++            timeout_seconds,
++            output_dir=out_dir / f"{request_id}_execution_io",
++            name=request_id,
++        )
+     base_result["executed"] = True
+     base_result["returncode"] = timed.returncode
+     base_result["started_at"] = timed.started_at
+@@ -225,6 +265,10 @@ def execute_tool_request(
+     base_result["status"] = "executed_ok" if timed.returncode == 0 else "executed_failed"
+     base_result["stdout_tail"] = timed.stdout_tail
+     base_result["stderr_tail"] = timed.stderr_tail
++    base_result["stdout_ref"] = timed.stdout_ref or {}
++    base_result["stderr_ref"] = timed.stderr_ref or {}
++    base_result["stdout_chars"] = timed.stdout_chars
++    base_result["stderr_chars"] = timed.stderr_chars
+     if timed.error:
+         base_result["errors"].append(timed.error)
+     if timed.returncode != 0:
+@@ -448,6 +492,8 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
+         "kind": "agent_runtime_tool_broker",
+         "generated_at": now_iso(),
+         "repo_root": str(repo_root),
++        "job_id": str(getattr(args, "job_id", "") or stamp),
++        "payload_file": str(getattr(args, "payload_file", "") or ""),
+         "request_file": repo_rel(request_path, repo_root) if request_path else "",
+         "request_transport": request_transport,
+         "request_kind": requests_data.get("kind"),
