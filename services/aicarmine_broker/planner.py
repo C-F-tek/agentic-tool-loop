@@ -9437,6 +9437,93 @@ def _write_controller_memory_lesson(
     return written
 
 
+def _loop_turn_memory_text(
+    job_id: str,
+    state: dict[str, Any],
+    row: dict[str, Any],
+    contract: dict[str, Any],
+    target_key: str,
+) -> str:
+    decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
+    result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+    args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+    rejected = decision.get("rejected_decision") if isinstance(decision.get("rejected_decision"), dict) else {}
+    lines = [
+        f"loop_turn_key={job_id}:{row.get('step')}:{row.get('substep') or row.get('preseed_index') or ''}",
+        f"job={job_id}",
+        f"target={target_key}",
+        f"step={row.get('step')}",
+        f"substep={row.get('substep') or ''}",
+        f"preseed_index={row.get('preseed_index') or ''}",
+        f"goal={str(state.get('goal') or '')[:240]}",
+        f"decision_action={str(decision.get('action') or '')[:80]}",
+        f"decision_tool={str(decision.get('tool') or '')[:120]}",
+        f"decision_reason={str(decision.get('reason') or '')[:240]}",
+        f"decision_args={json.dumps(_prompt_clip_value(args, text_limit=180, list_limit=8), ensure_ascii=False, default=str)[:600]}",
+        f"rejected_decision={json.dumps(_prompt_clip_value(rejected, text_limit=180, list_limit=8), ensure_ascii=False, default=str)[:600]}",
+        f"result_tool={str(result.get('tool') or '')[:120]}",
+        f"result_ok={result.get('ok')}",
+        f"guard_type={str(result.get('guard_type') or '')[:120]}",
+        f"summary={str(result.get('summary') or result.get('error') or '')[:260]}",
+        f"successful_reads={', '.join(str(p) for p in (contract.get('successful_repo_read_paths') or [])[-8:])}",
+        f"required_next_progress={str(contract.get('required_next_progress') or '')[:320]}",
+        f"history_count_after_turn={contract.get('history_count') or ''}",
+    ]
+    return "\n".join(line for line in lines if not line.endswith("="))[:4000]
+
+
+def _write_loop_turn_memory(
+    job_id: str,
+    state: dict[str, Any],
+    row: dict[str, Any],
+    root: Path,
+    history: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Persist one controller-visible loop turn in SQLite memory.
+
+    This is internal loop memory, not OpenWebUI public payload and not a planner
+    tool call. The planner still decides; this only makes prior turns searchable
+    without depending on how many message-history items fit in the next prompt.
+    """
+    goal = str(state.get("goal") or "")
+    contract = planner_evidence_contract(goal, history)
+    target_key = _controller_memory_target_key(goal, contract)
+    text = _loop_turn_memory_text(job_id, state, row, contract, target_key)
+    try:
+        written = runtime_sqlite_memory_write({
+            "kind": "controller_loop_turn",
+            "tag": target_key,
+            "text": text,
+            "metadata": {
+                "job_id": job_id,
+                "step": row.get("step"),
+                "substep": row.get("substep"),
+                "preseed_index": row.get("preseed_index"),
+                "target_key": target_key,
+                "decision_action": (row.get("decision") or {}).get("action")
+                if isinstance(row.get("decision"), dict) else None,
+                "decision_tool": (row.get("decision") or {}).get("tool")
+                if isinstance(row.get("decision"), dict) else None,
+                "result_tool": (row.get("tool_result") or {}).get("tool")
+                if isinstance(row.get("tool_result"), dict) else None,
+                "result_ok": (row.get("tool_result") or {}).get("ok")
+                if isinstance(row.get("tool_result"), dict) else None,
+            },
+        }, root)
+    except Exception as exc:  # pragma: no cover - loop memory must not block routing
+        written = {
+            "ok": False,
+            "tool": "runtime_sqlite_memory_write",
+            "error": "controller_loop_turn_memory_write_failed",
+            "error_type": type(exc).__name__,
+            "details": str(exc)[:1000],
+        }
+    written["target_key"] = target_key
+    written["controller_owned"] = True
+    written["loop_turn_memory"] = True
+    return written
+
+
 def finalize_agentic_job(
     job_id: str,
     state: dict[str, Any],
@@ -9519,6 +9606,15 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
     public_tool_name = str(state.get("public_tool_name") or "vulkan_helper")
     history: list[dict[str, Any]] = []
 
+    def persist_loop_turn_memory(row: dict[str, Any]) -> None:
+        state["controller_loop_turn_memory_last_write"] = _write_loop_turn_memory(
+            job_id,
+            state,
+            row,
+            root,
+            history,
+        )
+
     def append_cached_tool_result(step_number: int, planner_decision: dict[str, Any], cached: dict[str, Any]) -> None:
         cached_result = cached.get("result") if isinstance(cached.get("result"), dict) else {}
         append_agent_event(
@@ -9533,14 +9629,16 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             },
             step=step_number,
         )
-        history.append({
+        row = {
             "step": step_number,
             "decision": {k: v for k, v in planner_decision.items() if k != "raw_planner_text_preview"},
             "tool_result": cached_result,
-        })
+        }
+        history.append(row)
         state["history"] = planner_history_ledger(history)
         state["history_count"] = len(history)
         state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+        persist_loop_turn_memory(row)
         write_agent_job_state(state)
 
     def append_repeat_guard_result(
@@ -9564,14 +9662,16 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "reason": planner_decision.get("reason"),
         }
         append_agent_event(job_id, "planner_decision_rejected", guard_result["summary"], guard_result, step=step_number)
-        history.append({
+        row = {
             "step": step_number,
             "decision": {"action": "continue_required", "reason": "repeat guard rejected planner proposal"},
             "tool_result": guard_result,
-        })
+        }
+        history.append(row)
         state["history"] = planner_history_ledger(history)
         state["history_count"] = len(history)
         state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+        persist_loop_turn_memory(row)
         write_agent_job_state(state)
 
     def execute_validated_tool_decision(step_number: int, planner_decision: dict[str, Any], substep: int | None = None) -> dict[str, Any] | None:
@@ -9634,6 +9734,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
         history.append(row)
         state["history"] = planner_history_ledger(history)
         state["history_count"] = len(history)
+        persist_loop_turn_memory(row)
         write_agent_job_state(state)
         return None
 
@@ -9741,7 +9842,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             compact_preseed,
             step=0,
         )
-        history.append({
+        row = {
             "step": 0,
             "preseed_index": preseed_index,
             "decision": {
@@ -9751,7 +9852,9 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 "reason": preseed_reason,
             },
             "tool_result": compact_preseed,
-        })
+        }
+        history.append(row)
+        persist_loop_turn_memory(row)
         update_initial_orientation_state()
         return preseed_result if isinstance(preseed_result, dict) else {}, compact_preseed
 
@@ -9882,7 +9985,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     guard_result,
                     step=step,
                 )
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -9890,7 +9993,8 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         "rejected_decision": guard_result["rejected_decision"],
                     },
                     "tool_result": guard_result,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
@@ -9899,6 +10003,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     history,
                     planner_memory_snapshot,
                 )
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             return finalize_agentic_job(
@@ -10025,7 +10130,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 pass
             elif batch_guard:
                 append_agent_event(job_id, "planner_decision_rejected", batch_guard["summary"], batch_guard, step=step)
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10033,10 +10138,12 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         "rejected_decision": decision,
                     },
                     "tool_result": batch_guard,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             elif batch_decisions:
@@ -10115,7 +10222,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     guard_result,
                     step=step,
                 )
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10123,10 +10230,12 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         "rejected_decision": guard_result.get("rejected_decision"),
                     },
                     "tool_result": guard_result,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             if (
@@ -10169,7 +10278,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     guard_result,
                     step=step,
                 )
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10177,7 +10286,8 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         "rejected_decision": guard_result["rejected_decision"],
                     },
                     "tool_result": guard_result,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
@@ -10186,6 +10296,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     history,
                     planner_memory_snapshot,
                 )
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
 
@@ -10223,7 +10334,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     guard_result,
                     step=step,
                 )
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10238,10 +10349,12 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         },
                     },
                     "tool_result": guard_result,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
 
@@ -10258,7 +10371,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     guard_result,
                     step=step,
                 )
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10270,10 +10383,12 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         },
                     },
                     "tool_result": guard_result,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 blocker_answer = (
                     "planner_repeated_invalid_code_product_decision: planner repeated the same invalid "
@@ -10410,7 +10525,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                     },
                     step=step,
                 )
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10443,10 +10558,12 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                             "repaired_validation": repaired_validation,
                         },
                     },
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 if repaired_validation.get("ok"):
                     decision = repaired_decision
@@ -10501,7 +10618,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         },
                     )
 
-                history.append({
+                row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
@@ -10513,10 +10630,12 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         },
                     },
                     "tool_result": guard_result,
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
                 state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
 
@@ -10529,7 +10648,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 or decision.get("summary") or "Job completed."
             )
             if goal_has_write_intent(state.get("goal") or "") and not history_has_tool(history, "repo_apply_patch"):
-                history.append({
+                row = {
                     "step": step,
                     "decision": {"action": "continue_required",
                                   "reason": "final rejected: patch requested but not applied"},
@@ -10541,9 +10660,11 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                             "or repo_read to get old_text first."
                         ),
                     },
-                })
+                }
+                history.append(row)
                 state["history"] = planner_history_ledger(history)
                 state["history_count"] = len(history)
+                persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             terminal_decision = dict(decision)
@@ -10629,13 +10750,15 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
         append_agent_event(job_id, "tool_result", f"{tool} ok={bool(result.get('ok'))}",
                             compact_result, step=step)
 
-        history.append({
+        row = {
             "step": step,
             "decision": {k: v for k, v in decision.items() if k != "raw_planner_text_preview"},
             "tool_result": compact_result,
-        })
+        }
+        history.append(row)
         state["history"] = planner_history_ledger(history)
         state["history_count"] = len(history)
+        persist_loop_turn_memory(row)
         write_agent_job_state(state)
 
         # No controller_auto_final here: the next planner step must inspect the

@@ -675,10 +675,12 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
     goal = str(args.get("goal") or "")
     limit = max(1, min(int(args.get("limit") or 12), 50))
     target_key = str(args.get("target_key") or args.get("tag") or "").strip()
+    db_path = _memory_db(args)
     scratchpad = planner_scratchpad_read({"limit": limit}, root)
     query = _planner_memory_query(goal)
     target_memory = (
         runtime_sqlite_memory_search({
+            "db": str(db_path),
             "query": "",
             "kind": "controller_job_lesson",
             "tag": target_key,
@@ -686,14 +688,33 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
         }, root)
         if target_key else {"ok": True, "tool": "runtime_sqlite_memory_search", "count": 0, "items": []}
     )
+    target_loop_memory = (
+        runtime_sqlite_memory_search({
+            "db": str(db_path),
+            "query": "",
+            "kind": "controller_loop_turn",
+            "tag": target_key,
+            "limit": min(limit * 2, 50),
+        }, root)
+        if target_key else {"ok": True, "tool": "runtime_sqlite_memory_search", "count": 0, "items": []}
+    )
     persistent = runtime_sqlite_memory_search({
+        "db": str(db_path),
         "query": query,
         "kind": "controller_job_lesson",
         "limit": limit,
     }, root)
+    loop_persistent = runtime_sqlite_memory_search({
+        "db": str(db_path),
+        "query": query,
+        "kind": "controller_loop_turn",
+        "limit": min(limit * 2, 50),
+    }, root)
     scratch_items = scratchpad.get("items") if isinstance(scratchpad.get("items"), list) else []
     target_items = target_memory.get("items") if isinstance(target_memory.get("items"), list) else []
     query_items = persistent.get("items") if isinstance(persistent.get("items"), list) else []
+    target_loop_items = target_loop_memory.get("items") if isinstance(target_loop_memory.get("items"), list) else []
+    query_loop_items = loop_persistent.get("items") if isinstance(loop_persistent.get("items"), list) else []
     persistent_items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for row in [*target_items, *query_items]:
@@ -704,6 +725,17 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
             seen_ids.add(row_id)
         persistent_items.append(row)
         if len(persistent_items) >= limit:
+            break
+    loop_turn_items: list[dict[str, Any]] = []
+    loop_seen_ids: set[str] = set()
+    for row in [*target_loop_items, *query_loop_items]:
+        row_id = str(row.get("id") or row.get("record_id") or row.get("text") or "")
+        if row_id and row_id in loop_seen_ids:
+            continue
+        if row_id:
+            loop_seen_ids.add(row_id)
+        loop_turn_items.append(row)
+        if len(loop_turn_items) >= min(limit * 2, 50):
             break
     return {
         "available": True,
@@ -732,8 +764,26 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "error": target_memory.get("error") or persistent.get("error"),
             "details": target_memory.get("details") or persistent.get("details"),
         },
+        "loop_turn_memory": {
+            "available": True,
+            "kind": "controller_loop_turn",
+            "instruction": (
+                "Controller-owned per-turn loop memory written during the active "
+                "loop. Use it to recover prior loop decisions/results when only a "
+                "window of Ollama message history fits."
+            ),
+            "ok": bool(target_loop_memory.get("ok")) and bool(loop_persistent.get("ok")),
+            "target_count": int(target_loop_memory.get("count") or 0),
+            "query_count": int(loop_persistent.get("count") or 0),
+            "count": len(loop_turn_items),
+            "items": loop_turn_items[: min(limit * 2, 50)],
+            "db": loop_persistent.get("db") or target_loop_memory.get("db"),
+            "error": target_loop_memory.get("error") or loop_persistent.get("error"),
+            "details": target_loop_memory.get("details") or loop_persistent.get("details"),
+        },
         "records": persistent_items[:limit],
         "record_count": len(persistent_items),
+        "loop_turn_record_count": len(loop_turn_items),
     }
 
 
