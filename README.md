@@ -76,6 +76,97 @@ Supporting runtime surfaces:
 - [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
   - Applied bridge/tool material used by the local integration.
 
+## Folder README Index
+
+Core runtime folders:
+
+- [services](services/README.md)
+- [services/aicarmine_broker](services/aicarmine_broker/README.md)
+- [services/aicarmine_broker/planner_core](services/aicarmine_broker/planner_core/README.md)
+- [services/vulkan_bridge](services/vulkan_bridge/README.md)
+- [services/codex_bridge](services/codex_bridge/README.md)
+- [services/launch](services/launch/README.md)
+- [services/model_export](services/model_export/README.md)
+- [modelfiles](modelfiles/README.md)
+
+Applied bridge folders:
+
+- [codex_ollama_bridge_applied](codex_ollama_bridge_applied/README.md)
+- [codex_ollama_bridge_applied/codex_ollama_bridge](codex_ollama_bridge_applied/codex_ollama_bridge/README.md)
+- [codex_ollama_bridge_applied/useful_tools](codex_ollama_bridge_applied/useful_tools/README.md)
+
+Applied context folders:
+
+- [useful_tools/chunks](codex_ollama_bridge_applied/useful_tools/chunks/README.md)
+- [useful_tools/chunks/code_chunks](codex_ollama_bridge_applied/useful_tools/chunks/code_chunks/README.md)
+- [useful_tools/chunks/evidence_chunks](codex_ollama_bridge_applied/useful_tools/chunks/evidence_chunks/README.md)
+- [useful_tools/chunks/proposal_chunks](codex_ollama_bridge_applied/useful_tools/chunks/proposal_chunks/README.md)
+- [useful_tools/context](codex_ollama_bridge_applied/useful_tools/context/README.md)
+- [useful_tools/context/agent_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/README.md)
+- [useful_tools/context/agent_context/agnostic_tool_inventory](codex_ollama_bridge_applied/useful_tools/context/agent_context/agnostic_tool_inventory/README.md)
+- [useful_tools/context/agent_context/ai_context_pack](codex_ollama_bridge_applied/useful_tools/context/agent_context/ai_context_pack/README.md)
+- [useful_tools/context/agent_context/ensure_required_files](codex_ollama_bridge_applied/useful_tools/context/agent_context/ensure_required_files/README.md)
+- [useful_tools/context/agent_context/full_context_golden_proposals](codex_ollama_bridge_applied/useful_tools/context/agent_context/full_context_golden_proposals/README.md)
+- [useful_tools/context/agent_context/local_ai_enrichment_plan](codex_ollama_bridge_applied/useful_tools/context/agent_context/local_ai_enrichment_plan/README.md)
+- [useful_tools/context/agent_context/memory_inventory](codex_ollama_bridge_applied/useful_tools/context/agent_context/memory_inventory/README.md)
+- [useful_tools/context/agent_context/merge_candidates](codex_ollama_bridge_applied/useful_tools/context/agent_context/merge_candidates/README.md)
+- [useful_tools/context/agent_context/music_intermediates](codex_ollama_bridge_applied/useful_tools/context/agent_context/music_intermediates/README.md)
+- [useful_tools/context/agent_context/rag_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/rag_context/README.md)
+- [useful_tools/context/agent_context/semantic_evidence_chunks](codex_ollama_bridge_applied/useful_tools/context/agent_context/semantic_evidence_chunks/README.md)
+- [useful_tools/context/agent_context/semantic_evidence_chunks/select_code_chunks](codex_ollama_bridge_applied/useful_tools/context/agent_context/semantic_evidence_chunks/select_code_chunks/README.md)
+- [useful_tools/context/agent_context/shared_toolbox_bundle](codex_ollama_bridge_applied/useful_tools/context/agent_context/shared_toolbox_bundle/README.md)
+- [useful_tools/context/agent_context/state_packet](codex_ollama_bridge_applied/useful_tools/context/agent_context/state_packet/README.md)
+- [useful_tools/context/agent_context/transient_request_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/transient_request_context/README.md)
+- [useful_tools/context/context_pack](codex_ollama_bridge_applied/useful_tools/context/context_pack/README.md)
+- [useful_tools/context/context_reload](codex_ollama_bridge_applied/useful_tools/context/context_reload/README.md)
+- [useful_tools/context/file_refs](codex_ollama_bridge_applied/useful_tools/context/file_refs/README.md)
+- [useful_tools/context/heap_context_memory_reload](codex_ollama_bridge_applied/useful_tools/context/heap_context_memory_reload/README.md)
+- [useful_tools/context/heap_context_memory_reload/reconcile_report](codex_ollama_bridge_applied/useful_tools/context/heap_context_memory_reload/reconcile_report/README.md)
+
+Applied memory and pointer folders:
+
+- [useful_tools/memory](codex_ollama_bridge_applied/useful_tools/memory/README.md)
+- [useful_tools/memory/agent_memory](codex_ollama_bridge_applied/useful_tools/memory/agent_memory/README.md)
+- [useful_tools/memory/agent_memory/review](codex_ollama_bridge_applied/useful_tools/memory/agent_memory/review/README.md)
+- [useful_tools/memory/fts5](codex_ollama_bridge_applied/useful_tools/memory/fts5/README.md)
+- [useful_tools/memory/persistent](codex_ollama_bridge_applied/useful_tools/memory/persistent/README.md)
+- [useful_tools/memory/pointers](codex_ollama_bridge_applied/useful_tools/memory/pointers/README.md)
+- [useful_tools/memory/sqlite](codex_ollama_bridge_applied/useful_tools/memory/sqlite/README.md)
+- [useful_tools/memory/volatile](codex_ollama_bridge_applied/useful_tools/memory/volatile/README.md)
+- [useful_tools/pointers](codex_ollama_bridge_applied/useful_tools/pointers/README.md)
+- [useful_tools/pointers/graph](codex_ollama_bridge_applied/useful_tools/pointers/graph/README.md)
+- [useful_tools/pointers/resume](codex_ollama_bridge_applied/useful_tools/pointers/resume/README.md)
+- [useful_tools/pointers/revision_context](codex_ollama_bridge_applied/useful_tools/pointers/revision_context/README.md)
+
+Local-only descriptor folders:
+
+- [cache](cache/README.md)
+- [code-interpreter-workdir](code-interpreter-workdir/README.md)
+- [executor-runs](executor-runs/README.md)
+- [knowledge-bad-md](knowledge-bad-md/README.md)
+- [knowledge-code-packs](knowledge-code-packs/README.md)
+- [knowledge-md](knowledge-md/README.md)
+- [knowledge-md-parts](knowledge-md-parts/README.md)
+- [knowledge-small-md](knowledge-small-md/README.md)
+- [knowledge-sync](knowledge-sync/README.md)
+- [knowledge-tiny-md](knowledge-tiny-md/README.md)
+- [knowledge-upload-batches](knowledge-upload-batches/README.md)
+- [lab-patches](lab-patches/README.md)
+- [lab-worktrees](lab-worktrees/README.md)
+- [logs](logs/README.md)
+- [models-cpu](models-cpu/README.md)
+- [models-ovms-rerank](models-ovms-rerank/README.md)
+- [models-task](models-task/README.md)
+- [openwebui-data](openwebui-data/README.md)
+- [services/openwebui-data](services/openwebui-data/README.md)
+- [ovms-runtime](ovms-runtime/README.md)
+- [payloads](payloads/README.md)
+- [qwen-agent](qwen-agent/README.md)
+- [qwen-agent-workspace](qwen-agent-workspace/README.md)
+- [qwen-context](qwen-context/README.md)
+- [state](state/README.md)
+- [venvs](venvs/README.md)
+
 Local-only descriptor directories:
 
 - [lab-worktrees](lab-worktrees/README.md)
