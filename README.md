@@ -11,86 +11,99 @@ OpenWebUI data, and job outputs are intentionally excluded from Git.
 
 Start from these documents before changing runtime behavior:
 
-1. `AGENTS.md`
+1. [AGENTS.md](AGENTS.md)
    - Workspace operating rules and non-negotiable runtime contract notes.
-2. `services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
+2. [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
    - Core validator/controller contract for the agentic loop.
-3. `services/END_TO_END_AGENTIC_FLOW.md`
+3. [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
    - End-to-end flow between OpenWebUI, 3571, 3572, planner, tools, and final
      payload.
-4. `services/SERVICES_MODULE_TECHNICAL_REFERENCE.md`
+4. [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
    - Service-level technical map and module references.
-5. `services/MODULE_TECHNICAL_DESCRIPTIONS.md`
+5. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
    - File-by-file technical descriptions for the `services/` tree.
-6. `services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md`
+6. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
    - Operational limit for Codex when inspecting large OpenWebUI payloads.
-7. `services/aicarmine_broker/MODULE_REFERENCE.md`
+7. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
    - Broker module reference.
-8. `services/vulkan_bridge/MODULE_REFERENCE.md`
+8. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
    - Public bridge module reference.
-9. `services/codex_bridge/MODULE_REFERENCE.md`
+9. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
    - Codex bridge module reference.
-10. `services/launch/MODULE_REFERENCE.md`
+10. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
     - Launch-script module reference.
-11. `services/model_export/MODULE_REFERENCE.md`
+11. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
     - Model export module reference.
 
 Core code entry points:
 
-- `services/vulkan_bridge/app.py`
+- [services/vulkan_bridge/app.py](services/vulkan_bridge/app.py)
   - Public OpenWebUI wrapper surface.
-- `services/vulkan_bridge/agentic_v9.py`
+- [services/vulkan_bridge/agentic_v9.py](services/vulkan_bridge/agentic_v9.py)
   - Agentic bridge integration surface.
-- `services/aicarmine_broker/app.py`
+- [services/aicarmine_broker/app.py](services/aicarmine_broker/app.py)
   - Internal broker application.
-- `services/aicarmine_broker/planner.py`
+- [services/aicarmine_broker/planner.py](services/aicarmine_broker/planner.py)
   - Planner/controller contract and validation loop.
-- `services/aicarmine_broker/repo_tools.py`
+- [services/aicarmine_broker/repo_tools.py](services/aicarmine_broker/repo_tools.py)
   - Repository inspection, command, validation, and code-product tool
     implementations.
-- `services/aicarmine_broker/tool_registry.py`
+- [services/aicarmine_broker/tool_registry.py](services/aicarmine_broker/tool_registry.py)
   - Internal tool registry.
-- `services/aicarmine_broker/tool_dispatch.py`
+- [services/aicarmine_broker/tool_dispatch.py](services/aicarmine_broker/tool_dispatch.py)
   - Tool dispatch layer.
-- `services/aicarmine_broker/job_store.py`
+- [services/aicarmine_broker/job_store.py](services/aicarmine_broker/job_store.py)
   - Job state and artifact persistence.
-- `services/aicarmine_broker/public_wrapper.py`
+- [services/aicarmine_broker/public_wrapper.py](services/aicarmine_broker/public_wrapper.py)
   - Public result packaging support.
-- `services/aicarmine_broker/planner_intrinsic_context.py`
+- [services/aicarmine_broker/planner_intrinsic_context.py](services/aicarmine_broker/planner_intrinsic_context.py)
   - Intrinsic planner context builder.
-- `services/aicarmine_broker/code_edit_proposal_contract.py`
+- [services/aicarmine_broker/code_edit_proposal_contract.py](services/aicarmine_broker/code_edit_proposal_contract.py)
   - Report-only code edit proposal contract.
-- `services/aicarmine_broker/memory_tools.py`
+- [services/aicarmine_broker/memory_tools.py](services/aicarmine_broker/memory_tools.py)
   - Runtime memory tool support.
 
 Supporting runtime surfaces:
 
-- `services/launch/`
+- [services/launch/](services/launch/)
   - PowerShell helpers for service startup and environment setup.
-- `services/codex_bridge/`
+- [services/codex_bridge/](services/codex_bridge/)
   - Codex/Ollama bridge helpers.
-- `services/model_export/`
+- [services/model_export/](services/model_export/)
   - Model export helpers.
-- `modelfiles/`
+- [modelfiles/](modelfiles/)
   - Ollama model templates.
-- `codex_ollama_bridge_applied/`
+- [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
   - Applied bridge/tool material used by the local integration.
 
 Local-only descriptor directories:
 
-- `lab-worktrees/README.md`
-- `openwebui-data/README.md`
-- `services/openwebui-data/README.md`
-- `qwen-agent-workspace/README.md`
-- `qwen-agent/README.md`
-- `qwen-context/README.md`
-- `code-interpreter-workdir/README.md`
-- `executor-runs/README.md`
-- `payloads/README.md`
-- `logs/README.md`
-- `cache/README.md`
-- `state/README.md`
-- `venvs/README.md`
+- [lab-worktrees](lab-worktrees/README.md)
+- [openwebui-data](openwebui-data/README.md)
+- [services/openwebui-data](services/openwebui-data/README.md)
+- [qwen-agent-workspace](qwen-agent-workspace/README.md)
+- [qwen-agent](qwen-agent/README.md)
+- [qwen-context](qwen-context/README.md)
+- [code-interpreter-workdir](code-interpreter-workdir/README.md)
+- [executor-runs](executor-runs/README.md)
+- [payloads](payloads/README.md)
+- [logs](logs/README.md)
+- [cache](cache/README.md)
+- [state](state/README.md)
+- [venvs](venvs/README.md)
+- [lab-patches](lab-patches/README.md)
+- [knowledge-bad-md](knowledge-bad-md/README.md)
+- [knowledge-code-packs](knowledge-code-packs/README.md)
+- [knowledge-md](knowledge-md/README.md)
+- [knowledge-md-parts](knowledge-md-parts/README.md)
+- [knowledge-small-md](knowledge-small-md/README.md)
+- [knowledge-sync](knowledge-sync/README.md)
+- [knowledge-tiny-md](knowledge-tiny-md/README.md)
+- [knowledge-upload-batches](knowledge-upload-batches/README.md)
+- [models-cpu](models-cpu/README.md)
+- [models-ovms-rerank](models-ovms-rerank/README.md)
+- [models-task](models-task/README.md)
+- [ovms-runtime](ovms-runtime/README.md)
 
 ## Agentic Tool Runtime
 
@@ -271,63 +284,69 @@ metadata-only or artifact-path-only regressions.
 
 ## Top-Level Tree
 
-```text
-.
-|-- AGENTS.md
-|-- README.md
-|-- .gitignore
-|-- services/
-|-- codex_ollama_bridge_applied/
-|-- modelfiles/
-|-- lab-worktrees/
-|-- openwebui-data/
-|-- qwen-agent-workspace/
-|-- qwen-agent/
-|-- qwen-context/
-|-- code-interpreter-workdir/
-|-- executor-runs/
-|-- payloads/
-|-- logs/
-|-- cache/
-|-- state/
-|-- knowledge-*/
-|-- models-*/
-|-- ovms-runtime/
-|-- lab-patches/
-`-- venvs/
-```
+- [AGENTS.md](AGENTS.md)
+- [README.md](README.md)
+- [.gitignore](.gitignore)
+- [services/](services/)
+- [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
+- [modelfiles/](modelfiles/)
+- [lab-worktrees/](lab-worktrees/)
+- [openwebui-data/](openwebui-data/)
+- [qwen-agent-workspace/](qwen-agent-workspace/)
+- [qwen-agent/](qwen-agent/)
+- [qwen-context/](qwen-context/)
+- [code-interpreter-workdir/](code-interpreter-workdir/)
+- [executor-runs/](executor-runs/)
+- [payloads/](payloads/)
+- [logs/](logs/)
+- [cache/](cache/)
+- [state/](state/)
+- [knowledge-bad-md/](knowledge-bad-md/)
+- [knowledge-code-packs/](knowledge-code-packs/)
+- [knowledge-md/](knowledge-md/)
+- [knowledge-md-parts/](knowledge-md-parts/)
+- [knowledge-small-md/](knowledge-small-md/)
+- [knowledge-sync/](knowledge-sync/)
+- [knowledge-tiny-md/](knowledge-tiny-md/)
+- [knowledge-upload-batches/](knowledge-upload-batches/)
+- [models-cpu/](models-cpu/)
+- [models-ovms-rerank/](models-ovms-rerank/)
+- [models-task/](models-task/)
+- [ovms-runtime/](ovms-runtime/)
+- [lab-patches/](lab-patches/)
+- [venvs/](venvs/)
 
 ## Source And Runtime Code
 
-### `services/`
+### [services/](services/)
 
 Main service surface for the agentic loop.
 
 Important submodules:
 
-- `services/vulkan_bridge/`: public OpenWebUI-facing bridge surface, including
+- [services/vulkan_bridge/](services/vulkan_bridge/): public OpenWebUI-facing bridge surface, including
   the `vulkan_helper` wrapper flow.
-- `services/aicarmine_broker/`: internal broker and planner loop, job store,
+- [services/aicarmine_broker/](services/aicarmine_broker/): internal broker and planner loop, job store,
   tool registry, repo tools, memory tools, planner contracts, and code-product
   proposal support.
-- `services/codex_bridge/`: Codex/Ollama bridge helpers.
-- `services/model_export/`: local model export helpers.
-- `services/launch/`: PowerShell runtime launch helpers.
+- [services/codex_bridge/](services/codex_bridge/): Codex/Ollama bridge helpers.
+- [services/model_export/](services/model_export/): local model export helpers.
+- [services/launch/](services/launch/): PowerShell runtime launch helpers.
 
 Important documentation:
 
-- `services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
-- `services/END_TO_END_AGENTIC_FLOW.md`
-- `services/SERVICES_MODULE_TECHNICAL_REFERENCE.md`
-- `services/MODULE_TECHNICAL_DESCRIPTIONS.md`
-- `services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md`
+- [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
+- [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
+- [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
+- [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
+- [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
 
-### `codex_ollama_bridge_applied/`
+### [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
 
 Applied bridge scripts and copied tool/runtime material used as part of the
 local Codex/Ollama/OpenWebUI integration.
 
-### `modelfiles/`
+### [modelfiles/](modelfiles/)
 
 Ollama Modelfile templates and model configuration examples. Actual model
 binaries are not committed.
@@ -337,30 +356,30 @@ binaries are not committed.
 These directories are represented by committed `README.md` descriptors only.
 Their runtime contents are ignored by `.gitignore`.
 
-### `lab-worktrees/`
+### [lab-worktrees/](lab-worktrees/)
 
 Local controlled worktrees used by the agentic tool loop and OpenTerminal.
 The worktree code itself is external and already versioned elsewhere.
 
-### `openwebui-data/` and `services/openwebui-data/`
+### [openwebui-data/](openwebui-data/) and [services/openwebui-data/](services/openwebui-data/)
 
 Local OpenWebUI data directories. They may contain chats, uploads, runtime
 databases, caches, and generated state. Those contents are not source.
 
-### `qwen-agent-workspace/`
+### [qwen-agent-workspace/](qwen-agent-workspace/)
 
 Local job workspace for broker runs, tool results, planner streams, and final
 artifacts.
 
-### `qwen-agent/` and `qwen-context/`
+### [qwen-agent/](qwen-agent/) and [qwen-context/](qwen-context/)
 
 Local Qwen context, reports, patches, and runtime state.
 
-### `code-interpreter-workdir/`
+### [code-interpreter-workdir/](code-interpreter-workdir/)
 
 Scratch workspace for code-interpreter style executions.
 
-### `executor-runs/`, `payloads/`, `logs/`, `cache/`, `state/`
+### [executor-runs/](executor-runs/), [payloads/](payloads/), [logs/](logs/), [cache/](cache/), [state/](state/)
 
 Runtime outputs, diagnostic captures, logs, caches, and local state.
 
@@ -370,16 +389,34 @@ Generated knowledge packs, Markdown splits, upload batches, and synchronized
 knowledge mirrors. Curated documentation should live in normal source docs
 instead.
 
-### `models-*/` and `ovms-runtime/`
+Preserved descriptors:
+
+- [knowledge-bad-md](knowledge-bad-md/README.md)
+- [knowledge-code-packs](knowledge-code-packs/README.md)
+- [knowledge-md](knowledge-md/README.md)
+- [knowledge-md-parts](knowledge-md-parts/README.md)
+- [knowledge-small-md](knowledge-small-md/README.md)
+- [knowledge-sync](knowledge-sync/README.md)
+- [knowledge-tiny-md](knowledge-tiny-md/README.md)
+- [knowledge-upload-batches](knowledge-upload-batches/README.md)
+
+### `models-*/` and [ovms-runtime/](ovms-runtime/)
 
 Local model stores and OpenVINO Model Server runtime files. Model binaries and
 runtime state are not committed.
 
-### `lab-patches/`
+Preserved descriptors:
+
+- [models-cpu](models-cpu/README.md)
+- [models-ovms-rerank](models-ovms-rerank/README.md)
+- [models-task](models-task/README.md)
+- [ovms-runtime](ovms-runtime/README.md)
+
+### [lab-patches/](lab-patches/)
 
 Local patch experiments and proof artifacts.
 
-### `venvs/`
+### [venvs/](venvs/)
 
 Local Python virtual environments.
 

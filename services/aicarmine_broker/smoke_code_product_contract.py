@@ -230,6 +230,83 @@ def main() -> int:
                 "planner_text_tool_call_disallowed_in_native_mode" in spoofed_native_tool_gate.get("violations", []),
                 f"native mode accepted spoofed native_tool_call flag: {spoofed_native_tool_gate}",
             )
+            native_history_read = compact_history_row(
+                root=job_root,
+                step=2,
+                tool="repo_read",
+                arguments=read_args,
+                result=read_result,
+            )
+            native_history_read["decision"]["native_tool_call"] = True
+            native_history_read["decision"]["raw_native_tool_call"] = {
+                "id": "call_smoke_repo_read",
+                "function": {
+                    "name": "repo_read",
+                    "arguments": read_args,
+                },
+            }
+            native_history_messages, native_history_report = planner._planner_history_messages_for_ollama(
+                [native_history_read],
+                root=job_root,
+                goal="Native messages smoke",
+                window_chars=2500,
+                max_chars=20000,
+            )
+            require(native_history_report.get("included_history_items") == 1, f"native history not included: {native_history_report}")
+            require(
+                [msg.get("role") for msg in native_history_messages] == ["assistant", "tool"],
+                f"native history did not become assistant/tool messages: {native_history_messages}",
+            )
+            tool_message = json.loads(str(native_history_messages[1].get("content") or "{}"))
+            require(
+                tool_message.get("schema") == "planner_tool_result_message_window.v1",
+                f"tool history message did not use SQLite window schema: {tool_message}",
+            )
+            result_window = tool_message.get("result_window") if isinstance(tool_message.get("result_window"), dict) else {}
+            require(result_window.get("document_id"), f"tool history message missing document_id: {tool_message}")
+            require("text" in result_window, f"tool history message missing real first window text: {tool_message}")
+            optional_native = planner._optional_context_for_prompt(
+                root=job_root,
+                goal="Native messages smoke",
+                history=[native_history_read],
+                planner_memory={"available": True, "records": [], "record_count": 0},
+                intrinsic_context={"schema": "planner_intrinsic_context.v1"},
+                last_tool_result=native_history_read["tool_result"],
+                compact_mode=False,
+                window_chars=2500,
+            )
+            require("history_transport" in optional_native, f"native optional context missing transport note: {optional_native}")
+            require("history_tail" not in optional_native, f"native optional context still embeds history_tail: {optional_native}")
+            require("last_tool_result_digest" not in optional_native, f"native optional context still embeds last tool digest: {optional_native}")
+            native_user_payload, native_payload_report = planner._build_planner_user_payload(
+                job_id="smoke-native-history-messages",
+                state={"goal": "Native messages smoke", "max_steps": 5, "approval_mode": "safe_write_lab"},
+                step=3,
+                history=[native_history_read],
+                tool_manifest=tool_manifest,
+                evidence_contract=planner.planner_evidence_contract("Native messages smoke", [native_history_read]),
+                planner_memory={"available": True, "records": [], "record_count": 0},
+                intrinsic_context={"schema": "planner_intrinsic_context.v1"},
+                last_tool_result=native_history_read["tool_result"],
+            )
+            require(native_payload_report.get("over_budget") is False, f"native user payload over budget: {native_payload_report}")
+            native_response_format = native_user_payload.get("required_response_format") if isinstance(native_user_payload.get("required_response_format"), dict) else {}
+            require(
+                native_response_format.get("tool_execution") == "message.tool_calls",
+                f"native required_response_format does not require message.tool_calls: {native_response_format}",
+            )
+            require(
+                native_response_format.get("textual_tool_action_allowed") is False,
+                f"native required_response_format still allows textual tool action: {native_response_format}",
+            )
+            require(
+                native_response_format.get("allowed_content_actions") == ["final", "block"],
+                f"native content actions are not final/block only: {native_response_format}",
+            )
+            require(
+                "allowed_actions" not in native_response_format or "tool" not in native_response_format.get("allowed_actions", []),
+                f"native required_response_format still advertises JSON tool action: {native_response_format}",
+            )
             planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = False
             manifest_by_name = {
                 str(item.get("name")): item

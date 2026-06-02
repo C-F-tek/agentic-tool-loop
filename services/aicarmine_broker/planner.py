@@ -998,18 +998,40 @@ def _optional_context_for_prompt(
     window_chars: int,
 ) -> dict[str, Any]:
     optional = {
-        "history_tail": _compact_history_for_prompt(history),
-        "turn_memory": _prompt_clip_value(_planner_turn_memory(history), list_limit=8),
-        "last_tool_result_digest": _prompt_clip_value(
-            planner_last_result_digest(last_tool_result),
-            text_limit=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
-            list_limit=8,
-        ),
         "planner_memory": _prompt_clip_value(planner_memory, text_limit=360, list_limit=4),
         "intrinsic_context": _compact_intrinsic_context_for_prompt(intrinsic_context),
     }
+    if AGENTIC_PLANNER_NATIVE_TOOLS:
+        optional["history_transport"] = {
+            "schema": "planner_history_transport.v1",
+            "tool_history_and_results": "ollama_messages",
+            "tool_result_payloads": "sqlite_windows",
+            "read_more_tool": "planner_scratchpad_read",
+            "history_items_available": len(history if isinstance(history, list) else []),
+        }
+    else:
+        optional.update({
+            "history_tail": _compact_history_for_prompt(history),
+            "turn_memory": _prompt_clip_value(_planner_turn_memory(history), list_limit=8),
+            "last_tool_result_digest": _prompt_clip_value(
+                planner_last_result_digest(last_tool_result),
+                text_limit=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
+                list_limit=8,
+            ),
+        })
     if not compact_mode:
         return optional
+    if AGENTIC_PLANNER_NATIVE_TOOLS:
+        return {
+            key: _windowed_optional_context_value(
+                root,
+                goal=goal,
+                key=key,
+                value=value,
+                window_chars=window_chars,
+            )
+            for key, value in optional.items()
+        }
     tool_payload_windows: list[dict[str, Any]] = []
     for row in reversed(history if isinstance(history, list) else []):
         result = _history_tool_result(row)
@@ -1958,18 +1980,37 @@ def _build_planner_user_payload(
                 window_chars=window_chars,
             ),
             "evidence_contract": evidence_for_prompt,
-            "required_response_format": {
-                "json_only": True,
-                "allowed_actions": ["tool", "final", "block"],
-                "tool": internal_tool_prompt(exclude_vulkan=False),
-                "arguments": {},
-                "reason": "short operational reason",
-                "final_answer": "required when action=final or block",
-                "path_rule": (
-                    "Choose paths from required_working_set, evidence_contract, "
-                    "candidate_next_actions or explicit user input. Do not copy static example paths."
-                ),
-            },
+            "required_response_format": (
+                {
+                    "native_tool_calls_required_for_tools": True,
+                    "content_json_only_for": ["final", "block"],
+                    "allowed_content_actions": ["final", "block"],
+                    "textual_tool_action_allowed": False,
+                    "tool_execution": "message.tool_calls",
+                    "tool_arguments_rule": (
+                        "When choosing a tool, emit a native tool_call using the provided Ollama tools schema. "
+                        "Do not emit JSON content with action=tool."
+                    ),
+                    "final_answer": "required when content JSON action=final or block",
+                    "path_rule": (
+                        "Choose paths from required_working_set, evidence_contract, "
+                        "candidate_next_actions or explicit user input. Do not copy static example paths."
+                    ),
+                }
+                if AGENTIC_PLANNER_NATIVE_TOOLS and AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
+                else {
+                    "json_only": True,
+                    "allowed_actions": ["tool", "final", "block"],
+                    "tool": internal_tool_prompt(exclude_vulkan=False),
+                    "arguments": {},
+                    "reason": "short operational reason",
+                    "final_answer": "required when action=final or block",
+                    "path_rule": (
+                        "Choose paths from required_working_set, evidence_contract, "
+                        "candidate_next_actions or explicit user input. Do not copy static example paths."
+                    ),
+                }
+            ),
         }
         report_local = _prompt_budget_report(payload_local, system_prompt=_PLANNER_SYSTEM)
         report_local["required_working_set_chars"] = required_chars_local
@@ -2183,6 +2224,171 @@ def _history_tool_result(item: dict[str, Any]) -> dict[str, Any]:
     if item.get("tool"):
         return item
     return {}
+
+
+def _planner_tool_result_message_payload(
+    item: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    root: Path,
+    goal: str,
+    window_chars: int,
+) -> dict[str, Any]:
+    tool = str(result.get("tool") or (item.get("decision") or {}).get("tool") or "")
+    source = _same_tool_artifact_payload(result)
+    raw_payload = source if isinstance(source, dict) else result
+    raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
+    window = _store_prompt_text_window(
+        root,
+        section=f"message_tool_result:{item.get('step')}:{tool}",
+        text=raw_text,
+        query=goal,
+        max_chars=window_chars,
+        metadata={
+            "kind": "planner_message_tool_result_payload",
+            "step": item.get("step"),
+            "substep": item.get("substep"),
+            "tool": tool,
+            "format": "json",
+        },
+    )
+    payload: dict[str, Any] = {
+        "schema": "planner_tool_result_message_window.v1",
+        "step": item.get("step"),
+        "substep": item.get("substep"),
+        "tool": tool,
+        "arguments": (item.get("decision") or {}).get("arguments")
+        if isinstance(item.get("decision"), dict)
+        else None,
+        "result_window": window,
+    }
+    if window.get("document_id") and window.get("has_more_after") is True:
+        payload["planner_can_request_more"] = {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": window.get("document_id"),
+                "offset": window.get("window_end"),
+                "max_chars": window_chars,
+            },
+        }
+    return {k: v for k, v in payload.items() if v not in (None, "", [], {})}
+
+
+def _planner_history_item_messages(
+    item: dict[str, Any],
+    *,
+    root: Path,
+    goal: str,
+    window_chars: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(item, dict):
+        return []
+    decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+    result = _history_tool_result(item)
+    messages: list[dict[str, Any]] = []
+    if (
+        decision.get("native_tool_call") is True
+        and isinstance(decision.get("raw_native_tool_call"), dict)
+    ):
+        raw_native_call = decision["raw_native_tool_call"]
+        messages.append({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [raw_native_call],
+        })
+        if result:
+            tool_message = {
+                "role": "tool",
+                "tool_name": str(result.get("tool") or decision.get("tool") or ""),
+                "content": json.dumps(
+                    _planner_tool_result_message_payload(
+                        item,
+                        result,
+                        root=root,
+                        goal=goal,
+                        window_chars=window_chars,
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                ),
+            }
+            if raw_native_call.get("id"):
+                tool_message["tool_call_id"] = raw_native_call.get("id")
+            messages.append(tool_message)
+        return messages
+    if result:
+        payload = _planner_tool_result_message_payload(
+            item,
+            result,
+            root=root,
+            goal=goal,
+            window_chars=window_chars,
+        )
+        payload["transport_note"] = (
+            "controller/non-native history item; this is context only, not a planner tool call"
+        )
+        messages.append({
+            "role": "user",
+            "content": json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        })
+    return messages
+
+
+def _planner_history_messages_for_ollama(
+    history: list[dict[str, Any]],
+    *,
+    root: Path,
+    goal: str,
+    window_chars: int,
+    max_chars: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if max_chars <= 0:
+        return [], {
+            "schema": "planner_history_messages.v1",
+            "enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+            "included_history_items": 0,
+            "skipped_history_items": len(history if isinstance(history, list) else []),
+            "message_chars": 0,
+            "max_chars": max_chars,
+        }
+    selected_reversed: list[list[dict[str, Any]]] = []
+    total_chars = 0
+    included = 0
+    skipped = 0
+    for item in reversed(history if isinstance(history, list) else []):
+        item_messages = _planner_history_item_messages(
+            item,
+            root=root,
+            goal=goal,
+            window_chars=window_chars,
+        )
+        if not item_messages:
+            continue
+        item_chars = _json_char_len(item_messages)
+        if selected_reversed and total_chars + item_chars > max_chars:
+            skipped += 1
+            continue
+        if total_chars + item_chars > max_chars:
+            skipped += 1
+            continue
+        selected_reversed.append(item_messages)
+        total_chars += item_chars
+        included += 1
+    messages: list[dict[str, Any]] = []
+    for group in reversed(selected_reversed):
+        messages.extend(group)
+    return messages, {
+        "schema": "planner_history_messages.v1",
+        "enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+        "included_history_items": included,
+        "skipped_history_items": skipped,
+        "message_count": len(messages),
+        "message_chars": _json_char_len(messages),
+        "max_chars": max_chars,
+        "window_chars": window_chars,
+    }
 
 
 def _decision_for_turn_memory(decision: dict[str, Any] | None) -> dict[str, Any]:
@@ -7854,6 +8060,61 @@ def planner_decision(
     prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
 
     planner_system_prompt = _planner_system_for_current_mode()
+    history_messages: list[dict[str, Any]] = []
+    history_messages_report: dict[str, Any] = {
+        "schema": "planner_history_messages.v1",
+        "enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+        "message_count": 0,
+        "message_chars": 0,
+    }
+    if AGENTIC_PLANNER_NATIVE_TOOLS:
+        prompt_chars_without_history_messages = int(prompt_budget.get("total_prompt_chars") or 0)
+        if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0:
+            history_message_budget = max(
+                0,
+                AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - prompt_chars_without_history_messages,
+            )
+        else:
+            history_message_budget = max(0, AGENTIC_PLANNER_NUM_CTX * 2)
+        history_messages, history_messages_report = _planner_history_messages_for_ollama(
+            history,
+            root=agent_job_root(job_id),
+            goal=goal,
+            window_chars=_prompt_window_chars(True, 0),
+            max_chars=history_message_budget,
+        )
+        prompt_budget["history_messages"] = history_messages_report
+        prompt_budget["history_messages_chars"] = history_messages_report.get("message_chars", 0)
+        prompt_budget["history_message_budget"] = history_message_budget
+        prompt_budget["total_prompt_chars_with_history_messages"] = (
+            prompt_chars_without_history_messages + int(history_messages_report.get("message_chars") or 0)
+        )
+        if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0:
+            prompt_budget["over_budget_with_history_messages"] = (
+                int(prompt_budget["total_prompt_chars_with_history_messages"])
+                > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+            )
+        transportable_history_items = sum(
+            1
+            for item in (history if isinstance(history, list) else [])
+            if _history_tool_result(item)
+        )
+        if (
+            transportable_history_items > 0
+            and int(history_messages_report.get("included_history_items") or 0) == 0
+        ):
+            return {
+                "action": "block",
+                "reason": "planner_history_messages_budget_unavailable",
+                "blocked_by": "planner_history_messages_not_transported",
+                "final_answer": (
+                    "Native tool mode requires prior tool history/results to be transported "
+                    "through Ollama messages. The prompt budget left no room for any full "
+                    "SQLite-windowed history message, so the planner was not called with "
+                    "lost operational state."
+                ),
+                "prompt_budget_report": prompt_budget,
+            }
     planner_payload = {
         "model": PLANNER_MODEL,
         "stream": False,
@@ -7861,6 +8122,7 @@ def planner_decision(
         "think": False,
         "messages": [
             {"role": "system", "content": planner_system_prompt},
+            *history_messages,
             {"role": "user",
              "content": json.dumps(user_payload, ensure_ascii=False, indent=2, default=str)},
         ],
