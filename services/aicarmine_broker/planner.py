@@ -1007,10 +1007,11 @@ def _windowed_evidence_contract_for_prompt(
     goal: str,
     contract: dict[str, Any],
     window_chars: int,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    compact = _compact_evidence_contract_for_prompt(contract)
     if not isinstance(contract, dict) or not contract:
-        return compact
+        return {}
+    compact_full = _compact_evidence_contract_for_prompt(contract)
     window = _store_prompt_value_window(
         root,
         section="evidence_contract",
@@ -1019,6 +1020,79 @@ def _windowed_evidence_contract_for_prompt(
         max_chars=window_chars,
         metadata={"kind": "evidence_contract", "format": "json"},
     )
+    summary_limit = max(3500, min(7000, int(window_chars or 2500) * 2))
+    if _json_char_len(compact_full) > summary_limit:
+        compact: dict[str, Any] = {}
+        for key in (
+            "semantic_goal_classification",
+            "goal_requests_code_product",
+            "goal_requires_code_product_report",
+            "goal_requests_apply",
+            "action_plan_candidate",
+            "target_kind",
+            "resolved_goal_file",
+            "resolved_goal_scope",
+            "successful_repo_read_count",
+            "verified_content_read_count",
+            "planner_may_choose_final",
+            "required_next_progress",
+        ):
+            value = contract.get(key)
+            if value not in (None, "", [], {}):
+                compact[key] = _prompt_clip_value(value, text_limit=300, list_limit=4)
+        for key in (
+            "successful_repo_read_paths",
+            "read_admissible_paths",
+            "validator_admissible_repo_read_paths",
+            "failed_repo_read_paths",
+            "failed_repo_list_files_paths",
+        ):
+            value = contract.get(key)
+            if value not in (None, "", [], {}):
+                compact[key] = _prompt_clip_value(value, text_limit=180, list_limit=20)
+        for key in (
+            "core_discovery_status",
+            "code_product_contract",
+            "finalization_contract",
+            "initial_orientation_surface",
+        ):
+            value = contract.get(key)
+            if value not in (None, "", [], {}):
+                compact[key] = _prompt_clip_value(value, text_limit=260, list_limit=4)
+        candidates = contract.get("candidate_next_actions")
+        if isinstance(candidates, list) and candidates:
+            compact["candidate_next_actions"] = _prompt_clip_value(
+                candidates,
+                text_limit=260,
+                list_limit=6,
+            )
+        discovery_candidates = contract.get("core_discovery_candidates")
+        if isinstance(discovery_candidates, list) and discovery_candidates:
+            compact["core_discovery_candidates"] = _prompt_clip_value(
+                discovery_candidates,
+                text_limit=220,
+                list_limit=4,
+            )
+        operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
+        if operational:
+            compact["operational_notes"] = {
+                "final_allowed": operational.get("final_allowed"),
+                "next_instruction": _prompt_clip_text(operational.get("next_instruction"), 320),
+                "candidate_next_actions": _prompt_clip_value(
+                    operational.get("candidate_next_actions") or [],
+                    text_limit=220,
+                    list_limit=3,
+                ),
+            }
+        compact["windowed_due_to_prompt_budget"] = True
+        compact["full_contract_required_from_sqlite_window"] = True
+        compact["windowed_keys_available_in_full_evidence_contract_window"] = [
+            str(key)
+            for key, value in contract.items()
+            if value not in (None, "", [], {}) and key not in compact
+        ][:40]
+    else:
+        compact = compact_full
     compact["full_evidence_contract_window"] = window
     if window.get("document_id") and window.get("has_more_after") is True:
         compact["planner_can_request_more_evidence_contract"] = {
@@ -1030,6 +1104,28 @@ def _windowed_evidence_contract_for_prompt(
                 "max_chars": window_chars,
             },
         }
+        continuation = _evidence_contract_continuation_action(
+            compact,
+            history=history or [],
+            window_chars=window_chars,
+        )
+        if continuation:
+            actions = compact.get("candidate_next_actions") if isinstance(compact.get("candidate_next_actions"), list) else []
+            action_key = json.dumps(continuation, sort_keys=True, default=str)
+            compact["candidate_next_actions"] = [
+                continuation,
+                *[
+                    item for item in actions
+                    if json.dumps(item, sort_keys=True, default=str) != action_key
+                ][:10],
+            ]
+            compact["planner_may_choose_final"] = False
+            final_contract = compact.get("finalization_contract") if isinstance(compact.get("finalization_contract"), dict) else {}
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "Full evidence contract is windowed in SQLite and must be read before final/code-product decision."
+            compact["finalization_contract"] = final_contract
+            compact["required_next_progress"] = continuation.get("reason")
     return compact
 
 
@@ -2037,6 +2133,7 @@ def _build_planner_user_payload(
                 goal=goal,
                 contract=evidence_contract,
                 window_chars=window_chars,
+                history=history,
             )
             if compact_mode
             else _compact_evidence_contract_for_prompt(evidence_contract)
@@ -2294,6 +2391,29 @@ def _build_planner_user_payload(
                     break
             if report["total_prompt_chars"] <= AGENTIC_PLANNER_PROMPT_CHAR_BUDGET:
                 break
+    if native_history_reserve_chars:
+        total_without_native_history_reserve = max(
+            0,
+            int(report.get("total_prompt_chars") or 0) - native_history_reserve_chars,
+        )
+        history_message_char_budget = (
+            max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - total_without_native_history_reserve)
+            if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            else max(0, AGENTIC_PLANNER_NUM_CTX * 2)
+        )
+        report["native_history_reserve_is_synthetic"] = True
+        report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+        report["over_budget_without_native_history_reserve"] = bool(
+            AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            and total_without_native_history_reserve > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+        )
+        report["history_message_char_budget"] = history_message_char_budget
+        payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
+        payload_report["native_history_reserve_is_synthetic"] = True
+        payload_report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+        payload_report["over_budget_without_native_history_reserve"] = report["over_budget_without_native_history_reserve"]
+        payload_report["history_message_char_budget"] = history_message_char_budget
+        payload["prompt_budget_report"] = payload_report
     return payload, report
 
 
@@ -8213,6 +8333,23 @@ def planner_decision(
         native_tools_schema=native_tools_schema,
     )
     required_errors = prompt_budget.get("required_working_set_errors") if isinstance(prompt_budget, dict) else []
+    if isinstance(prompt_budget, dict):
+        native_history_reserve_chars_for_budget = (
+            int(prompt_budget.get("native_history_reserve_chars") or 0)
+            if AGENTIC_PLANNER_NATIVE_TOOLS
+            else 0
+        )
+        total_prompt_chars_for_budget = int(prompt_budget.get("total_prompt_chars") or 0)
+        total_without_native_history_reserve = max(
+            0,
+            total_prompt_chars_for_budget - native_history_reserve_chars_for_budget,
+        )
+        prompt_budget["native_history_reserve_is_synthetic"] = bool(native_history_reserve_chars_for_budget)
+        prompt_budget["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+        prompt_budget["over_budget_without_native_history_reserve"] = bool(
+            AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            and total_without_native_history_reserve > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+        )
     hard_required_errors = [
         err for err in (required_errors or [])
         if isinstance(err, dict) and err.get("error") in {
@@ -8220,16 +8357,25 @@ def planner_decision(
             "repo_read_full_content_missing_in_required_working_set",
         }
     ]
+    effective_prompt_over_budget = bool(prompt_budget.get("over_budget")) if isinstance(prompt_budget, dict) else False
     if (
         isinstance(prompt_budget, dict)
-        and prompt_budget.get("over_budget")
+        and AGENTIC_PLANNER_NATIVE_TOOLS
+        and int(prompt_budget.get("native_history_reserve_chars") or 0) > 0
+    ):
+        effective_prompt_over_budget = bool(prompt_budget.get("over_budget_without_native_history_reserve"))
+    if (
+        isinstance(prompt_budget, dict)
+        and effective_prompt_over_budget
         and AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
     ):
         hard_required_errors.append(
             {
                 "error": "planner_prompt_pack_over_budget_after_context_windowing",
                 "total_prompt_chars": prompt_budget.get("total_prompt_chars"),
+                "total_prompt_chars_without_native_history_reserve": prompt_budget.get("total_prompt_chars_without_native_history_reserve"),
                 "prompt_char_budget": prompt_budget.get("char_budget"),
+                "native_history_reserve_chars": prompt_budget.get("native_history_reserve_chars"),
                 "required_working_set_chars": prompt_budget.get("required_working_set_chars"),
             }
         )

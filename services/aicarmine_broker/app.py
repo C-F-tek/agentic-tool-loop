@@ -8,7 +8,6 @@ repository tools and job persistence stay in their dedicated modules.
 """
 from __future__ import annotations
 
-import html
 import sys
 from typing import Any
 
@@ -52,11 +51,9 @@ from .job_html import (
     agent_job_final_markdown_view_html,
     agent_job_ia_view_html,
     agent_job_ia_view_json_view_html,
+    agent_jobs_index_html,
     agent_job_planner_stream_view_html,
     agent_job_status_json_view_html,
-)
-from .job_store import (
-    list_agent_jobs,
 )
 from .tool_registry import capability_map
 
@@ -85,40 +82,12 @@ def create_app() -> FastAPI:
 
     @app.get(JOBS_INDEX_PATH, include_in_schema=False)
     def jobs_index(limit: int = 50) -> HTMLResponse:
-        safe_limit = max(1, min(int(limit or 50), 200))
-        rows: list[str] = []
-        for job in list_agent_jobs(limit=safe_limit):
-            job_id = html.escape(str(job.get("job_id") or ""))
-            status = html.escape(str(job.get("status") or ""))
-            goal = html.escape(str(job.get("goal") or ""))
-            updated = html.escape(str(job.get("updated_at") or ""))
-            workspace = html.escape(str(job.get("workspace") or ""))
-            rows.append(
-                "<tr>"
-                f"<td><a href='{JOBS_INDEX_PATH}/{job_id}'>{job_id}</a></td>"
-                f"<td>{status}</td>"
-                f"<td><pre>{goal}</pre></td>"
-                f"<td>{updated}</td>"
-                f"<td><pre>{workspace}</pre></td>"
-                "</tr>"
-            )
-
         return HTMLResponse(
-            "<!doctype html><html><head><meta charset='utf-8'>"
-            f"<meta http-equiv='refresh' content='{JOBS_REFRESH_SECONDS}'>"
-            f"<title>{html.escape(APP_TITLE)} Agent Jobs</title>"
-            "<style>"
-            "body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#111;color:#ddd}"
-            "a{color:#8fd3ff} table{border-collapse:collapse;width:100%}"
-            "td,th{border-bottom:1px solid #333;padding:8px;vertical-align:top}"
-            "pre{white-space:pre-wrap;margin:0}"
-            "</style></head><body>"
-            f"<h1>{html.escape(APP_TITLE)} Agent Jobs</h1>"
-            f"<p>Auto-refresh ogni {JOBS_REFRESH_SECONDS} secondi.</p>"
-            "<table><thead><tr><th>Job</th><th>Status</th><th>Goal</th>"
-            "<th>Updated</th><th>Workspace</th></tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody></table>"
-            "</body></html>"
+            agent_jobs_index_html(
+                limit=limit,
+                title=APP_TITLE,
+                refresh_seconds=JOBS_REFRESH_SECONDS,
+            )
         )
 
     @app.get(JOBS_JSON_PATH, include_in_schema=False)

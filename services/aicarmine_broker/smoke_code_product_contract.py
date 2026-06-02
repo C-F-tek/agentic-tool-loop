@@ -362,6 +362,76 @@ def main() -> int:
                 reserved_history_report.get("included_history_items") == 1,
                 f"native reserved history budget skipped the only tool result: {reserved_history_report}",
             )
+            bloated_evidence = planner.planner_evidence_contract("Native messages smoke", [native_history_read])
+            bloated_evidence["core_discovery_candidates"] = [
+                {
+                    "path": f"pkg/discovery_{index}.py",
+                    "next_tool": "repo_read",
+                    "source": "smoke",
+                    "rank": index,
+                    "reason": "x" * 260,
+                }
+                for index in range(80)
+            ]
+            bloated_evidence["candidate_next_actions"] = [
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": {"path": f"pkg/discovery_{index}.py"},
+                    "reason": "x" * 220,
+                }
+                for index in range(40)
+            ]
+            bloated_payload, bloated_report = planner._build_planner_user_payload(
+                job_id="smoke-native-bloated-evidence",
+                state={"goal": "Native messages smoke", "max_steps": 5, "approval_mode": "safe_write_lab"},
+                step=4,
+                history=[native_history_read],
+                tool_manifest=tool_manifest,
+                evidence_contract=bloated_evidence,
+                planner_memory={"available": True, "records": [], "record_count": 0},
+                intrinsic_context={"schema": "planner_intrinsic_context.v1"},
+                last_tool_result=native_history_read["tool_result"],
+                native_tools_schema=planner._native_tools_schema_for_planner(TOOLS_SCHEMA),
+            )
+            bloated_reserve = int(bloated_report.get("native_history_reserve_chars") or 0)
+            bloated_without_reserve = int(bloated_report.get("total_prompt_chars_without_native_history_reserve") or 0)
+            require(bloated_reserve >= 6000, f"bloated native report lacks history reserve: {bloated_report}")
+            require(
+                bloated_without_reserve <= int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0),
+                f"bloated evidence was not compacted into SQLite before hard budget gate: {bloated_report}",
+            )
+            bloated_evidence_prompt = bloated_payload.get("evidence_contract") or {}
+            require(
+                isinstance(bloated_evidence_prompt.get("full_evidence_contract_window"), dict)
+                and bloated_evidence_prompt["full_evidence_contract_window"].get("document_id"),
+                f"bloated evidence did not expose SQLite window pointer: {bloated_evidence_prompt}",
+            )
+            require(
+                (bloated_evidence_prompt.get("candidate_next_actions") or [{}])[0].get("tool") == "planner_scratchpad_read",
+                f"bloated evidence did not route next action to SQLite window read: {bloated_evidence_prompt}",
+            )
+            bloated_history_budget = max(
+                0,
+                int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0) - bloated_without_reserve,
+            )
+            bloated_history_messages, bloated_history_report = planner._planner_history_messages_for_ollama(
+                [native_history_read],
+                root=job_root,
+                goal="Native messages smoke",
+                window_chars=planner._prompt_window_chars(True, 0),
+                max_chars=bloated_history_budget,
+            )
+            require(
+                bloated_history_messages
+                and bloated_history_report.get("included_history_items") == 1,
+                f"bloated prompt left no room for real native history message: {bloated_history_report}",
+            )
+            require(
+                bloated_without_reserve + int(bloated_history_report.get("message_chars") or 0)
+                <= int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0),
+                f"bloated prompt actual messages exceed budget: report={bloated_report} history={bloated_history_report}",
+            )
             native_available_tools = native_user_payload.get("available_tools")
             require(
                 isinstance(native_available_tools, list)

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .job_store import agent_job_root, compact_agent_status, load_agent_job_state, read_agent_events, read_json
+from .job_store import agent_job_root, compact_agent_status, list_agent_jobs, load_agent_job_state, read_agent_events, read_json
 
 
 def _json_pretty(value: Any) -> str:
@@ -439,6 +439,7 @@ def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
 def _dashboard_links(job_id: str) -> str:
     safe_job = html.escape(job_id)
     return (
+        "<a href=\"/jobs\">jobs home</a> &middot; "
         f"<a href=\"/jobs/{safe_job}\">dashboard</a> &middot; "
         f"<a href=\"/jobs/{safe_job}/json\">status json</a> &middot; "
         f"<a href=\"/jobs/{safe_job}/final.json\">final json</a> &middot; "
@@ -890,6 +891,96 @@ def _gpu0_panel_html(job_id: str) -> str:
         f"{_html_pre(payload)}"
         "</aside>"
     )
+
+
+def _gpu0_global_panel_html(jobs: list[dict[str, Any]]) -> str:
+    summaries: list[dict[str, Any]] = []
+    for job in jobs[:25]:
+        job_id = str(job.get("job_id") or "").strip()
+        if not job_id:
+            continue
+        payload = _gpu0_corrections_payload(job_id)
+        if not payload.get("has_gpu0_corrections"):
+            continue
+        summaries.append({
+            "job_id": job_id,
+            "status": job.get("status"),
+            "repair_event_count": payload.get("repair_event_count"),
+            "final_repair_signal_count": payload.get("final_repair_signal_count"),
+        })
+    payload = {
+        "schema": "aicarmine_gpu0_corrections_global_overlay.v1",
+        "source": "recent job events.ndjson + final.json",
+        "jobs_scanned": min(len(jobs), 25),
+        "jobs_with_gpu0_corrections": summaries,
+        "has_gpu0_corrections": bool(summaries),
+    }
+    return (
+        "<aside class=\"gpu0-corrections-window\">"
+        "<h2>GPU0 corrections JSON</h2>"
+        f"{_html_pre(payload)}"
+        "</aside>"
+    )
+
+
+def agent_jobs_index_html(*, limit: int, title: str, refresh_seconds: int) -> str:
+    safe_limit = max(1, min(int(limit or 50), 200))
+    jobs = list_agent_jobs(limit=safe_limit)
+    rows: list[str] = []
+    for job in jobs:
+        job_id = html.escape(str(job.get("job_id") or ""))
+        status = html.escape(str(job.get("status") or ""))
+        goal = html.escape(str(job.get("goal") or ""))
+        updated = html.escape(str(job.get("updated_at") or ""))
+        workspace = html.escape(str(job.get("workspace") or ""))
+        rows.append(
+            "<tr>"
+            f"<td><a href=\"/jobs/{job_id}\">{job_id}</a></td>"
+            f"<td>{status}</td>"
+            f"<td><pre>{goal}</pre></td>"
+            f"<td>{updated}</td>"
+            f"<td><pre>{workspace}</pre></td>"
+            f"<td><a href=\"/jobs/{job_id}/events\">events</a> &middot; "
+            f"<a href=\"/jobs/{job_id}/ia-view\">IA view</a> &middot; "
+            f"<a href=\"/jobs/{job_id}/planner-stream\">planner stream</a></td>"
+            "</tr>"
+        )
+    body = (
+        "<div class=\"card\">"
+        f"<div class=\"status\">{html.escape(title)} Agent Jobs</div>"
+        f"<p class=\"muted\">Auto-refresh ogni {int(refresh_seconds)} secondi. Stato dettagli preservato tra refresh.</p>"
+        "</div>"
+        "<div class=\"card\">"
+        "<table><thead><tr><th>Job</th><th>Status</th><th>Goal</th>"
+        "<th>Updated</th><th>Workspace</th><th>Views</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+        "</div>"
+    )
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{html.escape(title)} Agent Jobs</title>
+<style>
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #111; color: #ddd; }}
+a {{ color: #8fd3ff; }}
+.card {{ border: 1px solid #444; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1b1b; }}
+details {{ border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; }}
+summary {{ cursor: pointer; font-weight: 700; }}
+table {{ border-collapse: collapse; width: 100%; }}
+td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
+pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
+.status {{ font-size: 20px; font-weight: 700; }}
+.muted {{ color: #aaa; }}
+{_gpu0_panel_css()}
+</style>
+{_stateful_refresh_script(refresh_seconds)}
+</head>
+<body>
+{_gpu0_global_panel_html(jobs)}
+{body}
+</body>
+</html>"""
 
 
 def agent_job_ia_view_payload(job_id: str) -> dict[str, Any]:
