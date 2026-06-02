@@ -19,6 +19,65 @@ def _read_text_if_exists(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _planner_stream_frames(raw_ndjson: str) -> list[dict[str, Any]]:
+    frames: list[dict[str, Any]] = []
+    for line in str(raw_ndjson or "").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            frame = json.loads(text)
+        except Exception:
+            continue
+        if isinstance(frame, dict):
+            frames.append(frame)
+    return frames
+
+
+def _planner_stream_native_summary(raw_ndjson: str) -> dict[str, Any]:
+    frames = _planner_stream_frames(raw_ndjson)
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    native_tool_calls: list[Any] = []
+    done_meta: dict[str, Any] = {}
+    for frame in frames:
+        message = frame.get("message") if isinstance(frame.get("message"), dict) else {}
+        content = message.get("content")
+        if isinstance(content, str) and content:
+            content_parts.append(content)
+        response_text = frame.get("response")
+        if isinstance(response_text, str) and response_text:
+            content_parts.append(response_text)
+        for key in ("thinking", "reasoning"):
+            value = frame.get(key)
+            if isinstance(value, str) and value:
+                reasoning_parts.append(value)
+            message_value = message.get(key)
+            if isinstance(message_value, str) and message_value:
+                reasoning_parts.append(message_value)
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            native_tool_calls.extend(tool_calls)
+        if frame.get("done") is True:
+            for key in (
+                "model", "done", "done_reason", "total_duration", "load_duration",
+                "prompt_eval_count", "prompt_eval_duration", "eval_count",
+                "eval_duration",
+            ):
+                if frame.get(key) not in (None, "", [], {}):
+                    done_meta[key] = frame.get(key)
+    return {
+        "available": bool(frames),
+        "frame_count": len(frames),
+        "assistant_content": "".join(content_parts),
+        "reasoning": "".join(reasoning_parts),
+        "native_tool_calls": native_tool_calls,
+        "native_tool_call_count": len(native_tool_calls),
+        "done_meta": done_meta,
+        "raw_ndjson": raw_ndjson,
+    }
+
+
 def _path_inside_root(root: Path, path_value: Any) -> Path | None:
     raw = str(path_value or "").strip()
     if not raw:
@@ -152,11 +211,691 @@ def _step_prompt_capture(root: Path, step: int) -> dict[str, Any]:
 def _step_stream_payload(root: Path, step: int) -> dict[str, Any]:
     stream_dir = root / "planner-stream"
     stem = stream_dir / f"step-{int(step):03d}"
+    raw_ndjson = _read_text_if_exists(stem.with_suffix(".raw.ndjson"))
     return {
         "content": _read_text_if_exists(stem.with_suffix(".content.txt")),
         "all": _read_text_if_exists(stem.with_suffix(".all.txt")),
-        "raw_ndjson": _read_text_if_exists(stem.with_suffix(".raw.ndjson")),
+        "raw_ndjson": raw_ndjson,
+        "native_stream": _planner_stream_native_summary(raw_ndjson),
     }
+
+
+def _latest_planner_step(root: Path) -> int:
+    steps: list[int] = []
+    for folder, pattern in (
+        (root / "planner-prompts", "step-*-planner-payload.json"),
+        (root / "planner-stream", "step-*.*"),
+    ):
+        for path in folder.glob(pattern):
+            parts = path.name.split("-")
+            if len(parts) < 2:
+                continue
+            try:
+                steps.append(int(parts[1].split(".")[0]))
+            except (TypeError, ValueError):
+                continue
+    return max(steps) if steps else 0
+
+
+def _latest_planner_prompt_capture(root: Path, step: int = 0) -> dict[str, Any]:
+    if step > 0:
+        return _step_prompt_capture(root, step)
+    latest = _latest_planner_step(root)
+    return _step_prompt_capture(root, latest) if latest else {}
+
+
+def _planner_stream_files_for_step(root: Path, step: int) -> list[Path]:
+    stream_dir = root / "planner-stream"
+    return sorted(stream_dir.glob(f"step-{int(step):03d}.*"))
+
+
+def _planner_stream_combined_text(root: Path, step: int = 0) -> str:
+    if step <= 0:
+        step = _latest_planner_step(root)
+    parts: list[str] = []
+    for path in _planner_stream_files_for_step(root, step):
+        parts.append(f"\n\n===== {path.name} =====\n")
+        parts.append(_read_text_if_exists(path))
+    return "".join(parts).strip()
+
+
+def _planner_stream_display(root: Path, step: int = 0) -> dict[str, Any]:
+    if step <= 0:
+        step = _latest_planner_step(root)
+    if step <= 0:
+        return {
+            "step": 0,
+            "thinking": "",
+            "content": "",
+            "combined": "",
+            "native_stream": {"available": False},
+        }
+    stream_dir = root / "planner-stream"
+    stem = stream_dir / f"step-{int(step):03d}"
+    raw_ndjson = _read_text_if_exists(stem.with_suffix(".raw.ndjson"))
+    native_stream = _planner_stream_native_summary(raw_ndjson)
+    thinking = _read_text_if_exists(stem.with_suffix(".thinking.txt"))
+    content = _read_text_if_exists(stem.with_suffix(".content.txt"))
+    combined = _read_text_if_exists(stem.with_suffix(".all.txt"))
+    base = _read_text_if_exists(stem.with_suffix(".txt"))
+    if not thinking:
+        thinking = str(native_stream.get("reasoning") or "")
+    if not content:
+        native_content = str(native_stream.get("assistant_content") or "")
+        native_tool_calls = native_stream.get("native_tool_calls")
+        if native_content:
+            content = native_content
+        elif native_tool_calls:
+            content = _json_pretty({
+                "source": "message.tool_calls",
+                "native_tool_calls": native_tool_calls,
+            })
+        elif native_stream.get("available"):
+            content = _json_pretty({
+                "source": "planner-stream raw_ndjson",
+                "assistant_content": "",
+                "native_tool_calls": [],
+                "done_meta": native_stream.get("done_meta"),
+            })
+    combined = _planner_stream_combined_text(root, step) or combined or base
+    return {
+        "step": step,
+        "thinking": thinking,
+        "content": content,
+        "combined": combined,
+        "native_stream": native_stream,
+    }
+
+
+def agent_job_planner_stream_text(job_id: str) -> str:
+    root = agent_job_root(job_id)
+    stream_dir = root / "planner-stream"
+    files = sorted(stream_dir.glob("step-*.*"))
+    if not files:
+        return ""
+    steps: list[int] = []
+    for path in files:
+        try:
+            steps.append(int(path.name.split("-")[1].split(".")[0]))
+        except (IndexError, ValueError):
+            continue
+    parts: list[str] = []
+    for step in sorted(set(steps)):
+        display = _planner_stream_display(root, step)
+        native_summary = dict(display.get("native_stream") or {})
+        native_summary.pop("raw_ndjson", None)
+        parts.append(f"\n\n===== step-{step:03d} native stream summary =====\n")
+        parts.append(_json_pretty(native_summary))
+        combined = str(display.get("combined") or "")
+        if combined:
+            parts.append(f"\n\n===== step-{step:03d} raw files =====\n")
+            parts.append(combined)
+    return "".join(parts).strip()
+
+
+def _html_pre(value: Any) -> str:
+    if isinstance(value, str):
+        text = value
+    else:
+        text = _json_pretty(value)
+    return f"<pre>{html.escape(text)}</pre>"
+
+
+def _safe_detail_key(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    cleaned = "".join(ch if ch.isalnum() else "-" for ch in text)
+    while "--" in cleaned:
+        cleaned = cleaned.replace("--", "-")
+    return (cleaned.strip("-") or "detail")[:200]
+
+
+def _html_detail_block(
+    title: str,
+    inner_html: str,
+    *,
+    open_by_default: bool = False,
+    detail_key: str | None = None,
+) -> str:
+    opened = " open" if open_by_default else ""
+    key = _safe_detail_key(detail_key or title)
+    return (
+        f"<details data-detail-key=\"{html.escape(key)}\"{opened}>"
+        f"<summary>{html.escape(title)}</summary>"
+        f"{inner_html}</details>"
+    )
+
+
+def _html_details(title: str, value: Any, *, open_by_default: bool = False) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    return _html_detail_block(
+        title,
+        _html_pre(value),
+        open_by_default=open_by_default,
+        detail_key=title,
+    )
+
+
+def _json_value_label(value: Any) -> str:
+    if isinstance(value, dict):
+        return f"object, {len(value)} keys"
+    if isinstance(value, list):
+        return f"array, {len(value)} items"
+    if isinstance(value, str):
+        return f"string, {len(value)} chars"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return type(value).__name__
+    return type(value).__name__
+
+
+def _html_json_scalar(value: Any) -> str:
+    if isinstance(value, str):
+        return _html_pre(value)
+    return _html_pre(_json_pretty(value))
+
+
+def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
+    if isinstance(value, dict):
+        if not value:
+            return _html_pre("{}")
+        parts: list[str] = ["<div class=\"json-tree json-object\">"]
+        for key, item in value.items():
+            item_path = f"{path}.{key}"
+            title = f"{key} ({_json_value_label(item)})"
+            parts.append(
+                _html_detail_block(
+                    title,
+                    _html_json_tree(item, path=item_path, depth=depth + 1),
+                    open_by_default=depth == 0 and not isinstance(item, (dict, list)),
+                    detail_key=item_path,
+                )
+            )
+        parts.append("</div>")
+        return "".join(parts)
+    if isinstance(value, list):
+        if not value:
+            return _html_pre("[]")
+        parts = ["<div class=\"json-tree json-array\">"]
+        for index, item in enumerate(value):
+            item_path = f"{path}[{index}]"
+            title = f"[{index}] ({_json_value_label(item)})"
+            parts.append(
+                _html_detail_block(
+                    title,
+                    _html_json_tree(item, path=item_path, depth=depth + 1),
+                    open_by_default=False,
+                    detail_key=item_path,
+                )
+            )
+        parts.append("</div>")
+        return "".join(parts)
+    return _html_json_scalar(value)
+
+
+def _dashboard_links(job_id: str) -> str:
+    safe_job = html.escape(job_id)
+    return (
+        f"<a href=\"/jobs/{safe_job}\">dashboard</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/json-view\">json view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/json\">json raw</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/final-view\">final view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/final.json\">final.json raw</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/final.md-view\">final.md view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/final.md\">final.md raw</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/events-view\">events view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/events\">events raw</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/planner-stream-view\">planner stream view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/planner-stream\">planner stream raw</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/ia-view\">IA live control view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/ia-view.json-view\">ia-view.json view</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/ia-view.json\">ia-view.json raw</a>"
+    )
+
+
+def _html_page(title: str, body_html: str, *, refresh_seconds: int = 2, job_id: str | None = None) -> str:
+    gpu0_panel = _gpu0_panel_html(job_id) if job_id else ""
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{html.escape(title)}</title>
+<style>
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #111; color: #ddd; }}
+a {{ color: #8fd3ff; }}
+.card {{ border: 1px solid #444; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1b1b; }}
+details {{ border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; }}
+summary {{ cursor: pointer; font-weight: 700; }}
+table {{ border-collapse: collapse; width: 100%; }}
+td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
+pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
+.status {{ font-size: 20px; font-weight: 700; }}
+.muted {{ color: #aaa; }}
+.json-tree details {{ margin-left: 12px; }}
+.event-type {{ font-family: Consolas, monospace; }}
+.audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
+.audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
+{_gpu0_panel_css()}
+</style>
+{_stateful_refresh_script(refresh_seconds)}
+</head>
+<body>
+{gpu0_panel}
+{body_html}
+</body>
+</html>"""
+
+
+def _structured_json_page(
+    job_id: str,
+    title: str,
+    payload: Any,
+    *,
+    summary: dict[str, Any] | None = None,
+) -> str:
+    body = (
+        "<div class=\"card\">"
+        f"<div class=\"status\">{html.escape(title)} - {html.escape(job_id)}</div>"
+        f"<p>{_dashboard_links(job_id)}</p>"
+        "</div>"
+    )
+    if summary:
+        body += (
+            "<div class=\"card\"><h2>Summary</h2>"
+            f"{_html_json_tree(summary, path='summary')}"
+            "</div>"
+        )
+    body += (
+        "<div class=\"card\"><h2>Structured JSON</h2>"
+        f"{_html_json_tree(payload, path=title)}"
+        "</div>"
+        "<div class=\"card\"><h2>Raw JSON</h2>"
+        f"{_html_details('Complete raw JSON', payload)}"
+        "</div>"
+    )
+    return _html_page(title, body, job_id=job_id)
+
+
+def agent_job_status_json_view_html(job_id: str) -> str:
+    payload = compact_agent_status(job_id, include_events=True)
+    return _structured_json_page(
+        job_id,
+        "Compact Status JSON View",
+        payload,
+        summary={
+            "ok": payload.get("ok"),
+            "status": payload.get("status"),
+            "goal": payload.get("goal"),
+            "events_tail_count": len(payload.get("events_tail") or []),
+        } if isinstance(payload, dict) else None,
+    )
+
+
+def agent_job_final_json_view_html(job_id: str) -> str:
+    root = agent_job_root(job_id)
+    path = root / "final.json"
+    if not path.exists():
+        payload: Any = {"ok": False, "job_id": job_id, "error": "final_not_found"}
+    else:
+        data = read_json(path, {})
+        payload = data if isinstance(data, dict) else {"ok": True, "job_id": job_id, "data": data}
+    summary = {
+        "status": payload.get("status") if isinstance(payload, dict) else None,
+        "ok": payload.get("ok") if isinstance(payload, dict) else None,
+        "tool_context_for_30b_keys": (
+            list(payload.get("tool_context_for_30b", {}).keys())
+            if isinstance(payload, dict) and isinstance(payload.get("tool_context_for_30b"), dict)
+            else []
+        ),
+    }
+    return _structured_json_page(job_id, "Final JSON View", payload, summary=summary)
+
+
+def _markdown_sections(text: str) -> list[tuple[str, str]]:
+    sections: list[tuple[str, str]] = []
+    current_title = "Preamble"
+    current_lines: list[str] = []
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            if current_lines or current_title != "Preamble":
+                sections.append((current_title, "\n".join(current_lines).strip()))
+            current_title = stripped.lstrip("#").strip() or stripped
+            current_lines = []
+        else:
+            current_lines.append(line)
+    if current_lines or not sections:
+        sections.append((current_title, "\n".join(current_lines).strip()))
+    return sections
+
+
+def agent_job_final_markdown_view_html(job_id: str) -> str:
+    root = agent_job_root(job_id)
+    path = root / "final.md"
+    text = _read_text_if_exists(path)
+    body = (
+        "<div class=\"card\">"
+        f"<div class=\"status\">Final Markdown View - {html.escape(job_id)}</div>"
+        f"<p>{_dashboard_links(job_id)}</p>"
+        f"<p class=\"muted\">Path: {html.escape(str(path))}</p>"
+        "</div>"
+    )
+    if not text:
+        body += "<div class=\"card\"><p>final.md not found or empty.</p></div>"
+    else:
+        section_html = "".join(
+            _html_detail_block(
+                title,
+                _html_pre(section_text),
+                open_by_default=index == 0,
+                detail_key=f"final-md.{index}.{title}",
+            )
+            for index, (title, section_text) in enumerate(_markdown_sections(text))
+        )
+        body += (
+            "<div class=\"card\"><h2>Markdown Sections</h2>"
+            f"{section_html}</div>"
+            "<div class=\"card\"><h2>Raw Markdown</h2>"
+            f"{_html_details('Complete final.md', text)}</div>"
+        )
+    return _html_page("Final Markdown View", body, job_id=job_id)
+
+
+def _read_events_ndjson(root: Path) -> tuple[str, list[dict[str, Any]]]:
+    raw = _read_text_if_exists(root / "events.ndjson")
+    events: list[dict[str, Any]] = []
+    for raw_line in raw.splitlines():
+        try:
+            decoded = json.loads(raw_line)
+        except Exception:
+            decoded = {"event_type": "raw", "message": raw_line}
+        if isinstance(decoded, dict):
+            events.append(decoded)
+    return raw, events
+
+
+def agent_job_events_view_html(job_id: str) -> str:
+    root = agent_job_root(job_id)
+    raw, events = _read_events_ndjson(root)
+    by_step: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        step = str(event.get("step") or "job")
+        by_step.setdefault(step, []).append(event)
+    body = (
+        "<div class=\"card\">"
+        f"<div class=\"status\">Events View - {html.escape(job_id)}</div>"
+        f"<p>{_dashboard_links(job_id)}</p>"
+        f"<p class=\"muted\">events={len(events)}</p>"
+        "</div>"
+    )
+    step_parts: list[str] = []
+    for step, step_events in by_step.items():
+        rows = []
+        for event_index, event in enumerate(step_events):
+            payload_html = ""
+            if event.get("payload") not in (None, "", [], {}):
+                payload_html = _html_detail_block(
+                    "payload",
+                    _html_json_tree(event.get("payload"), path=f"events.{step}.{event_index}.payload"),
+                    detail_key=f"events.{step}.{event_index}.payload",
+                )
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(event.get('time') or event.get('ts') or ''))}</td>"
+                f"<td class=\"event-type\">{html.escape(str(event.get('event_type') or ''))}</td>"
+                f"<td><pre>{html.escape(str(event.get('message') or ''))}</pre></td>"
+                f"<td>{payload_html}</td>"
+                "</tr>"
+            )
+        table = (
+            "<table><thead><tr><th>Time</th><th>Type</th><th>Message</th><th>Payload</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody></table>"
+        )
+        step_parts.append(
+            _html_detail_block(
+                f"Step {step} ({len(step_events)} events)",
+                table,
+                open_by_default=False,
+                detail_key=f"events.step.{step}",
+            )
+        )
+    body += (
+        "<div class=\"card\"><h2>Events By Step</h2>"
+        f"{''.join(step_parts) if step_parts else '<p>No events.</p>'}"
+        "</div>"
+        "<div class=\"card\"><h2>Raw NDJSON</h2>"
+        f"{_html_details('Complete events.ndjson', raw)}"
+        "</div>"
+    )
+    return _html_page("Events View", body, job_id=job_id)
+
+
+def agent_job_ia_view_json_view_html(job_id: str) -> str:
+    payload = agent_job_ia_view_payload(job_id)
+    summary = {
+        "ok": payload.get("ok") if isinstance(payload, dict) else None,
+        "job": payload.get("job") if isinstance(payload, dict) else None,
+        "steps_count": len(payload.get("steps") or []) if isinstance(payload, dict) else 0,
+    }
+    return _structured_json_page(job_id, "IA View JSON View", payload, summary=summary)
+
+
+def agent_job_planner_stream_view_html(job_id: str) -> str:
+    root = agent_job_root(job_id)
+    latest_step = _latest_planner_step(root)
+    steps: list[int] = []
+    for path in sorted((root / "planner-stream").glob("step-*.*")):
+        try:
+            steps.append(int(path.name.split("-")[1].split(".")[0]))
+        except (IndexError, ValueError):
+            continue
+    body = (
+        "<div class=\"card\">"
+        f"<div class=\"status\">Planner Stream View - {html.escape(job_id)}</div>"
+        f"<p>{_dashboard_links(job_id)}</p>"
+        f"<p class=\"muted\">latest_step={html.escape(str(latest_step))}</p>"
+        "</div>"
+    )
+    step_sections: list[str] = []
+    for step in sorted(set(steps)):
+        display = _planner_stream_display(root, step)
+        native_summary = dict(display.get("native_stream") or {})
+        native_summary.pop("raw_ndjson", None)
+        inner = (
+            _html_details("Native stream summary", native_summary, open_by_default=True)
+            + _html_details("Planner emitted content or native tool calls", display.get("content"))
+            + _html_details("Planner thinking / reasoning raw", display.get("thinking"))
+            + _html_details("Planner full raw combined", display.get("combined"))
+        )
+        step_sections.append(
+            _html_detail_block(
+                f"Step {step}",
+                inner,
+                open_by_default=step == latest_step,
+                detail_key=f"planner-stream.step.{step}",
+            )
+        )
+    body += (
+        "<div class=\"card\"><h2>Planner Stream Steps</h2>"
+        f"{''.join(step_sections) if step_sections else '<p>No planner stream files.</p>'}"
+        "</div>"
+    )
+    return _html_page("Planner Stream View", body, job_id=job_id)
+
+
+
+def _stateful_refresh_script(refresh_seconds: int = 2) -> str:
+    refresh_ms = max(1, int(refresh_seconds)) * 1000
+    return f"""<script>
+(function() {{
+  var key = "aicarmine-dashboard-state:" + window.location.pathname;
+  function detailKey(el, index) {{
+    return el.getAttribute("data-detail-key") || String(index);
+  }}
+  function readState() {{
+    try {{ return JSON.parse(sessionStorage.getItem(key) || "{{}}"); }}
+    catch (err) {{ return {{}}; }}
+  }}
+  function writeState() {{
+    var state = readState();
+    state.details = {{}};
+    document.querySelectorAll("details").forEach(function(el, index) {{
+      state.details[detailKey(el, index)] = !!el.open;
+    }});
+    state.scrollY = window.scrollY || 0;
+    sessionStorage.setItem(key, JSON.stringify(state));
+  }}
+  function restoreState() {{
+    var state = readState();
+    var details = state.details || {{}};
+    document.querySelectorAll("details").forEach(function(el, index) {{
+      var k = detailKey(el, index);
+      if (Object.prototype.hasOwnProperty.call(details, k)) {{
+        el.open = !!details[k];
+      }}
+      el.addEventListener("toggle", writeState);
+    }});
+    if (typeof state.scrollY === "number") {{
+      window.scrollTo(0, state.scrollY);
+    }}
+  }}
+  window.addEventListener("beforeunload", writeState);
+  document.addEventListener("DOMContentLoaded", restoreState);
+  window.setTimeout(function() {{
+    writeState();
+    window.location.reload();
+  }}, {refresh_ms});
+}})();
+</script>"""
+
+
+def _gpu0_panel_css() -> str:
+    return """
+body { padding-right: calc(30vw + 28px); }
+.gpu0-corrections-window {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 30vw;
+  height: 20vh;
+  overflow: auto;
+  z-index: 1000;
+  border: 1px solid #5d6b7b;
+  border-radius: 8px;
+  background: #151a20;
+  color: #e5edf5;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  padding: 10px;
+}
+.gpu0-corrections-window h2 {
+  font-size: 13px;
+  margin: 0 0 8px 0;
+}
+.gpu0-corrections-window pre {
+  font-size: 11px;
+  line-height: 1.25;
+}
+@media (max-width: 900px) {
+  body { padding-right: 20px; }
+  .gpu0-corrections-window {
+    position: static;
+    width: auto;
+    height: 220px;
+    margin-bottom: 14px;
+  }
+}
+"""
+
+
+def _contains_gpu0_repair_text(value: Any) -> bool:
+    text = str(value or "").lower()
+    if not any(marker in text for marker in ("gpu0", "vulkan_gpu0", "vulkan/gpu0")):
+        return False
+    return any(marker in text for marker in ("repair", "repaired", "correz", "correction"))
+
+
+def _collect_gpu0_repair_nodes(value: Any, *, path: str = "root") -> list[dict[str, Any]]:
+    nodes: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key)
+            item_path = f"{path}.{key_text}"
+            key_lower = key_text.lower()
+            if (
+                ("gpu0" in key_lower or "vulkan_repair" in key_lower or "vulkan_gpu0" in key_lower)
+                and item not in (None, "", [], {}, False)
+            ):
+                nodes.append({"path": item_path, "value": item})
+            if _contains_gpu0_repair_text(key_text) and item not in (None, "", [], {}, False):
+                nodes.append({"path": item_path, "value": item})
+            if not isinstance(item, (dict, list)) and _contains_gpu0_repair_text(item):
+                nodes.append({"path": item_path, "value": item})
+            nodes.extend(_collect_gpu0_repair_nodes(item, path=item_path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            item_path = f"{path}[{index}]"
+            if not isinstance(item, (dict, list)) and _contains_gpu0_repair_text(item):
+                nodes.append({"path": item_path, "value": item})
+            nodes.extend(_collect_gpu0_repair_nodes(item, path=item_path))
+    elif _contains_gpu0_repair_text(value):
+        nodes.append({"path": path, "value": value})
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node in nodes:
+        key = _json_pretty(node)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(node)
+    return deduped
+
+
+def _gpu0_corrections_payload(job_id: str) -> dict[str, Any]:
+    root = agent_job_root(job_id)
+    _, events = _read_events_ndjson(root)
+    repair_events: list[dict[str, Any]] = []
+    for event in events:
+        event_type = str(event.get("event_type") or "")
+        message = str(event.get("message") or "")
+        payload = event.get("payload")
+        payload_signals = _collect_gpu0_repair_nodes(payload, path="payload")
+        if (
+            _contains_gpu0_repair_text(event_type)
+            or _contains_gpu0_repair_text(message)
+            or bool(payload_signals)
+        ):
+            repair_events.append({
+                "step": event.get("step"),
+                "time": event.get("time") or event.get("ts"),
+                "event_type": event_type,
+                "message": message,
+                "payload": payload,
+                "payload_gpu0_repair_signals": payload_signals,
+            })
+    final_json = read_json(root / "final.json", {})
+    final_repair_signals = _collect_gpu0_repair_nodes(final_json)
+    return {
+        "schema": "aicarmine_gpu0_corrections_overlay.v1",
+        "job_id": job_id,
+        "source": "events.ndjson + final.json",
+        "has_gpu0_corrections": bool(repair_events or final_repair_signals),
+        "repair_event_count": len(repair_events),
+        "final_repair_signal_count": len(final_repair_signals),
+        "repair_events": repair_events,
+        "final_repair_signals": final_repair_signals,
+    }
+
+
+def _gpu0_panel_html(job_id: str) -> str:
+    payload = _gpu0_corrections_payload(job_id)
+    return (
+        "<aside class=\"gpu0-corrections-window\">"
+        "<h2>GPU0 corrections JSON</h2>"
+        f"{_html_pre(payload)}"
+        "</aside>"
+    )
 
 
 def agent_job_ia_view_payload(job_id: str) -> dict[str, Any]:
@@ -269,7 +1008,6 @@ def agent_job_ia_view_html(job_id: str) -> str:
 <head>
 <meta charset="utf-8">
 <title>AI-Carmine IA View {html.escape(job_id)}</title>
-<meta http-equiv="refresh" content="2">
 <style>
 body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #111; color: #ddd; }}
 a {{ color: #8fd3ff; }}
@@ -278,16 +1016,19 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
 .audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
 .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
+{_gpu0_panel_css()}
 </style>
+{_stateful_refresh_script(2)}
 </head>
 <body>
+{_gpu0_panel_html(job_id)}
 <div class="card">
   <div class="status">IA Live Control View - {html.escape(job_id)}</div>
   <p><b>Status:</b> {html.escape(str((payload.get('job') or {}).get('status') or ''))}</p>
   <p><b>Goal:</b> {html.escape(str((payload.get('job') or {}).get('goal') or ''))}</p>
   <p><b>Current step:</b> {html.escape(str((payload.get('job') or {}).get('current_step') or ''))}</p>
   <p>Historical steps are kept in the complete JSON view only.</p>
-  <p><a href="/jobs/{html.escape(job_id)}">dashboard</a> Â· <a href="/jobs/{html.escape(job_id)}/ia-view.json">ia-view.json</a></p>
+  <p>{_dashboard_links(job_id)}</p>
   <pre>{html.escape(_json_pretty(payload.get('mutation_check') or {}))}</pre>
 </div>
 {''.join(cards)}
@@ -301,28 +1042,112 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 
 def agent_job_html(job_id: str) -> str:
     status = compact_agent_status(job_id, include_events=True)
-    if not status.get('ok'):
-        return f'<html><body><h1>Job not found</h1><pre>{html.escape(json.dumps(status, ensure_ascii=False, indent=2))}</pre></body></html>'
+    if not status.get("ok"):
+        return f"<html><body><h1>Job not found</h1>{_html_pre(status)}</body></html>"
+    root = agent_job_root(job_id)
     events = read_agent_events(job_id, 500)
     rows = []
     for ev in events:
-        rows.append(f"<tr><td>{html.escape(str(ev.get('time') or ev.get('ts') or ''))}</td><td>{html.escape(str(ev.get('step') or ''))}</td><td>{html.escape(str(ev.get('event_type') or ''))}</td><td><pre>{html.escape(str(ev.get('message') or ''))}</pre></td></tr>")
-    final_summary = html.escape(str(status.get('final_summary') or ''))
-    planner_thinking_text = ''
-    planner_content_text = ''
-    planner_all_text = ''
-    planner_stream_dir = agent_job_root(job_id) / "planner-stream"
-    thinking_files = sorted(planner_stream_dir.glob('step-*.thinking.txt'))
-    content_files = sorted(planner_stream_dir.glob('step-*.content.txt'))
-    all_files = sorted(planner_stream_dir.glob('step-*.all.txt'))
-    if thinking_files:
-        planner_thinking_text = thinking_files[-1].read_text(encoding='utf-8', errors='replace')[-20000:]
-    if content_files:
-        planner_content_text = content_files[-1].read_text(encoding='utf-8', errors='replace')[-12000:]
-    if all_files:
-        planner_all_text = all_files[-1].read_text(encoding='utf-8', errors='replace')[-20000:]
-    planner_thinking_html = html.escape(planner_thinking_text)
-    planner_content_html = html.escape(planner_content_text)
-    planner_all_html = html.escape(planner_all_text)
-    return f"""<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>AI-Carmine Agent Job {html.escape(job_id)}</title>\n<meta http-equiv="refresh" content="2">\n<style>\nbody {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #111; color: #ddd; }}\na {{ color: #8fd3ff; }}\n.card {{ border: 1px solid #444; border-radius: 10px; padding: 14px; margin-bottom: 14px; background: #1b1b1b; }}\ntable {{ border-collapse: collapse; width: 100%; }}\ntd, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}\npre {{ white-space: pre-wrap; margin: 0; }}\n.status {{ font-size: 20px; font-weight: 700; }}\n</style>\n</head>\n<body>\n<div class="card">\n  <div class="status">Job {html.escape(job_id)} â€” {html.escape(str(status.get('status')))}</div>\n  <p><b>Goal:</b> {html.escape(str(status.get('goal') or ''))}</p>\n  <p><b>Workspace:</b> {html.escape(str(status.get('workspace') or ''))}</p>\n  <p><a href="/jobs/{html.escape(job_id)}/json">JSON compatto</a> Â· <a href="/jobs/{html.escape(job_id)}/final.json">final.json completo</a> Â· <a href="/jobs/{html.escape(job_id)}/final.md">final.md completo</a> Â· <a href="/jobs/{html.escape(job_id)}/events">events.ndjson</a> Â· <a href="/jobs/{html.escape(job_id)}/ia-view">IA live control view</a> Â· <a href="/jobs/{html.escape(job_id)}/ia-view.json">ia-view.json</a></p>\n</div>\n<div class="card">\n  <h2>Final summary</h2>\n  <pre>{final_summary}</pre>\n</div>\n<div class="card">\n  <h2>Planner thinking / reasoning raw</h2>\n  <p>Mostra solo ciÃ² che 11434 emette nello stream: thinking, reasoning o blocchi &lt;think&gt;...&lt;/think&gt;.</p>\n  <pre>{planner_thinking_html}</pre>\n</div>\n\n<div class="card">\n  <h2>Planner emitted content</h2>\n  <pre>{planner_content_html}</pre>\n</div>\n\n<div class="card">\n  <h2>Planner full raw combined</h2>\n  <p><a href="/jobs/{html.escape(job_id)}/planner-stream">full planner stream</a></p>\n  <pre>{planner_all_html}</pre>\n</div>\n<div class="card">\n  <h2>Events</h2>\n  <table>\n    <thead><tr><th>Time</th><th>Step</th><th>Type</th><th>Message</th></tr></thead>\n    <tbody>{''.join(rows)}</tbody>\n  </table>\n</div>\n</body>\n</html>"""
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(ev.get('time') or ev.get('ts') or ''))}</td>"
+            f"<td>{html.escape(str(ev.get('step') or ''))}</td>"
+            f"<td>{html.escape(str(ev.get('event_type') or ''))}</td>"
+            f"<td><pre>{html.escape(str(ev.get('message') or ''))}</pre></td>"
+            "</tr>"
+        )
+    latest_step = _latest_planner_step(root)
+    prompt_capture = _latest_planner_prompt_capture(root, latest_step)
+    stream_display = _planner_stream_display(root, latest_step)
+    native_stream = dict(stream_display.get("native_stream") or {})
+    native_stream.pop("raw_ndjson", None)
+    latest_decision: dict[str, Any] = {}
+    latest_guard: dict[str, Any] = {}
+    for ev in reversed(events):
+        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        event_type = str(ev.get("event_type") or "")
+        if not latest_decision and event_type == "planner_decision":
+            latest_decision = payload
+        if not latest_guard and event_type == "planner_decision_rejected":
+            latest_guard = payload
+        if latest_decision and latest_guard:
+            break
+    request_sections = (
+        _html_details(
+            "Prompt capture summary",
+            {
+                "path": prompt_capture.get("path"),
+                "planner_url": prompt_capture.get("planner_url"),
+                "planner_model": prompt_capture.get("planner_model"),
+                "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
+                "prompt_budget_report": prompt_capture.get("prompt_budget_report"),
+            },
+            open_by_default=True,
+        )
+        + _html_details("Prompt sent to 11434: messages/tools/options", prompt_capture.get("prompt_sent_to_11434"))
+        + _html_details("Planner user payload", prompt_capture.get("planner_user_payload"))
+    )
+    stream_sections = (
+        _html_details("Native stream summary", native_stream, open_by_default=True)
+        + _html_details("Planner thinking / reasoning raw", stream_display.get("thinking"))
+        + _html_details("Planner emitted content or native tool calls", stream_display.get("content"), open_by_default=True)
+        + _html_details("Planner full raw combined", stream_display.get("combined"))
+    )
+    decision_sections = (
+        _html_details("Latest planner decision", latest_decision, open_by_default=True)
+        + _html_details("Latest validator guard / rejection", latest_guard, open_by_default=True)
+    )
+    final_summary = html.escape(str(status.get("final_summary") or ""))
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>AI-Carmine Agent Job {html.escape(job_id)}</title>
+<style>
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #111; color: #ddd; }}
+a {{ color: #8fd3ff; }}
+.card {{ border: 1px solid #444; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1b1b; }}
+details {{ border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; }}
+summary {{ cursor: pointer; font-weight: 700; }}
+table {{ border-collapse: collapse; width: 100%; }}
+td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
+pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
+.status {{ font-size: 20px; font-weight: 700; }}
+{_gpu0_panel_css()}
+</style>
+{_stateful_refresh_script(2)}
+</head>
+<body>
+{_gpu0_panel_html(job_id)}
+<div class="card">
+  <div class="status">Job {html.escape(job_id)} - {html.escape(str(status.get('status')))}</div>
+  <p><b>Goal:</b> {html.escape(str(status.get('goal') or ''))}</p>
+  <p><b>Workspace:</b> {html.escape(str(status.get('workspace') or ''))}</p>
+  <p>{_dashboard_links(job_id)}</p>
+</div>
+<div class="card">
+  <h2>Final summary</h2>
+  <pre>{final_summary}</pre>
+</div>
+<div class="card">
+  <h2>Planner request to 11434</h2>
+  {request_sections or "<p>No planner prompt capture available.</p>"}
+</div>
+<div class="card">
+  <h2>Planner stream from 11434</h2>
+  {stream_sections or "<p>No planner stream available.</p>"}
+</div>
+<div class="card">
+  <h2>Planner decision and validator</h2>
+  {decision_sections or "<p>No planner decision available.</p>"}
+</div>
+<div class="card">
+  <h2>Events</h2>
+  <table>
+    <thead><tr><th>Time</th><th>Step</th><th>Type</th><th>Message</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</div>
+</body>
+</html>"""
 

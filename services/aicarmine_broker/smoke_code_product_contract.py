@@ -201,6 +201,20 @@ def main() -> int:
                 "planner_text_tool_call_disallowed_in_native_mode" in text_tool_gate.get("violations", []),
                 f"native mode accepted JSON-text tool call: {text_tool_gate}",
             )
+            native_empty_tool_call_gate = planner.validate_planner_decision_against_evidence(
+                "Native no tool call smoke",
+                {
+                    "action": "block",
+                    "reason": "planner_native_tool_call_required",
+                    "controller_synthesized_protocol_block": True,
+                    "native_tool_calls_seen": 0,
+                },
+                [],
+            )
+            require(
+                "planner_native_tool_call_required" in native_empty_tool_call_gate.get("violations", []),
+                f"native no-tool-call block was accepted as terminal: {native_empty_tool_call_gate}",
+            )
             native_tool_gate = planner.validate_planner_decision_against_evidence(
                 "Native tool gate smoke",
                 {
@@ -315,8 +329,53 @@ def main() -> int:
                 planner_memory={"available": True, "records": [], "record_count": 0},
                 intrinsic_context={"schema": "planner_intrinsic_context.v1"},
                 last_tool_result=native_history_read["tool_result"],
+                native_tools_schema=planner._native_tools_schema_for_planner(TOOLS_SCHEMA),
             )
             require(native_payload_report.get("over_budget") is False, f"native user payload over budget: {native_payload_report}")
+            require(
+                int(native_payload_report.get("extra_prompt_chars") or 0) > 0
+                and int((native_payload_report.get("sections") or {}).get("native_tools_schema") or 0) > 0,
+                f"native prompt budget does not account for Ollama tools schema: {native_payload_report}",
+            )
+            native_available_tools = native_user_payload.get("available_tools")
+            require(
+                isinstance(native_available_tools, list)
+                and native_available_tools
+                and all(
+                    "argument_contract" not in row and "description" not in row
+                    for row in native_available_tools
+                    if isinstance(row, dict)
+                ),
+                (
+                    "native user payload still duplicates full tool manifest instead "
+                    f"of using tools schema: {native_available_tools}"
+                ),
+            )
+            orientation_goal = (
+                "Genera un patch diff concreto per il file pkg/example.py "
+                "che include refactoring per modularizzazione delle cartellette."
+            )
+            orientation_plan = planner._controller_file_code_product_orientation_preseed_plan(
+                orientation_goal
+            )
+            require(
+                orientation_plan
+                and orientation_plan.get("tool") == "repo_tree"
+                and orientation_plan.get("dynamic_initial_orientation") is True,
+                f"file code-product goal lacks dynamic repo orientation preseed: {orientation_plan}",
+            )
+            compact_orientation_contract = planner._compact_evidence_contract_for_prompt({
+                "initial_orientation_surface": {
+                    "schema": "agentic_loop_initial_orientation_surface.v1",
+                    "root_tree": {"ok": True, "path": "."},
+                    "preseed_steps": [{"tool": "repo_tree", "reason": "smoke"}],
+                },
+                "candidate_next_actions": [],
+            })
+            require(
+                compact_orientation_contract.get("initial_orientation_surface"),
+                f"compact evidence dropped initial_orientation_surface: {compact_orientation_contract}",
+            )
             native_response_format = native_user_payload.get("required_response_format") if isinstance(native_user_payload.get("required_response_format"), dict) else {}
             require(
                 native_response_format.get("tool_execution") == "message.tool_calls",
@@ -2115,6 +2174,7 @@ def main() -> int:
             ia_view_root = repo_root / ".ia-view-job"
             ia_view_root.mkdir(parents=True, exist_ok=True)
             ia_prompt_path = ia_view_root / "planner-prompts" / "step-001-planner-payload.json"
+            ia_stream_path = ia_view_root / "planner-stream" / "step-001.raw.ndjson"
             write_json(
                 ia_prompt_path,
                 {
@@ -2133,6 +2193,33 @@ def main() -> int:
                     "planner_payload": {"messages": [{"role": "user", "content": "smoke"}]},
                 },
             )
+            ia_stream_path.parent.mkdir(parents=True, exist_ok=True)
+            ia_stream_path.write_text(
+                json.dumps(
+                    {
+                        "model": "smoke-model",
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "repo_status",
+                                        "arguments": {},
+                                    }
+                                }
+                            ],
+                        },
+                        "done": True,
+                        "done_reason": "stop",
+                        "prompt_eval_count": 14336,
+                        "eval_count": 3,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             ia_raw_tool_path = ia_view_root / "tool-results" / "step-001-planner_scratchpad_read.json"
             write_json(ia_raw_tool_path, next_window)
             ia_events = [
@@ -2146,6 +2233,18 @@ def main() -> int:
                 {
                     "time": "smoke",
                     "step": 1,
+                    "event_type": "planner_decision",
+                    "message": "Decision: tool repo_status",
+                    "payload": {
+                        "action": "tool",
+                        "tool": "repo_status",
+                        "arguments": {},
+                        "native_tool_call": True,
+                    },
+                },
+                {
+                    "time": "smoke",
+                    "step": 1,
                     "event_type": "tool_result",
                     "message": "smoke tool",
                     "payload": {**next_compact, "artifact": str(ia_raw_tool_path)},
@@ -2154,6 +2253,9 @@ def main() -> int:
             original_view_root = job_html.agent_job_root
             original_view_state = job_html.load_agent_job_state
             original_view_events = job_html.read_agent_events
+            ia_payload: dict[str, Any] = {}
+            ia_dashboard_html = ""
+            ia_stream_text = ""
             try:
                 job_html.agent_job_root = lambda _job_id: ia_view_root
                 job_html.load_agent_job_state = lambda _job_id: {
@@ -2165,6 +2267,8 @@ def main() -> int:
                 }
                 job_html.read_agent_events = lambda _job_id, _limit=5000: list(ia_events)
                 ia_payload = job_html.agent_job_ia_view_payload("smoke-ia-view")
+                ia_dashboard_html = job_html.agent_job_html("smoke-ia-view")
+                ia_stream_text = job_html.agent_job_planner_stream_text("smoke-ia-view")
             finally:
                 job_html.agent_job_root = original_view_root
                 job_html.load_agent_job_state = original_view_state
@@ -2176,6 +2280,14 @@ def main() -> int:
             )
             ia_steps = ia_payload.get("steps") or []
             require(ia_steps and ia_steps[-1].get("prompt_capture", {}).get("available") is True, "IA view did not load planner prompt capture")
+            ia_native_stream = ia_steps[-1].get("planner_stream", {}).get("native_stream", {})
+            require(
+                ia_native_stream.get("native_tool_call_count") == 1,
+                f"IA view did not expose native tool_calls from raw ndjson: {ia_native_stream}",
+            )
+            require("message.tool_calls" in ia_dashboard_html, "dashboard HTML did not surface native tool call stream")
+            require("native_tool_call_count" in ia_stream_text, "planner-stream text lacks native summary")
+            require("repo_status" in ia_stream_text, "planner-stream text lacks native tool call name")
             require(
                 ia_steps[-1].get("raw_tool_result_rehydrated", {}).get("tool") == "planner_scratchpad_read",
                 f"IA view did not rehydrate raw tool payload: {ia_steps[-1]}",

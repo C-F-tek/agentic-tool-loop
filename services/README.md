@@ -77,3 +77,25 @@ Core code entry points:
   - Reference for top-level scripts.
 - [requirements-agentic-optional.txt](requirements-agentic-optional.txt)
   - Optional runtime dependency list.
+
+## Planner Context Vs 3571 Payload
+
+The runtime has two different context surfaces:
+
+- `3572 -> 11434` planner context: native tool-call `messages`, prompt windows
+  and SQLite-backed prompt context are internal working context. They can be
+  budgeted and windowed for the next planner decision. If this transport skips
+  required history, the bug is inside planner routing/context construction.
+- Native planner tool dispatch requires Ollama `message.tool_calls`; text JSON
+  `action=tool` is invalid when native mode is required. Text JSON `final` and
+  `block` remain valid non-tool decisions.
+- `3572/3571 -> OpenWebUI` terminal payload: `tool_context_for_30b` is built
+  from persistent job `history` and raw `tool-results` artifacts, then returned
+  inline by 3571. It must remain complete for successful tool evidence and must
+  not depend on how much prior history fit into the native planner messages.
+
+Do not use local paths, SQLite ids, planner message windows or
+`skipped_history_items` diagnostics as substitutes for the public payload. For
+terminal OpenWebUI results, successful `repo_read` content and successful
+`repo_propose_code_edit` diffs/operations must be present as concrete inline
+artifacts in `tool_context_for_30b`.

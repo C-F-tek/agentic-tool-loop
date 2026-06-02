@@ -167,12 +167,36 @@ Verified behavior:
 - `PLANNER_URL` defaults to `http://127.0.0.1:11434/api/chat`.
 - `PLANNER_MODEL` is read from planner env variables or defaults in `config.py`.
 - `planner_decision()` builds a payload with `history`,
-  `turn_memory`, `evidence_contract`, tool schemas and required JSON response
-  format.
+  `turn_memory`, `evidence_contract`, tool schemas and response protocol
+  instructions.
 - It calls `post_json_stream_to_file(PLANNER_URL, planner_payload, ...)`.
 
 Implication: 11434 chooses the next planner action. Its Ollama
 `done_reason` is turn metadata; it does not by itself complete the 3572 job.
+
+#### Native tool calling contract
+
+When `AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS=true` and
+`AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS=true`, tool execution decisions
+must use Ollama native `message.tool_calls`.
+
+- `action=tool` as JSON text is not executable planner output in native mode.
+  The validator rejects it before dispatch.
+- `final` and `block` may still be strict JSON text because they are terminal
+  decisions, not tool dispatch requests.
+- The planner payload includes native `tools` schema for internal 3572 tools.
+  That schema is internal to 3572 and must not change the public 3571/OpenWebUI
+  tool surface.
+- Native `tool_batch` is a controller-normalized internal form for parallel
+  read-only calls only. Each sub-call is validated like a single tool decision.
+- Native tool-call messages are planner working history. They are not the
+  source of the final OpenWebUI payload; persistent job `history` plus raw tool
+  artifacts are.
+
+Regression signal: a planner text JSON tool call reaching `dispatch_tool()` in
+native-required mode means the native gate failed. A terminal `final`/`block`
+JSON being rejected only for lack of `tool_calls` means the gate is incorrectly
+applied to non-tool decisions.
 
 ### 5. 3572 validates, then dispatches tools
 

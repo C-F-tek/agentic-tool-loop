@@ -70,3 +70,26 @@ Core code entry points:
   - Compatibility facade for compaction helpers.
 - [MODULE_REFERENCE.md](MODULE_REFERENCE.md)
   - Detailed module contract and public result shape.
+
+## Source Of Public Evidence
+
+3571 must treat the terminal 3572 result as the source for OpenWebUI evidence.
+It must not depend on the native planner `messages` that were sent to 11434
+during the internal loop. Those messages are only planner working context and
+may be budgeted/windowed.
+
+For terminal responses, 3571 must use the structured terminal context and
+rehydrated tool artifacts to build `tool_context_for_30b`. The public payload
+must preserve successful tool results inline:
+
+- `repo_read`: real file content in `artifact.content` when available.
+- `repo_propose_code_edit`: complete `artifact.unified_diff` or
+  `artifact.structured_operations`.
+- command and listing tools: concrete stdout/stderr, paths, entries or counts
+  produced by the successful tool.
+
+`skipped_history_items` in planner-native message transport is not a public
+payload source and is not an acceptable reason to omit successful artifacts from
+3571. If final OpenWebUI evidence is incomplete, verify the 3572 persistent
+`history` and raw `tool-results` rehydration path before changing the public
+schema.

@@ -28,6 +28,11 @@ Read before edits:
 - Main external model endpoints are configured through `config.py`.
 - The controller validates planner decisions; Ollama `done_reason` is stored as
   turn metadata, not used as a job finalizer.
+- Planner tool dispatch uses native Ollama `message.tool_calls` when
+  `AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS` and
+  `AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS` are enabled. Text JSON
+  `action=tool` is rejected in that mode; text JSON `final` and `block` remain
+  valid non-tool decisions.
 - Successful tool evidence must carry real result data. A path to a local JSON
   artifact is internal storage, not model-visible evidence.
 - Before each 11434 planner turn, 3572 builds a measured prompt pack. The
@@ -96,6 +101,28 @@ Read before edits:
    `job_store.py`.
 9. 3571 reads terminal job state and transports successful real tool results to
    OpenWebUI.
+
+## Native Tool Calling Rules
+
+The planner protocol has two valid output shapes:
+
+- Tool dispatch: native Ollama `message.tool_calls` only when native mode is
+  required. The normalized decision carries `native_tool_call=true` and keeps
+  the raw native call for history/audit.
+- Non-tool terminal decisions: strict JSON text for `final`, `block`,
+  `completed`, `needs_user` or equivalent terminal actions.
+
+Invalid shapes:
+
+- text JSON `{"action":"tool", ...}` in native-required mode;
+- native batch containing write/command/non-cacheable tools;
+- native batch exceeding `AICARMINE_AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY`;
+- repair output that tries to turn invalid text into hidden tool execution
+  without native provenance and validator approval.
+
+Native messages are not durable evidence. Every dispatched tool still writes a
+raw artifact and appends persistent job `history`; finalization and 3571
+payload reconstruction use that history, not the budgeted planner messages.
 
 ## Evidence Rules
 

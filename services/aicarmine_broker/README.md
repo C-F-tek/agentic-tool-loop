@@ -80,3 +80,29 @@ Core code entry points:
   - Job persistence, dashboards and IA Live Control View rendering.
 - [memory_tools.py](memory_tools.py)
   - Scratchpad, SQLite memory and prompt-window support.
+
+## Persistent History Vs Planner Messages
+
+`aicarmine_broker` owns the internal 3572 loop and must keep two records
+separate:
+
+- Planner messages: when native tool calling is enabled, prior tool calls and
+  tool results can be transported to 11434 through Ollama `messages`. This is a
+  budgeted working-context surface for the next planner decision. It may use
+  SQLite windows and can report `skipped_history_items`; skipped items mean the
+  planner may lack working history for that turn.
+- Persistent job history: every executed internal tool result must be written
+  to a raw `tool-results/*.json` artifact and appended to the in-memory/job
+  `history`. This is the authoritative record used by finalization.
+
+The final OpenWebUI payload must be reconstructible from persistent job
+history, not from native planner messages. A native tool-call turn that omits
+an item from `messages` must not delete, replace or weaken the persistent
+`history` entry. For code-product work, each successful
+`repo_propose_code_edit` must keep its complete `unified_diff` or
+`structured_operations` available through the history/artifact rehydration path,
+even when many files are involved.
+
+If a regression is suspected, test the two surfaces separately: inspect the
+planner prompt capture for native message loss, then inspect final
+`tool_context_for_30b.artifacts` for complete public reconstruction.

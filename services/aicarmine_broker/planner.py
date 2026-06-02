@@ -791,6 +791,20 @@ def _native_tools_schema_for_planner(tools_schema: list[dict[str, Any]]) -> list
     return native_schema
 
 
+def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> Any:
+    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+        return compact_tools
+    return [
+        {
+            "name": row.get("name"),
+            "transport": "message.tool_calls",
+            "schema_source": "ollama_request.tools",
+        }
+        for row in compact_tools
+        if isinstance(row, dict) and row.get("name")
+    ]
+
+
 def _tool_shape_examples_for_prompt() -> dict[str, Any]:
     real_value_sources = [
         "candidate_next_actions",
@@ -952,6 +966,7 @@ def _compact_evidence_contract_for_prompt(contract: dict[str, Any]) -> dict[str,
         "user_scope_claims",
         "core_discovery_status",
         "core_discovery_candidates",
+        "initial_orientation_surface",
         "candidate_next_actions",
         "planner_may_choose_final",
         "code_product_contract",
@@ -1228,21 +1243,34 @@ def _optional_context_for_prompt(
     }
 
 
-def _prompt_budget_report(user_payload: dict[str, Any], *, system_prompt: str = "") -> dict[str, Any]:
+def _prompt_budget_report(
+    user_payload: dict[str, Any],
+    *,
+    system_prompt: str = "",
+    extra_prompt_sections: dict[str, int] | None = None,
+) -> dict[str, Any]:
     sections = {
         key: _json_char_len(value)
         for key, value in user_payload.items()
         if key not in {"available_tools"}
     }
     sections["available_tools"] = _json_char_len(user_payload.get("available_tools"))
+    extra_sections = {
+        str(key): int(value)
+        for key, value in (extra_prompt_sections or {}).items()
+        if int(value or 0) > 0
+    }
+    sections.update(extra_sections)
     total_user = _json_char_len(user_payload)
     system_chars = len(str(system_prompt or ""))
-    total = total_user + system_chars
+    extra_chars = sum(extra_sections.values())
+    total = total_user + system_chars + extra_chars
     return {
         "schema": "planner_prompt_budget.v1",
         "char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
         "system_prompt_chars": system_chars,
         "total_user_payload_chars": total_user,
+        "extra_prompt_chars": extra_chars,
         "total_prompt_chars": total,
         "over_budget": bool(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0 and total > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET),
         "sections": sections,
@@ -1964,9 +1992,17 @@ def _build_planner_user_payload(
     planner_memory: dict[str, Any],
     intrinsic_context: dict[str, Any],
     last_tool_result: dict[str, Any],
+    native_tools_schema: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     goal = str(state.get("goal") or "")
     compact_tools = _compact_tool_manifest_for_prompt(tool_manifest)
+    available_tools_for_payload = _available_tools_for_user_payload(compact_tools)
+    system_prompt_for_budget = _planner_system_for_current_mode()
+    extra_prompt_sections = (
+        {"native_tools_schema": _json_char_len(native_tools_schema or [])}
+        if AGENTIC_PLANNER_NATIVE_TOOLS
+        else {}
+    )
     root = agent_job_root(job_id)
 
     def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
@@ -2027,6 +2063,8 @@ def _build_planner_user_payload(
                 "prompt_compaction_ratio": AGENTIC_PLANNER_PROMPT_COMPACT_RATIO,
                 "compact_mode": compact_mode,
                 "window_chars": window_chars,
+                "native_tools_schema_accounted_in_budget": bool(extra_prompt_sections),
+                "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
                 "required_working_set_not_truncated": True,
                 "required_working_set_uses_real_sqlite_windows_when_compacted": True,
                 "optional_context_may_be_omitted_not_used_as_required_payload": True,
@@ -2041,7 +2079,7 @@ def _build_planner_user_payload(
                     "Native Open Terminal run_command may return status=running and exit_code=null; terminal_run_command_wait returns final output.",
                 ],
             },
-            "available_tools": compact_tools,
+            "available_tools": available_tools_for_payload,
             "tool_shape_examples": _tool_shape_examples_for_prompt(),
             "required_working_set": required_working_set,
             "optional_context": _optional_context_for_prompt(
@@ -2087,7 +2125,11 @@ def _build_planner_user_payload(
                 }
             ),
         }
-        report_local = _prompt_budget_report(payload_local, system_prompt=_PLANNER_SYSTEM)
+        report_local = _prompt_budget_report(
+            payload_local,
+            system_prompt=system_prompt_for_budget,
+            extra_prompt_sections=extra_prompt_sections,
+        )
         report_local["required_working_set_chars"] = required_chars_local
         report_local["required_working_set_errors"] = required_errors_local
         report_local["compact_mode"] = compact_mode
@@ -2129,7 +2171,11 @@ def _build_planner_user_payload(
             prompt_contract["hard_budget_optional_context_windowed"] = True
             prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
             payload["prompt_pack_contract"] = prompt_contract
-            report = _prompt_budget_report(payload, system_prompt=_PLANNER_SYSTEM)
+            report = _prompt_budget_report(
+                payload,
+                system_prompt=system_prompt_for_budget,
+                extra_prompt_sections=extra_prompt_sections,
+            )
             report["required_working_set_chars"] = required_chars
             report["required_working_set_errors"] = required_errors
             report["compact_mode"] = True
@@ -2141,12 +2187,18 @@ def _build_planner_user_payload(
         "char_budget": report.get("char_budget"),
         "total_prompt_chars": report.get("total_prompt_chars"),
         "over_budget": report.get("over_budget"),
+        "extra_prompt_chars": report.get("extra_prompt_chars"),
+        "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
         "required_working_set_chars": report.get("required_working_set_chars"),
         "compact_mode": report.get("compact_mode"),
         "window_chars": report.get("window_chars"),
     }
     for _ in range(6):
-        report = _prompt_budget_report(payload, system_prompt=_PLANNER_SYSTEM)
+        report = _prompt_budget_report(
+            payload,
+            system_prompt=system_prompt_for_budget,
+            extra_prompt_sections=extra_prompt_sections,
+        )
         report["required_working_set_chars"] = required_chars
         report["required_working_set_errors"] = required_errors
         report["compact_mode"] = (payload.get("prompt_pack_contract") or {}).get("compact_mode")
@@ -2156,11 +2208,17 @@ def _build_planner_user_payload(
             "char_budget": report.get("char_budget"),
             "total_prompt_chars": report.get("total_prompt_chars"),
             "over_budget": report.get("over_budget"),
+            "extra_prompt_chars": report.get("extra_prompt_chars"),
+            "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
             "required_working_set_chars": report.get("required_working_set_chars"),
             "compact_mode": report.get("compact_mode"),
             "window_chars": report.get("window_chars"),
         }
-        actual_total = len(_PLANNER_SYSTEM) + _json_char_len(payload)
+        actual_total = (
+            len(system_prompt_for_budget)
+            + _json_char_len(payload)
+            + int(report.get("extra_prompt_chars") or 0)
+        )
         if int(report.get("total_prompt_chars") or 0) == actual_total:
             break
     if (
@@ -2184,7 +2242,11 @@ def _build_planner_user_payload(
             prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
             payload["prompt_pack_contract"] = prompt_contract
             for _ in range(6):
-                report = _prompt_budget_report(payload, system_prompt=_PLANNER_SYSTEM)
+                report = _prompt_budget_report(
+                    payload,
+                    system_prompt=system_prompt_for_budget,
+                    extra_prompt_sections=extra_prompt_sections,
+                )
                 report["required_working_set_chars"] = required_chars
                 report["required_working_set_errors"] = required_errors
                 report["compact_mode"] = True
@@ -2194,11 +2256,17 @@ def _build_planner_user_payload(
                     "char_budget": report.get("char_budget"),
                     "total_prompt_chars": report.get("total_prompt_chars"),
                     "over_budget": report.get("over_budget"),
+                    "extra_prompt_chars": report.get("extra_prompt_chars"),
+                    "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
                     "required_working_set_chars": report.get("required_working_set_chars"),
                     "compact_mode": report.get("compact_mode"),
                     "window_chars": report.get("window_chars"),
                 }
-                actual_total = len(_PLANNER_SYSTEM) + _json_char_len(payload)
+                actual_total = (
+                    len(system_prompt_for_budget)
+                    + _json_char_len(payload)
+                    + int(report.get("extra_prompt_chars") or 0)
+                )
                 if int(report.get("total_prompt_chars") or 0) == actual_total:
                     break
             if report["total_prompt_chars"] <= AGENTIC_PLANNER_PROMPT_CHAR_BUDGET:
@@ -4525,6 +4593,20 @@ def _controller_preseed_plan(goal: str, original_args: dict[str, Any]) -> dict[s
             "dynamic_initial_orientation": True,
         }
     return None
+
+
+def _controller_file_code_product_orientation_preseed_plan(goal: str) -> dict[str, Any] | None:
+    if not _goal_target_file(goal) or not goal_requires_code_product_report(goal):
+        return None
+    return {
+        "event": "controller_preseed_file_code_product_orientation",
+        "result_event": "controller_preseed_file_code_product_orientation_result",
+        "tool": "repo_tree",
+        "arguments": {"path": ".", "max_depth": 2, "max_files": 300},
+        "reason": "file_code_product_request_needs_dynamic_repo_orientation",
+        "artifact_suffix": "file_code_product_orientation-repo_tree",
+        "dynamic_initial_orientation": True,
+    }
 
 
 SCOPED_CONCRETE_READ_TARGET = 10
@@ -7051,6 +7133,14 @@ def validate_planner_decision_against_evidence(
         # repair. The controller still does not invent a substitute action.
         reason = str(decision.get("reason") or "")
         reason_low = reason.lower()
+        if reason == "planner_native_tool_call_required":
+            violations.append("planner_native_tool_call_required")
+            contract["required_next_progress"] = (
+                "Native tool mode is active and the planner emitted no message.tool_calls. "
+                "Retry with one native tool_call from candidate_next_actions or return a real "
+                "final/block JSON only if the evidence contract allows it."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
         raw_planner_text = str(
             decision.get("raw_planner_text")
             or decision.get("raw_planner_text_preview")
@@ -8050,6 +8140,11 @@ def planner_decision(
         if isinstance(item.get("function"), dict)
         and item["function"].get("name") in internal_tools_list(exclude_vulkan=False)
     ]
+    native_tools_schema = (
+        _native_tools_schema_for_planner(TOOLS_SCHEMA)
+        if AGENTIC_PLANNER_NATIVE_TOOLS
+        else []
+    )
 
     last_step = history[-1] if history else {}
     last_tool_result = last_step.get("tool_result") if isinstance(last_step, dict) else {}
@@ -8092,6 +8187,7 @@ def planner_decision(
         planner_memory=planner_memory,
         intrinsic_context=intrinsic_context,
         last_tool_result=last_tool_result if isinstance(last_tool_result, dict) else {},
+        native_tools_schema=native_tools_schema,
     )
     required_errors = prompt_budget.get("required_working_set_errors") if isinstance(prompt_budget, dict) else []
     hard_required_errors = [
@@ -8201,7 +8297,7 @@ def planner_decision(
         },
     }
     if AGENTIC_PLANNER_NATIVE_TOOLS:
-        planner_payload["tools"] = _native_tools_schema_for_planner(TOOLS_SCHEMA)
+        planner_payload["tools"] = native_tools_schema
     else:
         planner_payload["format"] = "json"
 
@@ -8312,6 +8408,10 @@ def planner_decision(
                 "did not return message.tool_calls. JSON-text tool fallback was not used."
             ),
             "raw_planner_text": raw_text_for_native_mode[:12000],
+            "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+            "native_tool_calls_seen": 0,
+            "controller_synthesized_protocol_block": True,
+            **({"planner_stream_meta": stream_meta} if stream_meta else {}),
         }
 
     # --- degenerate output ---
@@ -9481,28 +9581,42 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
         update_initial_orientation_state()
         return preseed_result if isinstance(preseed_result, dict) else {}, compact_preseed
 
+    def execute_dynamic_initial_orientation(root_result: dict[str, Any], preseed_index: int) -> int:
+        if not root_result.get("ok"):
+            return preseed_index
+        doc_plan, skipped = _controller_initial_doc_preseed_plan(root_result)
+        add_initial_orientation_skipped(skipped)
+        if doc_plan:
+            execute_controller_preseed(doc_plan, preseed_index)
+            preseed_index += 1
+
+        area_plans, skipped = _controller_initial_area_list_plans(root_result)
+        add_initial_orientation_skipped(skipped)
+        for area_plan in area_plans:
+            area_list_result, _area_compact = execute_controller_preseed(area_plan, preseed_index)
+            preseed_index += 1
+            area_read_plan, skipped = _controller_initial_area_read_plan(area_list_result)
+            add_initial_orientation_skipped(skipped)
+            if area_read_plan:
+                execute_controller_preseed(area_read_plan, preseed_index)
+                preseed_index += 1
+        return preseed_index
+
     preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)
     if preseed_plan:
         preseed_index = 1
         root_preseed_result, _root_compact = execute_controller_preseed(preseed_plan, preseed_index)
         preseed_index += 1
         if preseed_plan.get("dynamic_initial_orientation") and root_preseed_result.get("ok"):
-            doc_plan, skipped = _controller_initial_doc_preseed_plan(root_preseed_result)
-            add_initial_orientation_skipped(skipped)
-            if doc_plan:
-                execute_controller_preseed(doc_plan, preseed_index)
-                preseed_index += 1
-
-            area_plans, skipped = _controller_initial_area_list_plans(root_preseed_result)
-            add_initial_orientation_skipped(skipped)
-            for area_plan in area_plans:
-                area_list_result, _area_compact = execute_controller_preseed(area_plan, preseed_index)
-                preseed_index += 1
-                area_read_plan, skipped = _controller_initial_area_read_plan(area_list_result)
-                add_initial_orientation_skipped(skipped)
-                if area_read_plan:
-                    execute_controller_preseed(area_read_plan, preseed_index)
-                    preseed_index += 1
+            preseed_index = execute_dynamic_initial_orientation(root_preseed_result, preseed_index)
+        orientation_plan = _controller_file_code_product_orientation_preseed_plan(str(state.get("goal") or ""))
+        if orientation_plan and not preseed_plan.get("dynamic_initial_orientation"):
+            orientation_result, _orientation_compact = execute_controller_preseed(
+                orientation_plan,
+                preseed_index,
+            )
+            preseed_index += 1
+            preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
 
     for step in range(1, max_steps + 1):
         state = load_agent_job_state(job_id) or state
@@ -9779,6 +9893,68 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 if isinstance(state.get("planner_memory_surface"), dict)
                 else {}
             )
+            validation_violations = {
+                str(v)
+                for v in (
+                    validation.get("violations")
+                    if isinstance(validation.get("violations"), list)
+                    else []
+                )
+            }
+            if "planner_native_tool_call_required" in validation_violations:
+                prior_native_empty_guards = controller_guard_count(
+                    history,
+                    "planner_native_tool_call_required",
+                )
+                if prior_native_empty_guards >= int(retry_limit or 0):
+                    return finalize_agentic_job(
+                        job_id,
+                        state,
+                        "blocked_needs_attention",
+                        (
+                            "planner_native_tool_call_required_repeated: planner native tool mode "
+                            "was active, tools were provided to Ollama, but the planner repeatedly "
+                            "returned no message.tool_calls. Controller did not fall back to JSON-text "
+                            "tool execution."
+                        ),
+                        {
+                            "history": history,
+                            "planner_decision": decision,
+                            "blocked_by": "planner_native_tool_call_required_repeated",
+                            "validation": validation,
+                            "agent_flow_diagnostics": _agent_flow_diagnostics(
+                                str(state.get("goal") or ""),
+                                history,
+                                planner_memory_snapshot,
+                            ),
+                        },
+                    )
+                guard_result = controller_guard_result_for_validation(validation, decision)
+                guard_result["guard_type"] = "planner_native_tool_call_required"
+                guard_result["summary"] = "planner_native_tool_call_required"
+                guard_result["retry_count"] = prior_native_empty_guards
+                guard_result["retry_limit"] = int(retry_limit or 0)
+                append_agent_event(
+                    job_id,
+                    "planner_decision_rejected",
+                    guard_result["summary"],
+                    guard_result,
+                    step=step,
+                )
+                history.append({
+                    "step": step,
+                    "decision": {
+                        "action": "continue_required",
+                        "reason": "native planner emitted no message.tool_calls",
+                        "rejected_decision": guard_result.get("rejected_decision"),
+                    },
+                    "tool_result": guard_result,
+                })
+                state["history"] = planner_history_ledger(history)
+                state["history_count"] = len(history)
+                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                write_agent_job_state(state)
+                continue
             if (
                 _planner_memory_false_unavailable_claim(raw_planner_text, planner_memory_snapshot)
                 and int(retry_limit or 0) > 0

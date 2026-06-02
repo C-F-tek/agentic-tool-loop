@@ -46,10 +46,19 @@ from .config import (
     WORKSPACE,
 )
 from .dispatcher import agent, agent_job_html
-from .job_html import agent_job_ia_view_html, agent_job_ia_view_payload
+from .job_html import (
+    agent_job_events_view_html,
+    agent_job_final_json_view_html,
+    agent_job_final_markdown_view_html,
+    agent_job_ia_view_html,
+    agent_job_ia_view_json_view_html,
+    agent_job_ia_view_payload,
+    agent_job_planner_stream_text,
+    agent_job_planner_stream_view_html,
+    agent_job_status_json_view_html,
+)
 from .job_store import (
     agent_job_events_path,
-    agent_job_planner_stream_dir,
     agent_job_root,
     compact_agent_status,
     list_agent_jobs,
@@ -64,12 +73,18 @@ def jobs_endpoint_paths() -> list[str]:
         JOBS_JSON_PATH,
         f"{JOBS_INDEX_PATH}/{{job_id}}",
         f"{JOBS_INDEX_PATH}/{{job_id}}/json",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/json-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/events",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/events-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/final.json",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/final-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/final.md",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/final.md-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json-view",
     ]
 
 
@@ -133,6 +148,10 @@ def create_app() -> FastAPI:
     def job_dashboard_json(job_id: str) -> dict[str, Any]:
         return compact_agent_status(job_id, include_events=True)
 
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/json-view", include_in_schema=False)
+    def job_dashboard_json_view(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_status_json_view_html(job_id))
+
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view", include_in_schema=False)
     def job_dashboard_ia_view(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_ia_view_html(job_id))
@@ -140,6 +159,10 @@ def create_app() -> FastAPI:
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json", include_in_schema=False)
     def job_dashboard_ia_view_json(job_id: str) -> dict[str, Any]:
         return agent_job_ia_view_payload(job_id)
+
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json-view", include_in_schema=False)
+    def job_dashboard_ia_view_json_view(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_ia_view_json_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events", include_in_schema=False)
     def job_dashboard_events(job_id: str) -> PlainTextResponse:
@@ -151,6 +174,10 @@ def create_app() -> FastAPI:
             media_type="text/plain; charset=utf-8",
         )
 
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events-view", include_in_schema=False)
+    def job_dashboard_events_view(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_events_view_html(job_id))
+
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final.json", include_in_schema=False)
     def job_dashboard_final_json(job_id: str) -> dict[str, Any]:
         path = agent_job_root(job_id) / "final.json"
@@ -158,6 +185,10 @@ def create_app() -> FastAPI:
             return {"ok": False, "job_id": job_id, "error": "final_not_found"}
         data = read_json(path, {})
         return data if isinstance(data, dict) else {"ok": True, "job_id": job_id, "data": data}
+
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final-view", include_in_schema=False)
+    def job_dashboard_final_view(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_final_json_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final.md", include_in_schema=False)
     def job_dashboard_final_markdown(job_id: str) -> PlainTextResponse:
@@ -168,6 +199,10 @@ def create_app() -> FastAPI:
             path.read_text(encoding="utf-8", errors="replace"),
             media_type="text/plain; charset=utf-8",
         )
+
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final.md-view", include_in_schema=False)
+    def job_dashboard_final_markdown_view(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_final_markdown_view_html(job_id))
 
     @app.get(HEALTH_PATH, include_in_schema=False)
     def health() -> dict[str, Any]:
@@ -219,16 +254,14 @@ def create_app() -> FastAPI:
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream", include_in_schema=False)
     def job_planner_stream_index(job_id: str) -> PlainTextResponse:
-        root = agent_job_planner_stream_dir(job_id)
-        files = sorted(root.glob("step-*.*"))
-        if not files:
-            return PlainTextResponse("", media_type="text/plain; charset=utf-8")
+        return PlainTextResponse(
+            agent_job_planner_stream_text(job_id),
+            media_type="text/plain; charset=utf-8",
+        )
 
-        parts: list[str] = []
-        for path in files:
-            parts.append(f"\n\n===== {path.name} =====\n")
-            parts.append(path.read_text(encoding="utf-8", errors="replace"))
-        return PlainTextResponse("".join(parts), media_type="text/plain; charset=utf-8")
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream-view", include_in_schema=False)
+    def job_planner_stream_view(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_planner_stream_view_html(job_id))
 
     @app.post(
         VULKAN_AGENT_PATH,

@@ -66,3 +66,21 @@ Core code entry points:
   - Ollama HTTP streaming, stream capture and strict planner JSON parsing.
 - [__init__.py](__init__.py)
   - Package marker.
+
+## Native Tool Calling Boundary
+
+`planner_core/json_io.py` handles HTTP streaming and strict JSON parsing, but it
+does not decide whether a planner tool call is valid. In the current planner
+protocol:
+
+- native Ollama `message.tool_calls` is the required transport for tool
+  dispatch when native mode is enabled;
+- strict JSON text parsing remains valid for `final` and `block` decisions;
+- JSON text `action=tool` must not be treated as a dispatchable tool call in
+  native-required mode;
+- per-job cache helpers may reuse successful read-only tool results, but do not
+  create new planner decisions and do not replace validator checks.
+
+Any change in this subpackage must preserve that boundary: transport/parsing
+support belongs here; planner policy, validator gates, native provenance checks
+and finalization remain owned by `planner.py`.

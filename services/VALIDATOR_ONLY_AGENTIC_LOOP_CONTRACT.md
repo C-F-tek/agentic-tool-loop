@@ -40,6 +40,36 @@ chiude solo quando la logica 3572 arriva a uno stato terminale (`completed`,
 `max_steps_reached`, `blocked_needs_attention`, `failed`, ecc.). Il caso
 `completed` richiede un `action=final` del planner accettato dal validator.
 
+## Planner native tool calling
+
+Quando `AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS=true` e
+`AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS=true`, il trasporto dei tool del
+planner verso 11434 e' native tool calling Ollama. In questa modalita':
+
+- una decisione tool valida deve arrivare come `message.tool_calls` nativo, con
+  `native_tool_call=true` dopo la normalizzazione interna;
+- JSON testuale con `{"action":"tool", ...}` non e' un tool call valido e deve
+  essere rifiutato prima del dispatch con una violazione tipizzata, per esempio
+  `planner_text_tool_call_disallowed_in_native_mode`;
+- `final`, `block` e stati terminali equivalenti possono restare decisioni
+  testuali JSON perche' non sono dispatch di tool;
+- il campo `tools` del payload Ollama e' il manifest operativo dei tool interni
+  disponibili al planner; i vincoli del manifest devono restare coerenti con il
+  validator;
+- eventuali batch native sono ammessi solo per tool read-only/cacheable, entro
+  `AICARMINE_AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY`, e ogni sub-call
+  passa lo stesso validator prima del dispatch;
+- il repair 11435 non deve convertire un'emissione testuale `action=tool` in un
+  tool dispatch nascosto quando native mode richiede `message.tool_calls`;
+- la history native in `messages` e' solo contesto di lavoro del planner, puo'
+  essere finestrata/budgetata e non sostituisce la history JSON persistente del
+  job.
+
+Regola anti-regressione: se una chiamata tool entra nel dispatcher senza
+provenienza native quando native mode e' richiesta, il protocollo planner e'
+rotto. Se invece un `final` o `block` JSON testuale viene rifiutato solo perche'
+non e' un tool call nativo, il gate e' troppo stretto.
+
 ## Preseed iniziale dinamico
 
 Per richieste generiche di analisi repository, il controller può raccogliere

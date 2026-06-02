@@ -236,6 +236,29 @@ OpenWebUI cannot open local paths such as `C:\Users\...`, `reads/*.json`,
 as audit/storage surfaces. If a successful tool result is needed by OpenWebUI,
 3571 must expand the real payload inline.
 
+### Planner Context Vs Public Payload
+
+There are two separate evidence transports and they must not be confused:
+
+- Planner turn context: the 11434 planner may receive prior tool calls and tool
+  results through native Ollama `messages`. This context is budgeted and
+  windowed for the next internal planner decision only. `skipped_history_items`
+  is a planner-loop risk because it can make the planner decide with incomplete
+  working history.
+- Public terminal payload: the 3571/OpenWebUI result is reconstructed from the
+  3572 job `history` plus raw `tool-results/*.json` artifacts. It must not be
+  derived from the budgeted native `messages` transport.
+
+Native tool-call history in `messages` is therefore not the authoritative
+record for OpenWebUI. The authoritative record is the persistent JSON history
+written by 3572 for every executed internal tool. On terminal states, 3571 must
+return all successful tool artifacts that OpenWebUI needs inline in
+`tool_context_for_30b.artifacts[*].artifact`, including complete
+`repo_propose_code_edit` diffs or structured operations. A loop that proposes
+diffs for many files must preserve every successful diff in persistent history
+so the final 3571 payload can be reconstructed without relying on omitted
+planner messages.
+
 ### Internal Broker
 
 `3572` owns the agentic loop. It creates jobs, stores state and events, builds
@@ -258,6 +281,9 @@ decision and the 3572 validator accepts it.
 
 - `11434` is the main planner endpoint. It receives the measured planner prompt
   pack, chooses the next action, and returns strict JSON or a native tool call.
+- In native planner mode, tool execution decisions must be Ollama native
+  `message.tool_calls`. Text JSON `action=tool` is invalid in that mode, while
+  text JSON `final` and `block` remain valid non-tool terminal decisions.
 - `11435` is the task/repair endpoint. It is support for selector, repair or
   normalization flows. It is not the main planner and does not decide job
   completion.
