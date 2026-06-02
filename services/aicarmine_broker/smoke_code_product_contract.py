@@ -131,6 +131,8 @@ def main() -> int:
         repo_tools.LAB_REPO = repo_root
         planner.LAB_REPO = repo_root
         try:
+            planner.AGENTIC_PLANNER_NATIVE_TOOLS = True
+            planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = True
             diff_text = generate_unified_diff_from_texts(
                 target_file=target,
                 old_text=old_text,
@@ -265,6 +267,31 @@ def main() -> int:
             result_window = tool_message.get("result_window") if isinstance(tool_message.get("result_window"), dict) else {}
             require(result_window.get("document_id"), f"tool history message missing document_id: {tool_message}")
             require("text" in result_window, f"tool history message missing real first window text: {tool_message}")
+            planner.AGENTIC_PLANNER_NATIVE_TOOLS = False
+            try:
+                legacy_optional_windows = planner._optional_context_for_prompt(
+                    root=job_root,
+                    goal="Native messages smoke",
+                    history=[native_history_read],
+                    planner_memory={"available": True, "records": [], "record_count": 0},
+                    intrinsic_context={"schema": "planner_intrinsic_context.v1"},
+                    last_tool_result=native_history_read["tool_result"],
+                    compact_mode=True,
+                    window_chars=2500,
+                )
+            finally:
+                planner.AGENTIC_PLANNER_NATIVE_TOOLS = True
+            legacy_payload_windows = legacy_optional_windows.get("successful_tool_payload_windows") or []
+            require(legacy_payload_windows, f"legacy optional context did not create tool payload window: {legacy_optional_windows}")
+            legacy_window = legacy_payload_windows[0].get("window") if isinstance(legacy_payload_windows[0], dict) else {}
+            for window_key in ("text", "window_start", "window_end", "has_more_after", "sha256"):
+                require(
+                    legacy_window.get(window_key) == result_window.get(window_key),
+                    (
+                        "native tool message window diverges from legacy SQLite optional "
+                        f"window for {window_key}: legacy={legacy_window} native={result_window}"
+                    ),
+                )
             optional_native = planner._optional_context_for_prompt(
                 root=job_root,
                 goal="Native messages smoke",
@@ -307,7 +334,41 @@ def main() -> int:
                 "allowed_actions" not in native_response_format or "tool" not in native_response_format.get("allowed_actions", []),
                 f"native required_response_format still advertises JSON tool action: {native_response_format}",
             )
+            native_shape_examples = native_user_payload.get("tool_shape_examples") if isinstance(native_user_payload.get("tool_shape_examples"), dict) else {}
+            native_shape_text = json.dumps(native_shape_examples, ensure_ascii=False, separators=(",", ":"), default=str)
+            require(
+                native_shape_examples.get("transport") == "native_tool_calls",
+                f"native tool shape examples are not native-specific: {native_shape_examples}",
+            )
+            require(
+                '"action":"tool"' not in native_shape_text and '"action": "tool"' not in native_shape_text,
+                f"native tool shape examples still expose JSON action=tool: {native_shape_examples}",
+            )
+            require(
+                "sqlite_prompt_context_window_read_native_tool_call" in native_shape_text
+                and '"transport":"message.tool_calls"' in native_shape_text,
+                f"native tool shape examples lack SQL/window native call guidance: {native_shape_examples}",
+            )
+            native_system_text = planner._planner_system_for_current_mode()
+            require(
+                '{"action":"tool"' not in native_system_text and '{"action": "tool"' not in native_system_text,
+                "native planner system prompt still contains JSON action=tool examples",
+            )
             planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = False
+            native_text_tool_gate_without_require = planner.validate_planner_decision_against_evidence(
+                "Native tool gate smoke",
+                {"action": "tool", "tool": "repo_status", "arguments": {}},
+                [],
+            )
+            require(
+                "planner_text_tool_call_disallowed_in_native_mode"
+                in native_text_tool_gate_without_require.get("violations", []),
+                (
+                    "native mode accepted JSON-text tool call when "
+                    f"AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS=false: {native_text_tool_gate_without_require}"
+                ),
+            )
+            planner.AGENTIC_PLANNER_NATIVE_TOOLS = False
             manifest_by_name = {
                 str(item.get("name")): item
                 for item in compact_manifest

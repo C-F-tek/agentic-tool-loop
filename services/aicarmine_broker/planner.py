@@ -6727,7 +6727,6 @@ def _native_required_repaired_tool_decision_disallowed(decision: dict[str, Any])
     action = str((decision if isinstance(decision, dict) else {}).get("action") or "").strip().lower()
     return bool(
         AGENTIC_PLANNER_NATIVE_TOOLS
-        and AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
         and action == "tool"
     )
 
@@ -7991,7 +7990,6 @@ Per un goal di code product non chiamare repo_apply_patch salvo richiesta esplic
 Per modificare file devi prima leggere l'old_text esatto con repo_read.
 Gli esempi in tool_shape_examples e argument_contract.shape_examples sono solo shape examples, not runnable calls. Non copiare mai valori EXAMPLE_ONLY_DO_NOT_COPY. Per scegliere un tool usa valori reali da candidate_next_actions, required_working_set, verified_content_reads o input utente esplicito.
 Shape examples non eseguibili sono nel payload tool_shape_examples. In native tool mode usa solo message.tool_calls per i tool; in legacy JSON mode usa solo il formato dichiarato da tool_shape_examples. Gli esempi non sono chiamate reali.
-{"action":"block","reason":"EXAMPLE_ONLY_DO_NOT_COPY_TYPED_BLOCK","final_answer":"EXAMPLE_ONLY_DO_NOT_COPY: use typed block when no verified text/window remains to build the diff."}
 Non usare vulkan_helper come tool ordinario di navigazione: se una chiamata tool è invalida, 3572 può chiedere riparazione al lane Vulkan/11435.
 """
 
