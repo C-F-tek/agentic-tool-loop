@@ -43,7 +43,7 @@ openwebui/**
 !openwebui/README.md
 
 # Agentic loop runtime artifacts
-qwen-agent-workspace/
+qwen-agent-workspace/**
 !qwen-agent-workspace/
 !qwen-agent-workspace/README.md
 executor-runs/**
