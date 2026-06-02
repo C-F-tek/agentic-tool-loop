@@ -1981,6 +1981,15 @@ def _decision_matches_prompt_context_continuation(
         return False
 
 
+def _native_history_message_reserve_chars(history: list[dict[str, Any]], window_chars: int) -> int:
+    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+        return 0
+    if not any(_history_tool_result(item) for item in (history if isinstance(history, list) else [])):
+        return 0
+    window = max(2500, int(window_chars or 0))
+    return max(6000, window + 3000)
+
+
 def _build_planner_user_payload(
     *,
     job_id: str,
@@ -2003,6 +2012,12 @@ def _build_planner_user_payload(
         if AGENTIC_PLANNER_NATIVE_TOOLS
         else {}
     )
+    native_history_reserve_chars = _native_history_message_reserve_chars(
+        history,
+        _prompt_window_chars(True, 0),
+    )
+    if native_history_reserve_chars:
+        extra_prompt_sections["native_history_messages_reserve"] = native_history_reserve_chars
     root = agent_job_root(job_id)
 
     def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
@@ -2065,6 +2080,7 @@ def _build_planner_user_payload(
                 "window_chars": window_chars,
                 "native_tools_schema_accounted_in_budget": bool(extra_prompt_sections),
                 "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
+                "native_history_messages_reserve_chars": native_history_reserve_chars,
                 "required_working_set_not_truncated": True,
                 "required_working_set_uses_real_sqlite_windows_when_compacted": True,
                 "optional_context_may_be_omitted_not_used_as_required_payload": True,
@@ -2134,6 +2150,7 @@ def _build_planner_user_payload(
         report_local["required_working_set_errors"] = required_errors_local
         report_local["compact_mode"] = compact_mode
         report_local["window_chars"] = window_chars
+        report_local["native_history_reserve_chars"] = native_history_reserve_chars
         return payload_local, report_local, required_chars_local, required_errors_local
 
     payload, report, required_chars, required_errors = assemble(
@@ -2180,6 +2197,7 @@ def _build_planner_user_payload(
             report["required_working_set_errors"] = required_errors
             report["compact_mode"] = True
             report["window_chars"] = hard_window_chars
+            report["native_history_reserve_chars"] = native_history_reserve_chars
             if report["total_prompt_chars"] <= AGENTIC_PLANNER_PROMPT_CHAR_BUDGET:
                 break
     payload["prompt_budget_report"] = {
@@ -2189,6 +2207,7 @@ def _build_planner_user_payload(
         "over_budget": report.get("over_budget"),
         "extra_prompt_chars": report.get("extra_prompt_chars"),
         "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
+        "native_history_reserve_chars": extra_prompt_sections.get("native_history_messages_reserve", 0),
         "required_working_set_chars": report.get("required_working_set_chars"),
         "compact_mode": report.get("compact_mode"),
         "window_chars": report.get("window_chars"),
@@ -2203,6 +2222,7 @@ def _build_planner_user_payload(
         report["required_working_set_errors"] = required_errors
         report["compact_mode"] = (payload.get("prompt_pack_contract") or {}).get("compact_mode")
         report["window_chars"] = (payload.get("prompt_pack_contract") or {}).get("window_chars")
+        report["native_history_reserve_chars"] = native_history_reserve_chars
         payload["prompt_budget_report"] = {
             "schema": report.get("schema"),
             "char_budget": report.get("char_budget"),
@@ -2210,6 +2230,7 @@ def _build_planner_user_payload(
             "over_budget": report.get("over_budget"),
             "extra_prompt_chars": report.get("extra_prompt_chars"),
             "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
+            "native_history_reserve_chars": extra_prompt_sections.get("native_history_messages_reserve", 0),
             "required_working_set_chars": report.get("required_working_set_chars"),
             "compact_mode": report.get("compact_mode"),
             "window_chars": report.get("window_chars"),
@@ -2251,6 +2272,7 @@ def _build_planner_user_payload(
                 report["required_working_set_errors"] = required_errors
                 report["compact_mode"] = True
                 report["window_chars"] = hard_window_chars
+                report["native_history_reserve_chars"] = native_history_reserve_chars
                 payload["prompt_budget_report"] = {
                     "schema": report.get("schema"),
                     "char_budget": report.get("char_budget"),
@@ -2258,6 +2280,7 @@ def _build_planner_user_payload(
                     "over_budget": report.get("over_budget"),
                     "extra_prompt_chars": report.get("extra_prompt_chars"),
                     "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
+                    "native_history_reserve_chars": extra_prompt_sections.get("native_history_messages_reserve", 0),
                     "required_working_set_chars": report.get("required_working_set_chars"),
                     "compact_mode": report.get("compact_mode"),
                     "window_chars": report.get("window_chars"),
@@ -8232,7 +8255,11 @@ def planner_decision(
         "message_chars": 0,
     }
     if AGENTIC_PLANNER_NATIVE_TOOLS:
-        prompt_chars_without_history_messages = int(prompt_budget.get("total_prompt_chars") or 0)
+        native_history_reserve_chars = int(prompt_budget.get("native_history_reserve_chars") or 0)
+        prompt_chars_without_history_messages = max(
+            0,
+            int(prompt_budget.get("total_prompt_chars") or 0) - native_history_reserve_chars,
+        )
         if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0:
             history_message_budget = max(
                 0,
@@ -8249,6 +8276,7 @@ def planner_decision(
         )
         prompt_budget["history_messages"] = history_messages_report
         prompt_budget["history_messages_chars"] = history_messages_report.get("message_chars", 0)
+        prompt_budget["native_history_reserve_chars"] = native_history_reserve_chars
         prompt_budget["history_message_budget"] = history_message_budget
         prompt_budget["total_prompt_chars_with_history_messages"] = (
             prompt_chars_without_history_messages + int(history_messages_report.get("message_chars") or 0)

@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse
 
 from .config import (
     AGENT_JOB_DB,
@@ -52,17 +52,11 @@ from .job_html import (
     agent_job_final_markdown_view_html,
     agent_job_ia_view_html,
     agent_job_ia_view_json_view_html,
-    agent_job_ia_view_payload,
-    agent_job_planner_stream_text,
     agent_job_planner_stream_view_html,
     agent_job_status_json_view_html,
 )
 from .job_store import (
-    agent_job_events_path,
-    agent_job_root,
-    compact_agent_status,
     list_agent_jobs,
-    read_json,
 )
 from .tool_registry import capability_map
 
@@ -73,18 +67,12 @@ def jobs_endpoint_paths() -> list[str]:
         JOBS_JSON_PATH,
         f"{JOBS_INDEX_PATH}/{{job_id}}",
         f"{JOBS_INDEX_PATH}/{{job_id}}/json",
-        f"{JOBS_INDEX_PATH}/{{job_id}}/json-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/events",
-        f"{JOBS_INDEX_PATH}/{{job_id}}/events-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/final.json",
-        f"{JOBS_INDEX_PATH}/{{job_id}}/final-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/final.md",
-        f"{JOBS_INDEX_PATH}/{{job_id}}/final.md-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream",
-        f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json",
-        f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json-view",
     ]
 
 
@@ -145,11 +133,7 @@ def create_app() -> FastAPI:
         return HTMLResponse(agent_job_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/json", include_in_schema=False)
-    def job_dashboard_json(job_id: str) -> dict[str, Any]:
-        return compact_agent_status(job_id, include_events=True)
-
-    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/json-view", include_in_schema=False)
-    def job_dashboard_json_view(job_id: str) -> HTMLResponse:
+    def job_dashboard_json(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_status_json_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view", include_in_schema=False)
@@ -157,51 +141,19 @@ def create_app() -> FastAPI:
         return HTMLResponse(agent_job_ia_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json", include_in_schema=False)
-    def job_dashboard_ia_view_json(job_id: str) -> dict[str, Any]:
-        return agent_job_ia_view_payload(job_id)
-
-    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json-view", include_in_schema=False)
-    def job_dashboard_ia_view_json_view(job_id: str) -> HTMLResponse:
+    def job_dashboard_ia_view_json(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_ia_view_json_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events", include_in_schema=False)
-    def job_dashboard_events(job_id: str) -> PlainTextResponse:
-        path = agent_job_events_path(job_id)
-        if not path.exists():
-            return PlainTextResponse("", media_type="text/plain; charset=utf-8")
-        return PlainTextResponse(
-            path.read_text(encoding="utf-8", errors="replace"),
-            media_type="text/plain; charset=utf-8",
-        )
-
-    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events-view", include_in_schema=False)
-    def job_dashboard_events_view(job_id: str) -> HTMLResponse:
+    def job_dashboard_events(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_events_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final.json", include_in_schema=False)
-    def job_dashboard_final_json(job_id: str) -> dict[str, Any]:
-        path = agent_job_root(job_id) / "final.json"
-        if not path.exists():
-            return {"ok": False, "job_id": job_id, "error": "final_not_found"}
-        data = read_json(path, {})
-        return data if isinstance(data, dict) else {"ok": True, "job_id": job_id, "data": data}
-
-    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final-view", include_in_schema=False)
-    def job_dashboard_final_view(job_id: str) -> HTMLResponse:
+    def job_dashboard_final_json(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_final_json_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final.md", include_in_schema=False)
-    def job_dashboard_final_markdown(job_id: str) -> PlainTextResponse:
-        path = agent_job_root(job_id) / "final.md"
-        if not path.exists():
-            return PlainTextResponse("", media_type="text/plain; charset=utf-8")
-        return PlainTextResponse(
-            path.read_text(encoding="utf-8", errors="replace"),
-            media_type="text/plain; charset=utf-8",
-        )
-
-    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/final.md-view", include_in_schema=False)
-    def job_dashboard_final_markdown_view(job_id: str) -> HTMLResponse:
+    def job_dashboard_final_markdown(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_final_markdown_view_html(job_id))
 
     @app.get(HEALTH_PATH, include_in_schema=False)
@@ -253,14 +205,7 @@ def create_app() -> FastAPI:
         }
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream", include_in_schema=False)
-    def job_planner_stream_index(job_id: str) -> PlainTextResponse:
-        return PlainTextResponse(
-            agent_job_planner_stream_text(job_id),
-            media_type="text/plain; charset=utf-8",
-        )
-
-    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream-view", include_in_schema=False)
-    def job_planner_stream_view(job_id: str) -> HTMLResponse:
+    def job_planner_stream_index(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_planner_stream_view_html(job_id))
 
     @app.post(

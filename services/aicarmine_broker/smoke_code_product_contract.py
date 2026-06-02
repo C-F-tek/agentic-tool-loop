@@ -337,6 +337,31 @@ def main() -> int:
                 and int((native_payload_report.get("sections") or {}).get("native_tools_schema") or 0) > 0,
                 f"native prompt budget does not account for Ollama tools schema: {native_payload_report}",
             )
+            require(
+                int(native_payload_report.get("native_history_reserve_chars") or 0) >= 6000,
+                f"native prompt budget did not reserve space for message history: {native_payload_report}",
+            )
+            reserved_history_chars = int(native_payload_report.get("native_history_reserve_chars") or 0)
+            base_prompt_without_reserved_history = max(
+                0,
+                int(native_payload_report.get("total_prompt_chars") or 0) - reserved_history_chars,
+            )
+            actual_history_budget = max(
+                0,
+                int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0) - base_prompt_without_reserved_history,
+            )
+            reserved_history_messages, reserved_history_report = planner._planner_history_messages_for_ollama(
+                [native_history_read],
+                root=job_root,
+                goal="Native messages smoke",
+                window_chars=planner._prompt_window_chars(True, 0),
+                max_chars=actual_history_budget,
+            )
+            require(reserved_history_messages, f"native reserved history budget produced no messages: {reserved_history_report}")
+            require(
+                reserved_history_report.get("included_history_items") == 1,
+                f"native reserved history budget skipped the only tool result: {reserved_history_report}",
+            )
             native_available_tools = native_user_payload.get("available_tools")
             require(
                 isinstance(native_available_tools, list)

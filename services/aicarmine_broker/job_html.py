@@ -440,19 +440,13 @@ def _dashboard_links(job_id: str) -> str:
     safe_job = html.escape(job_id)
     return (
         f"<a href=\"/jobs/{safe_job}\">dashboard</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/json-view\">json view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/json\">json raw</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/final-view\">final view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/final.json\">final.json raw</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/final.md-view\">final.md view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/final.md\">final.md raw</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/events-view\">events view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/events\">events raw</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/planner-stream-view\">planner stream view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/planner-stream\">planner stream raw</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/json\">status json</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/final.json\">final json</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/final.md\">final md</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/events\">events</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/planner-stream\">planner stream</a> &middot; "
         f"<a href=\"/jobs/{safe_job}/ia-view\">IA live control view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/ia-view.json-view\">ia-view.json view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/ia-view.json\">ia-view.json raw</a>"
+        f"<a href=\"/jobs/{safe_job}/ia-view.json\">IA view json</a>"
     )
 
 
@@ -774,7 +768,6 @@ def _stateful_refresh_script(refresh_seconds: int = 2) -> str:
 
 def _gpu0_panel_css() -> str:
     return """
-body { padding-right: calc(30vw + 28px); }
 .gpu0-corrections-window {
   position: fixed;
   top: 12px;
@@ -797,9 +790,10 @@ body { padding-right: calc(30vw + 28px); }
 .gpu0-corrections-window pre {
   font-size: 11px;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 @media (max-width: 900px) {
-  body { padding-right: 20px; }
   .gpu0-corrections-window {
     position: static;
     width: auto;
