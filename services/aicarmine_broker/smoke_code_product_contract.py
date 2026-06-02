@@ -126,6 +126,8 @@ def main() -> int:
 
         original_repo_tools_root = repo_tools.LAB_REPO
         original_planner_root = planner.LAB_REPO
+        original_native_tools = planner.AGENTIC_PLANNER_NATIVE_TOOLS
+        original_require_native_tools = planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
         repo_tools.LAB_REPO = repo_root
         planner.LAB_REPO = repo_root
         try:
@@ -179,6 +181,56 @@ def main() -> int:
                 if isinstance(item.get("function"), dict)
             ]
             compact_manifest = planner._compact_tool_manifest_for_prompt(tool_manifest)
+            native_system_prompt = planner._planner_system_for_current_mode()
+            require(
+                "non JSON testuale con action=tool" in native_system_prompt,
+                "native planner system prompt does not forbid JSON-text tool calls",
+            )
+            require(
+                "L'azione tool nel content non e' consentita in native tool mode" in native_system_prompt,
+                "native planner system prompt does not reserve content JSON for final/block only",
+            )
+            text_tool_gate = planner.validate_planner_decision_against_evidence(
+                "Native tool gate smoke",
+                {"action": "tool", "tool": "repo_status", "arguments": {}},
+                [],
+            )
+            require(
+                "planner_text_tool_call_disallowed_in_native_mode" in text_tool_gate.get("violations", []),
+                f"native mode accepted JSON-text tool call: {text_tool_gate}",
+            )
+            native_tool_gate = planner.validate_planner_decision_against_evidence(
+                "Native tool gate smoke",
+                {
+                    "action": "tool",
+                    "tool": "repo_status",
+                    "arguments": {},
+                    "native_tool_call": True,
+                    "raw_native_tool_call": {
+                        "function": {
+                            "name": "repo_status",
+                            "arguments": {},
+                        },
+                    },
+                },
+                [],
+            )
+            require(native_tool_gate.get("ok") is True, f"native tool decision was rejected: {native_tool_gate}")
+            spoofed_native_tool_gate = planner.validate_planner_decision_against_evidence(
+                "Native tool gate smoke",
+                {
+                    "action": "tool",
+                    "tool": "repo_status",
+                    "arguments": {},
+                    "native_tool_call": True,
+                },
+                [],
+            )
+            require(
+                "planner_text_tool_call_disallowed_in_native_mode" in spoofed_native_tool_gate.get("violations", []),
+                f"native mode accepted spoofed native_tool_call flag: {spoofed_native_tool_gate}",
+            )
+            planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = False
             manifest_by_name = {
                 str(item.get("name")): item
                 for item in compact_manifest
@@ -234,6 +286,24 @@ def main() -> int:
             require(
                 bool((repo_search_native.get("parameters") or {}).get("anyOf")),
                 "native repo_search schema lost one-of required contract",
+            )
+            repo_propose_native = next(
+                item["function"]
+                for item in native_tools_schema
+                if isinstance(item.get("function"), dict)
+                and item["function"].get("name") == "repo_propose_code_edit"
+            )
+            require(
+                "Internal argument contract:" in str(repo_propose_native.get("description") or ""),
+                "native repo_propose_code_edit schema lost operational argument contract description",
+            )
+            require(
+                "conditional_required" in str(repo_propose_native.get("description") or ""),
+                "native repo_propose_code_edit schema lost conditional_required guidance",
+            )
+            require(
+                "source_requirements" in str(repo_propose_native.get("description") or ""),
+                "native repo_propose_code_edit schema lost source_requirements guidance",
             )
             propose_contract = (manifest_by_name.get("repo_propose_code_edit") or {}).get("argument_contract") or {}
             scratch_read_contract = (manifest_by_name.get("planner_scratchpad_read") or {}).get("argument_contract") or {}
@@ -2460,6 +2530,8 @@ def main() -> int:
         finally:
             repo_tools.LAB_REPO = original_repo_tools_root
             planner.LAB_REPO = original_planner_root
+            planner.AGENTIC_PLANNER_NATIVE_TOOLS = original_native_tools
+            planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = original_require_native_tools
 
     print("code_product_contract_smoke ok")
     return 0

@@ -6436,6 +6436,21 @@ def _repo_read_selector_present(args: dict[str, Any]) -> bool:
     )
 
 
+def _native_required_tool_decision_has_transport_provenance(decision: dict[str, Any]) -> bool:
+    if decision.get("native_tool_call") is not True:
+        return False
+    return isinstance(decision.get("raw_native_tool_call"), dict)
+
+
+def _native_required_repaired_tool_decision_disallowed(decision: dict[str, Any]) -> bool:
+    action = str((decision if isinstance(decision, dict) else {}).get("action") or "").strip().lower()
+    return bool(
+        AGENTIC_PLANNER_NATIVE_TOOLS
+        and AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
+        and action == "tool"
+    )
+
+
 def _copyable_example_text(value: Any) -> bool:
     if not isinstance(value, str):
         return False
@@ -6613,6 +6628,19 @@ def validate_planner_decision_against_evidence(
             "evidence_contract": contract,
             "prompt_window_tracking_errors": tracking_errors,
         }
+    if (
+        AGENTIC_PLANNER_NATIVE_TOOLS
+        and AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
+        and action == "tool"
+        and not _native_required_tool_decision_has_transport_provenance(decision)
+    ):
+        violations.append("planner_text_tool_call_disallowed_in_native_mode")
+        contract["required_next_progress"] = (
+            "Native tool mode is required. Tool execution must arrive as "
+            "message.tool_calls with native_tool_call=true; JSON-text action=tool "
+            "is not executable. Choose a native tool_call, or return final/block JSON."
+        )
+        return {"ok": False, "violations": violations, "evidence_contract": contract}
     if action == "tool" and tool == "planner_scratchpad_read":
         requested_kind = str(args.get("kind") or "").strip()
         requested_doc_id = str(args.get("document_id") or args.get("id") or "").strip()
@@ -9347,6 +9375,17 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                             )
                         if repair_result.get("ok") and isinstance(repair_result.get("repaired_decision"), dict):
                             repaired_decision = repair_result["repaired_decision"]
+                            if _native_required_repaired_tool_decision_disallowed(repaired_decision):
+                                batch_guard = {
+                                    "tool": "controller_guard",
+                                    "ok": True,
+                                    "guard_type": "native_tool_batch_validation",
+                                    "summary": "vulkan_repair_tool_decision_disallowed_in_native_mode",
+                                    "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
+                                    "rejected_decision": call_decision,
+                                    "vulkan_repair": repair_result,
+                                }
+                                break
                             append_agent_event(
                                 job_id,
                                 "vulkan_gpu0_decision_repair",
@@ -9661,9 +9700,16 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 and isinstance(repair_result.get("repaired_decision"), dict)
             ):
                 repaired_decision = repair_result["repaired_decision"]
-                repaired_validation = validate_planner_decision_against_evidence(
-                    str(state.get("goal") or ""), repaired_decision, history
-                )
+                if _native_required_repaired_tool_decision_disallowed(repaired_decision):
+                    repaired_validation = {
+                        "ok": False,
+                        "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
+                        "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                    }
+                else:
+                    repaired_validation = validate_planner_decision_against_evidence(
+                        str(state.get("goal") or ""), repaired_decision, history
+                    )
                 append_agent_event(
                     job_id,
                     "vulkan_gpu0_decision_repair",
