@@ -791,6 +791,142 @@ def _native_tools_schema_for_planner(tools_schema: list[dict[str, Any]]) -> list
     return native_schema
 
 
+def _tool_shape_examples_for_prompt() -> dict[str, Any]:
+    real_value_sources = [
+        "candidate_next_actions",
+        "required_working_set",
+        "verified_content_reads",
+        "explicit user exact old_text/new_text",
+    ]
+    if AGENTIC_PLANNER_NATIVE_TOOLS:
+        return {
+            "schema": "planner_tool_shape_examples.v1",
+            "transport": "native_tool_calls",
+            "examples_are_not_runnable": True,
+            "must_not_copy_example_values": True,
+            "real_values_must_come_from": real_value_sources,
+            "content_json_tool_calls_allowed": False,
+            "examples": [
+                {
+                    "shape": "repo_read_known_path_native_tool_call",
+                    "transport": "message.tool_calls",
+                    "function": {
+                        "name": "repo_read",
+                        "arguments": {"path": "EXAMPLE_ONLY/path.py", "max_chars": 8000},
+                    },
+                    "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use a real repo-relative path from evidence.",
+                },
+                {
+                    "shape": "sqlite_prompt_context_window_read_native_tool_call",
+                    "transport": "message.tool_calls",
+                    "function": {
+                        "name": "planner_scratchpad_read",
+                        "arguments": {
+                            "kind": "prompt_context_window",
+                            "document_id": "EXAMPLE_ONLY_DO_NOT_COPY_document_id",
+                            "offset": 2500,
+                            "max_chars": 2500,
+                        },
+                    },
+                    "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use document_id/offset/max_chars from required_working_set or candidate_next_actions.",
+                },
+                {
+                    "shape": "code_product_build_state_write_native_tool_call",
+                    "transport": "message.tool_calls",
+                    "function": {
+                        "name": "planner_scratchpad_write",
+                        "arguments": {
+                            "kind": CODE_PRODUCT_BUILD_STATE_KIND,
+                            "target_file": "EXAMPLE_ONLY/path.py",
+                            "text": "{\"schema\":\"code_product_build_state.v1\",\"target_file\":\"EXAMPLE_ONLY/path.py\",\"status\":\"collecting_source\",\"source_windows\":[{\"document_id\":\"EXAMPLE_ONLY_DO_NOT_COPY_document_id\",\"offset\":0,\"complete\":false,\"sha256\":\"EXAMPLE_ONLY_DO_NOT_COPY_hash\"}],\"rationale\":\"EXAMPLE_ONLY_DO_NOT_COPY real progress only\"}",
+                        },
+                    },
+                    "reason": "EXAMPLE_ONLY_DO_NOT_COPY: write only a complete JSON state with real progress, never an empty template.",
+                },
+                {
+                    "shape": "repo_propose_from_verified_old_text_native_tool_call",
+                    "transport": "message.tool_calls",
+                    "function": {
+                        "name": "repo_propose_code_edit",
+                        "arguments": {
+                            "target_file": "EXAMPLE_ONLY/path.py",
+                            "edit_kind": "unified_diff",
+                            "rationale": "EXAMPLE_ONLY_DO_NOT_COPY: exact replacement from verified repo_read.",
+                            "old_text": "EXAMPLE_ONLY_DO_NOT_COPY_verified_old_text_from_repo_read",
+                            "new_text": "EXAMPLE_ONLY_DO_NOT_COPY_new_text",
+                        },
+                    },
+                    "reason": "EXAMPLE_ONLY_DO_NOT_COPY: old_text must be exact target content already verified by repo_read.",
+                },
+                {
+                    "shape": "typed_block_when_diff_not_constructible",
+                    "transport": "message.content_json",
+                    "action": "block",
+                    "reason": "EXAMPLE_ONLY_DO_NOT_COPY_TYPED_BLOCK",
+                    "final_answer": "EXAMPLE_ONLY_DO_NOT_COPY: use typed block when no verified text/window remains to build the diff.",
+                },
+            ],
+        }
+    return {
+        "schema": "planner_tool_shape_examples.v1",
+        "transport": "legacy_json_content",
+        "examples_are_not_runnable": True,
+        "must_not_copy_example_values": True,
+        "real_values_must_come_from": real_value_sources,
+        "examples": [
+            {
+                "shape": "repo_read_known_path",
+                "action": "tool",
+                "tool": "repo_read",
+                "arguments": {"path": "EXAMPLE_ONLY/path.py", "max_chars": 8000},
+                "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use a real repo-relative path from evidence.",
+            },
+            {
+                "shape": "sqlite_prompt_context_window_read",
+                "action": "tool",
+                "tool": "planner_scratchpad_read",
+                "arguments": {
+                    "kind": "prompt_context_window",
+                    "document_id": "EXAMPLE_ONLY_DO_NOT_COPY_document_id",
+                    "offset": 2500,
+                    "max_chars": 2500,
+                },
+                "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use document_id/offset/max_chars from required_working_set or candidate_next_actions.",
+            },
+            {
+                "shape": "code_product_build_state_write",
+                "action": "tool",
+                "tool": "planner_scratchpad_write",
+                "arguments": {
+                    "kind": CODE_PRODUCT_BUILD_STATE_KIND,
+                    "target_file": "EXAMPLE_ONLY/path.py",
+                    "text": "{\"schema\":\"code_product_build_state.v1\",\"target_file\":\"EXAMPLE_ONLY/path.py\",\"status\":\"collecting_source\",\"source_windows\":[{\"document_id\":\"EXAMPLE_ONLY_DO_NOT_COPY_document_id\",\"offset\":0,\"complete\":false,\"sha256\":\"EXAMPLE_ONLY_DO_NOT_COPY_hash\"}],\"rationale\":\"EXAMPLE_ONLY_DO_NOT_COPY real progress only\"}",
+                },
+                "reason": "EXAMPLE_ONLY_DO_NOT_COPY: write only a complete JSON state with real progress, never an empty template.",
+            },
+            {
+                "shape": "repo_propose_from_verified_old_text",
+                "action": "tool",
+                "tool": "repo_propose_code_edit",
+                "arguments": {
+                    "target_file": "EXAMPLE_ONLY/path.py",
+                    "edit_kind": "unified_diff",
+                    "rationale": "EXAMPLE_ONLY_DO_NOT_COPY: exact replacement from verified repo_read.",
+                    "old_text": "EXAMPLE_ONLY_DO_NOT_COPY_verified_old_text_from_repo_read",
+                    "new_text": "EXAMPLE_ONLY_DO_NOT_COPY_new_text",
+                },
+                "reason": "EXAMPLE_ONLY_DO_NOT_COPY: old_text must be exact target content already verified by repo_read.",
+            },
+            {
+                "shape": "typed_block_when_diff_not_constructible",
+                "action": "block",
+                "reason": "EXAMPLE_ONLY_DO_NOT_COPY_TYPED_BLOCK",
+                "final_answer": "EXAMPLE_ONLY_DO_NOT_COPY: use typed block when no verified text/window remains to build the diff.",
+            },
+        ],
+    }
+
+
 def _compact_history_for_prompt(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tail = max(1, int(AGENTIC_PLANNER_HISTORY_PROMPT_TAIL or 1))
     ledger = planner_history_ledger(history[-tail:])
@@ -1906,68 +2042,7 @@ def _build_planner_user_payload(
                 ],
             },
             "available_tools": compact_tools,
-            "tool_shape_examples": {
-                "schema": "planner_tool_shape_examples.v1",
-                "examples_are_not_runnable": True,
-                "must_not_copy_example_values": True,
-                "real_values_must_come_from": [
-                    "candidate_next_actions",
-                    "required_working_set",
-                    "verified_content_reads",
-                    "explicit user exact old_text/new_text",
-                ],
-                "examples": [
-                    {
-                        "shape": "repo_read_known_path",
-                        "action": "tool",
-                        "tool": "repo_read",
-                        "arguments": {"path": "EXAMPLE_ONLY/path.py", "max_chars": 8000},
-                        "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use a real repo-relative path from evidence.",
-                    },
-                    {
-                        "shape": "sqlite_prompt_context_window_read",
-                        "action": "tool",
-                        "tool": "planner_scratchpad_read",
-                        "arguments": {
-                            "kind": "prompt_context_window",
-                            "document_id": "EXAMPLE_ONLY_DO_NOT_COPY_document_id",
-                            "offset": 2500,
-                            "max_chars": 2500,
-                        },
-                        "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use document_id/offset/max_chars from required_working_set or candidate_next_actions.",
-                    },
-                    {
-                        "shape": "code_product_build_state_write",
-                        "action": "tool",
-                        "tool": "planner_scratchpad_write",
-                        "arguments": {
-                            "kind": CODE_PRODUCT_BUILD_STATE_KIND,
-                            "target_file": "EXAMPLE_ONLY/path.py",
-                            "text": "{\"schema\":\"code_product_build_state.v1\",\"target_file\":\"EXAMPLE_ONLY/path.py\",\"status\":\"collecting_source\",\"source_windows\":[{\"document_id\":\"EXAMPLE_ONLY_DO_NOT_COPY_document_id\",\"offset\":0,\"complete\":false,\"sha256\":\"EXAMPLE_ONLY_DO_NOT_COPY_hash\"}],\"rationale\":\"EXAMPLE_ONLY_DO_NOT_COPY real progress only\"}",
-                        },
-                        "reason": "EXAMPLE_ONLY_DO_NOT_COPY: write only a complete JSON state with real progress, never an empty template.",
-                    },
-                    {
-                        "shape": "repo_propose_from_verified_old_text",
-                        "action": "tool",
-                        "tool": "repo_propose_code_edit",
-                        "arguments": {
-                            "target_file": "EXAMPLE_ONLY/path.py",
-                            "edit_kind": "unified_diff",
-                            "rationale": "EXAMPLE_ONLY_DO_NOT_COPY: exact replacement from verified repo_read.",
-                            "old_text": "EXAMPLE_ONLY_DO_NOT_COPY_verified_old_text_from_repo_read",
-                            "new_text": "EXAMPLE_ONLY_DO_NOT_COPY_new_text",
-                        },
-                        "reason": "EXAMPLE_ONLY_DO_NOT_COPY: old_text must be exact target content already verified by repo_read.",
-                    },
-                    {
-                        "shape": "typed_block_when_diff_not_constructible",
-                        "action": "block",
-                        "reason": "EXAMPLE_ONLY_DO_NOT_COPY: use typed block when no verified text/window remains to build the diff.",
-                        "final_answer": "EXAMPLE_ONLY_DO_NOT_COPY_TYPED_BLOCK_REASON",
-                    },
-                ],
-            },
+            "tool_shape_examples": _tool_shape_examples_for_prompt(),
             "required_working_set": required_working_set,
             "optional_context": _optional_context_for_prompt(
                 root=root,
@@ -1997,7 +2072,7 @@ def _build_planner_user_payload(
                         "candidate_next_actions or explicit user input. Do not copy static example paths."
                     ),
                 }
-                if AGENTIC_PLANNER_NATIVE_TOOLS and AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
+                if AGENTIC_PLANNER_NATIVE_TOOLS
                 else {
                     "json_only": True,
                     "allowed_actions": ["tool", "final", "block"],
@@ -6836,7 +6911,6 @@ def validate_planner_decision_against_evidence(
         }
     if (
         AGENTIC_PLANNER_NATIVE_TOOLS
-        and AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
         and action == "tool"
         and not _native_required_tool_decision_has_transport_provenance(decision)
     ):
@@ -7916,11 +7990,7 @@ Per sostituzioni esatte dove old_text e new_text sono noti dal repo_read, devi u
 Per un goal di code product non chiamare repo_apply_patch salvo richiesta esplicita di apply/edit/fix/write. Per un goal apply/edit/fix/write continua a usare repo_apply_patch dopo repo_read dell'old_text esatto.
 Per modificare file devi prima leggere l'old_text esatto con repo_read.
 Gli esempi in tool_shape_examples e argument_contract.shape_examples sono solo shape examples, not runnable calls. Non copiare mai valori EXAMPLE_ONLY_DO_NOT_COPY. Per scegliere un tool usa valori reali da candidate_next_actions, required_working_set, verified_content_reads o input utente esplicito.
-Shape examples non eseguibili:
-{"action":"tool","tool":"repo_read","arguments":{"path":"EXAMPLE_ONLY/path.py","max_chars":8000},"reason":"EXAMPLE_ONLY_DO_NOT_COPY: replace path with a real evidence-bound path."}
-{"action":"tool","tool":"planner_scratchpad_read","arguments":{"kind":"prompt_context_window","document_id":"EXAMPLE_ONLY_DO_NOT_COPY_document_id","offset":2500,"max_chars":2500},"reason":"EXAMPLE_ONLY_DO_NOT_COPY: use real SQLite window values from required_working_set/candidate_next_actions."}
-{"action":"tool","tool":"planner_scratchpad_write","arguments":{"kind":"code_product_build_state","target_file":"EXAMPLE_ONLY/path.py","text":"EXAMPLE_ONLY_DO_NOT_COPY_complete_code_product_build_state_json_with_real_progress"},"reason":"EXAMPLE_ONLY_DO_NOT_COPY: write only a complete JSON state with real progress."}
-{"action":"tool","tool":"repo_propose_code_edit","arguments":{"target_file":"EXAMPLE_ONLY/path.py","edit_kind":"unified_diff","rationale":"EXAMPLE_ONLY_DO_NOT_COPY: exact replacement from verified repo_read.","old_text":"EXAMPLE_ONLY_DO_NOT_COPY_verified_old_text_from_repo_read","new_text":"EXAMPLE_ONLY_DO_NOT_COPY_new_text"},"reason":"EXAMPLE_ONLY_DO_NOT_COPY: old_text must be exact target content already verified by repo_read."}
+Shape examples non eseguibili sono nel payload tool_shape_examples. In native tool mode usa solo message.tool_calls per i tool; in legacy JSON mode usa solo il formato dichiarato da tool_shape_examples. Gli esempi non sono chiamate reali.
 {"action":"block","reason":"EXAMPLE_ONLY_DO_NOT_COPY_TYPED_BLOCK","final_answer":"EXAMPLE_ONLY_DO_NOT_COPY: use typed block when no verified text/window remains to build the diff."}
 Non usare vulkan_helper come tool ordinario di navigazione: se una chiamata tool è invalida, 3572 può chiedere riparazione al lane Vulkan/11435.
 """
@@ -8220,7 +8290,7 @@ def planner_decision(
             if stream_meta:
                 decision["planner_stream_meta"] = stream_meta
             return decision
-    if AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS and not native_calls:
+    if AGENTIC_PLANNER_NATIVE_TOOLS and not native_calls:
         raw_text_for_native_mode = str(response.get("response") or response.get("partial_content") or "")
         decoded_text_decision = _parse_strict_json_object(raw_text_for_native_mode)
         if isinstance(decoded_text_decision, dict):
