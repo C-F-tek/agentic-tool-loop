@@ -386,6 +386,26 @@ def _html_details(title: str, value: Any, *, open_by_default: bool = False) -> s
     )
 
 
+def _html_lazy_details(
+    title: str,
+    url: str,
+    *,
+    open_by_default: bool = False,
+    detail_key: str | None = None,
+) -> str:
+    opened = " open" if open_by_default else ""
+    key = _safe_detail_key(detail_key or title)
+    safe_url = html.escape(url, quote=True)
+    safe_title = html.escape(title)
+    return (
+        f"<details data-detail-key=\"{html.escape(key)}\" data-lazy-url=\"{safe_url}\"{opened}>"
+        f"<summary>{safe_title}</summary>"
+        "<div class=\"lazy-content\" data-lazy-loaded=\"0\">"
+        "<p class=\"muted\">Open this section to load the full payload.</p>"
+        "</div></details>"
+    )
+
+
 def _json_value_label(value: Any) -> str:
     if isinstance(value, dict):
         return f"object, {len(value)} keys"
@@ -781,7 +801,7 @@ def agent_job_events_view_html(job_id: str) -> str:
         f"{''.join(step_parts) if step_parts else '<p>No events.</p>'}"
         "</div>"
         "<div class=\"card\"><h2>Raw NDJSON</h2>"
-        f"{_html_details('Complete events.ndjson', raw)}"
+        f"{_html_lazy_details('Complete events.ndjson', f'/jobs/{job_id}/ia-view/section/events_raw', detail_key='events.raw_ndjson')}"
         "</div>"
     )
     return _html_page("Events View", body, refresh_seconds=2, job_id=job_id)
@@ -848,7 +868,11 @@ def agent_job_planner_stream_view_html(job_id: str) -> str:
             _html_details("Native stream summary", native_summary, open_by_default=True)
             + _html_details("Planner emitted content or native tool calls", display.get("content"))
             + _html_details("Planner thinking / reasoning raw", display.get("thinking"))
-            + _html_details("Planner full raw combined", display.get("combined"))
+            + _html_lazy_details(
+                "Planner full raw combined",
+                f"/jobs/{job_id}/ia-view/section/planner_stream_raw?step={step}",
+                detail_key=f"planner-stream.step.{step}.raw",
+            )
         )
         step_sections.append(
             _html_detail_block(
@@ -882,6 +906,30 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
     }});
     return found;
   }}
+  function loadedLazyContent(container) {{
+    var loaded = {{}};
+    container.querySelectorAll("details[data-lazy-url][data-lazy-loaded='1']").forEach(function(el) {{
+      var key = detailKey(el, 0);
+      var target = el.querySelector(".lazy-content");
+      if (target) {{
+        loaded[key] = target.innerHTML;
+      }}
+    }});
+    return loaded;
+  }}
+  function restoreLoadedLazyContent(container, loaded) {{
+    container.querySelectorAll("details[data-lazy-url]").forEach(function(el) {{
+      var key = detailKey(el, 0);
+      if (!Object.prototype.hasOwnProperty.call(loaded, key)) {{
+        return;
+      }}
+      var target = el.querySelector(".lazy-content");
+      if (target) {{
+        target.innerHTML = loaded[key];
+        el.setAttribute("data-lazy-loaded", "1");
+      }}
+    }});
+  }}
   function replaceLiveRegionsFrom(doc) {{
     var changed = false;
     doc.querySelectorAll("[data-live-region]").forEach(function(fresh) {{
@@ -891,7 +939,9 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
         return;
       }}
       if (current.innerHTML !== fresh.innerHTML) {{
+        var loaded = loadedLazyContent(current);
         current.innerHTML = fresh.innerHTML;
+        restoreLoadedLazyContent(current, loaded);
         changed = true;
       }}
     }});
@@ -935,6 +985,37 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
     state.scrollY = window.scrollY || 0;
     sessionStorage.setItem(key, JSON.stringify(state));
   }}
+  function bindLazyDetails() {{
+    document.querySelectorAll("details[data-lazy-url]").forEach(function(el) {{
+      if (el.getAttribute("data-lazy-bound")) {{
+        return;
+      }}
+      el.setAttribute("data-lazy-bound", "1");
+      el.addEventListener("toggle", function() {{
+        if (!el.open || el.getAttribute("data-lazy-loaded") === "1") {{
+          return;
+        }}
+        var target = el.querySelector(".lazy-content");
+        if (!target) {{
+          return;
+        }}
+        target.innerHTML = "<p class=\\"muted\\">Loading...</p>";
+        fetch(el.getAttribute("data-lazy-url"), {{ cache: "no-store" }})
+          .then(function(response) {{ return response.text(); }})
+          .then(function(text) {{
+            target.innerHTML = text;
+            el.setAttribute("data-lazy-loaded", "1");
+            restoreState(false);
+          }})
+          .catch(function(err) {{
+            target.innerHTML = "<pre>lazy load failed: " + String(err) + "</pre>";
+          }});
+      }});
+      if (el.open) {{
+        el.dispatchEvent(new Event("toggle"));
+      }}
+    }});
+  }}
   function restoreState(restoreScroll) {{
     var state = readState();
     var details = state.details || {{}};
@@ -948,6 +1029,7 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
         el.addEventListener("toggle", writeState);
       }}
     }});
+    bindLazyDetails();
     if (restoreScroll !== false && typeof state.scrollY === "number") {{
       window.scrollTo(0, state.scrollY);
     }}
@@ -1146,7 +1228,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 </html>"""
 
 
-def agent_job_ia_view_payload(job_id: str) -> dict[str, Any]:
+def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dict[str, Any]:
     state = load_agent_job_state(job_id)
     if not state:
         return {"ok": False, "job_id": job_id, "error": "job_not_found"}
@@ -1154,6 +1236,10 @@ def agent_job_ia_view_payload(job_id: str) -> dict[str, Any]:
     events = read_agent_events(job_id, 5000)
     event_count_before = len(events)
     steps: dict[int, dict[str, Any]] = {}
+    try:
+        current_step_number = int(state.get("current_step") or 0)
+    except (TypeError, ValueError):
+        current_step_number = 0
     for event in events:
         try:
             step = int(event.get("step") or 0)
@@ -1169,22 +1255,48 @@ def agent_job_ia_view_payload(job_id: str) -> dict[str, Any]:
         event_type = str(event.get("event_type") or "")
         if event_type == "planner_request_started":
             row["planner_request_started"] = payload
-            row["prompt_capture"] = _step_prompt_capture(root, step)
+            if include_heavy or step == current_step_number:
+                prompt_capture = _step_prompt_capture(root, step)
+                if include_heavy:
+                    row["prompt_capture"] = prompt_capture
+                else:
+                    row["prompt_capture"] = {
+                        "available": prompt_capture.get("available"),
+                        "planner_url": prompt_capture.get("planner_url"),
+                        "planner_model": prompt_capture.get("planner_model"),
+                        "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
+                        "prompt_budget_report": prompt_capture.get("prompt_budget_report"),
+                    }
         elif event_type == "planner_decision":
             row["planner_decision"] = payload
-            row["planner_stream"] = _step_stream_payload(root, step)
+            if include_heavy or step == current_step_number:
+                stream_payload = _step_stream_payload(root, step)
+                if include_heavy:
+                    row["planner_stream"] = stream_payload
+                else:
+                    native_stream = dict(stream_payload.get("native_stream") or {})
+                    native_stream.pop("raw_ndjson", None)
+                    row["planner_stream"] = {
+                        "native_stream": native_stream,
+                        "native_tool_call_stream": stream_payload.get("native_tool_call_stream"),
+                    }
         elif event_type == "planner_decision_rejected":
             row["validator_guard"] = payload
         elif event_type == "tool_start":
             row["tool_start"] = payload
         elif event_type == "tool_result":
-            raw_payload, raw_meta = _read_job_artifact_json(root, payload.get("artifact"))
-            row["history_tool_result_fed_back_to_planner"] = payload
-            row["raw_tool_result_rehydrated"] = raw_payload
-            row["payload_audit"] = {**raw_meta, **_tool_payload_audit(payload, raw_payload)}
+            row["history_tool_result_fed_back_to_planner"] = payload if include_heavy else {
+                key: value
+                for key, value in payload.items()
+                if key in {"tool", "ok", "mode", "kind", "target_file", "edit_kind", "window_start", "window_end", "document_id"}
+            }
+            if include_heavy:
+                raw_payload, raw_meta = _read_job_artifact_json(root, payload.get("artifact"))
+                row["raw_tool_result_rehydrated"] = raw_payload
+                row["payload_audit"] = {**raw_meta, **_tool_payload_audit(payload, raw_payload)}
     final_json = read_json(root / "final.json", {})
     terminal_payload = {}
-    if isinstance(final_json, dict) and isinstance(final_json.get("tool_context_for_30b"), dict):
+    if include_heavy and isinstance(final_json, dict) and isinstance(final_json.get("tool_context_for_30b"), dict):
         terminal_payload = final_json["tool_context_for_30b"]
     event_count_after = len(read_agent_events(job_id, 5000))
     return {
@@ -1206,11 +1318,69 @@ def agent_job_ia_view_payload(job_id: str) -> dict[str, Any]:
         },
         "steps": [steps[key] for key in sorted(steps)],
         "openwebui_30b_payload": terminal_payload,
+        "openwebui_30b_payload_available": bool(final_json),
     }
 
 
+def _ia_view_payload_step(payload: dict[str, Any], requested_step: int = 0) -> dict[str, Any]:
+    steps = [step for step in (payload.get("steps") or []) if isinstance(step, dict)]
+    if requested_step > 0:
+        for step in steps:
+            try:
+                if int(step.get("step") or 0) == requested_step:
+                    return step
+            except (TypeError, ValueError):
+                continue
+    if steps:
+        return steps[-1]
+    return {}
+
+
+def agent_job_ia_view_section_html(job_id: str, section: str, *, step: int = 0) -> str:
+    root = agent_job_root(job_id)
+    section_name = str(section or "").strip()
+    try:
+        requested_step = int(step or 0)
+    except (TypeError, ValueError):
+        requested_step = 0
+    if section_name == "prompt":
+        payload = _step_prompt_capture(root, requested_step or _latest_planner_step(root))
+        return _html_json_tree(payload, path="ia.lazy.prompt")
+    if section_name == "planner_stream_raw":
+        payload = _step_stream_payload(root, requested_step or _latest_planner_step(root))
+        return _html_json_tree(payload, path="ia.lazy.planner_stream_raw")
+    if section_name == "events_raw":
+        raw, _events = _read_events_ndjson(root)
+        return _html_pre(raw)
+    full_payload = agent_job_ia_view_payload(job_id, include_heavy=True)
+    if not full_payload.get("ok"):
+        return _html_pre(full_payload)
+    current_step = _ia_view_payload_step(full_payload, requested_step)
+    if section_name == "compact_tool_result":
+        return _html_json_tree(
+            current_step.get("history_tool_result_fed_back_to_planner") or {},
+            path="ia.lazy.compact_tool_result",
+        )
+    if section_name == "raw_tool_result":
+        return _html_json_tree(
+            current_step.get("raw_tool_result_rehydrated") or {},
+            path="ia.lazy.raw_tool_result",
+        )
+    if section_name == "payload_audit":
+        return _html_json_tree(
+            current_step.get("payload_audit") or {},
+            path="ia.lazy.payload_audit",
+        )
+    if section_name == "openwebui_payload":
+        return _html_json_tree(
+            full_payload.get("openwebui_30b_payload") or {},
+            path="ia.lazy.openwebui_30b_payload",
+        )
+    return _html_pre({"ok": False, "error": "unknown_ia_view_section", "section": section_name})
+
+
 def agent_job_ia_view_html(job_id: str) -> str:
-    payload = agent_job_ia_view_payload(job_id)
+    payload = agent_job_ia_view_payload(job_id, include_heavy=False)
     if not payload.get("ok"):
         return f'<html><body><h1>Job not found</h1><pre>{html.escape(_json_pretty(payload))}</pre></body></html>'
     cards: list[str] = []
@@ -1268,15 +1438,6 @@ def agent_job_ia_view_html(job_id: str) -> str:
         if value not in (None, "", [], {})
     )
     if isinstance(current_step, dict):
-        prompt_summary = {
-            "planner_url": prompt_capture.get("planner_url"),
-            "planner_model": prompt_capture.get("planner_model"),
-            "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
-            "prompt_budget_report": prompt_capture.get("prompt_budget_report"),
-            "required_working_set": prompt_capture.get("required_working_set"),
-            "intrinsic_context": prompt_capture.get("intrinsic_context"),
-            "candidate_next_actions": prompt_capture.get("candidate_next_actions"),
-        }
         planner_summary = {
             "planner_decision": planner_decision,
             "native_tool_call_stream": native_tool_call_stream,
@@ -1296,12 +1457,13 @@ def agent_job_ia_view_html(job_id: str) -> str:
                     detail_key="ia.current.native_tool_calls",
                 )
             )
-        if isinstance(audit, dict) and audit:
-            css = "audit-bad" if not audit.get("compact_payload_complete") else "audit-ok"
-            body_parts.append(
-                f"<div class='{css}'><b>Payload Audit</b>"
-                f"{_html_json_tree(audit, path='ia.current.payload_audit')}</div>"
+        body_parts.append(
+            _html_lazy_details(
+                "Payload Audit",
+                f"/jobs/{job_id}/ia-view/section/payload_audit?step={current_step.get('step') or 0}",
+                detail_key="ia.current.payload_audit",
             )
+        )
         if validator_guard:
             body_parts.append(
                 _html_detail_block(
@@ -1318,21 +1480,21 @@ def agent_job_ia_view_html(job_id: str) -> str:
                 open_by_default=True,
                 detail_key="ia.current.planner_summary",
             ),
-            _html_detail_block(
+            _html_lazy_details(
                 "Prompt Sent To 11434",
-                _html_json_tree(prompt_summary, path="ia.current.prompt_summary"),
+                f"/jobs/{job_id}/ia-view/section/prompt?step={current_step.get('step') or 0}",
                 detail_key="ia.current.prompt_summary",
             ),
-            _html_detail_block(
+            _html_lazy_details(
                 "History/Tool Result Fed Back To Planner",
-                _html_json_tree(current_step.get("history_tool_result_fed_back_to_planner"), path="ia.current.compact_tool_result"),
+                f"/jobs/{job_id}/ia-view/section/compact_tool_result?step={current_step.get('step') or 0}",
                 detail_key="ia.current.compact_tool_result",
             ) if current_step.get("history_tool_result_fed_back_to_planner") not in (None, "", [], {}) else "",
-            _html_detail_block(
+            _html_lazy_details(
                 "Raw Tool Result / Rehydrated",
-                _html_json_tree(current_step.get("raw_tool_result_rehydrated"), path="ia.current.raw_tool_result"),
+                f"/jobs/{job_id}/ia-view/section/raw_tool_result?step={current_step.get('step') or 0}",
                 detail_key="ia.current.raw_tool_result",
-            ) if current_step.get("raw_tool_result_rehydrated") not in (None, "", [], {}) else "",
+            ) if current_step.get("history_tool_result_fed_back_to_planner") not in (None, "", [], {}) else "",
         ])
         cards.append(
             "<div class='card' data-live-region='ia-current-step'>"
@@ -1343,10 +1505,9 @@ def agent_job_ia_view_html(job_id: str) -> str:
         )
     else:
         cards.append("<div class='card' data-live-region='ia-current-step'><h2>Current Step</h2><p>No planner step is available yet.</p></div>")
-    openwebui_payload = payload.get("openwebui_30b_payload") or {}
     openwebui_summary = {
-        "available": bool(openwebui_payload),
-        "keys": list(openwebui_payload.keys()) if isinstance(openwebui_payload, dict) else [],
+        "available": bool(payload.get("openwebui_30b_payload_available")),
+        "load": "open Complete terminal payload to fetch it on demand",
     }
     return f"""<!doctype html>
 <html>
@@ -1391,7 +1552,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 <div class="card" data-live-region="ia-openwebui-payload">
   <h2>OpenWebUI 30B Payload</h2>
   {_html_json_tree(openwebui_summary, path="ia.openwebui_30b_payload.summary")}
-  {_html_detail_block("Complete terminal payload", _html_json_tree(openwebui_payload, path="ia.openwebui_30b_payload"), detail_key="ia.openwebui_30b_payload")}
+  {_html_lazy_details("Complete terminal payload", f"/jobs/{job_id}/ia-view/section/openwebui_payload", detail_key="ia.openwebui_30b_payload")}
 </div>
 </body>
 </html>"""

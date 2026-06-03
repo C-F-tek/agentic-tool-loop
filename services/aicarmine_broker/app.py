@@ -51,6 +51,7 @@ from .job_html import (
     agent_job_html,
     agent_job_ia_view_html,
     agent_job_ia_view_payload,
+    agent_job_ia_view_section_html,
     agent_jobs_index_html,
     agent_job_planner_stream_view_html,
     agent_job_status_json_view_html,
@@ -70,6 +71,7 @@ def jobs_endpoint_paths() -> list[str]:
         f"{JOBS_INDEX_PATH}/{{job_id}}/planner-stream",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view/section/{{section}}",
     ]
 
 
@@ -112,6 +114,10 @@ def create_app() -> FastAPI:
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json", include_in_schema=False)
     def job_dashboard_ia_view_json(job_id: str) -> JSONResponse:
         return JSONResponse(agent_job_ia_view_payload(job_id))
+
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view/section/{{section}}", include_in_schema=False)
+    def job_dashboard_ia_view_section(job_id: str, section: str, step: int = 0) -> HTMLResponse:
+        return HTMLResponse(agent_job_ia_view_section_html(job_id, section, step=step))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events", include_in_schema=False)
     def job_dashboard_events(job_id: str) -> HTMLResponse:
