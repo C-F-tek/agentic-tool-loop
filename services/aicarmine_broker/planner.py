@@ -1745,8 +1745,10 @@ def _prompt_generation_headroom_char_budget() -> int:
     budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
     if budget <= 0:
         return 0
-    generation_reserve = max(4000, min(10000, budget // 6))
-    return max(1000, budget - generation_reserve)
+    generation_reserve = max(12000, min(18000, budget // 4))
+    char_budget_limit = budget - generation_reserve
+    token_budget_limit = int(max(1, AGENTIC_PLANNER_NUM_CTX - _planner_token_generation_reserve()) * 2.65)
+    return max(1000, min(char_budget_limit, token_budget_limit))
 
 
 def _planner_token_generation_reserve(num_ctx: int | None = None) -> int:
