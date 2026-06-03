@@ -1308,6 +1308,157 @@ def _windowed_evidence_contract_for_prompt(
     return compact
 
 
+def _prompt_section_window_pack(
+    root: Path,
+    *,
+    goal: str,
+    section: str,
+    value: Any,
+    window_chars: int,
+    reason: str,
+) -> dict[str, Any]:
+    window = _store_prompt_value_window(
+        root,
+        section=section,
+        value=value,
+        query=goal,
+        max_chars=max(500, int(window_chars or 1000)),
+        metadata={
+            "kind": "planner_prompt_section",
+            "section": section,
+            "format": "json",
+            "reason": reason,
+        },
+    )
+    out = {
+        "schema": "planner_prompt_section_window.v1",
+        "store": "job_local_sqlite",
+        "section": section,
+        "reason": reason,
+        "serialized_json_window": window,
+    }
+    if window.get("document_id") and window.get("has_more_after") is True:
+        out["planner_can_request_more"] = {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": window.get("document_id"),
+                "offset": window.get("window_end"),
+                "max_chars": max(500, int(window_chars or 1000)),
+            },
+        }
+    return out
+
+
+def _hard_budget_evidence_contract_for_prompt(
+    root: Path,
+    *,
+    goal: str,
+    contract: dict[str, Any],
+    window_chars: int,
+    history: list[dict[str, Any]] | None = None,
+    reason: str,
+) -> dict[str, Any]:
+    if not isinstance(contract, dict) or not contract:
+        return {}
+    window = _store_prompt_value_window(
+        root,
+        section="evidence_contract:hard_budget",
+        value=contract,
+        query=goal,
+        max_chars=max(500, int(window_chars or 1000)),
+        metadata={"kind": "evidence_contract", "format": "json", "reason": reason},
+    )
+    compact: dict[str, Any] = {
+        "schema": "planner_evidence_contract_hard_budget.v1",
+        "windowed_due_to_prompt_budget": True,
+        "full_contract_available_from_sqlite_window": True,
+        "full_contract_sqlite_window_is_hard_gate": False,
+        "hard_budget_reason": reason,
+    }
+    for key in (
+        "semantic_goal_classification",
+        "goal_requests_code_product",
+        "goal_requires_code_product_report",
+        "goal_requests_apply",
+        "target_kind",
+        "resolved_goal_file",
+        "resolved_goal_scope",
+        "successful_repo_read_count",
+        "verified_content_read_count",
+        "planner_may_choose_final",
+        "required_next_progress",
+    ):
+        value = contract.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _prompt_clip_value(value, text_limit=320, list_limit=6)
+    final_contract = contract.get("finalization_contract")
+    if isinstance(final_contract, dict):
+        compact["finalization_contract"] = {
+            key: _prompt_clip_value(final_contract.get(key), text_limit=260, list_limit=4)
+            for key in ("final_allowed", "planner_may_choose_final", "reason")
+            if final_contract.get(key) not in (None, "", [], {})
+        }
+    code_contract = contract.get("code_product_contract")
+    if isinstance(code_contract, dict):
+        compact["code_product_contract"] = {
+            key: _prompt_clip_value(code_contract.get(key), text_limit=320, list_limit=8)
+            for key in (
+                "required",
+                "required_tool",
+                "successful_proposal_count",
+                "latest_target_file",
+                "candidate_target_file",
+                "candidate_target_line_count",
+                "candidate_payload_must_be_generated_from_required_working_set",
+                "action_plan_candidate_available",
+                "latest_payload_complete",
+                "latest_violations",
+                "build_state_status",
+                "build_state_payload_loaded",
+                "build_state_complete_payload_ready",
+                "inline_payload_required",
+                "artifact_path_is_not_payload",
+                "full_payload_fields",
+            )
+            if code_contract.get(key) not in (None, "", [], {})
+        }
+    candidates = contract.get("candidate_next_actions")
+    if isinstance(candidates, list) and candidates:
+        compact["candidate_next_actions"] = _prompt_clip_value(
+            candidates,
+            text_limit=700,
+            list_limit=3,
+        )
+    for key in ("required_next_tool_call", "forbidden_repeated_tool_calls"):
+        value = contract.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _prompt_clip_value(value, text_limit=500, list_limit=8)
+    for key in ("successful_repo_read_paths", "read_admissible_paths", "validator_admissible_repo_read_paths"):
+        value = contract.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _prompt_clip_value(value, text_limit=160, list_limit=5)
+    compact["full_evidence_contract_window"] = window
+    if window.get("document_id") and window.get("has_more_after") is True:
+        compact["planner_can_request_more_evidence_contract"] = {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": window.get("document_id"),
+                "offset": window.get("window_end"),
+                "max_chars": max(500, int(window_chars or 1000)),
+            },
+        }
+        continuation = _evidence_contract_continuation_action(
+            compact,
+            history=history or [],
+            window_chars=max(500, int(window_chars or 1000)),
+        )
+        if continuation:
+            compact["optional_evidence_contract_next_window"] = continuation
+    return compact
+
+
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(context, dict):
         return {}
@@ -1763,7 +1914,7 @@ def _planner_token_generation_reserve(num_ctx: int | None = None) -> int:
 
 def _prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
     if compact_mode:
-        sequence = (4000, 3000, 2500)
+        sequence = (4000, 3000, 2500, 1800, 1200, 900, 700, 500)
         return sequence[min(max(0, attempt), len(sequence) - 1)]
     return max(1000, min(6000, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET // 5))
 
@@ -2461,6 +2612,16 @@ def _build_planner_user_payload(
             final_contract["reason"] = "Real prompt context window continuation is required before final/code-product decision."
             evidence_for_prompt["finalization_contract"] = final_contract
             evidence_for_prompt["required_next_progress"] = continuation_action["reason"]
+        tool_shape_examples = _tool_shape_examples_for_prompt()
+        if compact_mode:
+            tool_shape_examples = _prompt_section_window_pack(
+                root,
+                goal=goal,
+                section="tool_shape_examples",
+                value=tool_shape_examples,
+                window_chars=min(900, max(500, int(window_chars or 1000))),
+                reason="planner_prompt_compact_mode",
+            )
         payload_local = {
             "job_id": job_id,
             "goal": goal,
@@ -2498,7 +2659,7 @@ def _build_planner_user_payload(
                 ],
             },
             "available_tools": available_tools_for_payload,
-            "tool_shape_examples": _tool_shape_examples_for_prompt(),
+            "tool_shape_examples": tool_shape_examples,
             "required_working_set": required_working_set,
             "optional_context": _optional_context_for_prompt(
                 root=root,
@@ -2565,15 +2726,18 @@ def _build_planner_user_payload(
     )
     threshold = _prompt_compaction_threshold()
     if threshold and int(report.get("total_prompt_chars") or 0) > threshold:
-        for attempt in range(5):
+        for attempt in range(8):
             payload, report, required_chars, required_errors = assemble(
                 compact_mode=True,
                 window_chars=_prompt_window_chars(True, attempt),
             )
-            if (
-                headroom_char_budget <= 0
-                or int(report.get("total_prompt_chars") or 0) <= headroom_char_budget
-            ):
+            total_for_compaction = int(report.get("total_prompt_chars") or 0)
+            if int(report.get("native_history_reserve_chars") or 0) > 0:
+                total_for_compaction = max(
+                    0,
+                    total_for_compaction - int(report.get("native_history_reserve_chars") or 0),
+                )
+            if total_for_compaction <= threshold:
                 break
     if headroom_char_budget > 0 and int(report.get("total_prompt_chars") or 0) > headroom_char_budget:
         optional_for_window = (
@@ -2594,6 +2758,30 @@ def _build_planner_user_payload(
             prompt_contract["hard_budget_optional_context_windowed"] = True
             prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
             payload["prompt_pack_contract"] = prompt_contract
+            payload["evidence_contract"] = _hard_budget_evidence_contract_for_prompt(
+                root,
+                goal=goal,
+                contract=evidence_contract,
+                window_chars=hard_window_chars,
+                history=history,
+                reason="planner_prompt_pack_over_budget_after_compact_mode",
+            )
+            payload["tool_shape_examples"] = _prompt_section_window_pack(
+                root,
+                goal=goal,
+                section="tool_shape_examples",
+                value=_tool_shape_examples_for_prompt(),
+                window_chars=hard_window_chars,
+                reason="planner_prompt_pack_over_budget_after_compact_mode",
+            )
+            if isinstance(payload["evidence_contract"].get("required_next_tool_call"), dict):
+                payload["required_next_tool_call"] = payload["evidence_contract"]["required_next_tool_call"]
+            elif "required_next_tool_call" in payload:
+                payload.pop("required_next_tool_call", None)
+            if isinstance(payload["evidence_contract"].get("forbidden_repeated_tool_calls"), list):
+                payload["forbidden_repeated_tool_calls"] = payload["evidence_contract"]["forbidden_repeated_tool_calls"]
+            elif "forbidden_repeated_tool_calls" in payload:
+                payload.pop("forbidden_repeated_tool_calls", None)
             report = _prompt_budget_report(
                 payload,
                 system_prompt=system_prompt_for_budget,
@@ -2674,6 +2862,30 @@ def _build_planner_user_payload(
             prompt_contract["hard_budget_optional_context_windowed"] = True
             prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
             payload["prompt_pack_contract"] = prompt_contract
+            payload["evidence_contract"] = _hard_budget_evidence_contract_for_prompt(
+                root,
+                goal=goal,
+                contract=evidence_contract,
+                window_chars=hard_window_chars,
+                history=history,
+                reason="planner_prompt_pack_over_budget_after_budget_report",
+            )
+            payload["tool_shape_examples"] = _prompt_section_window_pack(
+                root,
+                goal=goal,
+                section="tool_shape_examples",
+                value=_tool_shape_examples_for_prompt(),
+                window_chars=hard_window_chars,
+                reason="planner_prompt_pack_over_budget_after_budget_report",
+            )
+            if isinstance(payload["evidence_contract"].get("required_next_tool_call"), dict):
+                payload["required_next_tool_call"] = payload["evidence_contract"]["required_next_tool_call"]
+            elif "required_next_tool_call" in payload:
+                payload.pop("required_next_tool_call", None)
+            if isinstance(payload["evidence_contract"].get("forbidden_repeated_tool_calls"), list):
+                payload["forbidden_repeated_tool_calls"] = payload["evidence_contract"]["forbidden_repeated_tool_calls"]
+            elif "forbidden_repeated_tool_calls" in payload:
+                payload.pop("forbidden_repeated_tool_calls", None)
             for _ in range(6):
                 report = _prompt_budget_report(
                     payload,
@@ -3662,6 +3874,39 @@ def _goal_report_only_code_product_marker(goal: str) -> bool:
     return bool(report_only and code_surface)
 
 
+def _goal_diff_output_not_apply_marker(goal: str) -> bool:
+    low = str(goal or "").lower()
+    diff_output = re.search(
+        r"\b("
+        r"generate\s+(?:complete\s+)?diff\s+patch(?:es)?|"
+        r"provide\s+(?:the\s+)?(?:full\s+)?diff\s+output|"
+        r"full\s+diff\s+output|"
+        r"comprehensive\s+diff\s+output(?:s)?|"
+        r"diff\s+output(?:s)?"
+        r")\b",
+        low,
+    )
+    apply_descriptor = re.search(
+        r"\b("
+        r"ready\s+to\s+apply|"
+        r"ready[-\s]?to[-\s]?apply|"
+        r"can\s+be\s+applied|"
+        r"patch(?:es)?\s+that\s+can\s+be\s+applied"
+        r")\b",
+        low,
+    )
+    explicit_apply_command = re.search(
+        r"\b("
+        r"apply\s+(?:the\s+)?patch|"
+        r"apply\s+(?:these\s+)?changes|"
+        r"actually\s+apply|"
+        r"applica(?:re)?\s+(?:la\s+)?patch"
+        r")\b",
+        low,
+    )
+    return bool(diff_output and apply_descriptor and not explicit_apply_command)
+
+
 def goal_requests_code_product(goal: str) -> bool:
     low = str(goal or "").lower()
     patterns = (
@@ -3670,6 +3915,10 @@ def goal_requests_code_product(goal: str) -> bool:
         r"\bdetailed\s+code\s+diff\b",
         r"\bcomplete\s+diff\s+patch(?:es)?\b",
         r"\bdiff\s+patch(?:es)?\b",
+        r"\bcomplete\s+diff\s+information\b",
+        r"\bcomprehensive\s+diff\s+information\b",
+        r"\bcomplete\s+diff\s+output(?:s)?\b",
+        r"\bcomprehensive\s+diff\s+output(?:s)?\b",
         r"\bdiff\s+completo\b",
         r"\bdiff\s+concret[aoei]\b",
         r"\bdifferenziale(?:\s+di\s+codice)?\b",
@@ -3702,7 +3951,7 @@ def goal_requests_code_product(goal: str) -> bool:
 
 def goal_requests_apply(goal: str) -> bool:
     low = str(goal or "").lower()
-    if _goal_report_only_code_product_marker(goal):
+    if _goal_report_only_code_product_marker(goal) or _goal_diff_output_not_apply_marker(goal):
         return False
     for negated in (
         r"\bdo\s+not\s+apply\b",
@@ -3744,9 +3993,11 @@ def goal_requests_apply(goal: str) -> bool:
     ):
         low = re.sub(negated, " ", low)
     low = re.sub(r"\bcode\s+edit\s+proposal(?:s)?\b", " ", low)
-    if goal_requests_code_product(goal) and re.search(
+    if goal_requests_code_product(goal) and (
+        _goal_diff_output_not_apply_marker(goal) or re.search(
         r"\b(report[-\s]?only|do\s+not\s+(?:actually\s+)?apply|without\s+(?:actually\s+)?applying(?:\s+changes?)?|non\s+applicare|senza\s+applicare)\b",
         str(goal or "").lower(),
+        )
     ):
         return False
     patterns = (
@@ -9300,13 +9551,23 @@ def planner_decision(
             and token_reserve > 0
             and prompt_eval_count >= max(0, AGENTIC_PLANNER_NUM_CTX - token_reserve)
         )
+        prompt_over_headroom_for_native = (
+            bool(prompt_budget.get("over_generation_headroom_budget"))
+            if isinstance(prompt_budget, dict)
+            else False
+        )
+        if (
+            isinstance(prompt_budget, dict)
+            and AGENTIC_PLANNER_NATIVE_TOOLS
+            and int(prompt_budget.get("native_history_reserve_chars") or 0) > 0
+        ):
+            prompt_over_headroom_for_native = bool(
+                prompt_budget.get("over_generation_headroom_without_native_history_reserve")
+            )
         if (
             (AGENTIC_PLANNER_NUM_CTX > 0 and prompt_eval_count >= AGENTIC_PLANNER_NUM_CTX)
             or token_headroom_low
-            or (
-                isinstance(prompt_budget, dict)
-                and bool(prompt_budget.get("over_generation_headroom_budget"))
-            )
+            or prompt_over_headroom_for_native
             or (
                 isinstance(prompt_budget, dict)
                 and bool(prompt_budget.get("over_generation_headroom_with_history_messages"))
