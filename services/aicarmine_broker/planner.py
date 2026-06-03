@@ -957,7 +957,6 @@ def _tool_surface_names_for_turn(
         names.update(
             {
                 "repo_propose_code_edit",
-                "planner_scratchpad_read",
                 "planner_scratchpad_write",
             }
         )
@@ -6912,6 +6911,9 @@ def planner_evidence_contract(
             "Non-repository goal has some executed evidence." if final_allowed
             else "Need at least one relevant tool result; no generic final fallback."
         )
+    if goal_requests_apply(goal) and not history_has_tool(history, "repo_apply_patch"):
+        final_allowed = False
+        final_reason = "Apply/edit/write goal requires repo_apply_patch after verified repo_read old_text evidence."
 
     core_candidates = _rank_core_candidates(file_memory, list_rows)
     candidates = _candidate_actions_from_evidence(
@@ -8782,6 +8784,62 @@ def _compact_repair_history(history: list[dict[str, Any]], limit: int = 8) -> li
     return rows
 
 
+def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(contract, dict):
+        return {}
+    compact: dict[str, Any] = {"schema": "vulkan_repair_evidence_contract.v1"}
+    for key in (
+        "semantic_goal_classification",
+        "goal_requests_code_product",
+        "goal_requires_code_product_report",
+        "goal_requests_apply",
+        "target_kind",
+        "resolved_goal_file",
+        "resolved_goal_scope",
+        "successful_repo_read_count",
+        "verified_content_read_count",
+        "planner_may_choose_final",
+        "required_next_progress",
+    ):
+        value = contract.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _prompt_clip_value(value, text_limit=260, list_limit=4)
+    for key in (
+        "known_paths_from_latest_repo_list_files",
+        "successful_repo_read_paths",
+        "read_admissible_paths",
+        "validator_admissible_repo_read_paths",
+        "failed_repo_read_paths",
+        "failed_repo_list_files_paths",
+    ):
+        value = contract.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _prompt_clip_value(value, text_limit=140, list_limit=16)
+    for key in (
+        "code_product_contract",
+        "finalization_contract",
+        "core_discovery_status",
+    ):
+        value = contract.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _prompt_clip_value(value, text_limit=260, list_limit=4)
+    candidates = contract.get("candidate_next_actions")
+    if isinstance(candidates, list) and candidates:
+        compact["candidate_next_actions"] = _prompt_clip_value(
+            candidates,
+            text_limit=260,
+            list_limit=4,
+        )
+    rejections = contract.get("validation_rejections_tail")
+    if isinstance(rejections, list) and rejections:
+        compact["validation_rejections_tail"] = _prompt_clip_value(
+            rejections,
+            text_limit=260,
+            list_limit=4,
+        )
+    return _prompt_clip_value(compact, text_limit=500, list_limit=16)
+
+
 def _should_attempt_vulkan_repair(
     decision: dict[str, Any],
     validation: dict[str, Any],
@@ -8826,7 +8884,17 @@ def _should_attempt_vulkan_repair(
                 "prompt_context_continuation_required",
                 "prompt_context_window_",
                 "planner_scratchpad_window_",
+                "planner_scratchpad_read_missing_selector",
                 "repo_read_window_",
+                "non_existing_path:",
+                "repo_read_already_successful:",
+                "repo_read_path_not_from_prior_file_evidence:",
+                "repo_read_path_outside_requested_scope:",
+                "repo_list_files_on_file_path_use_repo_read:",
+                "repo_list_files_scope_mismatch:",
+                "repo_list_files_limit_mismatch:",
+                "repo_list_files_suffix_not_python:",
+                "repeated_repo_list_files_after_useful_file_list",
                 "tool_not_in_turn_surface",
                 "native_tool_not_in_turn_surface",
                 "final_required_tool_call_disallowed",
@@ -8894,7 +8962,10 @@ def vulkan_repair_invalid_planner_decision(
                     "original_planner_decision": decision,
                     "raw_planner_text": raw_planner_text[:20000],
                     "validator_violations": validation.get("violations"),
-                    "evidence_contract": validation.get("evidence_contract"),
+                    "evidence_contract": _compact_vulkan_repair_evidence_contract(
+                        validation.get("evidence_contract")
+                    ),
+                    "evidence_contract_bounded_for_repair": True,
                     "history_tail": _compact_repair_history(history),
                     "available_tools": internal_tool_prompt(exclude_vulkan=False),
                     "rules": [

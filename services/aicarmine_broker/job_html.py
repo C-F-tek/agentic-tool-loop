@@ -212,11 +212,21 @@ def _step_stream_payload(root: Path, step: int) -> dict[str, Any]:
     stream_dir = root / "planner-stream"
     stem = stream_dir / f"step-{int(step):03d}"
     raw_ndjson = _read_text_if_exists(stem.with_suffix(".raw.ndjson"))
+    native_stream = _planner_stream_native_summary(raw_ndjson)
+    native_tool_calls = native_stream.get("native_tool_calls")
+    native_tool_call_stream = {}
+    if isinstance(native_tool_calls, list) and native_tool_calls:
+        native_tool_call_stream = {
+            "source": "message.tool_calls",
+            "native_tool_call_count": len(native_tool_calls),
+            "native_tool_calls": native_tool_calls,
+        }
     return {
         "content": _read_text_if_exists(stem.with_suffix(".content.txt")),
         "all": _read_text_if_exists(stem.with_suffix(".all.txt")),
         "raw_ndjson": raw_ndjson,
-        "native_stream": _planner_stream_native_summary(raw_ndjson),
+        "native_stream": native_stream,
+        "native_tool_call_stream": native_tool_call_stream,
     }
 
 
@@ -767,14 +777,14 @@ def agent_job_events_view_html(job_id: str) -> str:
             )
         )
     body += (
-        "<div class=\"card\"><h2>Events By Step</h2>"
+        "<div class=\"card\" data-live-region=\"events-by-step\"><h2>Events By Step</h2>"
         f"{''.join(step_parts) if step_parts else '<p>No events.</p>'}"
         "</div>"
         "<div class=\"card\"><h2>Raw NDJSON</h2>"
         f"{_html_details('Complete events.ndjson', raw)}"
         "</div>"
     )
-    return _html_page("Events View", body, job_id=job_id)
+    return _html_page("Events View", body, refresh_seconds=2, job_id=job_id)
 
 
 def agent_job_ia_view_json_view_html(job_id: str) -> str:
@@ -849,15 +859,63 @@ def agent_job_planner_stream_view_html(job_id: str) -> str:
             )
         )
     body += (
-        "<div class=\"card\"><h2>Planner Stream Steps</h2>"
+        "<div class=\"card\" data-live-region=\"planner-stream-steps\"><h2>Planner Stream Steps</h2>"
         f"{''.join(step_sections) if step_sections else '<p>No planner stream files.</p>'}"
         "</div>"
     )
-    return _html_page("Planner Stream View", body, job_id=job_id)
+    return _html_page("Planner Stream View", body, refresh_seconds=2, job_id=job_id)
 
 
 
 def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
+    interval_ms = max(0, int(float(refresh_seconds or 0) * 1000))
+    live_script = ""
+    if interval_ms > 0:
+        live_script = f"""
+  var liveTimer = null;
+  function findLiveRegion(key) {{
+    var found = null;
+    document.querySelectorAll("[data-live-region]").forEach(function(el) {{
+      if (!found && el.getAttribute("data-live-region") === key) {{
+        found = el;
+      }}
+    }});
+    return found;
+  }}
+  function replaceLiveRegionsFrom(doc) {{
+    var changed = false;
+    doc.querySelectorAll("[data-live-region]").forEach(function(fresh) {{
+      var key = fresh.getAttribute("data-live-region");
+      var current = findLiveRegion(key);
+      if (!current) {{
+        return;
+      }}
+      if (current.innerHTML !== fresh.innerHTML) {{
+        current.innerHTML = fresh.innerHTML;
+        changed = true;
+      }}
+    }});
+    if (changed) {{
+      restoreState(false);
+    }}
+  }}
+  function pollLiveRegions() {{
+    writeState();
+    var url = window.location.pathname + "?_live=" + Date.now();
+    fetch(url, {{ cache: "no-store" }})
+      .then(function(response) {{ return response.text(); }})
+      .then(function(text) {{
+        var doc = new DOMParser().parseFromString(text, "text/html");
+        replaceLiveRegionsFrom(doc);
+      }})
+      .catch(function() {{}});
+  }}
+  document.addEventListener("DOMContentLoaded", function() {{
+    if (document.querySelector("[data-live-region]")) {{
+      liveTimer = window.setInterval(pollLiveRegions, {interval_ms});
+    }}
+  }});
+"""
     return f"""<script>
 (function() {{
   var key = "aicarmine-dashboard-state:" + window.location.pathname;
@@ -877,7 +935,7 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
     state.scrollY = window.scrollY || 0;
     sessionStorage.setItem(key, JSON.stringify(state));
   }}
-  function restoreState() {{
+  function restoreState(restoreScroll) {{
     var state = readState();
     var details = state.details || {{}};
     document.querySelectorAll("details").forEach(function(el, index) {{
@@ -885,14 +943,20 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
       if (Object.prototype.hasOwnProperty.call(details, k)) {{
         el.open = !!details[k];
       }}
-      el.addEventListener("toggle", writeState);
+      if (!el.getAttribute("data-stateful-bound")) {{
+        el.setAttribute("data-stateful-bound", "1");
+        el.addEventListener("toggle", writeState);
+      }}
     }});
-    if (typeof state.scrollY === "number") {{
+    if (restoreScroll !== false && typeof state.scrollY === "number") {{
       window.scrollTo(0, state.scrollY);
     }}
   }}
   window.addEventListener("beforeunload", writeState);
-  document.addEventListener("DOMContentLoaded", restoreState);
+  document.addEventListener("DOMContentLoaded", function() {{
+    restoreState(true);
+  }});
+{live_script}
 }})();
 </script>"""
 
@@ -1016,7 +1080,7 @@ def _gpu0_corrections_payload(job_id: str) -> dict[str, Any]:
 def _gpu0_panel_html(job_id: str) -> str:
     payload = _gpu0_corrections_payload(job_id)
     return (
-        "<aside class=\"gpu0-corrections-window\">"
+        "<aside class=\"gpu0-corrections-window\" data-live-region=\"gpu0-corrections\">"
         "<h2>GPU0 corrections JSON</h2>"
         f"{_html_pre(payload)}"
         "</aside>"
@@ -1048,9 +1112,9 @@ def agent_jobs_index_html(*, limit: int, title: str, refresh_seconds: int) -> st
     body = (
         "<div class=\"card\">"
         f"<div class=\"status\">{html.escape(title)} Agent Jobs</div>"
-        "<p class=\"muted\">Auto-refresh pagina disattivato. Aggiorna manualmente la lista job quando serve.</p>"
+        "<p class=\"muted\">Live update aggiorna solo la tabella job, senza ricaricare la pagina intera.</p>"
         "</div>"
-        "<div class=\"card\">"
+        "<div class=\"card\" data-live-region=\"jobs-index-table\">"
         "<table><thead><tr><th>Job</th><th>Status</th><th>Goal</th>"
         "<th>Updated</th><th>Workspace</th><th>Views</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
@@ -1074,7 +1138,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .muted {{ color: #aaa; }}
 {_json_tree_css()}
 </style>
-{_stateful_refresh_script(0)}
+{_stateful_refresh_script(max(2, int(refresh_seconds or 5)))}
 </head>
 <body>
 {body}
@@ -1167,26 +1231,123 @@ def agent_job_ia_view_html(job_id: str) -> str:
                 continue
     if current_step is None and all_steps:
         current_step = all_steps[-1]
+    job = payload.get("job") if isinstance(payload.get("job"), dict) else {}
+    mutation_check = payload.get("mutation_check") if isinstance(payload.get("mutation_check"), dict) else {}
+    prompt_capture = current_step.get("prompt_capture") if isinstance(current_step, dict) and isinstance(current_step.get("prompt_capture"), dict) else {}
+    planner_decision = current_step.get("planner_decision") if isinstance(current_step, dict) and isinstance(current_step.get("planner_decision"), dict) else {}
+    planner_stream = current_step.get("planner_stream") if isinstance(current_step, dict) and isinstance(current_step.get("planner_stream"), dict) else {}
+    native_stream = planner_stream.get("native_stream") if isinstance(planner_stream.get("native_stream"), dict) else {}
+    native_tool_call_stream = (
+        planner_stream.get("native_tool_call_stream")
+        if isinstance(planner_stream.get("native_tool_call_stream"), dict)
+        else {}
+    )
+    validator_guard = current_step.get("validator_guard") if isinstance(current_step, dict) and isinstance(current_step.get("validator_guard"), dict) else {}
+    audit = current_step.get("payload_audit") if isinstance(current_step, dict) and isinstance(current_step.get("payload_audit"), dict) else {}
+    metrics = {
+        "step": current_step.get("step") if isinstance(current_step, dict) else None,
+        "status": job.get("status"),
+        "planner_model": prompt_capture.get("planner_model"),
+        "planner_url": prompt_capture.get("planner_url"),
+        "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
+        "prompt_chars": (prompt_capture.get("prompt_budget_report") or {}).get("total_prompt_chars")
+        if isinstance(prompt_capture.get("prompt_budget_report"), dict)
+        else None,
+        "decision": planner_decision.get("action") or planner_decision.get("tool"),
+        "tool": planner_decision.get("tool"),
+        "native_tool_calls": native_stream.get("native_tool_call_count"),
+        "validator_guard": validator_guard.get("guard_type") or validator_guard.get("reason"),
+        "payload_complete": audit.get("compact_payload_complete"),
+    }
+    metric_html = "".join(
+        "<div class=\"metric\">"
+        f"<span>{html.escape(str(key))}</span>"
+        f"<b>{html.escape(str(value))}</b>"
+        "</div>"
+        for key, value in metrics.items()
+        if value not in (None, "", [], {})
+    )
     if isinstance(current_step, dict):
-        sections = [
-            ("Prompt Sent To 11434", current_step.get("prompt_capture")),
-            ("History/Tool Result Fed Back To Planner", current_step.get("history_tool_result_fed_back_to_planner")),
-            ("Raw Tool Result / Rehydrated", current_step.get("raw_tool_result_rehydrated")),
-            ("Validator Guard / Rejection", current_step.get("validator_guard")),
-            ("Planner Decision / Stream", {"planner_decision": current_step.get("planner_decision"), "planner_stream": current_step.get("planner_stream")}),
-        ]
-        body = "".join(
-            f"<h3>{html.escape(title)}</h3><pre>{html.escape(_json_pretty(value))}</pre>"
-            for title, value in sections
-            if value not in (None, "", [], {})
-        )
-        audit = current_step.get("payload_audit")
-        if isinstance(audit, dict):
+        prompt_summary = {
+            "planner_url": prompt_capture.get("planner_url"),
+            "planner_model": prompt_capture.get("planner_model"),
+            "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
+            "prompt_budget_report": prompt_capture.get("prompt_budget_report"),
+            "required_working_set": prompt_capture.get("required_working_set"),
+            "intrinsic_context": prompt_capture.get("intrinsic_context"),
+            "candidate_next_actions": prompt_capture.get("candidate_next_actions"),
+        }
+        planner_summary = {
+            "planner_decision": planner_decision,
+            "native_tool_call_stream": native_tool_call_stream,
+            "native_stream_summary": {
+                key: value
+                for key, value in native_stream.items()
+                if key != "raw_ndjson"
+            },
+        }
+        body_parts: list[str] = []
+        if native_tool_call_stream:
+            body_parts.append(
+                _html_detail_block(
+                    "Native Tool Calls",
+                    _html_json_tree(native_tool_call_stream, path="ia.current.native_tool_calls"),
+                    open_by_default=True,
+                    detail_key="ia.current.native_tool_calls",
+                )
+            )
+        if isinstance(audit, dict) and audit:
             css = "audit-bad" if not audit.get("compact_payload_complete") else "audit-ok"
-            body = f"<div class='{css}'><b>Payload audit</b><pre>{html.escape(_json_pretty(audit))}</pre></div>" + body
-        cards.append(f"<div class='card'><h2>Current Step {html.escape(str(current_step.get('step')))}</h2>{body}</div>")
+            body_parts.append(
+                f"<div class='{css}'><b>Payload Audit</b>"
+                f"{_html_json_tree(audit, path='ia.current.payload_audit')}</div>"
+            )
+        if validator_guard:
+            body_parts.append(
+                _html_detail_block(
+                    "Validator Guard / Rejection",
+                    _html_json_tree(validator_guard, path="ia.current.validator_guard"),
+                    open_by_default=True,
+                    detail_key="ia.current.validator_guard",
+                )
+            )
+        body_parts.extend([
+            _html_detail_block(
+                "Planner Decision / Stream Summary",
+                _html_json_tree(planner_summary, path="ia.current.planner_summary"),
+                open_by_default=True,
+                detail_key="ia.current.planner_summary",
+            ),
+            _html_detail_block(
+                "Prompt Sent To 11434",
+                _html_json_tree(prompt_summary, path="ia.current.prompt_summary"),
+                detail_key="ia.current.prompt_summary",
+            ),
+            _html_detail_block(
+                "History/Tool Result Fed Back To Planner",
+                _html_json_tree(current_step.get("history_tool_result_fed_back_to_planner"), path="ia.current.compact_tool_result"),
+                detail_key="ia.current.compact_tool_result",
+            ) if current_step.get("history_tool_result_fed_back_to_planner") not in (None, "", [], {}) else "",
+            _html_detail_block(
+                "Raw Tool Result / Rehydrated",
+                _html_json_tree(current_step.get("raw_tool_result_rehydrated"), path="ia.current.raw_tool_result"),
+                detail_key="ia.current.raw_tool_result",
+            ) if current_step.get("raw_tool_result_rehydrated") not in (None, "", [], {}) else "",
+        ])
+        cards.append(
+            "<div class='card' data-live-region='ia-current-step'>"
+            f"<h2>Current Step {html.escape(str(current_step.get('step')))}</h2>"
+            f"<div class=\"metrics\">{metric_html}</div>"
+            f"{''.join(part for part in body_parts if part)}"
+            "</div>"
+        )
     else:
-        cards.append("<div class='card'><h2>Current Step</h2><p>No planner step is available yet.</p></div>")
+        cards.append("<div class='card' data-live-region='ia-current-step'><h2>Current Step</h2><p>No planner step is available yet.</p></div>")
+    openwebui_payload = payload.get("openwebui_30b_payload") or {}
+    openwebui_summary = {
+        "available": bool(openwebui_payload),
+        "keys": list(openwebui_payload.keys()) if isinstance(openwebui_payload, dict) else [],
+    }
     return f"""<!doctype html>
 <html>
 <head>
@@ -1196,29 +1357,41 @@ def agent_job_ia_view_html(job_id: str) -> str:
 body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #111; color: #ddd; }}
 a {{ color: #8fd3ff; }}
 .card {{ border: 1px solid #444; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1b1b; }}
+details {{ border-top: 1px solid #333; padding-top: 10px; margin-top: 10px; }}
+summary {{ cursor: pointer; font-weight: 700; }}
 pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
+.metrics {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 12px 0; }}
+.metric {{ border: 1px solid #333; border-radius: 6px; padding: 8px; background: #151515; }}
+.metric span {{ display: block; color: #aaa; font-size: 11px; }}
+.metric b {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
 .audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
 .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
+{_json_tree_css()}
 {_gpu0_panel_css()}
 </style>
-{_stateful_refresh_script(0)}
+{_stateful_refresh_script(2)}
 </head>
 <body>
 {_gpu0_panel_html(job_id)}
-<div class="card">
+<div class="card" data-live-region="ia-status">
   <div class="status">IA Live Control View - {html.escape(job_id)}</div>
-  <p><b>Status:</b> {html.escape(str((payload.get('job') or {}).get('status') or ''))}</p>
-  <p><b>Goal:</b> {html.escape(str((payload.get('job') or {}).get('goal') or ''))}</p>
-  <p><b>Current step:</b> {html.escape(str((payload.get('job') or {}).get('current_step') or ''))}</p>
+  <div class="metrics">
+    <div class="metric"><span>Status</span><b>{html.escape(str(job.get('status') or ''))}</b></div>
+    <div class="metric"><span>Current step</span><b>{html.escape(str(job.get('current_step') or ''))}</b></div>
+    <div class="metric"><span>Historical steps</span><b>{html.escape(str(len(all_steps)))}</b></div>
+    <div class="metric"><span>Read-only check</span><b>{html.escape(str(not mutation_check.get('event_count_changed')))}</b></div>
+  </div>
+  <p><b>Goal:</b> {html.escape(str(job.get('goal') or ''))}</p>
   <p>Historical steps are kept in the complete JSON view only.</p>
   <p>{_dashboard_links(job_id)}</p>
-  <pre>{html.escape(_json_pretty(payload.get('mutation_check') or {}))}</pre>
+  {_html_detail_block("Mutation Check", _html_json_tree(mutation_check, path="ia.mutation_check"), detail_key="ia.mutation_check")}
 </div>
 {''.join(cards)}
-<div class="card">
+<div class="card" data-live-region="ia-openwebui-payload">
   <h2>OpenWebUI 30B Payload</h2>
-  <pre>{html.escape(_json_pretty(payload.get("openwebui_30b_payload") or {}))}</pre>
+  {_html_json_tree(openwebui_summary, path="ia.openwebui_30b_payload.summary")}
+  {_html_detail_block("Complete terminal payload", _html_json_tree(openwebui_payload, path="ia.openwebui_30b_payload"), detail_key="ia.openwebui_30b_payload")}
 </div>
 </body>
 </html>"""
@@ -1228,7 +1401,6 @@ def agent_job_html(job_id: str) -> str:
     status = compact_agent_status(job_id, include_events=True)
     if not status.get("ok"):
         return f"<html><body><h1>Job not found</h1>{_html_pre(status)}</body></html>"
-    root = agent_job_root(job_id)
     events = read_agent_events(job_id, 500)
     rows = []
     for ev in events:
@@ -1240,47 +1412,6 @@ def agent_job_html(job_id: str) -> str:
             f"<td><pre>{html.escape(str(ev.get('message') or ''))}</pre></td>"
             "</tr>"
         )
-    latest_step = _latest_planner_step(root)
-    prompt_capture = _latest_planner_prompt_capture(root, latest_step)
-    stream_display = _planner_stream_display(root, latest_step)
-    native_stream = dict(stream_display.get("native_stream") or {})
-    native_stream.pop("raw_ndjson", None)
-    latest_decision: dict[str, Any] = {}
-    latest_guard: dict[str, Any] = {}
-    for ev in reversed(events):
-        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
-        event_type = str(ev.get("event_type") or "")
-        if not latest_decision and event_type == "planner_decision":
-            latest_decision = payload
-        if not latest_guard and event_type == "planner_decision_rejected":
-            latest_guard = payload
-        if latest_decision and latest_guard:
-            break
-    request_sections = (
-        _html_details(
-            "Prompt capture summary",
-            {
-                "path": prompt_capture.get("path"),
-                "planner_url": prompt_capture.get("planner_url"),
-                "planner_model": prompt_capture.get("planner_model"),
-                "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
-                "prompt_budget_report": prompt_capture.get("prompt_budget_report"),
-            },
-            open_by_default=True,
-        )
-        + _html_details("Prompt sent to 11434: messages/tools/options", prompt_capture.get("prompt_sent_to_11434"))
-        + _html_details("Planner user payload", prompt_capture.get("planner_user_payload"))
-    )
-    stream_sections = (
-        _html_details("Native stream summary", native_stream, open_by_default=True)
-        + _html_details("Planner thinking / reasoning raw", stream_display.get("thinking"))
-        + _html_details("Planner emitted content or native tool calls", stream_display.get("content"), open_by_default=True)
-        + _html_details("Planner full raw combined", stream_display.get("combined"))
-    )
-    decision_sections = (
-        _html_details("Latest planner decision", latest_decision, open_by_default=True)
-        + _html_details("Latest validator guard / rejection", latest_guard, open_by_default=True)
-    )
     final_summary = html.escape(str(status.get("final_summary") or ""))
     return f"""<!doctype html>
 <html>
@@ -1299,33 +1430,26 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
 {_gpu0_panel_css()}
 </style>
-{_stateful_refresh_script(0)}
+{_stateful_refresh_script(2)}
 </head>
 <body>
 {_gpu0_panel_html(job_id)}
-<div class="card">
+<div class="card" data-live-region="job-summary">
   <div class="status">Job {html.escape(job_id)} - {html.escape(str(status.get('status')))}</div>
   <p><b>Goal:</b> {html.escape(str(status.get('goal') or ''))}</p>
   <p><b>Workspace:</b> {html.escape(str(status.get('workspace') or ''))}</p>
   <p>{_dashboard_links(job_id)}</p>
 </div>
-<div class="card">
+<div class="card" data-live-region="job-final-summary">
   <h2>Final summary</h2>
   <pre>{final_summary}</pre>
 </div>
 <div class="card">
-  <h2>Planner request to 11434</h2>
-  {request_sections or "<p>No planner prompt capture available.</p>"}
+  <h2>Control views</h2>
+  <p>The dashboard is an index/status page. Planner prompt, stream, raw tool payloads and validator details are shown in the IA live control view.</p>
+  <p><a href="/jobs/{html.escape(job_id)}/ia-view">Open IA live control view</a></p>
 </div>
-<div class="card">
-  <h2>Planner stream from 11434</h2>
-  {stream_sections or "<p>No planner stream available.</p>"}
-</div>
-<div class="card">
-  <h2>Planner decision and validator</h2>
-  {decision_sections or "<p>No planner decision available.</p>"}
-</div>
-<div class="card">
+<div class="card" data-live-region="job-events">
   <h2>Events</h2>
   <table>
     <thead><tr><th>Time</th><th>Step</th><th>Type</th><th>Message</th></tr></thead>

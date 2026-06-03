@@ -274,13 +274,21 @@ def main() -> int:
                 f"native history did not become assistant/tool messages: {native_history_messages}",
             )
             tool_message = json.loads(str(native_history_messages[1].get("content") or "{}"))
-            require(
-                tool_message.get("schema") == "planner_tool_result_message_window.v1",
-                f"tool history message did not use SQLite window schema: {tool_message}",
-            )
-            result_window = tool_message.get("result_window") if isinstance(tool_message.get("result_window"), dict) else {}
-            require(result_window.get("document_id"), f"tool history message missing document_id: {tool_message}")
-            require("text" in result_window, f"tool history message missing real first window text: {tool_message}")
+            tool_message_schema = tool_message.get("schema")
+            if tool_message_schema in {"planner_tool_history_window.v1", "planner_tool_result_message_window.v1"}:
+                result_window = tool_message.get("result_window") if isinstance(tool_message.get("result_window"), dict) else {}
+                require(result_window.get("document_id"), f"tool history message missing document_id: {tool_message}")
+                require("text" in result_window, f"tool history message missing real first window text: {tool_message}")
+            else:
+                require(
+                    tool_message_schema == "planner_tool_history_evidence.v1",
+                    f"tool history message used unexpected schema: {tool_message}",
+                )
+                require(
+                    isinstance(tool_message.get("result"), dict) and tool_message["result"].get("tool") == "repo_read",
+                    f"bounded tool history evidence missing real result payload: {tool_message}",
+                )
+                result_window = {}
             planner.AGENTIC_PLANNER_NATIVE_TOOLS = False
             try:
                 legacy_optional_windows = planner._optional_context_for_prompt(
@@ -298,14 +306,15 @@ def main() -> int:
             legacy_payload_windows = legacy_optional_windows.get("successful_tool_payload_windows") or []
             require(legacy_payload_windows, f"legacy optional context did not create tool payload window: {legacy_optional_windows}")
             legacy_window = legacy_payload_windows[0].get("window") if isinstance(legacy_payload_windows[0], dict) else {}
-            for window_key in ("text", "window_start", "window_end", "has_more_after", "sha256"):
-                require(
-                    legacy_window.get(window_key) == result_window.get(window_key),
-                    (
-                        "native tool message window diverges from legacy SQLite optional "
-                        f"window for {window_key}: legacy={legacy_window} native={result_window}"
-                    ),
-                )
+            if result_window:
+                for window_key in ("text", "window_start", "window_end", "has_more_after", "sha256"):
+                    require(
+                        legacy_window.get(window_key) == result_window.get(window_key),
+                        (
+                            "native tool message window diverges from legacy SQLite optional "
+                            f"window for {window_key}: legacy={legacy_window} native={result_window}"
+                        ),
+                    )
             optional_native = planner._optional_context_for_prompt(
                 root=job_root,
                 goal="Native messages smoke",
@@ -408,8 +417,12 @@ def main() -> int:
                 f"bloated evidence did not expose SQLite window pointer: {bloated_evidence_prompt}",
             )
             require(
-                (bloated_evidence_prompt.get("candidate_next_actions") or [{}])[0].get("tool") == "planner_scratchpad_read",
-                f"bloated evidence did not route next action to SQLite window read: {bloated_evidence_prompt}",
+                bloated_evidence_prompt.get("full_contract_sqlite_window_is_hard_gate") is False,
+                f"bloated evidence SQLite window became a hard gate again: {bloated_evidence_prompt}",
+            )
+            require(
+                isinstance(bloated_evidence_prompt.get("planner_can_request_more_evidence_contract"), dict),
+                f"bloated evidence did not expose optional SQLite continuation: {bloated_evidence_prompt}",
             )
             bloated_history_budget = max(
                 0,
@@ -489,9 +502,20 @@ def main() -> int:
                 f"native required_response_format still advertises JSON tool action: {native_response_format}",
             )
             native_shape_examples = native_user_payload.get("tool_shape_examples") if isinstance(native_user_payload.get("tool_shape_examples"), dict) else {}
-            native_shape_text = json.dumps(native_shape_examples, ensure_ascii=False, separators=(",", ":"), default=str)
+            native_shape_window = (
+                native_shape_examples.get("serialized_json_window")
+                if isinstance(native_shape_examples.get("serialized_json_window"), dict)
+                else {}
+            )
+            native_shape_text = (
+                str(native_shape_window.get("text") or "")
+                if native_shape_window
+                else json.dumps(native_shape_examples, ensure_ascii=False, separators=(",", ":"), default=str)
+            )
             require(
-                native_shape_examples.get("transport") == "native_tool_calls",
+                native_shape_examples.get("transport") == "native_tool_calls"
+                or '"transport": "native_tool_calls"' in native_shape_text
+                or '"transport":"native_tool_calls"' in native_shape_text,
                 f"native tool shape examples are not native-specific: {native_shape_examples}",
             )
             require(
@@ -499,8 +523,11 @@ def main() -> int:
                 f"native tool shape examples still expose JSON action=tool: {native_shape_examples}",
             )
             require(
-                "sqlite_prompt_context_window_read_native_tool_call" in native_shape_text
-                and '"transport":"message.tool_calls"' in native_shape_text,
+                (
+                    "sqlite_prompt_context_window_read_native_tool_call" in native_shape_text
+                    and '"transport":"message.tool_calls"' in native_shape_text
+                )
+                or isinstance(native_shape_examples.get("planner_can_request_more"), dict),
                 f"native tool shape examples lack SQL/window native call guidance: {native_shape_examples}",
             )
             native_system_text = planner._planner_system_for_current_mode()
@@ -586,16 +613,16 @@ def main() -> int:
                 and item["function"].get("name") == "repo_propose_code_edit"
             )
             require(
-                "Internal argument contract:" in str(repo_propose_native.get("description") or ""),
-                "native repo_propose_code_edit schema lost operational argument contract description",
+                "Internal argument contract:" not in str(repo_propose_native.get("description") or ""),
+                "native repo_propose_code_edit schema leaked long operational argument contract description",
             )
             require(
-                "conditional_required" in str(repo_propose_native.get("description") or ""),
-                "native repo_propose_code_edit schema lost conditional_required guidance",
+                "conditional_required" not in str(repo_propose_native.get("description") or ""),
+                "native repo_propose_code_edit schema leaked conditional_required guidance into provider description",
             )
             require(
-                "source_requirements" in str(repo_propose_native.get("description") or ""),
-                "native repo_propose_code_edit schema lost source_requirements guidance",
+                "source_requirements" not in str(repo_propose_native.get("description") or ""),
+                "native repo_propose_code_edit schema leaked source_requirements guidance into provider description",
             )
             propose_contract = (manifest_by_name.get("repo_propose_code_edit") or {}).get("argument_contract") or {}
             scratch_read_contract = (manifest_by_name.get("planner_scratchpad_read") or {}).get("argument_contract") or {}
@@ -642,8 +669,10 @@ def main() -> int:
                     [],
                 )
                 require(gate.get("ok") is True, f"{tool_name} unexpectedly rejected empty arguments: {gate}")
+            code_product_validator_goal = f"Generate a detailed code diff for {target}"
+            apply_validator_goal = f"Apply a patch to {target}"
             no_op_payload_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_propose_code_edit",
@@ -672,7 +701,7 @@ def main() -> int:
                 },
             }
             placeholder_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 placeholder_decision,
                 history_read,
             )
@@ -692,7 +721,7 @@ def main() -> int:
                 },
             }
             paste_placeholder_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 paste_placeholder_decision,
                 history_read,
             )
@@ -701,7 +730,7 @@ def main() -> int:
                 f"repo_propose_code_edit paste placeholder was not rejected: {paste_placeholder_gate}",
             )
             example_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_propose_code_edit",
@@ -720,7 +749,7 @@ def main() -> int:
                 f"repo_propose_code_edit EXAMPLE_ONLY old_text was not rejected: {example_gate}",
             )
             old_phrase_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_propose_code_edit",
@@ -739,7 +768,7 @@ def main() -> int:
                 f"repo_propose_code_edit old phrase was not rejected: {old_phrase_gate}",
             )
             missing_old_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_propose_code_edit",
@@ -758,7 +787,7 @@ def main() -> int:
                 f"repo_propose_code_edit old_text outside repo_read was not rejected: {missing_old_gate}",
             )
             valid_old_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_propose_code_edit",
@@ -774,7 +803,7 @@ def main() -> int:
             )
             require(valid_old_gate.get("ok") is True, f"verified old_text was rejected: {valid_old_gate}")
             apply_placeholder_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                apply_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_apply_patch",
@@ -787,7 +816,7 @@ def main() -> int:
                 f"repo_apply_patch placeholder old_text was not rejected: {apply_placeholder_gate}",
             )
             apply_missing_old_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                apply_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_apply_patch",
@@ -800,7 +829,7 @@ def main() -> int:
                 f"repo_apply_patch old_text outside repo_read was not rejected: {apply_missing_old_gate}",
             )
             repeat_placeholder_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 placeholder_decision,
                 history_read + [
                     {
@@ -865,7 +894,7 @@ def main() -> int:
                 },
             ]
             terminal_placeholder_gate = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 paste_placeholder_decision,
                 repeated_placeholder_history,
             )
@@ -878,7 +907,7 @@ def main() -> int:
                 f"terminal placeholder repeat count should be 3: {terminal_placeholder_gate}",
             )
             valid_after_placeholder_history = planner.validate_planner_decision_against_evidence(
-                validator_goal,
+                code_product_validator_goal,
                 {
                     "action": "tool",
                     "tool": "repo_propose_code_edit",
@@ -1795,6 +1824,8 @@ def main() -> int:
                 "job_id",
                 "job_url",
                 "next_action_for_30b",
+                "full_result_available",
+                "full_result_hint",
                 "bridge_status",
                 "bridge_waited_for_agent",
                 "bridge_elapsed_seconds",
@@ -1805,10 +1836,6 @@ def main() -> int:
                     f"bridge v9 leaked public field: {removed_public_field}",
                 )
             require(
-                bridge_wrapped.get("full_result_available") is True,
-                "bridge v9 removed full_result_available",
-            )
-            require(
                 bridge_wrapped.get("result", {}).get("preview") == "planner preview",
                 "bridge v9 removed or moved away result.preview",
             )
@@ -1818,22 +1845,35 @@ def main() -> int:
             )
             require(
                 bridge_wrapped.get("required_top_level_keys")
-                == ["ok", "payload_index_for_30b", "content"],
+                == [
+                    "ok",
+                    "job_ok",
+                    "service",
+                    "mode",
+                    "tool_name",
+                    "tool_result_for",
+                    "called_by_30b",
+                    "required_top_level_keys",
+                    "payload_index_for_30b",
+                    "priority_evidence_for_30b",
+                    "openwebui_usage",
+                    "tool_context_for_30b",
+                ],
                 "bridge v9 did not promote required_top_level_keys",
             )
             public_key_order = list(bridge_wrapped)
             require(
                 public_key_order.index("payload_index_for_30b")
-                < public_key_order.index("content")
-                < public_key_order.index("result"),
+                < public_key_order.index("result")
+                < public_key_order.index("openwebui_usage")
+                < public_key_order.index("priority_evidence_for_30b")
+                < public_key_order.index("tool_context_for_30b"),
                 f"bridge v9 public field order is wrong: {public_key_order}",
             )
-            if "use_fields_in_order" in bridge_wrapped:
-                require(
-                    public_key_order.index("required_top_level_keys")
-                    < public_key_order.index("use_fields_in_order"),
-                    "bridge v9 placed required_top_level_keys after use_fields_in_order",
-                )
+            require("content" not in bridge_wrapped, f"bridge v9 leaked content top-level: {public_key_order}")
+            require("answer_for_30b" not in bridge_wrapped, f"bridge v9 leaked answer_for_30b: {public_key_order}")
+            require("message_for_30b" not in bridge_wrapped, f"bridge v9 leaked message_for_30b: {public_key_order}")
+            require("summary_for_30b" not in bridge_wrapped, f"bridge v9 leaked summary_for_30b: {public_key_order}")
             bridge_context_raw = bridge_wrapped.get("tool_context_for_30b")
             bridge_context = (
                 json.loads(bridge_context_raw)
@@ -1952,6 +1992,85 @@ def main() -> int:
                     history_read,
                 ),
                 "repo_propose_code_edit validator failure was routed to Vulkan/GPU0 repair",
+            )
+            invalid_path_validation = {
+                "ok": False,
+                "violations": ["non_existing_path:src"],
+                "evidence_contract": {
+                    "known_paths_from_latest_repo_list_files": [f"pkg/file_{idx}.py" for idx in range(120)],
+                    "successful_repo_read_paths": [target],
+                    "verified_content_reads": [
+                        {"path": target, "content_excerpt": "x" * 2000}
+                        for _ in range(20)
+                    ],
+                    "code_product_contract": {
+                        "required": True,
+                        "required_tool": "repo_propose_code_edit",
+                        "latest_violations": ["non_existing_path:src"],
+                    },
+                    "required_next_progress": "read a real target or propose a code product from verified evidence",
+                },
+            }
+            require(
+                not planner._should_attempt_vulkan_repair(
+                    {
+                        "action": "tool",
+                        "tool": "repo_list_files",
+                        "arguments": {"path": "src", "core": True},
+                    },
+                    invalid_path_validation,
+                    history_read,
+                ),
+                "non_existing_path validator failure was routed to Vulkan/GPU0 repair",
+            )
+            bounded_repair_contract = planner._compact_vulkan_repair_evidence_contract(
+                invalid_path_validation["evidence_contract"]
+            )
+            require(
+                len(json.dumps(bounded_repair_contract, ensure_ascii=False, default=str)) < 8000,
+                "Vulkan/GPU0 repair evidence contract was not bounded",
+            )
+            require(
+                bounded_repair_contract.get("known_paths_from_latest_repo_list_files"),
+                "bounded Vulkan/GPU0 repair evidence omitted known path evidence",
+            )
+            code_product_surface = planner._tool_surface_names_for_turn(
+                goal=goal,
+                evidence_contract={
+                    "semantic_goal_classification": {"class": "code_product_report"},
+                    "code_product_contract": {"required": True},
+                    "goal_requests_apply": False,
+                },
+                intrinsic_context={},
+            )
+            require(
+                "planner_scratchpad_read" not in code_product_surface,
+                f"planner_scratchpad_read leaked into non-continuation code-product surface: {code_product_surface}",
+            )
+            require(
+                "planner_scratchpad_write" in code_product_surface,
+                f"planner_scratchpad_write missing from code-product surface: {code_product_surface}",
+            )
+            continuation_surface = planner._tool_surface_names_for_turn(
+                goal=goal,
+                evidence_contract={
+                    "semantic_goal_classification": {"class": "code_product_report"},
+                    "code_product_contract": {"required": True},
+                },
+                intrinsic_context={},
+                prompt_context_continuation_required={
+                    "tool": "planner_scratchpad_read",
+                    "arguments": {
+                        "kind": "prompt_context_window",
+                        "document_id": "doc",
+                        "offset": 10,
+                        "max_chars": 500,
+                    },
+                },
+            )
+            require(
+                continuation_surface == ["planner_scratchpad_read"],
+                f"explicit continuation did not isolate planner_scratchpad_read surface: {continuation_surface}",
             )
 
             invalid_python_result = repo_tools.repo_propose_code_edit(
@@ -2348,8 +2467,10 @@ def main() -> int:
             original_view_root = job_html.agent_job_root
             original_view_state = job_html.load_agent_job_state
             original_view_events = job_html.read_agent_events
+            original_compact_status = job_html.compact_agent_status
             ia_payload: dict[str, Any] = {}
             ia_dashboard_html = ""
+            ia_control_html = ""
             ia_stream_text = ""
             try:
                 job_html.agent_job_root = lambda _job_id: ia_view_root
@@ -2361,13 +2482,24 @@ def main() -> int:
                     "workspace": str(ia_view_root),
                 }
                 job_html.read_agent_events = lambda _job_id, _limit=5000: list(ia_events)
+                job_html.compact_agent_status = lambda _job_id, include_events=False: {
+                    "ok": True,
+                    "job_id": "smoke-ia-view",
+                    "status": "running_agentic",
+                    "goal": "smoke view",
+                    "workspace": str(ia_view_root),
+                    "final_summary": "smoke summary",
+                    "events_tail": list(ia_events) if include_events else [],
+                }
                 ia_payload = job_html.agent_job_ia_view_payload("smoke-ia-view")
                 ia_dashboard_html = job_html.agent_job_html("smoke-ia-view")
+                ia_control_html = job_html.agent_job_ia_view_html("smoke-ia-view")
                 ia_stream_text = job_html.agent_job_planner_stream_text("smoke-ia-view")
             finally:
                 job_html.agent_job_root = original_view_root
                 job_html.load_agent_job_state = original_view_state
                 job_html.read_agent_events = original_view_events
+                job_html.compact_agent_status = original_compact_status
             require(ia_payload.get("ok") is True, f"IA view payload failed: {ia_payload}")
             require(
                 (ia_payload.get("mutation_check") or {}).get("event_count_changed") is False,
@@ -2380,7 +2512,13 @@ def main() -> int:
                 ia_native_stream.get("native_tool_call_count") == 1,
                 f"IA view did not expose native tool_calls from raw ndjson: {ia_native_stream}",
             )
-            require("message.tool_calls" in ia_dashboard_html, "dashboard HTML did not surface native tool call stream")
+            require("message.tool_calls" in ia_control_html, "IA view HTML did not surface native tool call stream")
+            require(
+                "Planner request to 11434" not in ia_dashboard_html
+                and "Planner stream from 11434" not in ia_dashboard_html
+                and "Planner decision and validator" not in ia_dashboard_html,
+                "dashboard HTML still duplicates planner control data",
+            )
             require("native_tool_call_count" in ia_stream_text, "planner-stream text lacks native summary")
             require("repo_status" in ia_stream_text, "planner-stream text lacks native tool call name")
             require(

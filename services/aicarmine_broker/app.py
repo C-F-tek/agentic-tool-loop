@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .config import (
     AGENT_JOB_DB,
@@ -50,7 +50,7 @@ from .job_html import (
     agent_job_final_markdown_view_html,
     agent_job_html,
     agent_job_ia_view_html,
-    agent_job_ia_view_json_view_html,
+    agent_job_ia_view_payload,
     agent_jobs_index_html,
     agent_job_planner_stream_view_html,
     agent_job_status_json_view_html,
@@ -110,8 +110,8 @@ def create_app() -> FastAPI:
         return HTMLResponse(agent_job_ia_view_html(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json", include_in_schema=False)
-    def job_dashboard_ia_view_json(job_id: str) -> HTMLResponse:
-        return HTMLResponse(agent_job_ia_view_json_view_html(job_id))
+    def job_dashboard_ia_view_json(job_id: str) -> JSONResponse:
+        return JSONResponse(agent_job_ia_view_payload(job_id))
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events", include_in_schema=False)
     def job_dashboard_events(job_id: str) -> HTMLResponse:
