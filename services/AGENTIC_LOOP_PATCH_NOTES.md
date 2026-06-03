@@ -8,11 +8,13 @@ Regole operative non negoziabili:
 
 ## 2026-06-02 operational update
 
-Current planner sizing defaults are `AICARMINE_AGENTIC_PLANNER_NUM_CTX=14336`,
-`AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP=14336` and
-`AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET=56000`. The prompt compaction
-threshold remains 50%, so the effective compact threshold is 28000 serialized
-prompt characters.
+Current planner sizing defaults are `AICARMINE_AGENTIC_PLANNER_NUM_CTX=12288`,
+`AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP=12288` and
+`AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET=48000`. The prompt compaction
+threshold remains 50%, so the soft compact threshold is 24000 serialized prompt
+characters. This is not the hard no-headroom blocker. The hard generation
+headroom budget is the prompt char budget minus the reserved generation margin
+(with these defaults, 48000 - 8000 = 40000).
 
 Large required file/diff/result sections are not replaced by metadata. They are
 stored in job-local SQLite prompt documents and surfaced to the planner as real

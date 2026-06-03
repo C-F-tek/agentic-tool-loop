@@ -198,12 +198,79 @@ def _normalize_final_answer_lines(decision: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _final_answer_from_content_field(content: Any) -> str:
+    """Extract a final answer from a strict JSON ``content`` payload.
+
+    Some planner turns legitimately return ``{"action":"final","content":{...}}``
+    instead of the older ``final_answer`` field.  That is still a planner final,
+    not a controller fallback: prefer the explicit nested final text when it
+    exists, then preserve the associated content as the answer payload.
+    """
+    if content in (None, "", [], {}):
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, dict):
+        for key in (
+            "final_analysis",
+            "final_answer",
+            "answer",
+            "summary",
+            "message",
+            "response",
+            "text",
+        ):
+            value = content.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return json.dumps(content, ensure_ascii=False, indent=2, default=str)
+    if isinstance(content, list):
+        if all(isinstance(item, str) for item in content):
+            return "\n".join(str(item) for item in content if str(item).strip())
+        return json.dumps(content, ensure_ascii=False, indent=2, default=str)
+    return str(content).strip()
+
+
+def _normalize_final_answer_from_content(decision: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(decision, dict):
+        return decision
+    action = str(decision.get("action") or "").strip().lower()
+    if action not in {
+        "final", "done", "complete", "completed",
+        "block", "blocked", "need_user", "needs_user",
+    }:
+        return decision
+    if str(decision.get("final_answer") or "").strip():
+        return decision
+    content_answer = _final_answer_from_content_field(decision.get("content"))
+    if not content_answer.strip():
+        return decision
+    normalized = dict(decision)
+    normalized["final_answer"] = content_answer
+    normalized["final_answer_source"] = (
+        "content.final_analysis"
+        if isinstance(decision.get("content"), dict)
+        and isinstance(decision["content"].get("final_analysis"), str)
+        and decision["content"].get("final_analysis").strip()
+        else "content"
+    )
+    return normalized
+
+
+def _normalize_terminal_planner_decision(decision: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(decision, dict):
+        return decision
+    return _normalize_final_answer_from_content(
+        _normalize_final_answer_lines(decision)
+    )
+
+
 def normalize_planner_decision(
     raw_text: str, goal: str, step: int, state: dict[str, Any]
 ) -> dict[str, Any]:
     decoded = _parse_strict_json_object(raw_text)
     if decoded:
-        normalized = _normalize_final_answer_lines(decoded)
+        normalized = _normalize_terminal_planner_decision(decoded)
         if str(normalized.get("action") or "tool").strip().lower() == "tool" and not normalized.get("tool"):
             for alias in ("name", "tool_name", "function"):
                 if normalized.get(alias):
@@ -753,42 +820,167 @@ def _compact_tool_manifest_for_prompt(tool_manifest: list[dict[str, Any]]) -> li
     return compacted
 
 
-def _native_tools_schema_for_planner(tools_schema: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    native_schema = copy.deepcopy(tools_schema)
-    contract_description_keys = (
-        "requires_one_of",
-        "conditional_required",
-        "source_requirements",
-        "sqlite_window_contract",
-        "default_allowed",
-        "violation",
-    )
-    for item in native_schema:
+def _tool_schema_name(item: dict[str, Any]) -> str:
+    function = item.get("function") if isinstance(item, dict) else {}
+    return str(function.get("name") or "").strip() if isinstance(function, dict) else ""
+
+
+def _ordered_tool_names(names: set[str]) -> list[str]:
+    ordered = [name for name in internal_tools_list(exclude_vulkan=False) if name in names]
+    ordered.extend(sorted(name for name in names if name not in ordered))
+    return ordered
+
+
+def _filter_tool_manifest_for_names(
+    tool_manifest: list[dict[str, Any]],
+    allowed_names: set[str] | list[str] | tuple[str, ...],
+) -> list[dict[str, Any]]:
+    allowed = {str(name) for name in allowed_names if str(name).strip()}
+    if not allowed:
+        return []
+    return [
+        item
+        for item in tool_manifest
+        if str(item.get("name") or "") in allowed
+    ]
+
+
+def _native_tools_schema_for_planner(
+    tools_schema: list[dict[str, Any]],
+    allowed_names: set[str] | list[str] | tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """Return the provider-native Ollama schema for this turn.
+
+    The provider schema stays canonical: function name, brief description and
+    JSON Schema parameters. Internal argument contracts stay in the planner
+    payload/evidence contract; appending them here bloats the native ``tools``
+    section and makes small-context turns optimize for the wrong surface.
+    """
+    filter_enabled = allowed_names is not None
+    allowed = {str(name) for name in allowed_names or [] if str(name).strip()}
+    native_schema: list[dict[str, Any]] = []
+    for source_item in tools_schema:
+        name = _tool_schema_name(source_item)
+        if filter_enabled and name not in allowed:
+            continue
+        item = copy.deepcopy(source_item)
         function = item.get("function") if isinstance(item, dict) else {}
-        if isinstance(function, dict):
-            argument_contract = function.pop("argument_contract", None)
-            if isinstance(argument_contract, dict) and argument_contract:
-                compact_contract = {
-                    key: argument_contract.get(key)
-                    for key in contract_description_keys
-                    if argument_contract.get(key) not in (None, "", [], {})
-                }
-                if compact_contract:
-                    contract_text = json.dumps(
-                        compact_contract,
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                        default=str,
-                    )
-                    if len(contract_text) > 1800:
-                        contract_text = contract_text[:1800] + "...[contract clipped]"
-                    description = str(function.get("description") or "").strip()
-                    function["description"] = (
-                        f"{description}\nInternal argument contract: {contract_text}"
-                        if description
-                        else f"Internal argument contract: {contract_text}"
-                    )
+        if not isinstance(function, dict):
+            continue
+        function.pop("argument_contract", None)
+        function["description"] = _prompt_clip_text(function.get("description"), 420)
+        native_schema.append(item)
     return native_schema
+
+
+def _intrinsic_context_declares_selective_memory_gap(intrinsic_context: dict[str, Any]) -> bool:
+    if not isinstance(intrinsic_context, dict):
+        return False
+    for key in ("retrieved_memory", "retrieved_rag_chunks"):
+        section = intrinsic_context.get(key)
+        if not isinstance(section, dict):
+            continue
+        if section.get("gap") or section.get("available") is False:
+            return True
+    return False
+
+
+def _candidate_tool_names(contract: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    actions = contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else []
+    for action in actions:
+        if isinstance(action, dict):
+            name = _normalize_tool_name(str(action.get("tool") or ""))
+            if name:
+                names.add(name)
+    return names
+
+
+def _contract_final_required_now(contract: dict[str, Any]) -> bool:
+    contract = contract if isinstance(contract, dict) else {}
+    final_contract = (
+        contract.get("finalization_contract")
+        if isinstance(contract.get("finalization_contract"), dict)
+        else {}
+    )
+    if final_contract.get("final_allowed") is not True:
+        return False
+    progress = str(contract.get("required_next_progress") or "").strip().lower()
+    if "produce action=final" in progress:
+        return True
+    if "quality gate is satisfied" in progress and "final" in progress:
+        return True
+    operational = (
+        contract.get("operational_notes")
+        if isinstance(contract.get("operational_notes"), dict)
+        else {}
+    )
+    next_instruction = str(operational.get("next_instruction") or "").strip().lower()
+    return "produce action=final" in next_instruction
+
+
+def _final_composition_tool_names_from_candidates(contract: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    actions = contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        name = _normalize_tool_name(str(action.get("tool") or ""))
+        args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+        if name == "planner_scratchpad_write" and str(args.get("kind") or "").strip() == "answer_chunk":
+            names.add(name)
+    return names
+
+
+def _tool_surface_names_for_turn(
+    *,
+    goal: str,
+    evidence_contract: dict[str, Any],
+    intrinsic_context: dict[str, Any],
+    prompt_context_continuation_required: dict[str, Any] | None = None,
+) -> list[str]:
+    continuation = prompt_context_continuation_required if isinstance(prompt_context_continuation_required, dict) else {}
+    if continuation.get("tool") == "planner_scratchpad_read":
+        return ["planner_scratchpad_read"]
+
+    contract = evidence_contract if isinstance(evidence_contract, dict) else {}
+    semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
+    goal_class = str(semantic.get("class") or "").strip()
+    code_product_required = bool((contract.get("code_product_contract") or {}).get("required")) if isinstance(contract.get("code_product_contract"), dict) else False
+    apply_required = bool(contract.get("goal_requests_apply")) or goal_requests_apply(goal)
+
+    if _contract_final_required_now(contract):
+        return _ordered_tool_names(_final_composition_tool_names_from_candidates(contract))
+
+    names: set[str] = {"repo_read", "repo_list_files", "repo_tree", "repo_search"}
+    if code_product_required:
+        names.update(
+            {
+                "repo_propose_code_edit",
+                "planner_scratchpad_read",
+                "planner_scratchpad_write",
+            }
+        )
+    elif apply_required:
+        names.update({"repo_apply_patch", "repo_validate", "repo_command", "terminal_run_command_wait"})
+    elif goal_class == "analysis_only":
+        names = {"repo_read", "repo_list_files", "repo_tree", "repo_search"}
+    else:
+        names.update({"repo_status"})
+
+    candidate_names = _candidate_tool_names(contract)
+    for candidate in candidate_names:
+        if candidate.startswith("runtime_sqlite_memory_"):
+            continue
+        if candidate == "planner_scratchpad_read":
+            continue
+        names.add(candidate)
+
+    if _intrinsic_context_declares_selective_memory_gap(intrinsic_context):
+        names.add("runtime_sqlite_memory_search")
+    if "runtime_sqlite_memory_write" in candidate_names:
+        names.add("runtime_sqlite_memory_write")
+    return _ordered_tool_names(names)
 
 
 def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> Any:
@@ -1085,7 +1277,9 @@ def _windowed_evidence_contract_for_prompt(
                 ),
             }
         compact["windowed_due_to_prompt_budget"] = True
-        compact["full_contract_required_from_sqlite_window"] = True
+        compact["full_contract_required_from_sqlite_window"] = False
+        compact["full_contract_available_from_sqlite_window"] = True
+        compact["full_contract_sqlite_window_is_hard_gate"] = False
         compact["windowed_keys_available_in_full_evidence_contract_window"] = [
             str(key)
             for key, value in contract.items()
@@ -1110,22 +1304,7 @@ def _windowed_evidence_contract_for_prompt(
             window_chars=window_chars,
         )
         if continuation:
-            actions = compact.get("candidate_next_actions") if isinstance(compact.get("candidate_next_actions"), list) else []
-            action_key = json.dumps(continuation, sort_keys=True, default=str)
-            compact["candidate_next_actions"] = [
-                continuation,
-                *[
-                    item for item in actions
-                    if json.dumps(item, sort_keys=True, default=str) != action_key
-                ][:10],
-            ]
-            compact["planner_may_choose_final"] = False
-            final_contract = compact.get("finalization_contract") if isinstance(compact.get("finalization_contract"), dict) else {}
-            final_contract["final_allowed"] = False
-            final_contract["planner_may_choose_final"] = False
-            final_contract["reason"] = "Full evidence contract is windowed in SQLite and must be read before final/code-product decision."
-            compact["finalization_contract"] = final_contract
-            compact["required_next_progress"] = continuation.get("reason")
+            compact["optional_evidence_contract_next_window"] = continuation
     return compact
 
 
@@ -1361,14 +1540,21 @@ def _prompt_budget_report(
     system_chars = len(str(system_prompt or ""))
     extra_chars = sum(extra_sections.values())
     total = total_user + system_chars + extra_chars
+    headroom_budget = _prompt_generation_headroom_char_budget()
+    generation_reserve = max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - headroom_budget)
     return {
         "schema": "planner_prompt_budget.v1",
         "char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
+        "generation_headroom_char_budget": headroom_budget,
+        "generation_headroom_reserve_chars": generation_reserve,
+        "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
+        "generation_token_reserve": _planner_token_generation_reserve(),
         "system_prompt_chars": system_chars,
         "total_user_payload_chars": total_user,
         "extra_prompt_chars": extra_chars,
         "total_prompt_chars": total,
         "over_budget": bool(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0 and total > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET),
+        "over_generation_headroom_budget": bool(headroom_budget > 0 and total > headroom_budget),
         "sections": sections,
     }
 
@@ -1553,6 +1739,24 @@ def _prompt_compaction_threshold() -> int:
     ratio = float(AGENTIC_PLANNER_PROMPT_COMPACT_RATIO or 0.5)
     ratio = max(0.1, min(ratio, 0.95))
     return max(1000, int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET * ratio))
+
+
+def _prompt_generation_headroom_char_budget() -> int:
+    budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
+    if budget <= 0:
+        return 0
+    generation_reserve = max(4000, min(10000, budget // 6))
+    return max(1000, budget - generation_reserve)
+
+
+def _planner_token_generation_reserve(num_ctx: int | None = None) -> int:
+    try:
+        ctx = int(num_ctx if num_ctx is not None else AGENTIC_PLANNER_NUM_CTX)
+    except Exception:
+        ctx = 0
+    if ctx <= 0:
+        return 0
+    return max(512, min(2048, ctx // 16))
 
 
 def _prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
@@ -2033,6 +2237,22 @@ def _prompt_context_continuation_from_payload(payload: dict[str, Any]) -> dict[s
     if not isinstance(payload, dict):
         return {}
     evidence = payload.get("evidence_contract") if isinstance(payload.get("evidence_contract"), dict) else {}
+    required = evidence.get("required_next_tool_call") if isinstance(evidence.get("required_next_tool_call"), dict) else {}
+    if required.get("tool") == "planner_scratchpad_read":
+        args = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
+        kind = str(args.get("kind") or "")
+        if kind in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND} and str(args.get("document_id") or "").strip():
+            return {
+                "tool": "planner_scratchpad_read",
+                "arguments": {
+                    "kind": kind,
+                    "document_id": str(args.get("document_id") or ""),
+                    "offset": args.get("offset"),
+                    "max_chars": args.get("max_chars"),
+                    **({"target_file": args.get("target_file")} if args.get("target_file") else {}),
+                },
+                "reason": required.get("reason") or evidence.get("required_next_progress"),
+            }
     actions = evidence.get("candidate_next_actions") if isinstance(evidence.get("candidate_next_actions"), list) else []
     first = actions[0] if actions and isinstance(actions[0], dict) else {}
     if first.get("tool") != "planner_scratchpad_read":
@@ -2072,9 +2292,80 @@ def _decision_matches_prompt_context_continuation(
     if str(args.get("document_id") or "") != str(expected.get("document_id") or ""):
         return False
     try:
-        return int(args.get("offset") or 0) == int(expected.get("offset") or 0)
+        if int(args.get("offset") or 0) != int(expected.get("offset") or 0):
+            return False
+        if expected.get("max_chars") not in (None, ""):
+            return int(args.get("max_chars") or 0) == int(expected.get("max_chars") or 0)
+        return True
     except (TypeError, ValueError):
         return False
+
+
+def _required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(action, dict):
+        return {}
+    tool = _normalize_tool_name(str(action.get("tool") or ""))
+    args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+    if tool != "planner_scratchpad_read" or not args:
+        return {}
+    return {
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            key: args.get(key)
+            for key in ("kind", "document_id", "offset", "max_chars", "target_file")
+            if args.get(key) not in (None, "", [], {})
+        },
+        "reason": action.get("reason"),
+    }
+
+
+def _forbidden_repeated_prompt_window_calls(
+    history: list[dict[str, Any]],
+    continuation_action: dict[str, Any],
+) -> list[dict[str, Any]]:
+    required = _required_next_tool_call_from_action(continuation_action)
+    required_args = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
+    required_doc_id = str(required_args.get("document_id") or "").strip()
+    if not required_doc_id:
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, int]] = set()
+    for row in history if isinstance(history, list) else []:
+        result = _history_tool_result(row)
+        if result.get("tool") != "planner_scratchpad_read" or result.get("ok") is not True:
+            continue
+        if str(result.get("mode") or "") not in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND}:
+            continue
+        for item in result.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            doc_id = str(item.get("document_id") or "").strip()
+            if doc_id != required_doc_id:
+                continue
+            try:
+                start = int(item.get("window_start") or 0)
+                chars = int(item.get("window_chars") or 0)
+                end = int(item.get("window_end") or 0)
+            except (TypeError, ValueError):
+                continue
+            key = (doc_id, start, chars)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "tool": "planner_scratchpad_read",
+                    "arguments": {
+                        "kind": str(result.get("mode") or "prompt_context_window"),
+                        "document_id": doc_id,
+                        "offset": start,
+                        "max_chars": chars,
+                    },
+                    "window_end": end,
+                    "reason": "already_consumed",
+                }
+            )
+    return out[-20:]
 
 
 def _native_history_message_reserve_chars(history: list[dict[str, Any]], window_chars: int) -> int:
@@ -2115,6 +2406,7 @@ def _build_planner_user_payload(
     if native_history_reserve_chars:
         extra_prompt_sections["native_history_messages_reserve"] = native_history_reserve_chars
     root = agent_job_root(job_id)
+    headroom_char_budget = _prompt_generation_headroom_char_budget()
 
     def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
         required_working_set = _required_working_set_for_prompt(
@@ -2144,6 +2436,11 @@ def _build_planner_user_payload(
             window_chars=window_chars,
         )
         if continuation_action:
+            required_next_tool_call = _required_next_tool_call_from_action(continuation_action)
+            forbidden_repeated_calls = _forbidden_repeated_prompt_window_calls(
+                history,
+                continuation_action,
+            )
             actions = evidence_for_prompt.get("candidate_next_actions") if isinstance(evidence_for_prompt.get("candidate_next_actions"), list) else []
             action_key = json.dumps(continuation_action, sort_keys=True, default=str)
             deduped = [
@@ -2151,6 +2448,10 @@ def _build_planner_user_payload(
                 if json.dumps(item, sort_keys=True, default=str) != action_key
             ]
             evidence_for_prompt["candidate_next_actions"] = [continuation_action] + deduped[:10]
+            if required_next_tool_call:
+                evidence_for_prompt["required_next_tool_call"] = required_next_tool_call
+            if forbidden_repeated_calls:
+                evidence_for_prompt["forbidden_repeated_tool_calls"] = forbidden_repeated_calls
             evidence_for_prompt["planner_may_choose_final"] = False
             final_contract = evidence_for_prompt.get("finalization_contract") if isinstance(evidence_for_prompt.get("finalization_contract"), dict) else {}
             final_contract["final_allowed"] = False
@@ -2171,6 +2472,8 @@ def _build_planner_user_payload(
                 "num_ctx_cap": AGENTIC_PLANNER_NUM_CTX_CAP,
                 "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
                 "prompt_char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
+                "generation_headroom_char_budget": headroom_char_budget,
+                "generation_headroom_reserve_chars": max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - headroom_char_budget),
                 "prompt_compaction_threshold_chars": _prompt_compaction_threshold(),
                 "prompt_compaction_ratio": AGENTIC_PLANNER_PROMPT_COMPACT_RATIO,
                 "compact_mode": compact_mode,
@@ -2238,6 +2541,10 @@ def _build_planner_user_payload(
                 }
             ),
         }
+        if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict):
+            payload_local["required_next_tool_call"] = evidence_for_prompt["required_next_tool_call"]
+        if isinstance(evidence_for_prompt.get("forbidden_repeated_tool_calls"), list):
+            payload_local["forbidden_repeated_tool_calls"] = evidence_for_prompt["forbidden_repeated_tool_calls"]
         report_local = _prompt_budget_report(
             payload_local,
             system_prompt=system_prompt_for_budget,
@@ -2262,11 +2569,11 @@ def _build_planner_user_payload(
                 window_chars=_prompt_window_chars(True, attempt),
             )
             if (
-                AGENTIC_PLANNER_PROMPT_CHAR_BUDGET <= 0
-                or int(report.get("total_prompt_chars") or 0) <= AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+                headroom_char_budget <= 0
+                or int(report.get("total_prompt_chars") or 0) <= headroom_char_budget
             ):
                 break
-    if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0 and report["over_budget"]:
+    if headroom_char_budget > 0 and int(report.get("total_prompt_chars") or 0) > headroom_char_budget:
         optional_for_window = (
             payload.get("optional_context")
             if isinstance(payload.get("optional_context"), dict)
@@ -2295,13 +2602,16 @@ def _build_planner_user_payload(
             report["compact_mode"] = True
             report["window_chars"] = hard_window_chars
             report["native_history_reserve_chars"] = native_history_reserve_chars
-            if report["total_prompt_chars"] <= AGENTIC_PLANNER_PROMPT_CHAR_BUDGET:
+            if report["total_prompt_chars"] <= headroom_char_budget:
                 break
     payload["prompt_budget_report"] = {
         "schema": report.get("schema"),
         "char_budget": report.get("char_budget"),
+        "generation_headroom_char_budget": report.get("generation_headroom_char_budget"),
+        "generation_headroom_reserve_chars": report.get("generation_headroom_reserve_chars"),
         "total_prompt_chars": report.get("total_prompt_chars"),
         "over_budget": report.get("over_budget"),
+        "over_generation_headroom_budget": report.get("over_generation_headroom_budget"),
         "extra_prompt_chars": report.get("extra_prompt_chars"),
         "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
         "native_history_reserve_chars": extra_prompt_sections.get("native_history_messages_reserve", 0),
@@ -2323,8 +2633,11 @@ def _build_planner_user_payload(
         payload["prompt_budget_report"] = {
             "schema": report.get("schema"),
             "char_budget": report.get("char_budget"),
+            "generation_headroom_char_budget": report.get("generation_headroom_char_budget"),
+            "generation_headroom_reserve_chars": report.get("generation_headroom_reserve_chars"),
             "total_prompt_chars": report.get("total_prompt_chars"),
             "over_budget": report.get("over_budget"),
+            "over_generation_headroom_budget": report.get("over_generation_headroom_budget"),
             "extra_prompt_chars": report.get("extra_prompt_chars"),
             "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
             "native_history_reserve_chars": extra_prompt_sections.get("native_history_messages_reserve", 0),
@@ -2340,8 +2653,8 @@ def _build_planner_user_payload(
         if int(report.get("total_prompt_chars") or 0) == actual_total:
             break
     if (
-        AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
-        and report.get("over_budget")
+        headroom_char_budget > 0
+        and int(report.get("total_prompt_chars") or 0) > headroom_char_budget
         and isinstance(payload.get("optional_context"), dict)
         and payload["optional_context"].get("schema") != "planner_optional_context_window_pack.v1"
     ):
@@ -2373,8 +2686,11 @@ def _build_planner_user_payload(
                 payload["prompt_budget_report"] = {
                     "schema": report.get("schema"),
                     "char_budget": report.get("char_budget"),
+                    "generation_headroom_char_budget": report.get("generation_headroom_char_budget"),
+                    "generation_headroom_reserve_chars": report.get("generation_headroom_reserve_chars"),
                     "total_prompt_chars": report.get("total_prompt_chars"),
                     "over_budget": report.get("over_budget"),
+                    "over_generation_headroom_budget": report.get("over_generation_headroom_budget"),
                     "extra_prompt_chars": report.get("extra_prompt_chars"),
                     "native_tools_schema_chars": extra_prompt_sections.get("native_tools_schema", 0),
                     "native_history_reserve_chars": extra_prompt_sections.get("native_history_messages_reserve", 0),
@@ -2389,7 +2705,7 @@ def _build_planner_user_payload(
                 )
                 if int(report.get("total_prompt_chars") or 0) == actual_total:
                     break
-            if report["total_prompt_chars"] <= AGENTIC_PLANNER_PROMPT_CHAR_BUDGET:
+            if report["total_prompt_chars"] <= headroom_char_budget:
                 break
     if native_history_reserve_chars:
         total_without_native_history_reserve = max(
@@ -2397,8 +2713,8 @@ def _build_planner_user_payload(
             int(report.get("total_prompt_chars") or 0) - native_history_reserve_chars,
         )
         history_message_char_budget = (
-            max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - total_without_native_history_reserve)
-            if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            max(0, headroom_char_budget - total_without_native_history_reserve)
+            if headroom_char_budget > 0
             else max(0, AGENTIC_PLANNER_NUM_CTX * 2)
         )
         report["native_history_reserve_is_synthetic"] = True
@@ -2407,11 +2723,16 @@ def _build_planner_user_payload(
             AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
             and total_without_native_history_reserve > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
         )
+        report["over_generation_headroom_without_native_history_reserve"] = bool(
+            headroom_char_budget > 0
+            and total_without_native_history_reserve > headroom_char_budget
+        )
         report["history_message_char_budget"] = history_message_char_budget
         payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
         payload_report["native_history_reserve_is_synthetic"] = True
         payload_report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
         payload_report["over_budget_without_native_history_reserve"] = report["over_budget_without_native_history_reserve"]
+        payload_report["over_generation_headroom_without_native_history_reserve"] = report["over_generation_headroom_without_native_history_reserve"]
         payload_report["history_message_char_budget"] = history_message_char_budget
         payload["prompt_budget_report"] = payload_report
     return payload, report
@@ -2512,6 +2833,192 @@ def _history_tool_result(item: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _bounded_prompt_context_tool_result_payload(result: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    if result.get("tool") != "planner_scratchpad_read":
+        return {}
+    mode = str(result.get("mode") or "")
+    if mode not in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND}:
+        return {}
+    items = result.get("items") if isinstance(result.get("items"), list) else []
+    payload: dict[str, Any] = {
+        "schema": "planner_bounded_tool_result.v1",
+        "tool": "planner_scratchpad_read",
+        "ok": result.get("ok"),
+        "mode": mode,
+        "count": result.get("count", len(items)),
+        "items": [
+            _compact_prompt_context_window_item(item)
+            for item in items
+            if isinstance(item, dict)
+        ],
+    }
+    for key in ("kind", "target_file", "status", "complete_payload_ready", "state_parse_error"):
+        if result.get(key) not in (None, "", [], {}):
+            payload[key] = result.get(key)
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict) or item.get("has_more_after") is not True:
+            continue
+        payload["planner_can_request_more"] = {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": mode,
+                "document_id": item.get("document_id"),
+                "offset": item.get("window_end"),
+                "max_chars": item.get("window_chars"),
+            },
+        }
+        if mode == CODE_PRODUCT_BUILD_STATE_KIND and payload.get("target_file"):
+            payload["planner_can_request_more"]["arguments"]["target_file"] = payload.get("target_file")
+        break
+    return {k: v for k, v in payload.items() if v not in (None, "", [], {})}
+
+
+_PLANNER_HISTORY_NOISE_KEYS = {
+    *_LOCAL_ARTIFACT_KEYS,
+    *_OLLAMA_STREAM_META_KEYS,
+    "cache_key",
+    "repair_cache_key",
+    "repair_cache_hit",
+    "cached_from_step",
+    "controller_preseed",
+    "preseed_index",
+    "dynamic_initial_orientation",
+    "duration",
+    "duration_ms",
+    "elapsed",
+    "elapsed_ms",
+    "started_at",
+    "finished_at",
+    "created_at",
+    "updated_at",
+    "events",
+    "raw_events",
+}
+
+
+def _planner_history_summary(value: Any) -> str:
+    text = str(value or "").strip()
+    for marker in (
+        " artifact=",
+        " cached_from_artifact=",
+        " stream_path=",
+        " events_path=",
+        " final_path=",
+    ):
+        if marker in text:
+            text = text.split(marker, 1)[0].strip()
+    return _prompt_clip_text(text, 700)
+
+
+def _clean_planner_history_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text in _PLANNER_HISTORY_NOISE_KEYS:
+                continue
+            if key_text == "store" and str(item).lower() in {"job_local_sqlite", "sqlite", "local_path"}:
+                continue
+            if key_text == "summary":
+                cleaned_summary = _planner_history_summary(item)
+                if cleaned_summary:
+                    out[key_text] = cleaned_summary
+                continue
+            out[key_text] = _clean_planner_history_value(item)
+        return _drop_empty_dict_values(out)
+    if isinstance(value, list):
+        return [
+            cleaned
+            for item in value
+            if (cleaned := _clean_planner_history_value(item)) not in (None, "", [], {})
+        ]
+    return value
+
+
+def _planner_history_arguments(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+    arguments = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+    if arguments:
+        return _drop_empty_dict_values(_clean_planner_history_value(arguments))
+    derived: dict[str, Any] = {}
+    for key in (
+        "path",
+        "paths",
+        "query",
+        "target_file",
+        "edit_kind",
+        "kind",
+        "mode",
+        "line",
+        "before",
+        "after",
+        "max_chars",
+        "limit",
+        "max_depth",
+        "suffix",
+        "document_id",
+        "offset",
+    ):
+        if result.get(key) not in (None, "", [], {}):
+            derived[key] = result.get(key)
+    return _drop_empty_dict_values(_clean_planner_history_value(derived))
+
+
+def _planner_history_reason(item: dict[str, Any], result: dict[str, Any]) -> str:
+    decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+    for value in (
+        decision.get("reason"),
+        result.get("preseed_reason"),
+        result.get("summary"),
+    ):
+        reason = _planner_history_summary(value)
+        if reason:
+            return reason
+    return ""
+
+
+def _planner_controller_guard_history_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
+    rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
+    operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
+    content = rejected.get("content")
+    payload: dict[str, Any] = {
+        "schema": "planner_controller_guard_history.v1",
+        "step": item.get("step"),
+        "substep": item.get("substep"),
+        "tool": "controller_guard",
+        "ok": result.get("ok"),
+        "guard_type": result.get("guard_type"),
+        "violations": result.get("violations"),
+        "summary": _planner_history_summary(result.get("summary")),
+        "rejected_action": rejected.get("action"),
+        "rejected_final_answer_source": rejected.get("final_answer_source"),
+        "rejected_content_keys": list(content.keys()) if isinstance(content, dict) else None,
+        "required_next_progress": contract.get("required_next_progress"),
+        "planner_may_choose_final": contract.get("planner_may_choose_final"),
+        "next_instruction": result.get("next_instruction") or operational.get("next_instruction"),
+        "successful_repo_read_count": contract.get("successful_repo_read_count"),
+        "verified_content_read_count": contract.get("verified_content_read_count"),
+    }
+    return _drop_empty_dict_values(_clean_planner_history_value(payload))
+
+
+def _planner_history_evidence_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    tool = str(result.get("tool") or (item.get("decision") or {}).get("tool") or "")
+    payload: dict[str, Any] = {
+        "schema": "planner_tool_history_evidence.v1",
+        "step": item.get("step"),
+        "substep": item.get("substep"),
+        "tool": tool,
+        "reason": _planner_history_reason(item, result),
+        "arguments": _planner_history_arguments(item, result),
+        "result": _clean_planner_history_value(result),
+    }
+    return _drop_empty_dict_values(payload)
+
+
 def _planner_tool_result_message_payload(
     item: dict[str, Any],
     result: dict[str, Any],
@@ -2521,9 +3028,21 @@ def _planner_tool_result_message_payload(
     window_chars: int,
 ) -> dict[str, Any]:
     tool = str(result.get("tool") or (item.get("decision") or {}).get("tool") or "")
-    source = _same_tool_artifact_payload(result)
-    raw_payload = source if isinstance(source, dict) else result
+    direct_payload = _bounded_prompt_context_tool_result_payload(result)
+    if direct_payload:
+        direct_payload["step"] = item.get("step")
+        if item.get("substep") not in (None, "", [], {}):
+            direct_payload["substep"] = item.get("substep")
+        decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+        if isinstance(decision.get("arguments"), dict):
+            direct_payload["arguments"] = decision.get("arguments")
+        return direct_payload
+    if tool == "controller_guard":
+        return _planner_controller_guard_history_payload(item, result)
+    raw_payload = _planner_history_evidence_payload(item, result)
     raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
+    if len(raw_text) <= max(1200, int(window_chars or 0)):
+        return raw_payload
     window = _store_prompt_text_window(
         root,
         section=f"message_tool_result:{item.get('step')}:{tool}",
@@ -2539,13 +3058,12 @@ def _planner_tool_result_message_payload(
         },
     )
     payload: dict[str, Any] = {
-        "schema": "planner_tool_result_message_window.v1",
+        "schema": "planner_tool_history_window.v1",
         "step": item.get("step"),
         "substep": item.get("substep"),
         "tool": tool,
-        "arguments": (item.get("decision") or {}).get("arguments")
-        if isinstance(item.get("decision"), dict)
-        else None,
+        "reason": raw_payload.get("reason"),
+        "arguments": raw_payload.get("arguments"),
         "result_window": window,
     }
     if window.get("document_id") and window.get("has_more_after") is True:
@@ -2611,9 +3129,6 @@ def _planner_history_item_messages(
             root=root,
             goal=goal,
             window_chars=window_chars,
-        )
-        payload["transport_note"] = (
-            "controller/non-native history item; this is context only, not a planner tool call"
         )
         messages.append({
             "role": "user",
@@ -3120,12 +3635,39 @@ def recoverable_planner_block(decision: dict[str, Any]) -> bool:
     return any(m in combined for m in markers)
 
 
+def _goal_report_only_code_product_marker(goal: str) -> bool:
+    low = str(goal or "").lower()
+    report_only = re.search(
+        r"\b("
+        r"report[-\s]?only|"
+        r"do\s+not\s+(?:actually\s+)?apply|"
+        r"without\s+(?:actually\s+)?applying(?:\s+changes?)?|"
+        r"non\s+applicare|"
+        r"senza\s+applicare"
+        r")\b",
+        low,
+    )
+    code_surface = re.search(
+        r"\b("
+        r"diff(?:\s+patch(?:es)?)?|"
+        r"patch(?:es)?|"
+        r"code\s+edit\s+proposal(?:s)?|"
+        r"code\s+product|"
+        r"refactor(?:ing)?"
+        r")\b",
+        low,
+    )
+    return bool(report_only and code_surface)
+
+
 def goal_requests_code_product(goal: str) -> bool:
     low = str(goal or "").lower()
     patterns = (
         r"\bunified\s+diff\b",
         r"\bcode\s+diff\b",
         r"\bdetailed\s+code\s+diff\b",
+        r"\bcomplete\s+diff\s+patch(?:es)?\b",
+        r"\bdiff\s+patch(?:es)?\b",
         r"\bdiff\s+completo\b",
         r"\bdiff\s+concret[aoei]\b",
         r"\bdifferenziale(?:\s+di\s+codice)?\b",
@@ -3141,6 +3683,9 @@ def goal_requests_code_product(goal: str) -> bool:
         r"\bpatch\s+candidate\b",
         r"\bcandidate\s+patch\b",
         r"\bcode\s+product\b",
+        r"\bcode\s+edit\s+proposal(?:s)?\b",
+        r"\breport[-\s]?only\s+code\s+edit\s+proposal(?:s)?\b",
+        r"\breport[-\s]?only\s+(?:diff|patch|code\s+product)\b",
         r"\bproposta\s+(?:di\s+)?refactor(?:ing)?\b",
         r"\bproponi(?:mi)?\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
         r"\bproporre\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
@@ -3150,13 +3695,16 @@ def goal_requests_code_product(goal: str) -> bool:
         r"\bgenerate\s+(?:a\s+)?(?:detailed\s+)?(?:code\s+)?diff\b",
         r"\bproduce\s+(?:a\s+)?(?:code\s+)?diff\b",
     )
-    return any(re.search(pattern, low) for pattern in patterns)
+    return _goal_report_only_code_product_marker(goal) or any(re.search(pattern, low) for pattern in patterns)
 
 
 def goal_requests_apply(goal: str) -> bool:
     low = str(goal or "").lower()
+    if _goal_report_only_code_product_marker(goal):
+        return False
     for negated in (
         r"\bdo\s+not\s+apply\b",
+        r"\bdo\s+not\s+actually\s+apply\b",
         r"\bdo\s+not\s+modify\b",
         r"\bdo\s+not\s+change\b",
         r"\bdo\s+not\s+edit\b",
@@ -3169,6 +3717,8 @@ def goal_requests_apply(goal: str) -> bool:
         r"\bdon't\s+write\b",
         r"\bdon't\s+fix\b",
         r"\bwithout\s+applying\b",
+        r"\bwithout\s+applying\s+changes?\b",
+        r"\bwithout\s+actually\s+applying(?:\s+changes?)?\b",
         r"\bwithout\s+modifying\b",
         r"\bwithout\s+changing\b",
         r"\bwithout\s+editing\b",
@@ -3191,8 +3741,9 @@ def goal_requests_apply(goal: str) -> bool:
         r"\breport[-\s]?only\b",
     ):
         low = re.sub(negated, " ", low)
+    low = re.sub(r"\bcode\s+edit\s+proposal(?:s)?\b", " ", low)
     if goal_requests_code_product(goal) and re.search(
-        r"\b(report[-\s]?only|do\s+not\s+apply|without\s+applying|non\s+applicare|senza\s+applicare)\b",
+        r"\b(report[-\s]?only|do\s+not\s+(?:actually\s+)?apply|without\s+(?:actually\s+)?applying(?:\s+changes?)?|non\s+applicare|senza\s+applicare)\b",
         str(goal or "").lower(),
     ):
         return False
@@ -5994,6 +6545,17 @@ def planner_evidence_contract(
     repo_available_read_candidates = _meaningful_read_candidates_from_evidence(list_rows)
     repo_required_read_count = _repo_required_read_count(repo_available_read_candidates)
     repo_goal = _repo_analysis_goal(goal)
+    analysis_only_repo_goal = (
+        repo_goal
+        and str(semantic_classification.get("class") or "") == "analysis_only"
+        and not bool(semantic_classification.get("must_produce_code_product"))
+        and not goal_requests_apply(goal)
+    )
+    repo_final_required_read_count = (
+        min(repo_required_read_count, 10)
+        if analysis_only_repo_goal
+        else repo_required_read_count
+    )
     scoped_inspection = bool(target_scope)
     file_read_done = bool(target_file and target_file in verified_read_path_set)
     scope_listed = bool(target_scope and any(_path_under_scope(str(row.get("path") or ""), target_scope) and str(row.get("path") or ".") not in ("", ".") for row in list_rows))
@@ -6053,20 +6615,41 @@ def planner_evidence_contract(
             f"(up to {SCOPED_CONCRETE_READ_TARGET}, bounded by discovered candidates)."
         )
     elif repo_goal:
-        final_allowed = bool(
+        strict_repo_evidence_sufficient = bool(
             root_surface_done
             and len(doc_reads) >= 3
             and len(meaningful_lists) >= 1
             and len(meaningful_content_reads) >= repo_required_read_count
         )
+        analysis_repo_evidence_sufficient = bool(
+            analysis_only_repo_goal
+            and root_surface_done
+            and len(doc_reads) >= 3
+            and len(meaningful_lists) >= 1
+            and len(meaningful_content_reads) >= 1
+            and len(verified_read_rows) >= repo_final_required_read_count
+        )
+        final_allowed = bool(strict_repo_evidence_sufficient or analysis_repo_evidence_sufficient)
         final_reason = (
-            "Codex-quality repository evidence exists: root surface, multiple docs/config reads, "
-            f"one meaningful non-infra/code area, and {len(meaningful_content_reads)}/"
-            f"{repo_required_read_count} verified concrete readable reads inside meaningful areas."
+            (
+                "Analysis-only repository evidence exists: root surface, multiple docs/config reads, "
+                f"one meaningful non-infra/code area, {len(meaningful_content_reads)} verified reads "
+                f"inside meaningful areas, and {len(verified_read_rows)}/{repo_final_required_read_count} "
+                "total verified content reads. The 20-read target remains orientative, not a hard final gate."
+            )
+            if analysis_repo_evidence_sufficient and not strict_repo_evidence_sufficient else
+            (
+                "Codex-quality repository evidence exists: root surface, multiple docs/config reads, "
+                f"one meaningful non-infra/code area, and {len(meaningful_content_reads)}/"
+                f"{repo_required_read_count} verified concrete readable reads inside meaningful areas."
+            )
             if final_allowed else
-            "Need root surface + at least 3 markdown/config reads + one meaningful non-infra/code area "
-            f"+ {len(meaningful_content_reads)}/{repo_required_read_count} verified concrete readable reads "
-            f"inside those areas (up to {REPO_CONCRETE_READ_TARGET}, bounded by discovered candidates)."
+            (
+                "Need root surface + at least 3 markdown/config reads + one meaningful non-infra/code area "
+                f"+ {len(meaningful_content_reads)}/{repo_final_required_read_count} verified concrete readable reads "
+                "for analysis-only finalization "
+                f"(target {REPO_CONCRETE_READ_TARGET} remains orientative and bounded by discovered candidates)."
+            )
         )
     else:
         # Non-repository goals may still finish only after a planner final with
@@ -6243,7 +6826,9 @@ def planner_evidence_contract(
         "scoped_available_read_candidates": scope_available_read_candidates[:120],
         "scoped_concrete_read_count": len(scope_content_reads),
         "repo_concrete_read_target": REPO_CONCRETE_READ_TARGET if repo_goal else None,
-        "repo_concrete_read_required": repo_required_read_count if repo_goal else None,
+        "repo_concrete_read_target_is_orientative": bool(analysis_only_repo_goal) if repo_goal else None,
+        "repo_concrete_read_required": repo_final_required_read_count if repo_goal else None,
+        "repo_concrete_read_strict_required": repo_required_read_count if repo_goal else None,
         "repo_available_read_candidates": repo_available_read_candidates[:160] if repo_goal else [],
         "repo_concrete_read_count": len(meaningful_content_reads) if repo_goal else None,
         "failed_repo_read_paths": read_failed[:120],
@@ -6320,8 +6905,9 @@ def planner_evidence_contract(
                 "if fewer are discovered, read all discovered candidates."
                 if target_kind == "directory" else
                 "For generic repository structure/content analysis: root surface, at least 3 markdown/config reads, "
-                f"one evidence-derived meaningful non-infra/code area, and up to {REPO_CONCRETE_READ_TARGET} "
-                "verified concrete readable files discovered inside meaningful areas. If fewer are discovered, read all discovered candidates."
+                "one evidence-derived meaningful non-infra/code area, and enough verified content reads for the "
+                f"current goal. For analysis-only goals the {REPO_CONCRETE_READ_TARGET}-read target is orientative; "
+                f"{repo_final_required_read_count} verified reads can satisfy finalization when concrete evidence is present."
             ),
         },
         "agentic_codex_quality": {
@@ -6352,7 +6938,7 @@ def planner_evidence_contract(
                 f"in-scope list/tree + {scope_required_read_count} in-scope verified concrete readable reads"
                 if target_kind == "directory" else
                 f"root_surface + >=3 docs/config reads + one evidence-derived non-infra/code area "
-                f"+ {repo_required_read_count} verified concrete readable reads"
+                f"+ {repo_final_required_read_count} verified concrete readable reads"
             ),
             "hardcoded_core_path": False,
         },
@@ -7113,7 +7699,7 @@ def validate_planner_decision_against_evidence(
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Validator-only gate. It rejects invalid planner decisions but does not execute a substitute tool."""
-    decision = decision if isinstance(decision, dict) else {}
+    decision = _normalize_terminal_planner_decision(decision if isinstance(decision, dict) else {})
     action = str(decision.get("action") or "tool").strip().lower()
     tool = _normalize_tool_name(str(decision.get("tool") or ""))
     args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
@@ -7145,6 +7731,29 @@ def validate_planner_decision_against_evidence(
             "is not executable. Choose a native tool_call, or return final/block JSON."
         )
         return {"ok": False, "violations": violations, "evidence_contract": contract}
+    allowed_tool_names_source = (
+        decision.get("allowed_tool_names")
+        if isinstance(decision.get("allowed_tool_names"), list)
+        else decision.get("allowed_native_tool_names")
+    )
+    if action == "tool" and isinstance(allowed_tool_names_source, list):
+        allowed_tool_names = {
+            _normalize_tool_name(str(name or ""))
+            for name in allowed_tool_names_source
+            if str(name or "").strip()
+        }
+        if tool not in allowed_tool_names:
+            violations.append("tool_not_in_turn_surface")
+            if (
+                AGENTIC_PLANNER_NATIVE_TOOLS
+                and _native_required_tool_decision_has_transport_provenance(decision)
+            ):
+                violations.append("native_tool_not_in_turn_surface")
+            contract["required_next_progress"] = (
+                "The tool call was not in the planner tool surface for this turn. "
+                "Use only the current turn tool surface; if the quality gate is satisfied, "
+                "produce action=final instead of calling another tool."
+            )
     if action == "tool" and tool == "planner_scratchpad_read":
         requested_kind = str(args.get("kind") or "").strip()
         requested_doc_id = str(args.get("document_id") or args.get("id") or "").strip()
@@ -7276,6 +7885,13 @@ def validate_planner_decision_against_evidence(
         # repair. The controller still does not invent a substitute action.
         reason = str(decision.get("reason") or "")
         reason_low = reason.lower()
+        if reason == "planner_final_required_empty_output":
+            violations.append("planner_final_required_empty_output")
+            contract["required_next_progress"] = (
+                "Quality gate is satisfied and no tool surface was provided. "
+                "Return one strict JSON final object with final_answer. Do not call tools."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
         if reason == "planner_native_tool_call_required":
             violations.append("planner_native_tool_call_required")
             contract["required_next_progress"] = (
@@ -7313,6 +7929,16 @@ def validate_planner_decision_against_evidence(
     if tool not in VALID_INTERNAL_TOOLS:
         violations.append(f"invalid_tool:{tool}")
         return {"ok": False, "violations": violations, "evidence_contract": contract}
+
+    if _contract_final_required_now(contract):
+        final_composition_tools = _final_composition_tool_names_from_candidates(contract)
+        if tool not in final_composition_tools:
+            violations.append("final_required_tool_call_disallowed")
+            contract["required_next_progress"] = (
+                "Quality gate is satisfied. The required next action is action=final. "
+                "Do not call repo tools, memory tools or prompt windows unless a concrete "
+                "answer_chunk composition tool is explicitly listed in candidate_next_actions."
+            )
 
     if tool == "repo_search" and not _any_argument_group_present(args, [["query"], ["pattern"], ["symbol"]]):
         violations.append("repo_search_missing_query_pattern_or_symbol")
@@ -7948,6 +8574,9 @@ def _should_attempt_vulkan_repair(
                 "prompt_context_window_",
                 "planner_scratchpad_window_",
                 "repo_read_window_",
+                "tool_not_in_turn_surface",
+                "native_tool_not_in_turn_surface",
+                "final_required_tool_call_disallowed",
             ))
             for violation in violations
         ):
@@ -8272,7 +8901,7 @@ def planner_decision(
         }
     from .tool_contract import TOOLS_SCHEMA  # noqa: PLC0415
 
-    tool_manifest = [
+    all_tool_manifest = [
         {
             "name": item["function"]["name"],
             "description": item["function"]["description"],
@@ -8283,11 +8912,6 @@ def planner_decision(
         if isinstance(item.get("function"), dict)
         and item["function"].get("name") in internal_tools_list(exclude_vulkan=False)
     ]
-    native_tools_schema = (
-        _native_tools_schema_for_planner(TOOLS_SCHEMA)
-        if AGENTIC_PLANNER_NATIVE_TOOLS
-        else []
-    )
 
     last_step = history[-1] if history else {}
     last_tool_result = last_step.get("tool_result") if isinstance(last_step, dict) else {}
@@ -8320,18 +8944,50 @@ def planner_decision(
         intrinsic_context["budget_report"]["num_ctx_cap"] = AGENTIC_PLANNER_NUM_CTX_CAP
     evidence_contract = planner_evidence_contract(goal, history, intrinsic_context=intrinsic_context)
 
-    user_payload, prompt_budget = _build_planner_user_payload(
-        job_id=job_id,
-        state=state,
-        step=step,
-        history=history,
-        tool_manifest=tool_manifest,
+    native_tool_names = _tool_surface_names_for_turn(
+        goal=goal,
         evidence_contract=evidence_contract,
-        planner_memory=planner_memory,
         intrinsic_context=intrinsic_context,
-        last_tool_result=last_tool_result if isinstance(last_tool_result, dict) else {},
-        native_tools_schema=native_tools_schema,
     )
+
+    def build_payload_for_native_tool_names(tool_names: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+        schema = (
+            _native_tools_schema_for_planner(TOOLS_SCHEMA, tool_names)
+            if AGENTIC_PLANNER_NATIVE_TOOLS
+            else []
+        )
+        manifest = _filter_tool_manifest_for_names(all_tool_manifest, tool_names)
+        payload, budget = _build_planner_user_payload(
+            job_id=job_id,
+            state=state,
+            step=step,
+            history=history,
+            tool_manifest=manifest,
+            evidence_contract=evidence_contract,
+            planner_memory=planner_memory,
+            intrinsic_context=intrinsic_context,
+            last_tool_result=last_tool_result if isinstance(last_tool_result, dict) else {},
+            native_tools_schema=schema,
+        )
+        return payload, budget, schema
+
+    user_payload, prompt_budget, native_tools_schema = build_payload_for_native_tool_names(
+        native_tool_names
+    )
+    prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
+    refined_native_tool_names = _tool_surface_names_for_turn(
+        goal=goal,
+        evidence_contract=evidence_contract,
+        intrinsic_context=intrinsic_context,
+        prompt_context_continuation_required=prompt_context_continuation_required,
+    )
+    if AGENTIC_PLANNER_NATIVE_TOOLS and refined_native_tool_names != native_tool_names:
+        native_tool_names = refined_native_tool_names
+        user_payload, prompt_budget, native_tools_schema = build_payload_for_native_tool_names(
+            native_tool_names
+        )
+        prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
+
     required_errors = prompt_budget.get("required_working_set_errors") if isinstance(prompt_budget, dict) else []
     if isinstance(prompt_budget, dict):
         native_history_reserve_chars_for_budget = (
@@ -8344,11 +9000,20 @@ def planner_decision(
             0,
             total_prompt_chars_for_budget - native_history_reserve_chars_for_budget,
         )
+        generation_headroom_char_budget = int(
+            prompt_budget.get("generation_headroom_char_budget")
+            or _prompt_generation_headroom_char_budget()
+            or 0
+        )
         prompt_budget["native_history_reserve_is_synthetic"] = bool(native_history_reserve_chars_for_budget)
         prompt_budget["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
         prompt_budget["over_budget_without_native_history_reserve"] = bool(
             AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
             and total_without_native_history_reserve > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+        )
+        prompt_budget["over_generation_headroom_without_native_history_reserve"] = bool(
+            generation_headroom_char_budget > 0
+            and total_without_native_history_reserve > generation_headroom_char_budget
         )
     hard_required_errors = [
         err for err in (required_errors or [])
@@ -8357,41 +9022,61 @@ def planner_decision(
             "repo_read_full_content_missing_in_required_working_set",
         }
     ]
-    effective_prompt_over_budget = bool(prompt_budget.get("over_budget")) if isinstance(prompt_budget, dict) else False
+    effective_prompt_over_budget = (
+        bool(prompt_budget.get("over_generation_headroom_budget")) if isinstance(prompt_budget, dict) else False
+    )
     if (
         isinstance(prompt_budget, dict)
         and AGENTIC_PLANNER_NATIVE_TOOLS
         and int(prompt_budget.get("native_history_reserve_chars") or 0) > 0
     ):
-        effective_prompt_over_budget = bool(prompt_budget.get("over_budget_without_native_history_reserve"))
+        effective_prompt_over_budget = bool(
+            prompt_budget.get("over_generation_headroom_without_native_history_reserve")
+        )
     if (
         isinstance(prompt_budget, dict)
         and effective_prompt_over_budget
-        and AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+        and int(prompt_budget.get("generation_headroom_char_budget") or 0) > 0
     ):
         hard_required_errors.append(
             {
-                "error": "planner_prompt_pack_over_budget_after_context_windowing",
+                "error": "planner_prompt_no_generation_headroom",
                 "total_prompt_chars": prompt_budget.get("total_prompt_chars"),
                 "total_prompt_chars_without_native_history_reserve": prompt_budget.get("total_prompt_chars_without_native_history_reserve"),
                 "prompt_char_budget": prompt_budget.get("char_budget"),
+                "generation_headroom_char_budget": prompt_budget.get("generation_headroom_char_budget"),
+                "generation_headroom_reserve_chars": prompt_budget.get("generation_headroom_reserve_chars"),
                 "native_history_reserve_chars": prompt_budget.get("native_history_reserve_chars"),
                 "required_working_set_chars": prompt_budget.get("required_working_set_chars"),
             }
         )
     if hard_required_errors:
+        headroom_block = any(
+            isinstance(err, dict) and err.get("error") == "planner_prompt_no_generation_headroom"
+            for err in hard_required_errors
+        )
         return {
             "action": "block",
-            "reason": "planner_prompt_required_working_set_invalid",
-            "blocked_by": "planner_prompt_required_payload_not_complete",
+            "reason": (
+                "planner_prompt_no_generation_headroom"
+                if headroom_block
+                else "planner_prompt_required_working_set_invalid"
+            ),
+            "blocked_by": (
+                "planner_prompt_no_generation_headroom"
+                if headroom_block
+                else "planner_prompt_required_payload_not_complete"
+            ),
             "final_answer": (
-                "Planner prompt construction refused to send truncated required payload. "
-                f"Errors: {json.dumps(hard_required_errors, ensure_ascii=False, default=str)}"
+                (
+                    "Planner prompt construction refused to call 11434 without generation headroom. "
+                    if headroom_block
+                    else "Planner prompt construction refused to send truncated required payload. "
+                )
+                + f"Errors: {json.dumps(hard_required_errors, ensure_ascii=False, default=str)}"
             ),
             "prompt_budget_report": prompt_budget,
         }
-    prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
-
     planner_system_prompt = _planner_system_for_current_mode()
     history_messages: list[dict[str, Any]] = []
     history_messages_report: dict[str, Any] = {
@@ -8406,10 +9091,11 @@ def planner_decision(
             0,
             int(prompt_budget.get("total_prompt_chars") or 0) - native_history_reserve_chars,
         )
-        if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0:
+        generation_headroom_char_budget = int(prompt_budget.get("generation_headroom_char_budget") or 0)
+        if generation_headroom_char_budget > 0:
             history_message_budget = max(
                 0,
-                AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - prompt_chars_without_history_messages,
+                generation_headroom_char_budget - prompt_chars_without_history_messages,
             )
         else:
             history_message_budget = max(0, AGENTIC_PLANNER_NUM_CTX * 2)
@@ -8432,6 +9118,24 @@ def planner_decision(
                 int(prompt_budget["total_prompt_chars_with_history_messages"])
                 > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
             )
+        if generation_headroom_char_budget > 0:
+            prompt_budget["over_generation_headroom_with_history_messages"] = (
+                int(prompt_budget["total_prompt_chars_with_history_messages"])
+                > generation_headroom_char_budget
+            )
+            if prompt_budget["over_generation_headroom_with_history_messages"]:
+                return {
+                    "action": "block",
+                    "reason": "planner_prompt_no_generation_headroom",
+                    "blocked_by": "planner_prompt_no_generation_headroom",
+                    "final_answer": (
+                        "Planner prompt construction refused to call 11434 without generation headroom "
+                        "after native history transport. "
+                        f"total_prompt_chars_with_history_messages={prompt_budget['total_prompt_chars_with_history_messages']} "
+                        f"generation_headroom_char_budget={generation_headroom_char_budget}."
+                    ),
+                    "prompt_budget_report": prompt_budget,
+                }
         transportable_history_items = sum(
             1
             for item in (history if isinstance(history, list) else [])
@@ -8521,9 +9225,14 @@ def planner_decision(
             "intrinsic_rag_status": (intrinsic_context.get("retrieved_rag_chunks") or {}).get("status"),
             "intrinsic_rag_rerank_status": ((intrinsic_context.get("retrieved_rag_chunks") or {}).get("rerank") or {}).get("status"),
             "prompt_char_budget": prompt_budget.get("char_budget") if isinstance(prompt_budget, dict) else None,
+            "generation_headroom_char_budget": prompt_budget.get("generation_headroom_char_budget") if isinstance(prompt_budget, dict) else None,
+            "generation_headroom_reserve_chars": prompt_budget.get("generation_headroom_reserve_chars") if isinstance(prompt_budget, dict) else None,
             "prompt_payload_chars": prompt_budget.get("total_user_payload_chars") if isinstance(prompt_budget, dict) else None,
             "prompt_over_budget": prompt_budget.get("over_budget") if isinstance(prompt_budget, dict) else None,
+            "prompt_over_generation_headroom_budget": prompt_budget.get("over_generation_headroom_budget") if isinstance(prompt_budget, dict) else None,
             "required_working_set_chars": prompt_budget.get("required_working_set_chars") if isinstance(prompt_budget, dict) else None,
+            "tool_surface_names": native_tool_names,
+            "native_tool_surface_names": native_tool_names if AGENTIC_PLANNER_NATIVE_TOOLS else [],
             "planner_payload_capture": prompt_capture,
         },
         step=step,
@@ -8553,6 +9262,8 @@ def planner_decision(
         if decision:
             decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
             decision["native_tool_calls_seen"] = len(native_calls)
+            decision["allowed_tool_names"] = list(native_tool_names)
+            decision["allowed_native_tool_names"] = list(native_tool_names)
             if prompt_context_continuation_required:
                 decision["prompt_context_continuation_required"] = prompt_context_continuation_required
             if stream_meta:
@@ -8564,16 +9275,88 @@ def planner_decision(
         if isinstance(decoded_text_decision, dict):
             action = str(decoded_text_decision.get("action") or "").strip().lower()
             if action in {"final", "done", "complete", "completed", "block", "blocked", "need_user", "needs_user"}:
-                decision = _normalize_final_answer_lines(decoded_text_decision)
+                decision = _normalize_terminal_planner_decision(decoded_text_decision)
                 decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
                 decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
                 decision["native_tool_calls_seen"] = 0
                 decision["native_tool_text_decision_allowed"] = action
+                decision["allowed_tool_names"] = list(native_tool_names)
                 if prompt_context_continuation_required:
                     decision["prompt_context_continuation_required"] = prompt_context_continuation_required
                 if stream_meta:
                     decision["planner_stream_meta"] = stream_meta
                 return decision
+        prompt_eval_count = 0
+        try:
+            prompt_eval_count = int(response.get("ollama_prompt_eval_count") or 0)
+        except Exception:
+            prompt_eval_count = 0
+        token_reserve = _planner_token_generation_reserve(AGENTIC_PLANNER_NUM_CTX)
+        token_headroom_low = bool(
+            AGENTIC_PLANNER_NUM_CTX > 0
+            and prompt_eval_count > 0
+            and token_reserve > 0
+            and prompt_eval_count >= max(0, AGENTIC_PLANNER_NUM_CTX - token_reserve)
+        )
+        if (
+            (AGENTIC_PLANNER_NUM_CTX > 0 and prompt_eval_count >= AGENTIC_PLANNER_NUM_CTX)
+            or token_headroom_low
+            or (
+                isinstance(prompt_budget, dict)
+                and bool(prompt_budget.get("over_generation_headroom_budget"))
+            )
+            or (
+                isinstance(prompt_budget, dict)
+                and bool(prompt_budget.get("over_generation_headroom_with_history_messages"))
+            )
+        ):
+            return {
+                "action": "block",
+                "reason": "planner_prompt_no_generation_headroom",
+                "blocked_by": "planner_prompt_no_generation_headroom",
+                "final_answer": (
+                    "Planner native tool mode returned no tool call, but the prompt had no "
+                    "safe generation headroom. This is a controller prompt-pack issue, not "
+                    "a native tool-call violation."
+                ),
+                "raw_planner_text": raw_text_for_native_mode[:12000],
+                "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+                "native_tool_calls_seen": 0,
+                "controller_synthesized_protocol_block": True,
+                "prompt_budget_report": prompt_budget,
+                "prompt_token_headroom": {
+                    "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
+                    "ollama_prompt_eval_count": prompt_eval_count,
+                    "generation_token_reserve": token_reserve,
+                    "headroom_tokens": (
+                        AGENTIC_PLANNER_NUM_CTX - prompt_eval_count
+                        if AGENTIC_PLANNER_NUM_CTX > 0 and prompt_eval_count > 0
+                        else None
+                    ),
+                    "classification": (
+                        "planner_prompt_token_headroom_low"
+                        if token_headroom_low
+                        else "planner_prompt_no_generation_headroom"
+                    ),
+                },
+                **({"planner_stream_meta": stream_meta} if stream_meta else {}),
+            }
+        if not native_tools_schema:
+            return {
+                "action": "block",
+                "reason": "planner_final_required_empty_output",
+                "final_answer": (
+                    "Planner had no native tools in this turn because the evidence contract "
+                    "required a final answer, but Ollama returned neither a strict final JSON "
+                    "object nor usable text."
+                ),
+                "raw_planner_text": raw_text_for_native_mode[:12000],
+                "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+                "native_tool_calls_seen": 0,
+                "controller_synthesized_protocol_block": True,
+                "prompt_budget_report": prompt_budget,
+                **({"planner_stream_meta": stream_meta} if stream_meta else {}),
+            }
         return {
             "action": "block",
             "reason": "planner_native_tool_call_required",
@@ -8669,6 +9452,7 @@ def planner_decision(
 
     decision = normalize_planner_decision(raw_text, goal, step, state)
     decision.setdefault("raw_planner_text_preview", raw_text[:2000])
+    decision["allowed_tool_names"] = list(native_tool_names)
     if prompt_context_continuation_required:
         decision["prompt_context_continuation_required"] = prompt_context_continuation_required
     if stream_meta:
@@ -10060,6 +10844,10 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         "native_tool_call": True,
                         "raw_native_tool_call": call.get("raw_tool_call") if isinstance(call.get("raw_tool_call"), dict) else call,
                     }
+                    if isinstance(decision.get("allowed_tool_names"), list):
+                        call_decision["allowed_tool_names"] = list(decision["allowed_tool_names"])
+                    if isinstance(decision.get("allowed_native_tool_names"), list):
+                        call_decision["allowed_native_tool_names"] = list(decision["allowed_native_tool_names"])
                     if isinstance(decision.get("prompt_context_continuation_required"), dict):
                         call_decision["prompt_context_continuation_required"] = decision["prompt_context_continuation_required"]
                     internal_args = sanitize_tool_args(
@@ -10097,7 +10885,9 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                                 state=state,
                             )
                         if repair_result.get("ok") and isinstance(repair_result.get("repaired_decision"), dict):
-                            repaired_decision = repair_result["repaired_decision"]
+                            repaired_decision = _normalize_terminal_planner_decision(
+                                repair_result["repaired_decision"]
+                            )
                             if _native_required_repaired_tool_decision_disallowed(repaired_decision):
                                 batch_guard = {
                                     "tool": "controller_guard",
@@ -10494,7 +11284,9 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 and repair_result.get("ok")
                 and isinstance(repair_result.get("repaired_decision"), dict)
             ):
-                repaired_decision = repair_result["repaired_decision"]
+                repaired_decision = _normalize_terminal_planner_decision(
+                    repair_result["repaired_decision"]
+                )
                 if _native_required_repaired_tool_decision_disallowed(repaired_decision):
                     repaired_validation = {
                         "ok": False,
@@ -10639,6 +11431,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                 write_agent_job_state(state)
                 continue
 
+        decision = _normalize_terminal_planner_decision(decision if isinstance(decision, dict) else {})
         action = str(decision.get("action") or "tool").strip().lower()
 
         # --- final ---

@@ -393,18 +393,64 @@ def _json_value_label(value: Any) -> str:
 
 
 def _html_json_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        css = "json-bool-true" if value else "json-bool-false"
+        text = "true" if value else "false"
+        return f"<span class=\"json-scalar json-bool {css}\">{text}</span>"
+    if value is None:
+        return "<span class=\"json-scalar json-null\">null</span>"
+    if isinstance(value, (int, float)):
+        return f"<span class=\"json-scalar json-number\">{html.escape(str(value))}</span>"
     if isinstance(value, str):
+        if "\n" not in value and len(value) <= 240:
+            return f"<span class=\"json-scalar json-string\">{html.escape(json.dumps(value, ensure_ascii=False))}</span>"
         return _html_pre(value)
     return _html_pre(_json_pretty(value))
 
 
+def _json_inline_container(value: Any) -> bool:
+    if isinstance(value, dict):
+        return 0 < len(value) <= 2 and all(not isinstance(item, (dict, list)) for item in value.values())
+    if isinstance(value, list):
+        return 0 < len(value) <= 2 and all(not isinstance(item, (dict, list)) for item in value)
+    return False
+
+
+def _html_json_inline_container(value: Any) -> str:
+    if isinstance(value, dict):
+        parts = []
+        for key, item in value.items():
+            parts.append(
+                "<span class=\"json-inline-pair\">"
+                f"<span class=\"json-key\">{html.escape(str(key))}</span>: "
+                f"{_html_json_scalar(item)}"
+                "</span>"
+            )
+        return "<span class=\"json-inline-object\">{ " + ", ".join(parts) + " }</span>"
+    if isinstance(value, list):
+        parts = [_html_json_scalar(item) for item in value]
+        return "<span class=\"json-inline-array\">[ " + ", ".join(parts) + " ]</span>"
+    return _html_json_scalar(value)
+
+
 def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
+    if _json_inline_container(value):
+        return _html_json_inline_container(value)
     if isinstance(value, dict):
         if not value:
             return _html_pre("{}")
         parts: list[str] = ["<div class=\"json-tree json-object\">"]
         for key, item in value.items():
             item_path = f"{path}.{key}"
+            if not isinstance(item, (dict, list)) or _json_inline_container(item):
+                parts.append(
+                    "<div class=\"json-row\">"
+                    f"<span class=\"json-key\">{html.escape(str(key))}</span>"
+                    f"<span class=\"json-label\">{html.escape(_json_value_label(item))}</span>"
+                    f"<span class=\"json-value\">{_html_json_tree(item, path=item_path, depth=depth + 1)}</span>"
+                    "</div>"
+                )
+                continue
             title = f"{key} ({_json_value_label(item)})"
             parts.append(
                 _html_detail_block(
@@ -422,6 +468,15 @@ def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
         parts = ["<div class=\"json-tree json-array\">"]
         for index, item in enumerate(value):
             item_path = f"{path}[{index}]"
+            if not isinstance(item, (dict, list)) or _json_inline_container(item):
+                parts.append(
+                    "<div class=\"json-row\">"
+                    f"<span class=\"json-key\">[{index}]</span>"
+                    f"<span class=\"json-label\">{html.escape(_json_value_label(item))}</span>"
+                    f"<span class=\"json-value\">{_html_json_tree(item, path=item_path, depth=depth + 1)}</span>"
+                    "</div>"
+                )
+                continue
             title = f"[{index}] ({_json_value_label(item)})"
             parts.append(
                 _html_detail_block(
@@ -434,6 +489,60 @@ def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
         parts.append("</div>")
         return "".join(parts)
     return _html_json_scalar(value)
+
+
+def _json_tree_css() -> str:
+    return """
+.json-tree details { margin-left: 12px; }
+.json-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-top: 1px solid #2b2b2b;
+  padding: 6px 0;
+  flex-wrap: wrap;
+}
+.json-key {
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  color: #9ed0ff;
+}
+.json-label {
+  color: #888;
+  font-size: 11px;
+}
+.json-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.json-scalar,
+.json-inline-object,
+.json-inline-array {
+  font-family: Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.json-bool {
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.json-bool-true {
+  color: #d7ffde;
+  background: #234d2b;
+}
+.json-bool-false {
+  color: #ffdede;
+  background: #5a2424;
+}
+.json-null {
+  color: #aaa;
+}
+.json-number {
+  color: #f2d28b;
+}
+.json-string {
+  color: #e4e4e4;
+}
+"""
 
 
 def _dashboard_links(job_id: str) -> str:
@@ -451,7 +560,7 @@ def _dashboard_links(job_id: str) -> str:
     )
 
 
-def _html_page(title: str, body_html: str, *, refresh_seconds: int = 2, job_id: str | None = None) -> str:
+def _html_page(title: str, body_html: str, *, refresh_seconds: int = 0, job_id: str | None = None) -> str:
     gpu0_panel = _gpu0_panel_html(job_id) if job_id else ""
     return f"""<!doctype html>
 <html>
@@ -469,11 +578,11 @@ td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
 pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
 .muted {{ color: #aaa; }}
-.json-tree details {{ margin-left: 12px; }}
-.event-type {{ font-family: Consolas, monospace; }}
-.audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
-.audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
-{_gpu0_panel_css()}
+  .event-type {{ font-family: Consolas, monospace; }}
+  .audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
+  .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
+  {_json_tree_css()}
+  {_gpu0_panel_css()}
 </style>
 {_stateful_refresh_script(refresh_seconds)}
 </head>
@@ -670,12 +779,38 @@ def agent_job_events_view_html(job_id: str) -> str:
 
 def agent_job_ia_view_json_view_html(job_id: str) -> str:
     payload = agent_job_ia_view_payload(job_id)
-    summary = {
-        "ok": payload.get("ok") if isinstance(payload, dict) else None,
-        "job": payload.get("job") if isinstance(payload, dict) else None,
-        "steps_count": len(payload.get("steps") or []) if isinstance(payload, dict) else 0,
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return _structured_json_page(job_id, "IA View JSON View", payload)
+    steps = [step for step in (payload.get("steps") or []) if isinstance(step, dict)]
+    summary_payload = {
+        "ok": payload.get("ok"),
+        "job": payload.get("job"),
+        "steps_count": len(steps),
+        "mutation_check": payload.get("mutation_check"),
     }
-    return _structured_json_page(job_id, "IA View JSON View", payload, summary=summary)
+    body = (
+        "<div class=\"card\">"
+        f"<div class=\"status\">IA View JSON View - {html.escape(job_id)}</div>"
+        f"<p>{_dashboard_links(job_id)}</p>"
+        "</div>"
+        "<div class=\"card\"><h2>Summary</h2>"
+        f"{_html_json_tree(summary_payload, path='ia_view_summary')}"
+        "</div>"
+    )
+    for step in steps:
+        step_id = html.escape(str(step.get("step") or "job"))
+        body += (
+            f"<div class=\"card step-card\" data-step=\"{step_id}\">"
+            f"<h2>Step {step_id}</h2>"
+            f"{_html_json_tree(step, path=f'ia_view.steps.{step_id}')}"
+            "</div>"
+        )
+    body += (
+        "<div class=\"card\"><h2>OpenWebUI 30B Payload</h2>"
+        f"{_html_json_tree(payload.get('openwebui_30b_payload') or {}, path='ia_view.openwebui_30b_payload')}"
+        "</div>"
+    )
+    return _html_page("IA View JSON View", body, job_id=job_id)
 
 
 def agent_job_planner_stream_view_html(job_id: str) -> str:
@@ -722,8 +857,7 @@ def agent_job_planner_stream_view_html(job_id: str) -> str:
 
 
 
-def _stateful_refresh_script(refresh_seconds: int = 2) -> str:
-    refresh_ms = max(1, int(refresh_seconds)) * 1000
+def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
     return f"""<script>
 (function() {{
   var key = "aicarmine-dashboard-state:" + window.location.pathname;
@@ -759,10 +893,6 @@ def _stateful_refresh_script(refresh_seconds: int = 2) -> str:
   }}
   window.addEventListener("beforeunload", writeState);
   document.addEventListener("DOMContentLoaded", restoreState);
-  window.setTimeout(function() {{
-    writeState();
-    window.location.reload();
-  }}, {refresh_ms});
 }})();
 </script>"""
 
@@ -893,36 +1023,6 @@ def _gpu0_panel_html(job_id: str) -> str:
     )
 
 
-def _gpu0_global_panel_html(jobs: list[dict[str, Any]]) -> str:
-    summaries: list[dict[str, Any]] = []
-    for job in jobs[:25]:
-        job_id = str(job.get("job_id") or "").strip()
-        if not job_id:
-            continue
-        payload = _gpu0_corrections_payload(job_id)
-        if not payload.get("has_gpu0_corrections"):
-            continue
-        summaries.append({
-            "job_id": job_id,
-            "status": job.get("status"),
-            "repair_event_count": payload.get("repair_event_count"),
-            "final_repair_signal_count": payload.get("final_repair_signal_count"),
-        })
-    payload = {
-        "schema": "aicarmine_gpu0_corrections_global_overlay.v1",
-        "source": "recent job events.ndjson + final.json",
-        "jobs_scanned": min(len(jobs), 25),
-        "jobs_with_gpu0_corrections": summaries,
-        "has_gpu0_corrections": bool(summaries),
-    }
-    return (
-        "<aside class=\"gpu0-corrections-window\">"
-        "<h2>GPU0 corrections JSON</h2>"
-        f"{_html_pre(payload)}"
-        "</aside>"
-    )
-
-
 def agent_jobs_index_html(*, limit: int, title: str, refresh_seconds: int) -> str:
     safe_limit = max(1, min(int(limit or 50), 200))
     jobs = list_agent_jobs(limit=safe_limit)
@@ -948,7 +1048,7 @@ def agent_jobs_index_html(*, limit: int, title: str, refresh_seconds: int) -> st
     body = (
         "<div class=\"card\">"
         f"<div class=\"status\">{html.escape(title)} Agent Jobs</div>"
-        f"<p class=\"muted\">Auto-refresh ogni {int(refresh_seconds)} secondi. Stato dettagli preservato tra refresh.</p>"
+        "<p class=\"muted\">Auto-refresh pagina disattivato. Aggiorna manualmente la lista job quando serve.</p>"
         "</div>"
         "<div class=\"card\">"
         "<table><thead><tr><th>Job</th><th>Status</th><th>Goal</th>"
@@ -972,12 +1072,11 @@ td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
 pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
 .muted {{ color: #aaa; }}
-{_gpu0_panel_css()}
+{_json_tree_css()}
 </style>
-{_stateful_refresh_script(refresh_seconds)}
+{_stateful_refresh_script(0)}
 </head>
 <body>
-{_gpu0_global_panel_html(jobs)}
 {body}
 </body>
 </html>"""
@@ -1103,7 +1202,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
 {_gpu0_panel_css()}
 </style>
-{_stateful_refresh_script(2)}
+{_stateful_refresh_script(0)}
 </head>
 <body>
 {_gpu0_panel_html(job_id)}
@@ -1200,7 +1299,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
 {_gpu0_panel_css()}
 </style>
-{_stateful_refresh_script(2)}
+{_stateful_refresh_script(0)}
 </head>
 <body>
 {_gpu0_panel_html(job_id)}

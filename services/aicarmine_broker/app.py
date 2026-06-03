@@ -32,7 +32,6 @@ from .config import (
     HEALTH_PATH,
     JOBS_INDEX_PATH,
     JOBS_JSON_PATH,
-    JOBS_REFRESH_SECONDS,
     LAB_REPO,
     OLLAMA_TASK_MODEL,
     OLLAMA_TASK_URL,
@@ -44,11 +43,12 @@ from .config import (
     VULKAN_AGENT_PATH,
     WORKSPACE,
 )
-from .dispatcher import agent, agent_job_html
+from .dispatcher import agent
 from .job_html import (
     agent_job_events_view_html,
     agent_job_final_json_view_html,
     agent_job_final_markdown_view_html,
+    agent_job_html,
     agent_job_ia_view_html,
     agent_job_ia_view_json_view_html,
     agent_jobs_index_html,
@@ -86,7 +86,7 @@ def create_app() -> FastAPI:
             agent_jobs_index_html(
                 limit=limit,
                 title=APP_TITLE,
-                refresh_seconds=JOBS_REFRESH_SECONDS,
+                refresh_seconds=0,
             )
         )
 

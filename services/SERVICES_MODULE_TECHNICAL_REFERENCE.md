@@ -60,7 +60,7 @@ OpenWebUI
       -> valid final: finalize_agentic_job(...)
   -> 3572 compact terminal job response
   -> 3571 terminal wrapper
-  -> OpenWebUI content + tool_context_for_30b
+  -> OpenWebUI payload_index_for_30b + priority_evidence_for_30b + tool_context_for_30b
 ```
 
 Detailed proof and diagnostic steps are in
@@ -85,8 +85,11 @@ Critical protocol notes:
   Optional memory/RAG/history context can be omitted only after real
   SQLite-windowing and serialized prompt counting. `num_ctx` is
   requested/capped/effective, not assumed. Current documented defaults are
-  `num_ctx_requested=14336`, `num_ctx_cap=14336`,
-  `prompt_char_budget=56000`, with compaction beginning at 50% of that budget.
+  `num_ctx_requested=12288`, `num_ctx_cap=12288`,
+  `prompt_char_budget=48000`, with compaction beginning at 50% of that budget.
+  The 50% compaction threshold is a soft trigger for SQLite windowing, not a
+  hard no-headroom blocker; the hard generation headroom budget is the prompt
+  char budget minus the reserved generation margin.
 - If required prompt context still has unread real text, the next planner action
   must be `planner_scratchpad_read(kind=prompt_context_window, ...)`; the
   controller rejects other actions as `prompt_context_continuation_required`
@@ -104,11 +107,18 @@ Critical protocol notes:
 
 For terminal jobs returned to OpenWebUI:
 
-- `content`: compact final planner answer or terminal message.
+- primary metadata: `ok`, `job_ok`, `service`, `mode`, `tool_name`,
+  `tool_result_for`, `called_by_30b`, `required_top_level_keys`.
+- `payload_index_for_30b`: first navigation surface for concrete payload fields.
+- `priority_evidence_for_30b`: high-priority inline concrete payloads and
+  compact analysis evidence.
+- `openwebui_usage`: runtime instructions for reading the indexed fields.
 - `tool_context_for_30b`: pretty-printed JSON string containing only useful
   successful-tool evidence and declared limits.
+- `result`: preserved unchanged when already produced by the current flow.
 - No continuation protocol, no tool-call examples, no raw events, no transport
-  diagnostics, no local artifact paths as content.
+  diagnostics, no blocked/prose narrative as primary answer, no local artifact
+  paths as content.
 
 The evidence JSON should preserve real successful tool output:
 

@@ -100,10 +100,10 @@ app = FastAPI(
     description=(
         "OpenWebUI-facing native vulkan_helper tool. "
         "Use one call for a local repo task; the default wait response returns the completed planner "
-        "answer and inline evidence. Completed responses put payload_index_for_30b near the top: "
+        "inline evidence. Completed responses put payload_index_for_30b near the top: "
         "it tells the model which fields contain concrete results such as diffs/file content and "
-        "which fields are only descriptions, review metadata or navigation hints. After a completed "
-        "result, answer from content, payload_index_for_30b, priority_evidence_for_30b and "
+        "which fields are only descriptions, review metadata or navigation hints. After a terminal "
+        "result, answer from payload_index_for_30b, priority_evidence_for_30b and "
         "tool_context_for_30b instead of issuing follow-up tool calls."
     ),
 )
@@ -353,67 +353,42 @@ def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
 
     compacted: dict[str, Any] = {}
     keep_keys = (
-        "ok", "job_ok", "service", "mode", "verdict", "tool_name", "tool_result_for",
-        "called_by_30b", "operation_id", "job_id", "status", "goal", "job_url",
-        "answer_for_30b", "summary_for_30b", "message_for_30b", "next_action_for_30b",
-        "openwebui_usage", "final_path", "final_markdown_path", "events_path",
-        "full_result_available", "full_result_hint", "bridge_status", "bridge_waited_for_agent",
-        "bridge_elapsed_seconds", "bridge_agent_url", "bridge_public_tool",
-        "bridge_alias_called", "bridge_forwarding_mode",
-        "working_memory_for_30b", "evidence_contract",
-        "planner_emission_interpreter", "openwebui_final_tool_settle_applied",
-        "openwebui_final_tool_settle_seconds", "openwebui_final_unload_planner",
-        "openwebui_final_handoff",
+        "ok", "job_ok", "service", "mode", "tool_name", "tool_result_for",
+        "called_by_30b", "required_top_level_keys", "payload_index_for_30b",
+        "priority_evidence_for_30b", "openwebui_usage", "tool_context_for_30b",
+        "result",
     )
     for key in keep_keys:
         if decoded.get(key) not in (None, "", [], {}):
             compacted[key] = decoded.get(key)
 
-    answer = (
-        decoded.get("answer_for_30b") or decoded.get("message_for_30b")
-        or decoded.get("summary_for_30b") or decoded.get("final_summary")
-        or decoded.get("content") or decoded.get("text") or ""
-    )
-    answer = _compact_text(answer, BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS)
-    summary = _compact_text(
-        decoded.get("summary_for_30b") or decoded.get("final_summary") or answer,
-        BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS,
-    )
-    if answer:
-        compacted["answer_for_30b"] = answer
-        compacted["message_for_30b"] = answer
-    if summary:
-        compacted["summary_for_30b"] = summary
-        compacted["final_summary"] = summary
-
-    public_context = {
-        "type": "public_followup_evidence_context",
-        "primary_evidence_field": "content",
-        "primary_answer_field": "answer_for_30b",
-        "job_id": compacted.get("job_id"),
-        "status": compacted.get("status"),
-        "goal": compacted.get("goal"),
-        "final_path": compacted.get("final_path"),
-        "final_markdown_path": compacted.get("final_markdown_path"),
-        "diagnostic_context_omitted_from_openwebui": True,
-        "diagnostic_context_location": "final_path",
-    }
-    compacted["tool_context_for_30b"] = public_context
-    alias = {
-        "alias_of": "tool_context_for_30b",
-        "diagnostic_context_omitted_from_openwebui": True,
-    }
-    compacted["agent_context_for_30b"] = alias
-    compacted["structured_context_for_30b"] = alias
-    compacted["structured_result_for_30b"] = alias
-    compacted["result"] = _bridge_result_digest(decoded.get("result"))
-    artifacts = decoded.get("artifacts")
-    if isinstance(artifacts, list):
-        compacted["artifacts"] = [x for x in artifacts[:10] if isinstance(x, str)]
+    compacted.setdefault("required_top_level_keys", [
+        "ok",
+        "job_ok",
+        "service",
+        "mode",
+        "tool_name",
+        "tool_result_for",
+        "called_by_30b",
+        "required_top_level_keys",
+        "payload_index_for_30b",
+        "priority_evidence_for_30b",
+        "openwebui_usage",
+        "tool_context_for_30b",
+    ])
+    compacted.setdefault("openwebui_usage", {
+        "primary_payload_fields": [
+            "payload_index_for_30b",
+            "priority_evidence_for_30b",
+            "tool_context_for_30b",
+            "result",
+        ],
+        "rule": "Leggi i payload primari inline; non usare campi narrativi o path locali come sostituti.",
+    })
     compacted["bridge_compacted_for_openwebui"] = True
     compacted["bridge_original_response_chars"] = _json_size(decoded)
     compacted["bridge_compaction_rule"] = (
-        "Large nested agent payload removed from OpenWebUI context; use job_url/final_path for full result."
+        "Large nested agent payload retained only through primary inline fields; no narrative/path substitute promoted."
     )
     return compacted
 
@@ -914,13 +889,18 @@ def _vulkan_helper_completed_response_schema() -> dict[str, Any]:
         "properties": {
             "ok": {"type": "boolean"},
             "job_ok": {"type": "boolean"},
-            "status": {
-                "type": "string",
-                "description": "Terminal job status. When status=completed, answer from the indexed fields instead of repeating the same tool call.",
+            "service": {"type": "string"},
+            "mode": {"type": "string"},
+            "tool_name": {"type": "string"},
+            "tool_result_for": {"type": "string"},
+            "called_by_30b": {"type": "string"},
+            "required_top_level_keys": {
+                "type": "array",
+                "description": "Primary top-level fields expected by the public wrapper response.",
+                "items": {"type": "string"},
             },
-            "content": {
-                "type": "string",
-                "description": "Compact final planner answer/description. It is useful prose, not the complete evidence payload.",
+            "result": {
+                "description": "Optional existing flow result. When present, it is preserved and not rewritten by the wrapper.",
             },
             "payload_index_for_30b": {
                 "type": "object",
@@ -991,7 +971,7 @@ def _vulkan_helper_completed_response_schema() -> dict[str, Any]:
             },
             "openwebui_usage": {
                 "type": "object",
-                "description": "Runtime instructions naming payload_index_for_30b and the concrete evidence fields.",
+                "description": "Runtime instructions naming the primary payload fields and concrete evidence locations.",
                 "additionalProperties": True,
             },
         },
@@ -1011,7 +991,9 @@ def _annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
         + "\n\nCompleted response schema: read `payload_index_for_30b` first. "
         "Its `concrete_results[*].primary_location` points to exact useful payload fields "
         "such as `priority_evidence_for_30b.items[*].unified_diff`; "
-        "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result."
+        "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
+        "`answer_for_30b`, `message_for_30b`, `summary_for_30b`, `next_action_for_30b` "
+        "and `full_result_hint` are not primary top-level result fields."
     )
     operation.setdefault("responses", {})
     operation["responses"]["200"] = {
@@ -2922,18 +2904,14 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
         "index_kind": "openwebui_payload_index.v1",
         "job_completed": bool(completed),
         "same_request_rule": (
-            "Se status=completed, rispondi usando i campi indicizzati qui; "
+            "Se job_completed=true, rispondi usando i campi indicizzati qui; "
             "non richiamare vulkan_helper per la stessa richiesta."
         ),
         "concrete_results": concrete_results,
         "descriptive_only": descriptive_only + [
             {
-                "field": "content",
-                "role": "risposta finale compatta/descrittiva del planner",
-            },
-            {
-                "field": "answer_for_30b / summary_for_30b / message_for_30b",
-                "role": "testo di handoff/descrizione, non indice dei payload concreti",
+                "field": "priority_evidence_for_30b.items[*].summary",
+                "role": "descrizione del planner, non diff/contenuto concreto",
             },
         ],
         "suggestions_or_review_metadata_only": suggestions_only + [
@@ -2942,7 +2920,7 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
                 "role": "limiti/troncamenti dichiarati, non richiesta automatica di nuovo tool",
             },
             {
-                "field": "full_result_hint / openwebui_usage",
+                "field": "openwebui_usage",
                 "role": "istruzioni di navigazione",
             },
         ],
@@ -3112,11 +3090,9 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             tool_context,
             completed=terminal_completed,
         )
-        content_text = _agentic_v9_build_completed_content_text(planner_text, tool_context)
         safe_keys = (
-            "ok", "job_ok", "service", "mode", "verdict",
+            "ok", "job_ok", "service", "mode",
             "tool_name", "tool_result_for", "called_by_30b",
-            "arguments_from_30b", "operation_id",
         )
         sealed = {}
         for key in safe_keys:
@@ -3130,30 +3106,26 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         sealed.setdefault("tool_name", decoded.get("tool_name") or "vulkan_helper")
         sealed.setdefault("tool_result_for", decoded.get("tool_result_for") or sealed["tool_name"])
         sealed.setdefault("called_by_30b", decoded.get("called_by_30b") or sealed["tool_name"])
-        sealed.setdefault("arguments_from_30b", decoded.get("arguments_from_30b") or {})
-        wrapper_expected_contract = (
-            out.get("wrapper_expected_contract")
-            or decoded.get("wrapper_expected_contract")
-            or terminal_source.get("wrapper_expected_contract")
-            or {}
-        )
-        for key in ("status", "goal", "full_result_available"):
-            value = out.get(key)
-            if value in (None, "", [], {}):
-                value = decoded.get(key)
-            if value in (None, "", [], {}):
-                value = terminal_source.get(key)
-            if value not in (None, "", [], {}):
-                sealed[key] = value
-        required_top_level_keys = (
-            wrapper_expected_contract.get("required_top_level_keys")
-            if isinstance(wrapper_expected_contract, dict)
-            else None
-        )
-        if required_top_level_keys:
-            sealed["required_top_level_keys"] = required_top_level_keys
+        sealed.setdefault("ok", decoded.get("ok", True))
+        sealed.setdefault("job_ok", bool(terminal_completed))
+        sealed.setdefault("service", decoded.get("service") or terminal_source.get("service") or "vulkan_agent")
+        sealed.setdefault("mode", decoded.get("mode") or terminal_source.get("mode") or "agent_job_final_waited_compact")
+        stable_required_top_level_keys = [
+            "ok",
+            "job_ok",
+            "service",
+            "mode",
+            "tool_name",
+            "tool_result_for",
+            "called_by_30b",
+            "required_top_level_keys",
+            "payload_index_for_30b",
+            "priority_evidence_for_30b",
+            "openwebui_usage",
+            "tool_context_for_30b",
+        ]
+        sealed["required_top_level_keys"] = stable_required_top_level_keys
         sealed["payload_index_for_30b"] = payload_index
-        sealed["content"] = content_text
         result_value = out.get("result")
         if result_value in (None, "", [], {}):
             result_value = decoded.get("result")
@@ -3162,28 +3134,28 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         if result_value not in (None, "", [], {}):
             sealed["result"] = result_value
         sealed["openwebui_usage"] = {
-            "primary_answer_field": "content",
+            "primary_payload_fields": [
+                "payload_index_for_30b",
+                "priority_evidence_for_30b",
+                "tool_context_for_30b",
+                "result",
+            ],
             "payload_index_field": "payload_index_for_30b",
             "concrete_results_field": "payload_index_for_30b.concrete_results",
             "priority_evidence_field": "priority_evidence_for_30b.items",
             "full_tool_evidence_field": "tool_context_for_30b.artifacts[*].artifact",
+            "top_level_present_fields": list(sealed.keys()),
             "rule": (
                 "Prima leggi payload_index_for_30b. I risultati concreti sono "
                 "nei campi indicati in concrete_results. Descrizioni, suggerimenti, "
                 "manual_review_required, validation_commands e limits non sono motivo "
-                "per richiamare vulkan_helper se status=completed."
+                "per richiamare vulkan_helper per la stessa richiesta. job_ok=false "
+                "dichiara lo stato del job interno senza sostituire i payload."
             ),
         }
         sealed["priority_evidence_for_30b"] = priority_evidence
-        sealed["full_result_hint"] = (
-            "Useful concrete results are indexed first in payload_index_for_30b. "
-            "Complete payloads remain inline in priority_evidence_for_30b and "
-            "the full successful tool evidence remains inline in tool_context_for_30b."
-        )
         sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(tool_context, indent=2)
-        sealed.setdefault("summary_for_30b", terminal_answer or planner_text)
-        sealed.setdefault("answer_for_30b", terminal_answer or planner_text)
-        sealed.setdefault("message_for_30b", terminal_answer or planner_text)
+        sealed["openwebui_usage"]["top_level_present_fields"] = list(sealed.keys())
         return sealed
 
     protocol_text = _compact_text(

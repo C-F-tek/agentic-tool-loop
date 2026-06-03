@@ -48,13 +48,19 @@ Read before edits:
 
 For terminal jobs returned to OpenWebUI:
 
-- `content`: compact planner final answer or terminal message.
+- primary metadata: `ok`, `job_ok`, `service`, `mode`, `tool_name`,
+  `tool_result_for`, `called_by_30b`, `required_top_level_keys`.
+- `payload_index_for_30b`: first navigation surface for concrete payload fields.
+- `priority_evidence_for_30b`: high-priority inline concrete payloads and
+  compact analysis evidence.
+- `openwebui_usage`: runtime instructions for reading the indexed fields.
 - `tool_context_for_30b`: a pretty-printed JSON string with successful internal
   tool artifacts and limits.
+- `result`: preserved unchanged when already produced by the current flow.
 - The JSON string must contain real tool outputs, not local artifact paths.
 - Do not include continuation instructions, call protocol, tool examples,
-  transport diagnostics, raw events, hashes or failed/rejected/blocked evidence
-  as useful evidence.
+  transport diagnostics, raw events, hashes, failed/rejected/blocked evidence as
+  useful evidence, or blocked/prose narrative as the primary answer.
 
 Expected successful artifact shapes:
 
@@ -122,9 +128,10 @@ limits, summaries or artifact references.
    repair/selector support and internal tool dispatch.
 4. 3571 waits for terminal state according to configured wait settings.
 5. 3571 reads terminal job payload/final JSON from 3572 response.
-6. 3571 builds `content`, `priority_evidence_for_30b` and
-   `tool_context_for_30b`.
-7. OpenWebUI receives only public metadata plus model-usable content/context.
+6. 3571 builds `payload_index_for_30b`, `priority_evidence_for_30b`,
+   `openwebui_usage` and `tool_context_for_30b`.
+7. OpenWebUI receives only public metadata plus model-usable inline
+   payload/context.
 
 ## Evidence Expansion Rules
 

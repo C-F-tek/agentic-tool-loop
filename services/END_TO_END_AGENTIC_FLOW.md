@@ -60,7 +60,7 @@ sequenceDiagram
     end
     B3572-->>B3571: compact terminal job response
     B3571->>B3571: load terminal/final payload + build tool_context_for_30b
-    B3571-->>OWUI: content + pretty JSON tool_context_for_30b
+    B3571-->>OWUI: payload_index_for_30b + priority_evidence_for_30b + pretty JSON tool_context_for_30b
 ```
 
 ## Owner Matrix
@@ -74,7 +74,7 @@ sequenceDiagram
 | 3572 -> 11435 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_selection.py`, `services/aicarmine_broker/config.py` | Repair/selector paths use `OLLAMA_TASK_URL`; default is `http://127.0.0.1:11435/api/chat`. |
 | 3572 -> internal tools | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_dispatch.py` | Validated tool decisions call `dispatch_tool()`, which maps to repo, terminal, memory and helper tools. |
 | 3572 -> terminal compact result | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/job_store.py` | `finalize_agentic_job()` writes final state; `wait_for_agent_terminal()` returns `compact_agent_terminal_response()`. |
-| 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns compact `content` plus pretty JSON `tool_context_for_30b`. |
+| 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns the stable public surface: primary metadata, `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and pretty JSON `tool_context_for_30b`. It does not promote blocked/prose narrative fields as the primary answer. |
 
 ## 3572 IA Live Control View
 
@@ -348,9 +348,10 @@ Verified behavior:
   structured context from final/state when available.
 - 3571's v9 wrapper recognizes terminal agent results and calls
   `_agentic_v9_build_openwebui_response()`.
-- For terminal results, 3571 returns a sealed public object with `content`, a
-  top-level `priority_evidence_for_30b` object for the most important complete
-  payloads, and a pretty-printed JSON string `tool_context_for_30b`.
+- For terminal results, 3571 returns a sealed public object with stable primary
+  metadata, `payload_index_for_30b`, top-level `priority_evidence_for_30b` for
+  the most important complete payloads, `openwebui_usage`, and a pretty-printed
+  JSON string `tool_context_for_30b`.
 - `priority_evidence_for_30b` is an index for model navigation, not a
   replacement for `tool_context_for_30b`: code-edit proposals expose complete
   `unified_diff`/`structured_operations`, complete file requests expose full
@@ -360,8 +361,9 @@ Verified behavior:
   payloads inline as `tool_context_for_30b.artifacts[*].artifact`; local
   JSON/SQLite/job paths are not a substitute for content visible to OpenWebUI.
 
-Implication: OpenWebUI receives the public planner answer plus inline real
-successful tool evidence. It must not be expected to open local job paths.
+Implication: OpenWebUI receives indexed inline real successful tool evidence.
+It must not be expected to open local job paths or treat a blocked/prose
+narrative as the primary result.
 
 ## What Must Stay True
 
@@ -391,10 +393,10 @@ When this flow breaks, prove the failed edge:
 5. If a final exists, `final.json` contains planner final data and structured
    context.
 6. 3571 `POST /vulkan_helper {"action":"result","job_id":"..."}` returns
-   `content`, `priority_evidence_for_30b.items[*]` and
-   `tool_context_for_30b.artifacts[*].artifact` inline; local paths, SQLite
-   document ids and job artifact paths must not be required for OpenWebUI to
-   understand the result.
+   `payload_index_for_30b`, `priority_evidence_for_30b.items[*]`,
+   `openwebui_usage` and `tool_context_for_30b.artifacts[*].artifact` inline;
+   local paths, SQLite document ids and job artifact paths must not be required
+   for OpenWebUI to understand the result.
 
 ## Operational Stop Proof
 

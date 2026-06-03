@@ -267,11 +267,13 @@ Schema minimo:
   "failure_patterns": [],
   "tool_purpose_manifest": [],
   "budget_report": {
-    "num_ctx_requested": 14336,
-    "num_ctx_cap": 14336,
-    "num_ctx_effective": 14336,
-    "prompt_char_budget": 56000,
-    "prompt_compact_threshold_chars": 28000
+    "num_ctx_requested": 12288,
+    "num_ctx_cap": 12288,
+    "num_ctx_effective": 12288,
+    "prompt_char_budget": 48000,
+    "prompt_compact_threshold_chars": 24000,
+    "generation_headroom_char_budget": 40000,
+    "generation_headroom_reserve_chars": 8000
   }
 }
 ```
@@ -287,6 +289,10 @@ Regole:
   di compattazione: se il prompt misurato supera il 50% del budget disponibile,
   il controller salva sezioni grandi in SQLite job-local e passa al planner
   solo finestre piccole reali.
+- La soglia di compattazione e' soft. Non e' il limite hard di headroom. Il
+  blocco `planner_prompt_no_generation_headroom` scatta solo quando, dopo
+  windowing/omissione opzionale, il prompt supera ancora il budget hard di
+  generazione (`prompt_char_budget` meno la riserva di generazione).
 - file, diff, repo tree, history e risultati grandi vengono rappresentati come
   finestre `planner_prompt_context_window.v1` con testo, `document_id`,
   offset, `has_more_before`, `has_more_after`, dimensione completa e hash. Non

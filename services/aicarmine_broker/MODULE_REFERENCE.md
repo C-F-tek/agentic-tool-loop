@@ -184,6 +184,10 @@ the actual prompt payload before posting to 11434.
   job-local SQLite composer and represented as
   `planner_prompt_context_window.v1` text windows with `document_id`, offsets
   `has_more_before/has_more_after` and hashes.
+- The compaction ratio is a soft windowing trigger. It must not be reused as
+  the hard generation-headroom limit. The hard limit is the prompt char budget
+  minus the reserved generation margin, so a prompt below that hard limit can
+  still call 11434 after windowing.
 - If a SQLite-backed prompt window has `has_more_after=true`, the planner can read
   the next real window through `planner_scratchpad_read` using
   `kind=prompt_context_window`, `document_id`, `offset` and `max_chars`.
