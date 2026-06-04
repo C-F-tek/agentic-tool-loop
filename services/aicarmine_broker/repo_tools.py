@@ -30,10 +30,12 @@ from .config import (
     VALID_INTERNAL_TOOLS,
     parse_bool,
 )
-from .infrastructure.command_runner import SubprocessCommandRunner
 from .infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from .job_store import now, write_json
 from .tool_registry import capability_map
+from .tools.command_safety import dangerous_command
+from .tools.powershell_runner import run_ps as _tool_run_ps
+from .tools.repo_command import repo_command
 from .tools.repo_list_files import repo_list_files
 from .tools.repo_read import repo_read
 from .tools.repo_search import repo_search
@@ -47,37 +49,7 @@ from .tools.repo_validate import repo_validate
 
 
 def run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, Any]:
-    completed = SubprocessCommandRunner().run(
-        ("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command),
-        cwd=LAB_REPO,
-        timeout_seconds=timeout,
-    )
-    return {
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-        "stdout_tail": completed.stdout[-4000:],
-        "stderr_tail": completed.stderr[-4000:],
-    }
-
-
-def dangerous_command(command: str) -> bool:
-    low = command.lower()
-    patterns = [
-        r"\bgit\s+reset\b",
-        r"\bgit\s+clean\b",
-        r"\bgit\s+push\b",
-        r"\bgit\s+commit\b",
-        r"\bgit\s+merge\b",
-        r"\bgit\s+rebase\b",
-        r"\bremove-item\b",
-        r"\brm\s+-",
-        r"\bdel\s+",
-        r"\brmdir\b",
-        r"\bformat\b",
-        r"\bshutdown\b",
-    ]
-    return any(re.search(p, low) for p in patterns)
+    return _tool_run_ps(command, timeout=timeout)
 
 
 def compact(value: Any, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
@@ -1572,54 +1544,3 @@ def repo_write_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     return payload
 
 
-# ---------------------------------------------------------------------------
-# Tool: repo_command
-# ---------------------------------------------------------------------------
-
-
-def repo_command(
-    args: dict[str, Any],
-    root: Path,
-    allow_command: bool,
-    user_consent: str,
-) -> dict[str, Any]:
-    if not allow_command:
-        return {"ok": False, "tool": "repo_command", "error": "commands disabled by request"}
-
-    command = str(args.get("command") or "").strip()
-    timeout = int(args.get("timeout_seconds") or COMMAND_TIMEOUT_SECONDS)
-
-    if not command:
-        return {"ok": False, "tool": "repo_command", "error": "missing command"}
-
-    if command.lower() in {"compile", "build", "compila"}:
-        command = (
-            "python -m compileall -q ia_carmine; "
-            "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; "
-            "python -m compileall -q Tools"
-        )
-
-    if dangerous_command(command) and (
-        "confirm" not in user_consent.lower()
-        and "confermo" not in user_consent.lower()
-    ):
-        return {
-            "ok": False,
-            "tool": "repo_command",
-            "needs_consent": True,
-            "command": command,
-            "error": "dangerous command blocked without user_consent",
-        }
-
-    result = run_ps(command, timeout=timeout)
-    artifact = root / "commands" / f"command-{now()}.json"
-    write_json(artifact, {"command": command, "result": result})
-    return {
-        "ok": result["returncode"] == 0,
-        "tool": "repo_command",
-        "command": command,
-        "returncode": result["returncode"],
-        "stdout_tail": result["stdout_tail"],
-        "stderr_tail": result["stderr_tail"],
-        "artifact": str(artifact),
-    }

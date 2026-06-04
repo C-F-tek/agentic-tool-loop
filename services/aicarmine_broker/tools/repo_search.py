@@ -1,28 +1,13 @@
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO
-from aicarmine_broker.infrastructure.command_runner import SubprocessCommandRunner
+import json
+
 from aicarmine_broker.job_store import now, write_json
-
-
-def _run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, Any]:
-    completed = SubprocessCommandRunner().run(
-        ("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command),
-        cwd=LAB_REPO,
-        timeout_seconds=timeout,
-    )
-    return {
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-        "stdout_tail": completed.stdout[-4000:],
-        "stderr_tail": completed.stderr[-4000:],
-    }
+from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
 
 
 def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:

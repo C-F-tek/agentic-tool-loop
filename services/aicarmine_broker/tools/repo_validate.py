@@ -3,24 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO, parse_bool
-from aicarmine_broker.infrastructure.command_runner import SubprocessCommandRunner
+from aicarmine_broker.config import parse_bool
 from aicarmine_broker.job_store import now, write_json
-
-
-def _run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, Any]:
-    completed = SubprocessCommandRunner().run(
-        ("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command),
-        cwd=LAB_REPO,
-        timeout_seconds=timeout,
-    )
-    return {
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-        "stdout_tail": completed.stdout[-4000:],
-        "stderr_tail": completed.stderr[-4000:],
-    }
+from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
 
 
 def repo_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
