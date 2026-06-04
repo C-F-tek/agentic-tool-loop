@@ -435,6 +435,11 @@ def compact_agent_terminal_response(job_id: str) -> dict[str, Any]:
             "events_tail_digest": [event_digest(ev) for ev in read_agent_events(job_id, 20)],
         }
 
+    context_alias = {
+        "schema": "agentic_terminal_context_alias.v1",
+        "alias_of": "tool_context_for_30b",
+        "same_payload": True,
+    }
     return {
         "ok": True,
         "job_ok": status == "completed",
@@ -470,9 +475,9 @@ def compact_agent_terminal_response(job_id: str) -> dict[str, Any]:
         },
         "result": result_digest,
         "tool_context_for_30b": tool_context,
-        "agent_context_for_30b": tool_context,
-        "structured_context_for_30b": tool_context,
-        "structured_result_for_30b": tool_context,
+        "agent_context_for_30b": context_alias,
+        "structured_context_for_30b": context_alias,
+        "structured_result_for_30b": context_alias,
         "artifacts": artifacts,
         "events_tail_digest": events,
     }

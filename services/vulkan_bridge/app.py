@@ -1156,6 +1156,200 @@ def _agentic_v9_clean(value):
     return value
 
 
+_AGENTIC_V9_PUBLIC_POINTER_KEYS = {
+    "artifact_path",
+    "producer_artifact",
+    "final_path",
+    "events_path",
+    "db",
+    "db_path",
+    "sqlite_path",
+    "document_id",
+    "evidence_contract",
+    "raw_planner_text_preview",
+    "raw_planner_text",
+    "raw_text",
+}
+
+
+def _agentic_v9_public_content_key(key):
+    return str(key or "").lower() in {
+        "content",
+        "content_view",
+        "unified_diff",
+        "structured_operations",
+        "old_text",
+        "new_text",
+        "stdout",
+        "stderr",
+        "stdout_tail",
+        "stderr_tail",
+        "text",
+    }
+
+
+def _agentic_v9_public_sanitize_text(value, *, content=False):
+    text = str(value or "")
+    if not text:
+        return ""
+    if content:
+        return text
+    text = re.sub(r"\s+(?:backup_)?artifact=[^\s,}\]]+", "", text)
+    text = re.sub(r'"(?:artifact|artifact_path|producer_artifact|document_id|db|db_path|sqlite_path)"\s*:\s*"[^"]*",?', "", text)
+    text = re.sub(r"[A-Za-z]:\\[^\s,}\]]+", "[local_path_omitted]", text)
+    text = re.sub(r"https?://(?:127\.0\.0\.1|localhost)[^\s,}\]]*", "[local_url_omitted]", text, flags=re.I)
+    text = re.sub(r"\bqwen-agent-workspace[^\s,}\]]*", "[job_workspace_path_omitted]", text)
+    text = re.sub(r"\bagent-jobs[^\s,}\]]*", "[job_path_omitted]", text)
+    text = re.sub(r"\btool-results\\[^\s,}\]]*", "[tool_result_path_omitted]", text)
+    text = re.sub(r"\S+\.sqlite\b", "[sqlite_path_omitted]", text, flags=re.I)
+    return text
+
+
+def _agentic_v9_public_sanitize_value(value, *, key="", depth=0):
+    if depth > 12:
+        return {}
+    key_text = str(key or "")
+    key_low = key_text.lower()
+    if key_low in _AGENTIC_V9_PUBLIC_POINTER_KEYS:
+        return None
+    if isinstance(value, dict):
+        out = {}
+        for child_key, child_value in value.items():
+            sanitized = _agentic_v9_public_sanitize_value(
+                child_value,
+                key=str(child_key),
+                depth=depth + 1,
+            )
+            if sanitized not in (None, "", [], {}):
+                out[str(child_key)] = sanitized
+        return out
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            sanitized = _agentic_v9_public_sanitize_value(item, key=key_text, depth=depth + 1)
+            if sanitized not in (None, "", [], {}):
+                out.append(sanitized)
+        return out
+    if isinstance(value, str):
+        return _agentic_v9_public_sanitize_text(
+            value,
+            content=_agentic_v9_public_content_key(key_text),
+        )
+    return value
+
+
+def _agentic_v9_public_arguments(args):
+    if not isinstance(args, dict):
+        return {}
+    return _agentic_v9_public_sanitize_value(args) or {}
+
+
+def _agentic_v9_public_history_row(row):
+    row = _agentic_v9_as_dict(row)
+    decision = _agentic_v9_as_dict(row.get("decision"))
+    result = _agentic_v9_as_dict(row.get("tool_result"))
+    if not result and row.get("tool"):
+        result = row
+    tool = result.get("tool") or decision.get("tool") or row.get("tool")
+
+    def public_summary(value):
+        text = _agentic_v9_clip_text(value, 1200)
+        return _agentic_v9_public_sanitize_text(text)
+
+    public = {
+        "step": row.get("step"),
+        "action": decision.get("action") or row.get("action"),
+        "tool": tool,
+        "ok": result.get("ok") if result else row.get("ok"),
+        "reason": _agentic_v9_clip_text(decision.get("reason") or row.get("reason"), 700),
+        "arguments": _agentic_v9_public_arguments(
+            decision.get("arguments") if isinstance(decision.get("arguments"), dict) else row.get("arguments")
+        ),
+        "path": result.get("path") or row.get("path"),
+        "count": result.get("count") or row.get("count"),
+        "total_matches": result.get("total_matches") or row.get("total_matches"),
+        "items_total": result.get("items_total") or row.get("items_total"),
+        "paths_total": result.get("paths_total") or row.get("paths_total"),
+        "returncode": result.get("returncode") or row.get("returncode"),
+        "guard_type": result.get("guard_type") or row.get("guard_type"),
+        "violations": result.get("violations") or row.get("violations"),
+        "summary": public_summary(result.get("summary") or row.get("summary")),
+    }
+    if tool == "repo_read":
+        items = []
+        source_items = _agentic_v9_as_list(result.get("items") or row.get("items"))
+        for item in source_items[:80]:
+            item = _agentic_v9_as_dict(item)
+            content = item.get("content")
+            items.append({
+                "ok": item.get("ok"),
+                "path": item.get("path"),
+                "line_count": item.get("line_count"),
+                "truncated": item.get("truncated"),
+                "content_chars": len(content) if isinstance(content, str) else item.get("content_chars"),
+                "content_sha256": (
+                    _agentic_v9_hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()
+                    if isinstance(content, str) and content else item.get("content_sha256")
+                ),
+                "error": item.get("error"),
+            })
+        public["items"] = items
+    elif tool == "repo_propose_code_edit":
+        for key in (
+            "kind", "target_file", "edit_kind", "rationale",
+            "source_writes_performed", "patch_application_performed",
+            "manual_review_required", "validation_commands",
+            "unified_diff", "structured_operations", "errors", "warnings",
+            "target_metadata", "ast_evidence",
+        ):
+            value = result.get(key) if result else row.get(key)
+            if value not in (None, "", [], {}):
+                public[key] = value
+    elif tool == "planner_scratchpad_read":
+        mode = result.get("mode") or row.get("mode")
+        if mode:
+            public["mode"] = mode
+        items = _agentic_v9_as_list(result.get("items") or row.get("items"))
+        if items:
+            public["items"] = [
+                _agentic_v9_clean({
+                    "section": _agentic_v9_as_dict(item).get("section"),
+                    "window_start": _agentic_v9_as_dict(item).get("window_start"),
+                    "window_end": _agentic_v9_as_dict(item).get("window_end"),
+                    "full_chars": _agentic_v9_as_dict(item).get("full_chars"),
+                    "window_chars": _agentic_v9_as_dict(item).get("window_chars"),
+                    "complete": _agentic_v9_as_dict(item).get("complete"),
+                    "has_more_before": _agentic_v9_as_dict(item).get("has_more_before"),
+                    "has_more_after": _agentic_v9_as_dict(item).get("has_more_after"),
+                    "sha256": _agentic_v9_as_dict(item).get("sha256"),
+                    "window_sha256": _agentic_v9_as_dict(item).get("window_sha256"),
+                    "text": _agentic_v9_as_dict(item).get("text"),
+                })
+                for item in items[:80]
+            ]
+    return _agentic_v9_clean(public)
+
+
+def _agentic_v9_public_result_for_30b(result):
+    if not isinstance(result, dict):
+        return result
+    public = dict(result)
+    history = result.get("history")
+    if isinstance(history, list):
+        public["history_count"] = len(history)
+        public["history"] = [_agentic_v9_public_history_row(row) for row in history]
+        public["history_schema"] = "agentic_terminal_public_history_ledger.v1"
+        public["raw_history_not_inlined"] = True
+    memory_write = public.get("controller_memory_write")
+    if isinstance(memory_write, dict):
+        public["controller_memory_write"] = {
+            k: memory_write.get(k)
+            for k in ("ok", "tool", "kind", "tag", "record_id", "chars", "sha256", "target_key")
+            if memory_write.get(k) not in (None, "", [], {})
+        }
+    return _agentic_v9_clean(_agentic_v9_public_sanitize_value(public) or {})
+
+
 def _agentic_v9_context_keys():
     return ("tool_context_for_30b", "structured_result_for_30b", "agent_context_for_30b", "tool_result_for_30b", "result")
 
@@ -2783,22 +2977,34 @@ def _agentic_v9_repo_analysis_priority_item(tool_context, planner_text):
     })
 
 
-def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text):
+def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, completed=True):
     tool_context = _agentic_v9_as_dict(tool_context)
-    priority_items = []
+    artifact_items = []
     for row in _agentic_v9_as_list(tool_context.get("artifacts")):
         item = _agentic_v9_priority_item_from_artifact(row)
         if item:
-            priority_items.append(item)
+            artifact_items.append(item)
+    partial_items = []
     for row in _agentic_v9_as_list(tool_context.get("partial_products_for_30b")):
         item = _agentic_v9_as_dict(row)
         if item:
             item = dict(item)
             item.setdefault("payload_is_complete", False)
             item.setdefault("validator_accepted", False)
-            priority_items.append(_agentic_v9_clean(item))
+            partial_items.append(_agentic_v9_clean(item))
     analysis_item = _agentic_v9_repo_analysis_priority_item(tool_context, planner_text)
-    if analysis_item:
+    priority_items = []
+    if not completed:
+        if analysis_item:
+            priority_items.append(analysis_item)
+        priority_items.extend(partial_items)
+        priority_items.extend(artifact_items)
+    else:
+        priority_items.extend(artifact_items)
+        priority_items.extend(partial_items)
+        if analysis_item:
+            priority_items.append(analysis_item)
+    if completed and analysis_item and analysis_item not in priority_items:
         priority_items.append(analysis_item)
     return _agentic_v9_clean({
         "schema": "openwebui.priority_evidence_for_30b.v1",
@@ -2810,7 +3016,9 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text):
         ),
         "navigation_hint": (
             "Read priority_evidence_for_30b.items before searching the larger "
-            "tool_context_for_30b JSON."
+            "tool_context_for_30b JSON. For job_ok=false, useful status or "
+            "partial products are intentionally first; do not stop at the "
+            "terminal warning."
         ),
         "items": priority_items,
         "limits": tool_context.get("limits"),
@@ -2938,12 +3146,19 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
                 "role": "descrizione del planner, non diff/contenuto concreto",
             })
 
+    has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
     return _agentic_v9_clean({
         "index_kind": "openwebui_payload_index.v1",
         "job_completed": bool(completed),
         "same_request_rule": (
-            "Se job_completed=true, rispondi usando i campi indicizzati qui; "
-            "non richiamare vulkan_helper per la stessa richiesta."
+            "Rispondi usando i campi indicizzati qui quando esistono "
+            "concrete_results, partial_results o descriptive_only. Non "
+            "richiamare vulkan_helper per la stessa richiesta solo perche' "
+            "job_completed=false/job_ok=false; quello e' uno stato del job "
+            "interno, non assenza di payload."
+            if has_indexed_payload else
+            "Nessun payload indicizzato disponibile; solo in questo caso una "
+            "nuova chiamata puo' essere necessaria per la stessa richiesta."
         ),
         "concrete_results": concrete_results,
         "partial_results": partial_results,
@@ -3260,7 +3475,11 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         if not planner_text:
             planner_text = "Agentic job ended without a planner final answer."
         tool_context = _agentic_v9_build_structured_tool_context(terminal_source)
-        priority_evidence = _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text)
+        priority_evidence = _agentic_v9_build_priority_evidence_for_30b(
+            tool_context,
+            planner_text,
+            completed=terminal_completed,
+        )
         payload_index = _agentic_v9_build_payload_index_for_30b(
             priority_evidence,
             tool_context,
@@ -3308,7 +3527,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         if result_value in (None, "", [], {}):
             result_value = out.get("result")
         if result_value not in (None, "", [], {}):
-            sealed["result"] = result_value
+            sealed["result"] = _agentic_v9_public_result_for_30b(result_value)
         sealed["openwebui_usage"] = {
             "primary_payload_fields": [
                 "payload_index_for_30b",
@@ -3323,10 +3542,12 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "top_level_present_fields": list(sealed.keys()),
             "rule": (
                 "Prima leggi payload_index_for_30b. I risultati concreti sono "
-                "nei campi indicati in concrete_results. Descrizioni, suggerimenti, "
+                "nei campi indicati in concrete_results; i risultati utili non "
+                "validati sono in partial_results. Descrizioni, suggerimenti, "
                 "manual_review_required, validation_commands e limits non sono motivo "
                 "per richiamare vulkan_helper per la stessa richiesta. job_ok=false "
-                "dichiara lo stato del job interno senza sostituire i payload."
+                "dichiara lo stato del job interno senza sostituire i payload: usa "
+                "prima priority_evidence_for_30b e tool_context_for_30b."
             ),
         }
         sealed["priority_evidence_for_30b"] = priority_evidence

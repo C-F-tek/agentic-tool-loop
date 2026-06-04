@@ -255,6 +255,25 @@ finestra prompt senza questi campi, il validator deve bloccare con
 una finestra gia' consumata, deve bloccare con
 `prompt_context_window_already_consumed`.
 
+La native tool surface di ogni turno deve essere coerente con
+`required_next_progress`. Se il contratto richiede un passo specifico, ad
+esempio `planner_scratchpad_write` per `code_product_build_state`,
+`planner_scratchpad_read` per una continuation reale, `repo_propose_code_edit`
+con payload completo, un typed block o un final, la surface non deve esporre
+tool contraddittori solo perche' esistono nel registry. Una native tool call non
+presente nella surface del turno resta invalida
+(`native_tool_not_in_turn_surface`).
+
+Gli adapter deterministici (`repo_fd_files`, `repo_rg_search`, `repo_jq_query`,
+`repo_ast_grep_*`, `repo_tree_sitter_parse`, `repo_unidiff_validate`,
+`repo_git_apply_check`, `repo_ruff_check`, `repo_pyright_check`,
+`repo_pytest_run`, `repo_shellcheck`, `repo_ctags_symbols`,
+`repo_semgrep_scan`, `repo_hyperfine_benchmark`) seguono la stessa regola:
+sono tool interni 3572 esposti solo quando utili alla classe del goal o a un
+`required_next_progress` specifico. Non entrano nella superficie pubblica 3571 e
+non sostituiscono `repo_read`, diff completi o payload ricostruiti per
+OpenWebUI.
+
 Schema minimo:
 
 ```json
@@ -444,6 +463,15 @@ perche' il job e' bloccato, fallito, arrivato a max step o cancellato. Se il
 payload terminale/final JSON contiene un `result` completo, quello e' la fonte
 primaria da riportare a OpenWebUI; il digest compatto
 `{ "preview": ... }` e' solo fallback quando non esiste un `result` completo.
+
+Nel payload pubblico `result.history` non e' raw audit history: e' una ledger
+bounded `agentic_terminal_public_history_ledger.v1`. Deve mostrare step,
+azione, tool, motivo, target/result facts e payload code-product completi se
+presenti, ma non deve reinserire raw `evidence_contract`, cache key, artifact
+path locali o diagnostica transport pesante. I payload reali completi restano
+in `tool_context_for_30b`, `priority_evidence_for_30b` e
+`payload_index_for_30b`.
+
 `job_ok=false` e lo stato terminale sono il warning, non un motivo per
 sostituire il payload con una risposta ridotta.
 

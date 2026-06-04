@@ -13,15 +13,30 @@ from .memory_tools import (
     runtime_sqlite_memory_write,
 )
 from .repo_tools import (
+    repo_ast_grep_dry_run,
+    repo_ast_grep_search,
     repo_apply_patch,
     repo_capabilities,
+    repo_ctags_symbols,
     repo_command,
+    repo_fd_files,
+    repo_git_apply_check,
+    repo_hyperfine_benchmark,
+    repo_jq_query,
     repo_list_files,
     repo_propose_code_edit,
+    repo_pyright_check,
+    repo_pytest_run,
     repo_read,
+    repo_rg_search,
+    repo_ruff_check,
     repo_search,
+    repo_semgrep_scan,
+    repo_shellcheck,
     repo_status,
+    repo_tree_sitter_parse,
     repo_tree,
+    repo_unidiff_validate,
     repo_validate,
     repo_write_file,
     terminal_list_files,
@@ -43,6 +58,36 @@ def dispatch_tool(name: str, args: dict[str, Any], root: Path, allow_command: bo
         return repo_list_files(args, root)
     if tool == 'repo_search':
         return repo_search(args, root)
+    if tool == 'repo_fd_files':
+        return repo_fd_files(args, root)
+    if tool == 'repo_rg_search':
+        return repo_rg_search(args, root)
+    if tool == 'repo_jq_query':
+        return repo_jq_query(args, root)
+    if tool == 'repo_ast_grep_search':
+        return repo_ast_grep_search(args, root)
+    if tool == 'repo_ast_grep_dry_run':
+        return repo_ast_grep_dry_run(args, root)
+    if tool == 'repo_tree_sitter_parse':
+        return repo_tree_sitter_parse(args, root)
+    if tool == 'repo_unidiff_validate':
+        return repo_unidiff_validate(args, root)
+    if tool == 'repo_git_apply_check':
+        return repo_git_apply_check(args, root)
+    if tool == 'repo_ruff_check':
+        return repo_ruff_check(args, root)
+    if tool == 'repo_pyright_check':
+        return repo_pyright_check(args, root)
+    if tool == 'repo_pytest_run':
+        return repo_pytest_run(args, root)
+    if tool == 'repo_shellcheck':
+        return repo_shellcheck(args, root)
+    if tool == 'repo_ctags_symbols':
+        return repo_ctags_symbols(args, root)
+    if tool == 'repo_semgrep_scan':
+        return repo_semgrep_scan(args, root)
+    if tool == 'repo_hyperfine_benchmark':
+        return repo_hyperfine_benchmark(args, root, allow_command=allow_command, user_consent=user_consent)
     if tool == 'repo_read':
         return repo_read(args, root)
     if tool == 'repo_propose_code_edit':

@@ -446,12 +446,17 @@ def main() -> int:
                 f"bloated prompt actual messages exceed budget: report={bloated_report} history={bloated_history_report}",
             )
             native_available_tools = native_user_payload.get("available_tools")
+            native_available_tool_rows = (
+                native_available_tools
+                if isinstance(native_available_tools, list)
+                else (native_available_tools.get("summary") if isinstance(native_available_tools, dict) else [])
+            )
             require(
-                isinstance(native_available_tools, list)
-                and native_available_tools
+                isinstance(native_available_tool_rows, list)
+                and native_available_tool_rows
                 and all(
                     "argument_contract" not in row and "description" not in row
-                    for row in native_available_tools
+                    for row in native_available_tool_rows
                     if isinstance(row, dict)
                 ),
                 (
@@ -459,6 +464,15 @@ def main() -> int:
                     f"of using tools schema: {native_available_tools}"
                 ),
             )
+            if isinstance(native_available_tools, dict):
+                tools_window = native_available_tools.get("window") if isinstance(native_available_tools.get("window"), dict) else {}
+                require(
+                    native_available_tools.get("schema") == "planner_available_tools_window.v1"
+                    and tools_window.get("document_id")
+                    and isinstance(tools_window.get("text"), str)
+                    and tools_window.get("full_chars", 0) >= tools_window.get("window_chars", 0),
+                    f"windowed native available_tools lacks real consumable window: {native_available_tools}",
+                )
             orientation_goal = (
                 "Genera un patch diff concreto per il file pkg/example.py "
                 "che include refactoring per modularizzazione delle cartellette."
@@ -958,7 +972,6 @@ def main() -> int:
                 "-old",
                 "+new",
                 "<insert",
-                "prompt-context-",
                 '"query":"pattern"',
                 '"query": "pattern"',
                 "Complete validated answer section",
@@ -968,6 +981,24 @@ def main() -> int:
                     forbidden not in combined_prompt_text,
                     f"copyable prompt example still present: {forbidden}",
                 )
+            def iter_strings(value):
+                if isinstance(value, str):
+                    yield value
+                elif isinstance(value, dict):
+                    for sub in value.values():
+                        yield from iter_strings(sub)
+                elif isinstance(value, list):
+                    for sub in value:
+                        yield from iter_strings(sub)
+
+            copyable_prompt_context_ids = [
+                value for value in iter_strings(prompt_payload.get("tool_shape_examples") or {})
+                if value.startswith("prompt-context-")
+            ]
+            require(
+                not copyable_prompt_context_ids,
+                f"copyable prompt-context document_id still present in tool shape examples: {copyable_prompt_context_ids}",
+            )
             require(
                 "EXAMPLE_ONLY_DO_NOT_COPY" in combined_prompt_text,
                 "non-runnable EXAMPLE_ONLY_DO_NOT_COPY guidance missing from planner prompt",
@@ -2050,6 +2081,100 @@ def main() -> int:
             require(
                 "planner_scratchpad_write" in code_product_surface,
                 f"planner_scratchpad_write missing from code-product surface: {code_product_surface}",
+            )
+            deterministic_internal_tools = {
+                "repo_fd_files",
+                "repo_rg_search",
+                "repo_jq_query",
+                "repo_ast_grep_search",
+                "repo_ast_grep_dry_run",
+                "repo_tree_sitter_parse",
+                "repo_unidiff_validate",
+                "repo_git_apply_check",
+                "repo_ruff_check",
+                "repo_pyright_check",
+                "repo_pytest_run",
+                "repo_shellcheck",
+                "repo_ctags_symbols",
+                "repo_semgrep_scan",
+                "repo_hyperfine_benchmark",
+            }
+            missing_internal_tools = deterministic_internal_tools - set(tool_registry.PLANNER_INTERNAL_TOOLS)
+            require(
+                not missing_internal_tools,
+                f"deterministic adapters missing from internal planner surface: {sorted(missing_internal_tools)}",
+            )
+            leaked_public_tools = deterministic_internal_tools & set(tool_registry.OPENWEBUI_PUBLIC_TOOLS)
+            require(
+                not leaked_public_tools,
+                f"deterministic adapters leaked into OpenWebUI public tools: {sorted(leaked_public_tools)}",
+            )
+            analysis_surface = planner._tool_surface_names_for_turn(
+                goal="analizza la repo e descrivi il funzionamento",
+                evidence_contract={"semantic_goal_classification": {"class": "analysis_only"}},
+                intrinsic_context={},
+            )
+            require(
+                {"repo_fd_files", "repo_rg_search", "repo_ctags_symbols"}.issubset(set(analysis_surface)),
+                f"analysis surface lacks deterministic discovery/symbol tools: {analysis_surface}",
+            )
+            require(
+                "repo_propose_code_edit" not in analysis_surface
+                and "repo_apply_patch" not in analysis_surface
+                and "repo_hyperfine_benchmark" not in analysis_surface,
+                f"analysis surface exposed code/apply/benchmark tools unexpectedly: {analysis_surface}",
+            )
+            require(
+                {
+                    "repo_ast_grep_search",
+                    "repo_tree_sitter_parse",
+                    "repo_unidiff_validate",
+                    "repo_git_apply_check",
+                    "repo_propose_code_edit",
+                }.issubset(set(code_product_surface)),
+                f"code-product surface lacks AST/diff/proposal tools: {code_product_surface}",
+            )
+            apply_surface = planner._tool_surface_names_for_turn(
+                goal="applica una patch e valida con test",
+                evidence_contract={
+                    "semantic_goal_classification": {"class": "apply_write"},
+                    "goal_requests_apply": True,
+                },
+                intrinsic_context={},
+            )
+            require(
+                {"repo_apply_patch", "repo_ruff_check", "repo_pyright_check", "repo_pytest_run"}.issubset(set(apply_surface)),
+                f"apply surface lacks apply/validation tools: {apply_surface}",
+            )
+            keyword_surface = planner._tool_surface_names_for_turn(
+                goal="analizza JSON, security shell e performance benchmark",
+                evidence_contract={"semantic_goal_classification": {"class": "analysis_only"}},
+                intrinsic_context={},
+            )
+            require(
+                {"repo_jq_query", "repo_semgrep_scan", "repo_shellcheck", "repo_hyperfine_benchmark"}.issubset(
+                    set(keyword_surface)
+                ),
+                f"keyword surface lacks requested deterministic tools: {keyword_surface}",
+            )
+            native_surface_previous = planner.AGENTIC_PLANNER_NATIVE_TOOLS
+            planner.AGENTIC_PLANNER_NATIVE_TOOLS = True
+            native_surface_gate = planner.validate_planner_decision_against_evidence(
+                "analizza la repo e descrivi il funzionamento",
+                {
+                    "action": "tool",
+                    "tool": "repo_apply_patch",
+                    "arguments": {"patch": "diff --git a/x b/x\n"},
+                    "allowed_native_tool_names": ["repo_read"],
+                    "native_tool_call": True,
+                    "raw_native_tool_call": {"function": {"name": "repo_apply_patch"}},
+                },
+                [],
+            )
+            planner.AGENTIC_PLANNER_NATIVE_TOOLS = native_surface_previous
+            require(
+                "native_tool_not_in_turn_surface" in native_surface_gate.get("violations", []),
+                f"native out-of-surface tool call was not rejected: {native_surface_gate}",
             )
             continuation_surface = planner._tool_surface_names_for_turn(
                 goal=goal,

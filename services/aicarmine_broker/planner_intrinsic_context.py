@@ -41,10 +41,28 @@ TOOL_PURPOSE_MANIFEST: tuple[dict[str, Any], ...] = (
         "policy": "support evidence only; never direct apply without explicit apply goal",
     },
     {
+        "name": "repo_fd_files / repo_rg_search / repo_jq_query",
+        "purpose": "deterministic file discovery, text search and JSON query evidence",
+        "writes_source": False,
+        "policy": "turn-scoped repo inspection only; payloads are bounded and structured",
+    },
+    {
+        "name": "repo_ast_grep_search / repo_ast_grep_dry_run",
+        "purpose": "turn-scoped AST structural search and rewrite dry-run evidence",
+        "writes_source": False,
+        "policy": "dry-run/evidence only; generated operations or diffs must still be explicit payloads",
+    },
+    {
         "name": "Tree-sitter",
         "purpose": "parse and anchor files structurally before proposing edits",
         "writes_source": False,
         "policy": "parse errors are typed blockers, not text heuristics",
+    },
+    {
+        "name": "repo_tree_sitter_parse / repo_ctags_symbols",
+        "purpose": "structural anchors and bounded symbol maps for repo analysis and code-product targeting",
+        "writes_source": False,
+        "policy": "anchors support planner decisions; they do not replace repo_read evidence",
     },
     {
         "name": "unidiff/difflib",
@@ -56,6 +74,30 @@ TOOL_PURPOSE_MANIFEST: tuple[dict[str, Any], ...] = (
         "name": "git apply --check",
         "purpose": "validate patch applicability without applying it",
         "writes_source": False,
+    },
+    {
+        "name": "repo_unidiff_validate / repo_git_apply_check",
+        "purpose": "validate complete diff payloads and patch applicability without applying",
+        "writes_source": False,
+        "policy": "validation output is evidence; source writes remain prohibited in report-only lanes",
+    },
+    {
+        "name": "repo_ruff_check / repo_pyright_check / repo_pytest_run",
+        "purpose": "targeted Python lint, type and test validation",
+        "writes_source": False,
+        "policy": "only exposed for validation/apply or relevant analysis turns; not a generic escape route",
+    },
+    {
+        "name": "repo_shellcheck / repo_semgrep_scan",
+        "purpose": "targeted shell and security validation evidence",
+        "writes_source": False,
+        "policy": "only exposed when the request or controller context makes the check relevant",
+    },
+    {
+        "name": "repo_hyperfine_benchmark",
+        "purpose": "explicit-consent performance benchmark evidence",
+        "writes_source": False,
+        "policy": "guarded tool; requires explicit benchmark intent and command consent",
     },
     {
         "name": "terminal_run_command_wait / Open Terminal",

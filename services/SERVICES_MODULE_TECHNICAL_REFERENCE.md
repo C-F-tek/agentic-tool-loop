@@ -82,6 +82,9 @@ Critical protocol notes:
   is represented as real windows with coordinates and hashes. Above the prompt
   compaction threshold, large sections are stored in job-local SQLite and the
   planner receives recursive `planner_prompt_context_window.v1` windows.
+  If the internal tool manifest becomes the large section, `available_tools`
+  is similarly represented by `planner_available_tools_window.v1`: a bounded
+  index plus a real SQLite text window for the complete compact manifest.
   Optional memory/RAG/history context can be omitted only after real
   SQLite-windowing and serialized prompt counting. `num_ctx` is
   requested/capped/effective, not assumed. Current documented defaults are
@@ -115,12 +118,19 @@ For terminal jobs returned to OpenWebUI:
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
 - `tool_context_for_30b`: pretty-printed JSON string containing only useful
   successful-tool evidence and declared limits.
-- `result`: preserved unchanged when already produced by the current flow. For
-  terminal jobs, the full terminal/final payload `result` is the primary source;
-  the compact response digest is only a fallback.
+- `result`: carried from the terminal/final payload as the public result source.
+  The compact response digest is only a fallback. Raw controller audit
+  `result.history` is normalized to `agentic_terminal_public_history_ledger.v1`
+  so OpenWebUI receives useful step/tool/result facts without local job paths,
+  SQLite ids or transport audit noise.
+- Public terminal `result.history` is not raw audit history. It is a bounded
+  `agentic_terminal_public_history_ledger.v1` with step/action/tool/reason and
+  useful result facts. Complete file/diff payloads remain in
+  `tool_context_for_30b`, `priority_evidence_for_30b` and
+  `payload_index_for_30b`; local artifact paths are not substitutes.
 - Completed and non-completed terminal jobs use the same public shape. Do not
   create a smaller `blocked`/`failed` top-level shape and do not let compact
-  `{ "preview": ... }` shadow a full terminal `result`.
+  `{ "preview": ... }` shadow a terminal `result` with public history ledger.
 - For `job_ok=false`, useful rejected code-product candidates, action plans and
   repair text are transported as explicit partial products in
   `tool_context_for_30b.partial_products_for_30b` and indexed through
@@ -176,14 +186,14 @@ planner history, validation, finalization and job dashboards.
 | `aicarmine_broker/job_html.py` | HTML renderer for job dashboard pages and the 3572-only IA Live Control View. | Reads job state/events, planner prompt captures, stream files and same-job tool artifacts for display. | Display-only; avoid changing job semantics here. |
 | `aicarmine_broker/job_store.py` | Job persistence: SQLite metadata, JSON state, NDJSON events, final result files, compact terminal responses. | Writes under agent job workspace and broker DB. | State schema and compact responses are consumed by 3571, dashboards and tests. |
 | `aicarmine_broker/memory_tools.py` | Scratchpad and SQLite-backed planner memory tools. | Reads/writes broker memory tables and scratchpad files. | Keep memory distinct from proof/evidence used by finalization gates. |
-| `aicarmine_broker/planner.py` | Controlled planner loop, prompt/history construction, intrinsic-context injection, preseed evidence, validation, repair routing, code-product/apply intent split, tool execution and finalization. | Talks to Ollama 11434/11435, dispatches internal tools, writes job state/events. | Highest-risk module. Do not change max step, model, ctx, launcher or validator flow without direct evidence. |
+| `aicarmine_broker/planner.py` | Controlled planner loop, prompt/history construction, intrinsic-context injection, preseed evidence, validation, repair routing, code-product/apply intent split, turn-specific native tool surface, tool execution and finalization. | Talks to Ollama 11434/11435, dispatches internal tools, writes job state/events. | Highest-risk module. Do not change max step, model, ctx, launcher or validator flow without direct evidence. The exposed native tools must match `required_next_progress`; do not leave repo navigation tools visible when the contract requires a build-state write, code-product proposal, typed block or final. |
 | `aicarmine_broker/planner_intrinsic_context.py` | Internal optional-context builder. It bounds controller memory, reads optional `rag.sqlite`/FTS5 chunks in read-only mode, summarizes repo evidence, failure patterns, tool purposes and `num_ctx` requested/cap/effective. | Reads planner memory surface and optional SQLite RAG DB. Writes nothing and is not a tool surface. | Keep it controller-injected only; do not register RAG/chunks as planner tools or import lab runtime modules. |
 | `aicarmine_broker/public_wrapper.py` | Deterministic public wrapper helpers for public answers and selector failures. | Pure formatting/normalization helpers. | Keep deterministic; no hidden tool calls. |
-| `aicarmine_broker/repo_tools.py` | Deterministic filesystem, search, read, report-only code edit proposal, patch, validation, terminal and command tools for lab/main repos. | Reads/writes repo files only through explicit write/apply tool paths and approval rules; shells via guarded commands. | Security-sensitive and evidence-sensitive. Tool results must contain real output, not only artifact paths. |
+| `aicarmine_broker/repo_tools.py` | Deterministic filesystem, search, read, report-only code edit proposal, patch, validation, terminal and command tools for lab/main repos. Includes bounded adapters for `fd`, `rg`, `jq`, `ast-grep`, Tree-sitter, `unidiff`, `git apply --check`, `ruff`, `pyright`, `pytest`, ShellCheck, Universal Ctags, Semgrep and explicit-consent Hyperfine. | Reads/writes repo files only through explicit write/apply tool paths and approval rules; shells via guarded commands. Deterministic adapters resolve from the active service venv or installed CLI paths and return structured payloads. | Security-sensitive and evidence-sensitive. Tool results must contain real output, not only artifact paths. External adapters are internal evidence/validation tools; do not expose them as 3571 OpenWebUI tools. |
 | `aicarmine_broker/code_edit_proposal_contract.py` | Local stable contract builder for report-only code products. It validates `unified_diff`, `structured_edit` and `no_op`, generates diffs from `old_text/new_text`, and attaches AST evidence through deterministic tooling. | Reads target files and optional AST/diff dependencies from the active venv/CLI. Writes no source files. | Diff/code-product payload must stay complete; dependency failures are typed errors, not heuristic fallbacks. |
 | `aicarmine_broker/tool_contract.py` | Tool schema normalization: names, aliases, args, bad-path detection, text extraction. | Pure contract helpers. | Public/internal name changes can break planner and OpenWebUI routing. |
-| `aicarmine_broker/tool_dispatch.py` | Dispatch table from normalized tool calls to repo/memory/helper functions, including `repo_propose_code_edit`. | Calls deterministic tools. | Keep dispatch explicit; do not insert hidden planner decisions. |
-| `aicarmine_broker/tool_registry.py` | Canonical tool registry and OpenAPI-like schema data, including the internal `repo_propose_code_edit` schema and aliases. | Pure data and schema helpers. | Tool schema changes affect planner prompts and public tool metadata. |
+| `aicarmine_broker/tool_dispatch.py` | Dispatch table from normalized tool calls to repo/memory/helper functions, including `repo_propose_code_edit` and deterministic adapter tools. | Calls deterministic tools. | Keep dispatch explicit; do not insert hidden planner decisions or shell-freeform substitutes. |
+| `aicarmine_broker/tool_registry.py` | Canonical tool registry and OpenAPI-like schema data, including the internal `repo_propose_code_edit` schema, deterministic adapter schemas and aliases. | Pure data and schema helpers. | Tool schema changes affect planner prompts and public tool metadata. Internal adapter schemas must not leak into 3571 public OpenWebUI tools. |
 | `aicarmine_broker/tool_selection.py` | Public request classifier and fallback internal tool selector. | Reads user goal text; chooses initial public/internal tool path. | Avoid hard-coded repo structure assumptions except documented generic rules. |
 
 ### `aicarmine_broker/planner_core`

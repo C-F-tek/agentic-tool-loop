@@ -85,9 +85,10 @@ are visible to OpenWebUI but do not satisfy the successful code-product gate.
 Non-ok terminal jobs must keep the same public shape as ok jobs. The difference
 is `job_ok=false` or the terminal status/warning metadata, not a different
 payload contract. If `final.json`/the terminal payload contains `result`, 3571
-must prefer that full `result` over the compact transport digest from
-`compact_agent_terminal_response()`. A compact `{ "preview": ... }` result is
-only a fallback when no full terminal `result` is available.
+must prefer that terminal `result` over the compact transport digest from
+`compact_agent_terminal_response()`. Raw `result.history` is normalized to the
+public ledger schema; a compact `{ "preview": ... }` result is only a fallback
+when no terminal `result` is available.
 
 ## 3572 IA Live Control View
 
@@ -234,7 +235,13 @@ Current tool surface:
 - Public OpenWebUI surface on 3571: `/vulkan_helper` only.
 - Internal 3572 planner surface:
   `repo_capabilities`, `repo_status`, `repo_tree`, `repo_search`,
-  `repo_read`, `repo_list_files`, `repo_propose_code_edit`,
+  `repo_fd_files`, `repo_rg_search`, `repo_jq_query`,
+  `repo_ast_grep_search`, `repo_ast_grep_dry_run`,
+  `repo_tree_sitter_parse`, `repo_unidiff_validate`,
+  `repo_git_apply_check`, `repo_ruff_check`, `repo_pyright_check`,
+  `repo_pytest_run`, `repo_shellcheck`, `repo_ctags_symbols`,
+  `repo_semgrep_scan`, `repo_hyperfine_benchmark`, `repo_read`,
+  `repo_list_files`, `repo_propose_code_edit`,
   `repo_apply_patch`, `repo_write_file`, `repo_validate`, `repo_command`,
   `terminal_run_command_wait`, `terminal_search_files`,
   `terminal_list_files`, `planner_scratchpad_read`,
@@ -247,6 +254,12 @@ Current tool surface:
 - `repo_propose_code_edit` is internal, read-only and report-only. It produces
   a complete `code_edit_proposal` payload for diff/refactoring/code-product
   goals and must not write source files or apply patches.
+- Deterministic adapters (`repo_fd_files`, `repo_rg_search`, `repo_jq_query`,
+  AST/diff validators, Python/shell/security checks and explicit-consent
+  `repo_hyperfine_benchmark`) are internal support tools only. They are exposed
+  by the planner surface per turn, according to the request class and
+  `required_next_progress`; they are not public 3571 tools and they do not
+  replace `repo_read`, complete diff payloads or final OpenWebUI transport.
 
 Implication: 3572 is both validator and dispatcher. It may reject or execute a
 planner proposal, but it must not secretly invent a different tool sequence.
@@ -368,10 +381,16 @@ Verified behavior:
 - The sealed terminal shape is identical for completed and non-completed
   terminal jobs. Do not branch into a smaller blocked/failure response shape:
   keep `payload_index_for_30b`, `priority_evidence_for_30b`,
-  `openwebui_usage`, `tool_context_for_30b` and full `result` when present.
+  `openwebui_usage`, `tool_context_for_30b` and terminal `result` when present.
 - `result` source precedence is terminal/final payload first, compact response
-  fallback second. The compact `result.preview` digest must not shadow the full
-  loop `result` loaded from the terminal payload.
+  fallback second. The compact `result.preview` digest must not shadow the
+  terminal `result` loaded from the terminal payload.
+- The public `result` must not inline raw controller audit history when that
+  history would dominate the OpenWebUI context. `result.history` is exposed as
+  `agentic_terminal_public_history_ledger.v1`: step, action, tool, reason,
+  target/result facts and complete code-product payloads when present. Raw
+  audit detail remains internal job evidence; it is not a substitute for
+  `tool_context_for_30b`.
 - `priority_evidence_for_30b` is an index for model navigation, not a
   replacement for `tool_context_for_30b`: code-edit proposals expose complete
   `unified_diff`/`structured_operations`, complete file requests expose full
@@ -401,6 +420,11 @@ narrative as the primary result.
 - 3571 must not regress non-ok terminal jobs to a reduced or preview-only
   payload. The top-level shape stays the same as ok; only `job_ok` and terminal
   status/warning indicate failure/block/max/cancel.
+- 3572 must keep the native tool surface coherent with
+  `required_next_progress`. If code-product progress says the target is already
+  read and asks for `code_product_build_state`, repo navigation tools must not
+  remain exposed for that turn. If final is required and allowed, tools are not
+  exposed unless a final-composition tool is explicitly listed.
 
 ## Diagnostic Checklist
 

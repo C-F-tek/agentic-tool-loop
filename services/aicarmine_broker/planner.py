@@ -932,6 +932,203 @@ def _final_composition_tool_names_from_candidates(contract: dict[str, Any]) -> s
     return names
 
 
+def _candidate_action_tool(action: Any) -> str:
+    if not isinstance(action, dict):
+        return ""
+    return _normalize_tool_name(str(action.get("tool") or ""))
+
+
+def _candidate_action_args(action: Any) -> dict[str, Any]:
+    if not isinstance(action, dict):
+        return {}
+    args = action.get("arguments")
+    return args if isinstance(args, dict) else {}
+
+
+def _candidate_action_is_build_state_write(action: Any) -> bool:
+    return (
+        _candidate_action_tool(action) == "planner_scratchpad_write"
+        and str(_candidate_action_args(action).get("kind") or "").strip() == CODE_PRODUCT_BUILD_STATE_KIND
+    )
+
+
+def _candidate_action_is_build_state_read(action: Any) -> bool:
+    args = _candidate_action_args(action)
+    return (
+        _candidate_action_tool(action) == "planner_scratchpad_read"
+        and str(args.get("kind") or args.get("mode") or "").strip() == CODE_PRODUCT_BUILD_STATE_KIND
+    )
+
+
+def _dedupe_candidate_actions(actions: list[Any], *, limit: int = 16) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        key = json.dumps(action, ensure_ascii=False, sort_keys=True, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(action)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _apply_turn_surface_policy(contract: dict[str, Any]) -> dict[str, Any]:
+    """Keep candidate actions and native tools aligned with required progress.
+
+    This does not execute a fallback path. It removes contradictory options from
+    the planner-visible surface when the controller contract already names the
+    only admissible next progress class.
+    """
+    if not isinstance(contract, dict):
+        return contract
+    actions = (
+        contract.get("candidate_next_actions")
+        if isinstance(contract.get("candidate_next_actions"), list)
+        else []
+    )
+    progress = str(contract.get("required_next_progress") or "").strip().lower()
+    policy: dict[str, Any] = {
+        "schema": "planner_turn_tool_surface_policy.v1",
+        "reason": "",
+        "allowed_tool_names": [],
+        "candidate_actions_filtered": False,
+    }
+
+    def set_actions(filtered: list[dict[str, Any]], reason: str) -> None:
+        filtered = _dedupe_candidate_actions(filtered)
+        contract["candidate_next_actions"] = filtered
+        policy["candidate_actions_filtered"] = True
+        policy["reason"] = reason
+        policy["allowed_tool_names"] = _ordered_tool_names({
+            name for name in (_candidate_action_tool(item) for item in filtered) if name
+        })
+        if len(filtered) == 1:
+            policy["required_next_tool_call"] = {
+                "tool": _candidate_action_tool(filtered[0]),
+                "arguments": _candidate_action_args(filtered[0]),
+                "reason": reason,
+            }
+
+    def set_surface_only(allowed_names: set[str], reason: str) -> None:
+        policy["candidate_actions_filtered"] = False
+        policy["reason"] = reason
+        policy["allowed_tool_names"] = _ordered_tool_names({
+            _normalize_tool_name(str(name))
+            for name in allowed_names
+            if _normalize_tool_name(str(name))
+        })
+
+    if _contract_final_required_now(contract):
+        final_actions = [
+            item for item in actions
+            if _candidate_action_tool(item) == "planner_scratchpad_write"
+            and str(_candidate_action_args(item).get("kind") or "").strip() == "answer_chunk"
+        ]
+        set_actions(final_actions, "final_allowed_and_required_now")
+        contract["turn_tool_surface_policy"] = policy
+        return contract
+
+    code_contract = (
+        contract.get("code_product_contract")
+        if isinstance(contract.get("code_product_contract"), dict)
+        else {}
+    )
+    if not code_contract.get("required"):
+        return contract
+
+    if "return action=block" in progress and "blocked_incomplete" in progress:
+        set_actions([], "code_product_build_state_blocked_incomplete")
+    elif "call repo_propose_code_edit" in progress and (
+        "ready_for_propose" in progress
+        or "complete repo_propose_code_edit candidate" in progress
+        or "complete payload from candidate_next_actions" in progress
+    ):
+        propose_actions = [
+            item for item in actions
+            if _candidate_action_tool(item) == "repo_propose_code_edit"
+            and _code_product_action_has_complete_payload(item)
+        ]
+        set_actions(propose_actions, "code_product_ready_for_propose")
+    elif "read the internal code_product_build_state" in progress:
+        read_actions = [item for item in actions if _candidate_action_is_build_state_read(item)]
+        set_actions(read_actions, "code_product_build_state_read_required")
+    elif (
+        ("advance with one real step" in progress or "write code_product_build_state with new real progress" in progress)
+        and ("call repo_propose_code_edit" in progress or "typed block" in progress)
+    ):
+        mixed_actions = [
+            item for item in actions
+            if (
+                _candidate_action_tool(item) == "repo_propose_code_edit"
+                and _code_product_action_has_complete_payload(item)
+            )
+            or _candidate_action_is_build_state_write(item)
+        ]
+        set_actions(mixed_actions, "code_product_mixed_real_progress_or_typed_block")
+    elif (
+        "persist an internal code_product_build_state" in progress
+        or "write code_product_build_state" in progress
+        or "code_product_build_state with real progress" in progress
+    ):
+        write_actions = [item for item in actions if _candidate_action_is_build_state_write(item)]
+        set_actions(write_actions, "code_product_build_state_write_required")
+    elif "candidate_next_actions[0]" in progress and actions:
+        first = actions[0] if isinstance(actions[0], dict) else {}
+        set_actions([first] if first else [], "required_candidate_next_actions_0")
+    elif (
+        ("target is already read" in progress or "already read" in progress)
+        and ("do not repeat repo_read" in progress or "do not call repo_read" in progress)
+    ):
+        filtered = [
+            item for item in actions
+            if _candidate_action_tool(item) not in {"repo_read", "repo_list_files", "repo_tree", "repo_search"}
+        ]
+        set_actions(filtered, "code_product_target_already_read_no_repo_navigation")
+    elif "read the target with repo_read" in progress:
+        filtered = [
+            item for item in actions
+            if _candidate_action_tool(item) in {"repo_read", "repo_list_files", "repo_tree", "repo_search"}
+        ]
+        if filtered:
+            set_actions(filtered, "code_product_target_read_required")
+        else:
+            set_surface_only({"repo_read", "repo_list_files", "repo_tree", "repo_search"}, "code_product_target_read_required")
+    elif "call repo_propose_code_edit" in progress:
+        propose_actions = [
+            item for item in actions
+            if _candidate_action_tool(item) == "repo_propose_code_edit"
+            and _code_product_action_has_complete_payload(item)
+        ]
+        if propose_actions:
+            set_actions(propose_actions, "code_product_propose_required")
+        else:
+            set_surface_only({"repo_propose_code_edit", "planner_scratchpad_write"}, "code_product_propose_or_build_state_required")
+    else:
+        filtered = [
+            item for item in actions
+            if not (
+                _candidate_action_tool(item) == "repo_propose_code_edit"
+                and not _code_product_action_has_complete_payload(item)
+            )
+        ]
+        if "do not repeat repo_read" in progress or "do not call repo_read" in progress:
+            filtered = [item for item in filtered if _candidate_action_tool(item) != "repo_read"]
+        set_actions(filtered[:16], "code_product_remove_incomplete_or_repeated_candidates")
+
+    allowed = policy.get("allowed_tool_names")
+    if not allowed:
+        # A typed block/final without tool calls is valid for some code-product
+        # states. Mark the surface locked so provider tools are not exposed as a
+        # misleading escape route.
+        policy["locked_empty_tool_surface"] = True
+    contract["turn_tool_surface_policy"] = policy
+    return contract
+
+
 def _tool_surface_names_for_turn(
     *,
     goal: str,
@@ -944,6 +1141,20 @@ def _tool_surface_names_for_turn(
         return ["planner_scratchpad_read"]
 
     contract = evidence_contract if isinstance(evidence_contract, dict) else {}
+    surface_policy = (
+        contract.get("turn_tool_surface_policy")
+        if isinstance(contract.get("turn_tool_surface_policy"), dict)
+        else {}
+    )
+    policy_allowed = surface_policy.get("allowed_tool_names")
+    if isinstance(policy_allowed, list):
+        if policy_allowed or surface_policy.get("locked_empty_tool_surface") or _contract_final_required_now(contract):
+            return _ordered_tool_names({
+                _normalize_tool_name(str(name))
+                for name in policy_allowed
+                if _normalize_tool_name(str(name))
+            })
+
     semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
     goal_class = str(semantic.get("class") or "").strip()
     code_product_required = bool((contract.get("code_product_contract") or {}).get("required")) if isinstance(contract.get("code_product_contract"), dict) else False
@@ -952,20 +1163,50 @@ def _tool_surface_names_for_turn(
     if _contract_final_required_now(contract):
         return _ordered_tool_names(_final_composition_tool_names_from_candidates(contract))
 
-    names: set[str] = {"repo_read", "repo_list_files", "repo_tree", "repo_search"}
+    goal_low = str(goal or "").lower()
+    repo_discovery_tools = {
+        "repo_read",
+        "repo_list_files",
+        "repo_tree",
+        "repo_search",
+        "repo_fd_files",
+        "repo_rg_search",
+    }
+    ast_diff_tools = {
+        "repo_ast_grep_search",
+        "repo_ast_grep_dry_run",
+        "repo_tree_sitter_parse",
+        "repo_unidiff_validate",
+        "repo_git_apply_check",
+    }
+    validation_tools = {
+        "repo_validate",
+        "repo_ruff_check",
+        "repo_pyright_check",
+        "repo_pytest_run",
+    }
+    names: set[str] = set(repo_discovery_tools)
     if code_product_required:
-        names.update(
-            {
-                "repo_propose_code_edit",
-                "planner_scratchpad_write",
-            }
-        )
+        names.update(ast_diff_tools)
+        names.update({"repo_propose_code_edit", "planner_scratchpad_write"})
     elif apply_required:
-        names.update({"repo_apply_patch", "repo_validate", "repo_command", "terminal_run_command_wait"})
+        names.update(ast_diff_tools)
+        names.update(validation_tools)
+        names.update({"repo_apply_patch", "repo_command", "terminal_run_command_wait"})
     elif goal_class == "analysis_only":
-        names = {"repo_read", "repo_list_files", "repo_tree", "repo_search"}
+        names = set(repo_discovery_tools)
+        names.add("repo_ctags_symbols")
     else:
         names.update({"repo_status"})
+
+    if any(token in goal_low for token in ("json", "payload", "schema", "openapi")):
+        names.add("repo_jq_query")
+    if any(token in goal_low for token in ("security", "sicurezza", "vulnerability", "vulnerabil", "sast", "semgrep")):
+        names.add("repo_semgrep_scan")
+    if any(token in goal_low for token in ("shell", "bash", ".sh", "shellcheck")):
+        names.add("repo_shellcheck")
+    if any(token in goal_low for token in ("benchmark", "performance", "prestazioni", "hyperfine")):
+        names.add("repo_hyperfine_benchmark")
 
     candidate_names = _candidate_tool_names(contract)
     for candidate in candidate_names:
@@ -994,6 +1235,61 @@ def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> An
         for row in compact_tools
         if isinstance(row, dict) and row.get("name")
     ]
+
+
+def _available_tools_window_pack(
+    root: Path,
+    *,
+    goal: str,
+    available_tools: Any,
+    window_chars: int,
+    reason: str,
+) -> dict[str, Any]:
+    tools = available_tools if isinstance(available_tools, list) else []
+    text = json.dumps(tools, ensure_ascii=False, indent=2, default=str)
+    window = _store_prompt_text_window(
+        root,
+        section="available_tools",
+        text=text,
+        query=goal,
+        max_chars=window_chars,
+        metadata={
+            "kind": "available_tools_manifest",
+            "format": "json",
+            "reason": reason,
+        },
+    )
+    summary: list[dict[str, Any]] = []
+    for row in tools:
+        if not isinstance(row, dict):
+            continue
+        item = {"name": row.get("name")}
+        if row.get("transport"):
+            item["transport"] = row.get("transport")
+        if isinstance(row.get("required"), list) and row.get("required"):
+            item["required"] = row.get("required")
+        summary.append({k: v for k, v in item.items() if v not in (None, "", [], {})})
+    payload: dict[str, Any] = {
+        "schema": "planner_available_tools_window.v1",
+        "tool_count": len(summary),
+        "tool_names": [str(item.get("name")) for item in summary if item.get("name")],
+        "summary": summary[:80],
+        "window": window,
+    }
+    if len(summary) > 80:
+        payload["summary_truncated"] = True
+        payload["summary_omitted_count"] = len(summary) - 80
+    if window.get("document_id") and window.get("has_more_after") is True:
+        payload["planner_can_request_more"] = {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": window.get("document_id"),
+                "offset": window.get("window_end"),
+                "max_chars": window_chars,
+            },
+        }
+    return payload
 
 
 def _tool_shape_examples_for_prompt() -> dict[str, Any]:
@@ -1458,6 +1754,78 @@ def _hard_budget_evidence_contract_for_prompt(
     return compact
 
 
+def _report_exceeds_generation_headroom(report: dict[str, Any], headroom_char_budget: int) -> bool:
+    if int(headroom_char_budget or 0) <= 0:
+        return False
+    total = int((report or {}).get("total_prompt_chars") or 0)
+    if total <= int(headroom_char_budget):
+        return False
+    native_reserve = int((report or {}).get("native_history_reserve_chars") or 0)
+    if native_reserve > 0 and max(0, total - native_reserve) <= int(headroom_char_budget):
+        return False
+    return True
+
+
+def _preserve_required_next_tool_call_for_prompt(
+    payload: dict[str, Any],
+    previous_evidence_contract: dict[str, Any],
+) -> None:
+    if not isinstance(payload, dict) or not isinstance(previous_evidence_contract, dict):
+        return
+    evidence = payload.get("evidence_contract") if isinstance(payload.get("evidence_contract"), dict) else {}
+    required = (
+        previous_evidence_contract.get("required_next_tool_call")
+        if isinstance(previous_evidence_contract.get("required_next_tool_call"), dict)
+        else {}
+    )
+    if not required:
+        return
+    evidence["required_next_tool_call"] = required
+    payload["required_next_tool_call"] = required
+    for key in ("forbidden_repeated_tool_calls",):
+        value = previous_evidence_contract.get(key)
+        if isinstance(value, list) and value:
+            evidence[key] = value
+            payload[key] = value
+    prev_actions = (
+        previous_evidence_contract.get("candidate_next_actions")
+        if isinstance(previous_evidence_contract.get("candidate_next_actions"), list)
+        else []
+    )
+    current_actions = evidence.get("candidate_next_actions") if isinstance(evidence.get("candidate_next_actions"), list) else []
+    required_key = json.dumps(required, ensure_ascii=False, sort_keys=True, default=str)
+    matched_action = {}
+    for action in prev_actions:
+        if not isinstance(action, dict):
+            continue
+        action_required = _required_next_tool_call_from_action(action)
+        if json.dumps(action_required, ensure_ascii=False, sort_keys=True, default=str) == required_key:
+            matched_action = action
+            break
+    if matched_action:
+        action_key = json.dumps(matched_action, ensure_ascii=False, sort_keys=True, default=str)
+        evidence["candidate_next_actions"] = [matched_action] + [
+            item for item in current_actions
+            if json.dumps(item, ensure_ascii=False, sort_keys=True, default=str) != action_key
+        ][:10]
+    progress = previous_evidence_contract.get("required_next_progress")
+    if progress not in (None, "", [], {}):
+        evidence["required_next_progress"] = progress
+    final_contract = evidence.get("finalization_contract") if isinstance(evidence.get("finalization_contract"), dict) else {}
+    prev_final_contract = (
+        previous_evidence_contract.get("finalization_contract")
+        if isinstance(previous_evidence_contract.get("finalization_contract"), dict)
+        else {}
+    )
+    if prev_final_contract.get("final_allowed") is False or required.get("tool") == "planner_scratchpad_read":
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["reason"] = prev_final_contract.get("reason") or evidence.get("required_next_progress")
+        evidence["planner_may_choose_final"] = False
+    evidence["finalization_contract"] = final_contract
+    payload["evidence_contract"] = evidence
+
+
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(context, dict):
         return {}
@@ -1529,10 +1897,18 @@ def _optional_context_window_pack(
         for key, value in (optional_context or {}).items()
         if value not in (None, "", [], {})
     ]
+    successful_payload_windows = (
+        optional_context.get("successful_tool_payload_windows")
+        if isinstance(optional_context.get("successful_tool_payload_windows"), list)
+        else []
+    )
+    window_source = dict(optional_context or {})
+    if successful_payload_windows:
+        window_source.pop("successful_tool_payload_windows", None)
     window = _store_prompt_value_window(
         root,
         section="optional_context:hard_budget_pack",
-        value=optional_context or {},
+        value=window_source,
         query=goal,
         max_chars=max(500, int(window_chars or 1000)),
         metadata={
@@ -1549,6 +1925,8 @@ def _optional_context_window_pack(
         "source_keys": source_keys,
         "serialized_json_window": window,
     }
+    if successful_payload_windows:
+        out["successful_tool_payload_windows"] = successful_payload_windows
     if window.get("document_id") and window.get("has_more_after") is True:
         out["planner_can_request_more"] = {
             "tool": "planner_scratchpad_read",
@@ -1597,21 +1975,12 @@ def _optional_context_for_prompt(
         })
     if not compact_mode:
         return optional
-    if AGENTIC_PLANNER_NATIVE_TOOLS:
-        return {
-            key: _windowed_optional_context_value(
-                root,
-                goal=goal,
-                key=key,
-                value=value,
-                window_chars=window_chars,
-            )
-            for key, value in optional.items()
-        }
     tool_payload_windows: list[dict[str, Any]] = []
     for row in reversed(history if isinstance(history, list) else []):
         result = _history_tool_result(row)
         if not result.get("ok"):
+            continue
+        if result.get("tool") == "controller_guard":
             continue
         raw_payload = _same_tool_artifact_payload(result)
         if not isinstance(raw_payload, dict):
@@ -2612,15 +2981,6 @@ def _build_planner_user_payload(
             evidence_for_prompt["finalization_contract"] = final_contract
             evidence_for_prompt["required_next_progress"] = continuation_action["reason"]
         tool_shape_examples = _tool_shape_examples_for_prompt()
-        if compact_mode:
-            tool_shape_examples = _prompt_section_window_pack(
-                root,
-                goal=goal,
-                section="tool_shape_examples",
-                value=tool_shape_examples,
-                window_chars=min(900, max(500, int(window_chars or 1000))),
-                reason="planner_prompt_compact_mode",
-            )
         payload_local = {
             "job_id": job_id,
             "goal": goal,
@@ -2738,13 +3098,18 @@ def _build_planner_user_payload(
                 )
             if total_for_compaction <= threshold:
                 break
-    if headroom_char_budget > 0 and int(report.get("total_prompt_chars") or 0) > headroom_char_budget:
+    if _report_exceeds_generation_headroom(report, headroom_char_budget):
         optional_for_window = (
             payload.get("optional_context")
             if isinstance(payload.get("optional_context"), dict)
             else {}
         )
         for hard_window_chars in (1000, 700, 500):
+            evidence_before_hard_budget = (
+                dict(payload.get("evidence_contract"))
+                if isinstance(payload.get("evidence_contract"), dict)
+                else {}
+            )
             payload["optional_context"] = _optional_context_window_pack(
                 root,
                 goal=goal,
@@ -2765,14 +3130,8 @@ def _build_planner_user_payload(
                 history=history,
                 reason="planner_prompt_pack_over_budget_after_compact_mode",
             )
-            payload["tool_shape_examples"] = _prompt_section_window_pack(
-                root,
-                goal=goal,
-                section="tool_shape_examples",
-                value=_tool_shape_examples_for_prompt(),
-                window_chars=hard_window_chars,
-                reason="planner_prompt_pack_over_budget_after_compact_mode",
-            )
+            _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
+            payload["tool_shape_examples"] = _tool_shape_examples_for_prompt()
             if isinstance(payload["evidence_contract"].get("required_next_tool_call"), dict):
                 payload["required_next_tool_call"] = payload["evidence_contract"]["required_next_tool_call"]
             elif "required_next_tool_call" in payload:
@@ -2791,7 +3150,40 @@ def _build_planner_user_payload(
             report["compact_mode"] = True
             report["window_chars"] = hard_window_chars
             report["native_history_reserve_chars"] = native_history_reserve_chars
-            if report["total_prompt_chars"] <= headroom_char_budget:
+            if not _report_exceeds_generation_headroom(report, headroom_char_budget):
+                break
+    if (
+        _report_exceeds_generation_headroom(report, headroom_char_budget)
+        and int((report.get("sections") or {}).get("available_tools") or 0) > 2500
+        and not (
+            isinstance(payload.get("available_tools"), dict)
+            and payload["available_tools"].get("schema") == "planner_available_tools_window.v1"
+        )
+    ):
+        for hard_window_chars in (700, 500):
+            payload["available_tools"] = _available_tools_window_pack(
+                root,
+                goal=goal,
+                available_tools=available_tools_for_payload,
+                window_chars=hard_window_chars,
+                reason="planner_prompt_pack_over_budget_available_tools_windowed",
+            )
+            prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+            prompt_contract["compact_mode"] = True
+            prompt_contract["available_tools_windowed"] = True
+            prompt_contract["available_tools_window_chars"] = hard_window_chars
+            payload["prompt_pack_contract"] = prompt_contract
+            report = _prompt_budget_report(
+                payload,
+                system_prompt=system_prompt_for_budget,
+                extra_prompt_sections=extra_prompt_sections,
+            )
+            report["required_working_set_chars"] = required_chars
+            report["required_working_set_errors"] = required_errors
+            report["compact_mode"] = True
+            report["window_chars"] = hard_window_chars
+            report["native_history_reserve_chars"] = native_history_reserve_chars
+            if not _report_exceeds_generation_headroom(report, headroom_char_budget):
                 break
     payload["prompt_budget_report"] = {
         "schema": report.get("schema"),
@@ -2842,13 +3234,17 @@ def _build_planner_user_payload(
         if int(report.get("total_prompt_chars") or 0) == actual_total:
             break
     if (
-        headroom_char_budget > 0
-        and int(report.get("total_prompt_chars") or 0) > headroom_char_budget
+        _report_exceeds_generation_headroom(report, headroom_char_budget)
         and isinstance(payload.get("optional_context"), dict)
         and payload["optional_context"].get("schema") != "planner_optional_context_window_pack.v1"
     ):
         optional_for_window = payload["optional_context"]
         for hard_window_chars in (700, 500):
+            evidence_before_hard_budget = (
+                dict(payload.get("evidence_contract"))
+                if isinstance(payload.get("evidence_contract"), dict)
+                else {}
+            )
             payload["optional_context"] = _optional_context_window_pack(
                 root,
                 goal=goal,
@@ -2869,14 +3265,8 @@ def _build_planner_user_payload(
                 history=history,
                 reason="planner_prompt_pack_over_budget_after_budget_report",
             )
-            payload["tool_shape_examples"] = _prompt_section_window_pack(
-                root,
-                goal=goal,
-                section="tool_shape_examples",
-                value=_tool_shape_examples_for_prompt(),
-                window_chars=hard_window_chars,
-                reason="planner_prompt_pack_over_budget_after_budget_report",
-            )
+            _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
+            payload["tool_shape_examples"] = _tool_shape_examples_for_prompt()
             if isinstance(payload["evidence_contract"].get("required_next_tool_call"), dict):
                 payload["required_next_tool_call"] = payload["evidence_contract"]["required_next_tool_call"]
             elif "required_next_tool_call" in payload:
@@ -2918,7 +3308,7 @@ def _build_planner_user_payload(
                 )
                 if int(report.get("total_prompt_chars") or 0) == actual_total:
                     break
-            if report["total_prompt_chars"] <= headroom_char_budget:
+            if not _report_exceeds_generation_headroom(report, headroom_char_budget):
                 break
     if native_history_reserve_chars:
         total_without_native_history_reserve = max(
@@ -3578,7 +3968,10 @@ def _public_tool_response(tool_result: dict[str, Any]) -> dict[str, Any]:
         "summary", "content", "text", "message", "result", "items",
         "matches", "files", "paths", "count", "total_matches", "limit",
         "truncated", "returncode", "stdout", "stderr", "stdout_text",
-        "stderr_text", "stdout_tail", "stderr_tail",
+        "stderr_text", "stdout_tail", "stderr_tail", "diagnostics",
+        "diagnostics_total", "anchors", "anchors_total", "symbols",
+        "symbols_total", "comments", "parsed_json", "file_count",
+        "results", "results_total", "errors", "warnings", "stderr_tail",
     ):
         if source.get(key) not in (None, "", [], {}):
             useful[key] = _strip_public_artifact_paths(source.get(key))
@@ -3648,6 +4041,14 @@ def _public_tool_artifact_rows(history: list[dict[str, Any]]) -> list[dict[str, 
         artifact_payload = _strip_public_artifact_paths(artifact_payload)
         if tool == "repo_propose_code_edit":
             artifact = {"kind": "code_edit_proposal", **artifact_payload}
+        elif tool in {"repo_unidiff_validate", "repo_git_apply_check"}:
+            artifact = {"kind": "diff_validation", **artifact_payload}
+        elif tool in {"repo_ruff_check", "repo_pyright_check", "repo_pytest_run", "repo_shellcheck", "repo_semgrep_scan"}:
+            artifact = {"kind": "validation_result", **artifact_payload}
+        elif tool in {"repo_ast_grep_search", "repo_ast_grep_dry_run", "repo_tree_sitter_parse", "repo_ctags_symbols"}:
+            artifact = {"kind": "structural_evidence", **artifact_payload}
+        elif tool in {"repo_fd_files", "repo_rg_search", "repo_jq_query"}:
+            artifact = {"kind": "deterministic_repo_evidence", **artifact_payload}
         elif tool == "repo_tree":
             artifact = {"kind": "repo_tree", **artifact_payload}
         elif tool == "repo_list_files":
@@ -3830,6 +4231,42 @@ def controller_guard_count(history: list[dict[str, Any]], kind: str) -> int:
             str(x or "") for x in (result.get("summary"), decision.get("reason"))
         ).lower()
         if wanted and wanted in combined:
+            count += 1
+    return count
+
+
+def _controller_guard_rejection_signature(validation: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
+    rejected = {
+        k: decision.get(k)
+        for k in ("action", "tool", "arguments")
+        if decision.get(k) not in (None, "", [], {})
+    }
+    return {
+        "violations": [str(v) for v in violations],
+        "rejected_decision": rejected,
+    }
+
+
+def _controller_guard_rejection_signature_count(
+    history: list[dict[str, Any]],
+    signature: dict[str, Any],
+) -> int:
+    key = _invalid_decision_signature_key(signature)
+    if not key:
+        return 0
+    count = 0
+    for item in history if isinstance(history, list) else []:
+        result = _history_tool_result(item)
+        if result.get("tool") != "controller_guard":
+            continue
+        existing = result.get("invalid_decision_signature")
+        if not isinstance(existing, dict) or not existing:
+            existing = _controller_guard_rejection_signature(
+                {"violations": result.get("violations") if isinstance(result.get("violations"), list) else []},
+                result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {},
+            )
+        if _invalid_decision_signature_key(existing) == key:
             count += 1
     return count
 
@@ -4486,6 +4923,9 @@ def _code_product_build_state_write_action(
             "with an explicit blocker."
         ),
     }
+    state_text = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+    if _code_product_build_state_duplicate_write(history or [], target_file=target, text=state_text):
+        return {}
     return {
         "action": "tool",
         "tool": "planner_scratchpad_write",
@@ -4495,7 +4935,7 @@ def _code_product_build_state_write_action(
             "status": "collecting_source",
             "section": _code_product_build_state_section(target),
             "max_chars": 8000,
-            "text": json.dumps(state, ensure_ascii=False, separators=(",", ":")),
+            "text": state_text,
         },
         "reason": (
             "Persist a valid internal code_product_build_state with real repo_read "
@@ -6149,15 +6589,20 @@ def _repo_list_evidence(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         paths: list[str] = []
         keys = ("paths", "paths_preview") if tool == "repo_list_files" else ("entries", "entries_preview", "files", "files_preview")
-        for key in keys:
-            value = result.get(key)
-            if not isinstance(value, list):
-                continue
-            for raw in value:
-                p = raw.get("path") if isinstance(raw, dict) else raw
-                p = _repo_rel_token(p or "")
-                if p and p not in paths:
-                    paths.append(p)
+        sources = [result]
+        raw_payload = _same_tool_artifact_payload(result)
+        if isinstance(raw_payload, dict):
+            sources.append(raw_payload)
+        for source in sources:
+            for key in keys:
+                value = source.get(key)
+                if not isinstance(value, list):
+                    continue
+                for raw in value:
+                    p = raw.get("path") if isinstance(raw, dict) else raw
+                    p = _repo_rel_token(p or "")
+                    if p and p not in paths:
+                        paths.append(p)
 
         rows.append({
             "step": item.get("step"),
@@ -6883,15 +7328,22 @@ def planner_evidence_contract(
     repo_available_read_candidates = _meaningful_read_candidates_from_evidence(list_rows)
     repo_required_read_count = _repo_required_read_count(repo_available_read_candidates)
     repo_goal = _repo_analysis_goal(goal)
+    repo_goal_class = str(semantic_classification.get("class") or "")
     analysis_only_repo_goal = (
         repo_goal
-        and str(semantic_classification.get("class") or "") == "analysis_only"
+        and repo_goal_class == "analysis_only"
+        and not bool(semantic_classification.get("must_produce_code_product"))
+        and not goal_requests_apply(goal)
+    )
+    orientative_repo_final_goal = (
+        repo_goal
+        and repo_goal_class in {"analysis_only", "action_plan_only"}
         and not bool(semantic_classification.get("must_produce_code_product"))
         and not goal_requests_apply(goal)
     )
     repo_final_required_read_count = (
         min(repo_required_read_count, 10)
-        if analysis_only_repo_goal
+        if orientative_repo_final_goal
         else repo_required_read_count
     )
     scoped_inspection = bool(target_scope)
@@ -6960,7 +7412,7 @@ def planner_evidence_contract(
             and len(meaningful_content_reads) >= repo_required_read_count
         )
         analysis_repo_evidence_sufficient = bool(
-            analysis_only_repo_goal
+            orientative_repo_final_goal
             and root_surface_done
             and len(doc_reads) >= 3
             and len(meaningful_lists) >= 1
@@ -6970,7 +7422,7 @@ def planner_evidence_contract(
         final_allowed = bool(strict_repo_evidence_sufficient or analysis_repo_evidence_sufficient)
         final_reason = (
             (
-                "Analysis-only repository evidence exists: root surface, multiple docs/config reads, "
+                "Analysis/action-plan repository evidence exists: root surface, multiple docs/config reads, "
                 f"one meaningful non-infra/code area, {len(meaningful_content_reads)} verified reads "
                 f"inside meaningful areas, and {len(verified_read_rows)}/{repo_final_required_read_count} "
                 "total verified content reads. The 20-read target remains orientative, not a hard final gate."
@@ -6985,7 +7437,7 @@ def planner_evidence_contract(
             (
                 "Need root surface + at least 3 markdown/config reads + one meaningful non-infra/code area "
                 f"+ {len(meaningful_content_reads)}/{repo_final_required_read_count} verified concrete readable reads "
-                "for analysis-only finalization "
+                "for analysis/action-plan finalization "
                 f"(target {REPO_CONCRETE_READ_TARGET} remains orientative and bounded by discovered candidates)."
             )
         )
@@ -7167,11 +7619,12 @@ def planner_evidence_contract(
         "scoped_available_read_candidates": scope_available_read_candidates[:120],
         "scoped_concrete_read_count": len(scope_content_reads),
         "repo_concrete_read_target": REPO_CONCRETE_READ_TARGET if repo_goal else None,
-        "repo_concrete_read_target_is_orientative": bool(analysis_only_repo_goal) if repo_goal else None,
+        "repo_concrete_read_target_is_orientative": bool(orientative_repo_final_goal) if repo_goal else None,
         "repo_concrete_read_required": repo_final_required_read_count if repo_goal else None,
         "repo_concrete_read_strict_required": repo_required_read_count if repo_goal else None,
         "repo_available_read_candidates": repo_available_read_candidates[:160] if repo_goal else [],
         "repo_concrete_read_count": len(meaningful_content_reads) if repo_goal else None,
+        "repo_goal_final_target_is_orientative": bool(orientative_repo_final_goal) if repo_goal else None,
         "failed_repo_read_paths": read_failed[:120],
         "failed_repo_list_files_paths": list_failed[:120],
         "repo_list_files_evidence": list_rows[-10:],
@@ -7247,7 +7700,7 @@ def planner_evidence_contract(
                 if target_kind == "directory" else
                 "For generic repository structure/content analysis: root surface, at least 3 markdown/config reads, "
                 "one evidence-derived meaningful non-infra/code area, and enough verified content reads for the "
-                f"current goal. For analysis-only goals the {REPO_CONCRETE_READ_TARGET}-read target is orientative; "
+                f"current goal. For analysis/action-plan goals the {REPO_CONCRETE_READ_TARGET}-read target is orientative; "
                 f"{repo_final_required_read_count} verified reads can satisfy finalization when concrete evidence is present."
             ),
         },
@@ -7596,6 +8049,7 @@ def planner_evidence_contract(
         contract["required_next_progress"] = (
             "Use prior evidence. If enough, final with concrete cited paths; otherwise choose a new evidence-bound tool."
         )
+    contract = _apply_turn_surface_policy(contract)
     return contract
 
 def _path_exists_repo_relative(path: str) -> bool:
@@ -8284,6 +8738,26 @@ def validate_planner_decision_against_evidence(
 
     if tool == "repo_search" and not _any_argument_group_present(args, [["query"], ["pattern"], ["symbol"]]):
         violations.append("repo_search_missing_query_pattern_or_symbol")
+    elif tool == "repo_rg_search" and not _any_argument_group_present(args, [["query"], ["pattern"]]):
+        violations.append("repo_rg_search_missing_pattern")
+    elif tool == "repo_jq_query" and not _any_argument_group_present(args, [["query"], ["filter"]]):
+        violations.append("repo_jq_query_missing_query")
+    elif tool == "repo_ast_grep_search" and not _any_argument_group_present(args, [["pattern"], ["kind"]]):
+        violations.append("repo_ast_grep_search_missing_pattern_or_kind")
+    elif tool == "repo_ast_grep_dry_run" and not _any_argument_group_present(args, [["pattern", "rewrite"]]):
+        violations.append("repo_ast_grep_dry_run_missing_pattern_or_rewrite")
+    elif tool == "repo_tree_sitter_parse" and not _argument_value_present(args, "path"):
+        violations.append("repo_tree_sitter_parse_missing_path")
+    elif tool == "repo_unidiff_validate" and not _any_argument_group_present(args, [["unified_diff"], ["diff"]]):
+        violations.append("repo_unidiff_validate_missing_diff")
+    elif tool == "repo_git_apply_check" and not _any_argument_group_present(args, [["unified_diff"], ["diff"], ["patch"]]):
+        violations.append("repo_git_apply_check_missing_diff")
+    elif tool == "repo_shellcheck" and not _any_argument_group_present(args, [["path"], ["paths"]]):
+        violations.append("repo_shellcheck_missing_path")
+    elif tool == "repo_semgrep_scan" and not _any_argument_group_present(args, [["pattern"], ["config"]]):
+        violations.append("repo_semgrep_scan_missing_pattern_or_config")
+    elif tool == "repo_hyperfine_benchmark" and not _argument_value_present(args, "commands"):
+        violations.append("repo_hyperfine_benchmark_missing_commands")
     elif tool == "repo_read" and not _repo_read_selector_present(args):
         violations.append("repo_read_missing_path_or_paths_items")
     elif tool == "planner_scratchpad_write" and not _any_argument_group_present(args, [["text"], ["content"]]):
@@ -8329,7 +8803,25 @@ def validate_planner_decision_against_evidence(
             return {"ok": False, "violations": violations, "evidence_contract": contract}
 
     target_scope = _agentic_v2_goal_scope(str(goal or ""), contract)
-    if target_scope and tool in {"repo_list_files", "repo_read", "repo_search", "repo_write_file", "repo_apply_patch", "repo_propose_code_edit"}:
+    if target_scope and tool in {
+        "repo_list_files",
+        "repo_fd_files",
+        "repo_rg_search",
+        "repo_ast_grep_search",
+        "repo_ast_grep_dry_run",
+        "repo_tree_sitter_parse",
+        "repo_ctags_symbols",
+        "repo_semgrep_scan",
+        "repo_shellcheck",
+        "repo_ruff_check",
+        "repo_pyright_check",
+        "repo_pytest_run",
+        "repo_read",
+        "repo_search",
+        "repo_write_file",
+        "repo_apply_patch",
+        "repo_propose_code_edit",
+    }:
         out_of_scope = [
             p for p in _agentic_v2_decision_paths(tool, args)
             if p and not _path_under_scope(p, target_scope)
@@ -9921,6 +10413,190 @@ def _compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]
     return compact_result
 
 
+_PUBLIC_TERMINAL_POINTER_KEYS = {
+    "artifact_path",
+    "producer_artifact",
+    "final_path",
+    "events_path",
+    "db",
+    "db_path",
+    "sqlite_path",
+    "document_id",
+    "evidence_contract",
+    "raw_planner_text_preview",
+    "raw_planner_text",
+    "raw_text",
+}
+
+
+def _public_terminal_content_key(key: Any) -> bool:
+    return str(key or "").lower() in {
+        "content",
+        "content_view",
+        "unified_diff",
+        "structured_operations",
+        "old_text",
+        "new_text",
+        "stdout",
+        "stderr",
+        "stdout_tail",
+        "stderr_tail",
+        "text",
+    }
+
+
+def _public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    if content:
+        return text
+    text = re.sub(r"\s+(?:backup_)?artifact=[^\s,}\]]+", "", text)
+    text = re.sub(r'"(?:artifact|artifact_path|producer_artifact|document_id|db|db_path|sqlite_path)"\s*:\s*"[^"]*",?', "", text)
+    text = re.sub(r"[A-Za-z]:\\[^\s,}\]]+", "[local_path_omitted]", text)
+    text = re.sub(r"https?://(?:127\.0\.0\.1|localhost)[^\s,}\]]*", "[local_url_omitted]", text, flags=re.I)
+    text = re.sub(r"\bqwen-agent-workspace[^\s,}\]]*", "[job_workspace_path_omitted]", text)
+    text = re.sub(r"\bagent-jobs[^\s,}\]]*", "[job_path_omitted]", text)
+    text = re.sub(r"\btool-results\\[^\s,}\]]*", "[tool_result_path_omitted]", text)
+    text = re.sub(r"\S+\.sqlite\b", "[sqlite_path_omitted]", text, flags=re.I)
+    return text
+
+
+def _public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
+    if depth > 12:
+        return {}
+    key_text = str(key or "")
+    if key_text.lower() in _PUBLIC_TERMINAL_POINTER_KEYS:
+        return None
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for child_key, child_value in value.items():
+            cleaned = _public_terminal_sanitize_value(child_value, key=str(child_key), depth=depth + 1)
+            if cleaned not in (None, "", [], {}):
+                out[str(child_key)] = cleaned
+        return out
+    if isinstance(value, list):
+        out_list: list[Any] = []
+        for item in value:
+            cleaned = _public_terminal_sanitize_value(item, key=key_text, depth=depth + 1)
+            if cleaned not in (None, "", [], {}):
+                out_list.append(cleaned)
+        return out_list
+    if isinstance(value, str):
+        return _public_terminal_sanitize_text(
+            value,
+            content=_public_terminal_content_key(key_text),
+        )
+    return value
+
+
+def _public_terminal_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ledger: list[dict[str, Any]] = []
+
+    def public_summary(value: Any) -> str:
+        text = _prompt_clip_text(value, 1200)
+        return _public_terminal_sanitize_text(text)
+
+    for item in history if isinstance(history, list) else []:
+        if not isinstance(item, dict):
+            continue
+        decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+        result = _history_tool_result(item)
+        tool = str(result.get("tool") or decision.get("tool") or "").strip()
+        row: dict[str, Any] = {
+            "step": item.get("step"),
+            "action": decision.get("action"),
+            "tool": tool or None,
+            "ok": result.get("ok"),
+            "reason": _prompt_clip_text(decision.get("reason"), 700),
+            "arguments": _public_terminal_sanitize_value(
+                decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {},
+            ),
+            "path": result.get("path"),
+            "count": result.get("count"),
+            "total_matches": result.get("total_matches"),
+            "items_total": result.get("items_total"),
+            "paths_total": result.get("paths_total"),
+            "returncode": result.get("returncode"),
+            "guard_type": result.get("guard_type"),
+            "violations": result.get("violations"),
+            "summary": public_summary(result.get("summary")),
+        }
+        if tool == "repo_read" and isinstance(result.get("items"), list):
+            read_items = []
+            for sub in result["items"][:80]:
+                if not isinstance(sub, dict):
+                    continue
+                content, _meta = _repo_read_item_full_content(sub)
+                read_items.append({
+                    "ok": sub.get("ok"),
+                    "path": sub.get("path"),
+                    "line_count": sub.get("line_count"),
+                    "truncated": sub.get("truncated"),
+                    "content_chars": len(content) if content else None,
+                    "content_sha256": _text_hash(content) if content else None,
+                    "error": sub.get("error"),
+                })
+            row["items"] = read_items
+        elif tool == "repo_propose_code_edit":
+            for key in (
+                "kind", "target_file", "edit_kind", "rationale",
+                "source_writes_performed", "patch_application_performed",
+                "manual_review_required", "validation_commands",
+                "unified_diff", "structured_operations", "errors", "warnings",
+                "target_metadata", "ast_evidence",
+            ):
+                if result.get(key) not in (None, "", [], {}):
+                    row[key] = result.get(key)
+        elif tool == "planner_scratchpad_read" and str(result.get("mode") or "") == "prompt_context_window":
+            row["mode"] = result.get("mode")
+            if isinstance(result.get("items"), list):
+                row["items"] = [
+                    _public_terminal_sanitize_value(_compact_prompt_context_window_item(sub))
+                    for sub in result["items"][:80]
+                    if isinstance(sub, dict)
+                ]
+        ledger.append({
+            k: v
+            for k, v in _public_terminal_sanitize_value(row).items()
+            if v not in (None, "", [], {})
+        })
+    return ledger
+
+
+def _public_terminal_result_for_30b(result: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    public = dict(result)
+    history = result.get("history")
+    if isinstance(history, list):
+        public["history_count"] = len(history)
+        public["history"] = _public_terminal_history_ledger(history)
+        public["history_schema"] = "agentic_terminal_public_history_ledger.v1"
+        public["raw_history_not_inlined"] = True
+    memory_write = public.get("controller_memory_write")
+    if isinstance(memory_write, dict):
+        public["controller_memory_write"] = {
+            k: memory_write.get(k)
+            for k in ("ok", "tool", "kind", "tag", "record_id", "chars", "sha256", "target_key")
+            if memory_write.get(k) not in (None, "", [], {})
+        }
+    for key in ("validation", "planner_decision"):
+        section = public.get(key)
+        if isinstance(section, dict):
+            for drop_key in ("evidence_contract", "raw_planner_text_preview", "raw_planner_text", "raw_text"):
+                section.pop(drop_key, None)
+    return _public_terminal_sanitize_value(public) or {}
+
+
+def _terminal_context_alias() -> dict[str, Any]:
+    return {
+        "schema": "agentic_terminal_context_alias.v1",
+        "alias_of": "tool_context_for_30b",
+        "same_payload": True,
+    }
+
+
 
 def _planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -10952,6 +11628,7 @@ def finalize_agentic_job(
         result["partial_products_for_30b"] = tool_context.get("partial_products_for_30b")
     if tool_context.get("best_partial_product_for_30b") not in (None, "", [], {}):
         result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
+    public_result = _public_terminal_result_for_30b(result)
     answer = tool_context.get("answer_for_30b") or final_summary_with_turns
     public_final_summary = (
         answer
@@ -10969,12 +11646,12 @@ def finalize_agentic_job(
         "answer_for_30b": answer,
         "message_for_30b": answer,
         "next_action_for_30b": next_action,
-        "result": result,
+        "result": public_result,
         "agent_flow_diagnostics": tool_context.get("agent_flow_diagnostics"),
         "tool_context_for_30b": tool_context,
-        "agent_context_for_30b": tool_context,
-        "structured_context_for_30b": tool_context,
-        "structured_result_for_30b": tool_context,
+        "agent_context_for_30b": _terminal_context_alias(),
+        "structured_context_for_30b": _terminal_context_alias(),
+        "structured_result_for_30b": _terminal_context_alias(),
         "events_path": str(root / "events.ndjson"),
     }
     write_json(root / "final.json", final)
@@ -10989,11 +11666,11 @@ def finalize_agentic_job(
         "answer_for_30b": answer,
         "message_for_30b": answer,
         "next_action_for_30b": next_action,
-        "result": _compact_final_state_result(result),
+        "result": _compact_final_state_result(public_result),
         "tool_context_for_30b": tool_context,
-        "agent_context_for_30b": tool_context,
-        "structured_context_for_30b": tool_context,
-        "structured_result_for_30b": tool_context,
+        "agent_context_for_30b": _terminal_context_alias(),
+        "structured_context_for_30b": _terminal_context_alias(),
+        "structured_result_for_30b": _terminal_context_alias(),
     })
     write_agent_job_state(state)
     append_agent_event(
@@ -11824,6 +12501,66 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
                         "planner_decision": decision,
                         "invalid_decision_signature": validation.get("invalid_decision_signature"),
                         "invalid_decision_repeat_count": validation.get("invalid_decision_repeat_count"),
+                        "agent_flow_diagnostics": _agent_flow_diagnostics(
+                            str(state.get("goal") or ""),
+                            history,
+                            planner_memory_snapshot,
+                        ),
+                    },
+                )
+
+            rejection_signature = _controller_guard_rejection_signature(validation, decision)
+            repeated_rejection_count = _controller_guard_rejection_signature_count(
+                history,
+                rejection_signature,
+            )
+            repeated_rejection_limit = max(1, int(retry_limit or 0))
+            if repeated_rejection_count >= repeated_rejection_limit:
+                guard_result = controller_guard_result_for_validation(validation, decision)
+                guard_result["guard_type"] = "repeated_identical_planner_rejection"
+                guard_result["summary"] = "repeated_identical_planner_rejection"
+                guard_result["invalid_decision_signature"] = rejection_signature
+                guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
+                guard_result["retry_limit"] = repeated_rejection_limit
+                append_agent_event(
+                    job_id,
+                    "planner_decision_rejected",
+                    guard_result["summary"],
+                    guard_result,
+                    step=step,
+                )
+                row = {
+                    "step": step,
+                    "decision": {
+                        "action": "continue_required",
+                        "reason": "planner repeated identical rejected decision",
+                        "rejected_decision": guard_result.get("rejected_decision"),
+                    },
+                    "tool_result": guard_result,
+                }
+                history.append(row)
+                state["history"] = planner_history_ledger(history)
+                state["history_count"] = len(history)
+                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                persist_loop_turn_memory(row)
+                write_agent_job_state(state)
+                return finalize_agentic_job(
+                    job_id,
+                    state,
+                    "blocked_needs_attention",
+                    (
+                        "repeated_identical_planner_rejection: planner repeated the same "
+                        "validator-rejected decision after controller feedback. Controller "
+                        "stopped the loop and preserved available payloads instead of "
+                        "consuming max_steps."
+                    ),
+                    {
+                        "history": history,
+                        "blocked_by": "repeated_identical_planner_rejection",
+                        "planner_decision": decision,
+                        "validation": validation,
+                        "invalid_decision_signature": rejection_signature,
+                        "invalid_decision_repeat_count": repeated_rejection_count + 1,
                         "agent_flow_diagnostics": _agent_flow_diagnostics(
                             str(state.get("goal") or ""),
                             history,

@@ -115,6 +115,8 @@ The planner protocol has two valid output shapes:
 Invalid shapes:
 
 - text JSON `{"action":"tool", ...}` in native-required mode;
+- native tool call whose name is not present in the current turn tool surface
+  (`native_tool_not_in_turn_surface`);
 - native batch containing write/command/non-cacheable tools;
 - native batch exceeding `AICARMINE_AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY`;
 - repair output that tries to turn invalid text into hidden tool execution
@@ -123,6 +125,14 @@ Invalid shapes:
 Native messages are not durable evidence. Every dispatched tool still writes a
 raw artifact and appends persistent job `history`; finalization and 3571
 payload reconstruction use that history, not the budgeted planner messages.
+
+The turn surface is dynamic. Analysis turns normally expose repo inspection
+tools plus deterministic discovery/search/symbol support. Code-product turns
+add AST/diff/proposal tools such as `repo_ast_grep_search`,
+`repo_tree_sitter_parse`, `repo_unidiff_validate`, `repo_git_apply_check` and
+`repo_propose_code_edit`. Apply/write turns add guarded apply and validation
+tools. `planner_scratchpad_read` is exposed only for an exact required
+continuation window.
 
 ## Evidence Rules
 
@@ -145,6 +155,14 @@ payload reconstruction use that history, not the budgeted planner messages.
   is missing, even if generic repo/file evidence is otherwise sufficient.
 - terminal tools useful evidence is `returncode`, `stdout`, `stderr` and tails
   when produced.
+- deterministic adapter useful evidence is their structured inline payload:
+  file paths/matches for `repo_fd_files` and `repo_rg_search`, parsed JSON for
+  `repo_jq_query`, AST anchors/symbols for `repo_tree_sitter_parse` and
+  `repo_ctags_symbols`, diff validation for `repo_unidiff_validate` and
+  `repo_git_apply_check`, diagnostics for `repo_ruff_check`,
+  `repo_pyright_check`, `repo_pytest_run`, `repo_shellcheck` and
+  `repo_semgrep_scan`, and explicit-consent benchmark results for
+  `repo_hyperfine_benchmark`.
 - Failed, rejected, blocked, guard and diagnostic entries are job history, not
   successful evidence for OpenWebUI.
 
@@ -184,6 +202,10 @@ the actual prompt payload before posting to 11434.
   job-local SQLite composer and represented as
   `planner_prompt_context_window.v1` text windows with `document_id`, offsets
   `has_more_before/has_more_after` and hashes.
+- If the turn tool manifest itself becomes the budget pressure point,
+  `available_tools` is represented as `planner_available_tools_window.v1`: a
+  bounded tool-name index plus a real SQLite text window containing the complete
+  compact manifest. This is prompt compaction, not a public schema change.
 - The compaction ratio is a soft windowing trigger. It must not be reused as
   the hard generation-headroom limit. The hard limit is the prompt char budget
   minus the reserved generation margin, so a prompt below that hard limit can

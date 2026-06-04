@@ -56,10 +56,16 @@ For terminal jobs returned to OpenWebUI:
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
 - `tool_context_for_30b`: a pretty-printed JSON string with successful internal
   tool artifacts and limits.
-- `result`: preserved unchanged when already produced by the current flow. In
-  terminal wrapping, prefer the full `result` loaded from the terminal/final
-  payload; use the compact result digest only if the full payload has no
-  `result`.
+- `result`: carried from the terminal/final payload as the public result source.
+  Terminal wrapping uses the compact digest only when the terminal payload has
+  no `result`. Raw controller audit `result.history` is normalized to the
+  public ledger schema instead of being inlined as raw transport history.
+- Public terminal `result.history` is a bounded
+  `agentic_terminal_public_history_ledger.v1`, not raw controller audit history.
+  Keep complete file/diff payloads in `tool_context_for_30b`,
+  `priority_evidence_for_30b` and `payload_index_for_30b`; do not expose local
+  job paths, SQLite document ids or artifact paths as locations OpenWebUI must
+  open.
 - `completed`, `max_steps_reached`, `blocked_needs_attention`,
   `blocked_needs_consent`, `failed`, `failed_tool_error`,
   `failed_planner_error` and `cancelled` must use the same top-level public
@@ -143,8 +149,9 @@ limits, summaries or artifact references.
 5. 3571 reads terminal job payload/final JSON from 3572 response.
 6. 3571 builds `payload_index_for_30b`, `priority_evidence_for_30b`,
    `openwebui_usage` and `tool_context_for_30b`.
-7. 3571 carries full terminal `result` when present; compact previews are only
-   fallback transport and must not shadow the full payload.
+7. 3571 carries terminal `result` when present; compact previews are only
+   fallback transport and must not shadow the payload. Raw `result.history` is
+   exposed as the bounded public ledger, not raw audit history.
 8. OpenWebUI receives only public metadata plus model-usable inline
    payload/context.
 
@@ -180,5 +187,5 @@ limits, summaries or artifact references.
    access.
 5. Verify non-ok terminal responses still contain the same primary keys as ok
    responses and that `result` is not reduced to `{ "preview": ... }` when a
-   full terminal `result` exists.
+   terminal `result` with public history ledger exists.
 6. Re-run at least `python -m compileall -q services\vulkan_bridge`.
