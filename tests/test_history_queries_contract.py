@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "services"))
 from aicarmine_broker.application.history_queries import (  # noqa: E402
     failed_code_edit_proposal_validation_row,
     history_has_tool,
+    history_tool_result,
     successful_code_edit_proposals,
 )
 
@@ -24,6 +25,15 @@ def test_history_has_tool_checks_decision_and_tool_result() -> None:
     assert history_has_tool(history, "repo_read")
     assert history_has_tool(history, "repo_apply_patch")
     assert not history_has_tool(history, "repo_validate")
+
+
+def test_history_tool_result_prefers_tool_result_and_accepts_flat_tool_row() -> None:
+    result = {"tool": "repo_read", "ok": True}
+
+    assert history_tool_result({"tool_result": result, "tool": "repo_tree"}) is result
+    assert history_tool_result({"tool": "repo_tree", "ok": True}) == {"tool": "repo_tree", "ok": True}
+    assert history_tool_result({"decision": {"tool": "repo_read"}}) == {}
+    assert history_tool_result("bad") == {}  # type: ignore[arg-type]
 
 
 def test_successful_code_edit_proposals_returns_only_ok_results() -> None:

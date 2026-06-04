@@ -4,6 +4,17 @@ from __future__ import annotations
 from typing import Any
 
 
+def history_tool_result(item: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return {}
+    result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+    if result:
+        return result
+    if item.get("tool"):
+        return item
+    return {}
+
+
 def history_has_tool(history: list[dict[str, Any]], tool_name: str) -> bool:
     for item in history:
         if not isinstance(item, dict):
@@ -18,7 +29,7 @@ def history_has_tool(history: list[dict[str, Any]], tool_name: str) -> bool:
 def successful_code_edit_proposals(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     proposals: list[dict[str, Any]] = []
     for item in history if isinstance(history, list) else []:
-        result = item.get("tool_result") if isinstance(item, dict) and isinstance(item.get("tool_result"), dict) else {}
+        result = history_tool_result(item)
         if result.get("tool") == "repo_propose_code_edit" and result.get("ok") is True:
             proposals.append(result)
     return proposals
@@ -27,7 +38,7 @@ def successful_code_edit_proposals(history: list[dict[str, Any]]) -> list[dict[s
 def failed_code_edit_proposal_validation_row(item: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(item, dict):
         return {}
-    result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+    result = history_tool_result(item)
     if result.get("tool") != "repo_propose_code_edit" or result.get("ok") is not False:
         return {}
     decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}

@@ -82,7 +82,7 @@ Read before edits:
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
 | `application/evidence_prompt_contract.py` | Prompt-facing evidence contract compaction and hard-budget summary helpers. It keeps the planner-visible keys bounded without storing windows or changing validation policy. |
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
-| `application/history_queries.py` | Small query helpers over planner history, including tool-presence checks and code-edit proposal success/failure extraction. |
+| `application/history_queries.py` | Small query helpers over planner history, including normalized tool-result extraction, tool-presence checks and code-edit proposal success/failure extraction. |
 | `application/history_prompt_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
@@ -96,6 +96,12 @@ Read before edits:
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
 | `application/validation_rejections.py` | Validation rejection signature and prompt compaction helpers, including invalid code-product repeat detection. |
 | `application/window_signatures.py` | Pure signature/range helpers for repo_read and planner_scratchpad_read windows. Used to prevent repeated identical reads without embedding history policy. |
+
+## infrastructure Subpackage
+
+| Module | Technical description |
+| --- | --- |
+| `infrastructure/json_files.py` | JSON file adapter with atomic writes and same-tool artifact rehydration. Artifact loading is internal evidence reconstruction, not public payload substitution. |
 
 ## planner_core Subpackage
 

@@ -137,6 +137,7 @@ from .application.goal_classifier import (
 )
 from .application.history_queries import (
     failed_code_edit_proposal_validation_row as _failed_code_edit_proposal_validation_row,
+    history_tool_result as _history_tool_result_impl,
     history_has_tool,
     successful_code_edit_proposals,
 )
@@ -191,6 +192,7 @@ from .application.window_signatures import (
     repo_read_window_range_for_target as _repo_read_window_range_for_target,
     repo_read_window_signature as _repo_read_window_signature,
 )
+from .infrastructure.json_files import same_tool_artifact_payload as _same_tool_artifact_payload_impl
 
 
 # ---------------------------------------------------------------------------
@@ -2481,14 +2483,7 @@ def _history_item_ollama_turn(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _history_tool_result(item: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(item, dict):
-        return {}
-    result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
-    if result:
-        return result
-    if item.get("tool"):
-        return item
-    return {}
+    return _history_tool_result_impl(item)
 
 
 def _bounded_prompt_context_tool_result_payload(result: dict[str, Any]) -> dict[str, Any]:
@@ -2895,26 +2890,7 @@ def _strip_public_local_references(value: Any) -> Any:
 
 
 def _same_tool_artifact_payload(result: dict[str, Any]) -> dict[str, Any]:
-    """Load the full JSON only for the same successful tool result."""
-    if not isinstance(result, dict) or not result.get("ok"):
-        return result if isinstance(result, dict) else {}
-    artifact = str(result.get("artifact") or "")
-    if not artifact:
-        return result
-    try:
-        artifact_path = Path(artifact)
-        if not artifact_path.exists() or not artifact_path.is_file():
-            return result
-        loaded = json.loads(artifact_path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        return result
-    if not isinstance(loaded, dict):
-        return result
-    expected_tool = str(result.get("tool") or "")
-    loaded_tool = str(loaded.get("tool") or "")
-    if expected_tool and loaded_tool and expected_tool != loaded_tool:
-        return result
-    return loaded
+    return _same_tool_artifact_payload_impl(result)
 
 
 def _public_tool_response(tool_result: dict[str, Any]) -> dict[str, Any]:
