@@ -2471,6 +2471,8 @@ def main() -> int:
             ia_payload: dict[str, Any] = {}
             ia_dashboard_html = ""
             ia_control_html = ""
+            ia_lazy_raw_tool_html = ""
+            ia_lazy_terminal_html = ""
             ia_stream_text = ""
             try:
                 job_html.agent_job_root = lambda _job_id: ia_view_root
@@ -2494,6 +2496,15 @@ def main() -> int:
                 ia_payload = job_html.agent_job_ia_view_payload("smoke-ia-view")
                 ia_dashboard_html = job_html.agent_job_html("smoke-ia-view")
                 ia_control_html = job_html.agent_job_ia_view_html("smoke-ia-view")
+                ia_lazy_raw_tool_html = job_html.agent_job_ia_view_section_html(
+                    "smoke-ia-view",
+                    "raw_tool_result",
+                    step=1,
+                )
+                ia_lazy_terminal_html = job_html.agent_job_ia_view_section_html(
+                    "smoke-ia-view",
+                    "openwebui_payload",
+                )
                 ia_stream_text = job_html.agent_job_planner_stream_text("smoke-ia-view")
             finally:
                 job_html.agent_job_root = original_view_root
@@ -2513,6 +2524,19 @@ def main() -> int:
                 f"IA view did not expose native tool_calls from raw ndjson: {ia_native_stream}",
             )
             require("message.tool_calls" in ia_control_html, "IA view HTML did not surface native tool call stream")
+            require("data-lazy-url" in ia_control_html, "IA view HTML did not expose lazy-load sections")
+            require(
+                "planner_scratchpad_read" in ia_lazy_raw_tool_html,
+                "IA view lazy raw tool section did not rehydrate tool payload",
+            )
+            require(
+                "HEAVY" not in ia_control_html and "planner_scratchpad_read" not in ia_control_html,
+                "IA view initial HTML rendered lazy raw tool payload inline",
+            )
+            require(
+                "openwebui_30b_payload" in ia_lazy_terminal_html or "{}" in ia_lazy_terminal_html,
+                "IA view lazy terminal payload endpoint did not render",
+            )
             require(
                 "Planner request to 11434" not in ia_dashboard_html
                 and "Planner stream from 11434" not in ia_dashboard_html
