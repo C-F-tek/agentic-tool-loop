@@ -40,6 +40,7 @@ from .application.job_terminal_response import (
     build_compact_terminal_response,
     build_missing_job_response,
 )
+from .application.job_status_response import build_compact_status_response
 from .infrastructure.json_files import JsonFileStore
 from .infrastructure.time_provider import TimeProvider
 
@@ -322,71 +323,18 @@ def compact_agent_status(
 ) -> dict[str, Any]:
     state = load_agent_job_state(job_id)
     if not state:
-        return {
-            "ok": False,
-            "service": "vulkan_agent",
-            "tool_name": "vulkan_helper",
-            "error": "job_not_found",
-            "job_id": job_id,
-        }
+        return build_missing_job_response(job_id)
     events = (
         read_agent_events(job_id, AGENT_JOB_MAX_INLINE_EVENTS)
         if include_events
         else []
     )
-    memory = state.get("working_memory_for_30b") if isinstance(state.get("working_memory_for_30b"), dict) else {}
-    evidence = state.get("evidence_contract") if isinstance(state.get("evidence_contract"), dict) else {}
-    running_context = {
-        "type": "agentic_loop_running_structured_context",
-        "job": {
-            "job_id": job_id,
-            "status": state.get("status"),
-            "goal": state.get("goal"),
-            "current_step": state.get("current_step"),
-            "status_message": state.get("status_message"),
-        },
-        "working_memory_for_30b": memory,
-        "evidence_contract": evidence,
-        "events_tail_digest": [event_digest(ev) for ev in events[-10:]],
-    }
-    message_for_30b = state.get("answer_for_30b") or (
-        f"Agent job {job_id} status={state.get('status')} "
-        f"step={state.get('current_step')} message={state.get('status_message') or ''}. "
-        "Use working_memory_for_30b/evidence_contract from this same tool result before deciding the next call."
+    return build_compact_status_response(
+        job_id=job_id,
+        state=state,
+        events=events,
+        job_url_value=job_url(job_id),
     )
-
-    return {
-        "ok": True,
-        "service": "vulkan_agent",
-        "mode": "agent_job_status",
-        "tool_name": str(state.get("public_tool_name") or "vulkan_helper"),
-        "tool_result_for": str(state.get("public_tool_name") or "vulkan_helper"),
-        "called_by_30b": str(state.get("public_tool_name") or "vulkan_helper"),
-        "job_id": job_id,
-        "status": state.get("status"),
-        "goal": state.get("goal"),
-        "created_at": state.get("created_at"),
-        "updated_at": state.get("updated_at"),
-        "workspace": state.get("workspace"),
-        "job_url": job_url(job_id),
-        "events_tail": events,
-        "final_path": state.get("final_path"),
-        "final_summary": state.get("final_summary", ""),
-        "answer_for_30b": state.get("answer_for_30b", ""),
-        "next_action_for_30b": state.get("next_action_for_30b", {}),
-        "working_memory_for_30b": state.get("working_memory_for_30b", {}),
-        "evidence_contract": state.get("evidence_contract", {}),
-        "planner_emission_interpreter": state.get("planner_emission_interpreter", {}),
-        "current_step": state.get("current_step"),
-        "status_message": state.get("status_message", ""),
-        "result": state.get("result", {}),
-        "tool_context_for_30b": state.get("tool_context_for_30b") or running_context,
-        "agent_context_for_30b": state.get("agent_context_for_30b") or running_context,
-        "structured_context_for_30b": state.get("structured_context_for_30b") or running_context,
-        "structured_result_for_30b": state.get("structured_result_for_30b") or running_context,
-        "message_for_30b": message_for_30b,
-        "answer_for_30b": state.get("answer_for_30b") or message_for_30b,
-    }
 
 
 def wait_for_agent_terminal(
