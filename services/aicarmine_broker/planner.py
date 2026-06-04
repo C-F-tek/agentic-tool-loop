@@ -128,6 +128,16 @@ from .application.code_product_state import (
     copyable_example_text as _copyable_example_text,
     goal_exact_text_block as _goal_exact_text_block,
 )
+from .application.code_product_history import (
+    code_product_build_state_duplicate_write as _code_product_build_state_duplicate_write_impl,
+    code_product_build_state_from_result as _code_product_build_state_from_result_impl,
+    code_product_build_state_propose_action as _code_product_build_state_propose_action_impl,
+    code_product_build_state_read_action as _code_product_build_state_read_action_impl,
+    code_product_build_state_write_action as _code_product_build_state_write_action_impl,
+    code_product_candidate_action as _code_product_candidate_action_impl,
+    code_product_source_windows_from_reads as _code_product_source_windows_from_reads_impl,
+    latest_code_product_build_state as _latest_code_product_build_state_impl,
+)
 from .application.goal_classifier import (
     final_answer_has_inline_code_product as _final_answer_has_inline_code_product,
     final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
@@ -2276,128 +2286,26 @@ def _code_product_build_state_duplicate_write(
     target_file: str,
     text: str,
 ) -> bool:
-    target = _repo_rel_token(target_file)
-    if not target or target == ".":
-        return False
-    sha256 = _text_hash(text)
-    for item in history if isinstance(history, list) else []:
-        result = _history_tool_result(item)
-        if (
-            result.get("tool") == "planner_scratchpad_write"
-            and result.get("ok") is True
-            and str(result.get("mode") or "") == CODE_PRODUCT_BUILD_STATE_KIND
-            and _repo_rel_token(result.get("target_file") or "") == target
-            and str(result.get("sha256") or "") == sha256
-        ):
-            return True
-    return False
+    return _code_product_build_state_duplicate_write_impl(
+        history,
+        target_file=target_file,
+        text=text,
+    )
 
 
 def _code_product_build_state_from_result(result: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(result, dict) or result.get("ok") is not True:
-        return {}
-    tool = str(result.get("tool") or "")
-    mode = str(result.get("mode") or "")
-    if mode != CODE_PRODUCT_BUILD_STATE_KIND or tool not in {"planner_scratchpad_write", "planner_scratchpad_read"}:
-        return {}
-    base: dict[str, Any] = {
-        "schema": CODE_PRODUCT_BUILD_STATE_SCHEMA,
-        "source_tool": tool,
-        "document_id": result.get("document_id"),
-        "section": result.get("section"),
-        "target_file": _repo_rel_token(result.get("target_file") or ""),
-        "status": result.get("status"),
-        "sha256": result.get("sha256"),
-        "complete_payload_ready": bool(result.get("complete_payload_ready")),
-        "payload_loaded": False,
-    }
-    if tool == "planner_scratchpad_read":
-        items = result.get("items") if isinstance(result.get("items"), list) else []
-        if not items:
-            return {}
-        for item in reversed(items):
-            if not isinstance(item, dict):
-                continue
-            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-            state = _code_product_build_state_parse(str(item.get("text") or ""))
-            if state:
-                base.update({
-                    "document_id": item.get("document_id") or base.get("document_id"),
-                    "section": item.get("section") or base.get("section"),
-                    "target_file": _repo_rel_token(metadata.get("target_file") or state.get("target_file") or base.get("target_file") or ""),
-                    "status": metadata.get("status") or state.get("status") or base.get("status"),
-                    "sha256": item.get("sha256") or base.get("sha256"),
-                    "window_start": item.get("window_start"),
-                    "window_end": item.get("window_end"),
-                    "full_chars": item.get("full_chars"),
-                    "complete": item.get("complete"),
-                    "has_more_after": item.get("has_more_after"),
-                })
-                ready_args = _code_product_build_state_ready_payload(state)
-                base["payload_loaded"] = True
-                base["state"] = state
-                base["complete_payload_ready"] = bool(ready_args)
-                if ready_args:
-                    base["ready_arguments"] = ready_args
-                return {k: v for k, v in base.items() if v not in (None, "", [], {})}
-            if item.get("has_more_after") is True:
-                base.update({
-                    "document_id": item.get("document_id") or base.get("document_id"),
-                    "section": item.get("section") or base.get("section"),
-                    "target_file": _repo_rel_token(metadata.get("target_file") or base.get("target_file") or ""),
-                    "status": metadata.get("status") or base.get("status"),
-                    "sha256": item.get("sha256") or base.get("sha256"),
-                    "window_start": item.get("window_start"),
-                    "window_end": item.get("window_end"),
-                    "full_chars": item.get("full_chars"),
-                    "complete": item.get("complete"),
-                    "has_more_after": item.get("has_more_after"),
-                    "window_only": True,
-                })
-                return {k: v for k, v in base.items() if v not in (None, "", [], {})}
-        return {}
-    return {k: v for k, v in base.items() if v not in (None, "", [], {})}
+    return _code_product_build_state_from_result_impl(result)
 
 
 def _latest_code_product_build_state(
     history: list[dict[str, Any]],
     target_file: str = "",
 ) -> dict[str, Any]:
-    target = _repo_rel_token(target_file)
-    for item in reversed(history if isinstance(history, list) else []):
-        result = _history_tool_result(item)
-        state = _code_product_build_state_from_result(result)
-        if not state:
-            continue
-        state_target = _repo_rel_token(state.get("target_file") or "")
-        if target and target != "." and state_target and state_target != target:
-            continue
-        return state
-    return {}
+    return _latest_code_product_build_state_impl(history, target_file)
 
 
 def _code_product_build_state_read_action(state: dict[str, Any], target_file: str) -> dict[str, Any]:
-    target = _repo_rel_token(target_file or state.get("target_file") or "")
-    args: dict[str, Any] = {
-        "kind": CODE_PRODUCT_BUILD_STATE_KIND,
-        "max_chars": 8000,
-    }
-    if state.get("document_id"):
-        args["document_id"] = state.get("document_id")
-        args["offset"] = int(state.get("window_end") or 0)
-    elif target and target != ".":
-        args["target_file"] = target
-        args["section"] = _code_product_build_state_section(target)
-        args["offset"] = 0
-    else:
-        args["section"] = CODE_PRODUCT_BUILD_STATE_KIND
-        args["offset"] = 0
-    return {
-        "action": "tool",
-        "tool": "planner_scratchpad_read",
-        "arguments": args,
-        "reason": "Read the internal code_product_build_state SQLite window before proposing a code product.",
-    }
+    return _code_product_build_state_read_action_impl(state, target_file)
 
 
 def _code_product_source_windows_from_reads(
@@ -2406,115 +2314,32 @@ def _code_product_source_windows_from_reads(
     *,
     limit: int = 3,
 ) -> list[dict[str, Any]]:
-    target = _repo_rel_token(target_file)
-    if not target or target == ".":
-        return []
-    windows: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for item in reversed(history if isinstance(history, list) else []):
-        result = _history_tool_result(item)
-        if result.get("tool") != "repo_read" or result.get("ok") is not True:
-            continue
-        source = _same_tool_artifact_payload(result)
-        raw_items = source.get("items") if isinstance(source.get("items"), list) else []
-        if not raw_items and source.get("path"):
-            raw_items = [source]
-        for sub in raw_items:
-            if not isinstance(sub, dict) or sub.get("ok") is False:
-                continue
-            path = _repo_rel_token(sub.get("path") or sub.get("repo_path") or "")
-            if path != target:
-                continue
-            text, _content_meta = _repo_read_item_full_content(sub)
-            if not text:
-                text = str(sub.get("content") or "")
-            if not text:
-                continue
-            digest = _text_hash(text)
-            if digest in seen:
-                continue
-            seen.add(digest)
-            windows.append({
-                "source_tool": "repo_read",
-                "target_file": target,
-                "section": f"repo_read:{target}",
-                "window_start": int(sub.get("window_start") or 0),
-                "window_end": int(sub.get("window_end") or len(text)),
-                "full_chars": int(sub.get("full_chars") or len(text)),
-                "window_chars": len(text),
-                "complete": bool(sub.get("complete", sub.get("truncated") is not True)),
-                "has_more_before": bool(sub.get("has_more_before", False)),
-                "has_more_after": bool(sub.get("has_more_after", False)),
-                "sha256": digest,
-                "window_sha256": _text_hash(text),
-            })
-            if len(windows) >= max(1, int(limit or 1)):
-                return windows
-    return windows
+    return _code_product_source_windows_from_reads_impl(
+        history,
+        target_file,
+        same_tool_artifact_payload=_same_tool_artifact_payload,
+        repo_read_item_full_content=_repo_read_item_full_content,
+        limit=limit,
+    )
 
 
 def _code_product_build_state_write_action(
     target_file: str,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    target = _repo_rel_token(target_file)
-    if not target or target == ".":
-        return {}
-    source_windows = _code_product_source_windows_from_reads(history or [], target)
-    if not source_windows:
-        return {}
-    state = {
-        "schema": CODE_PRODUCT_BUILD_STATE_SCHEMA,
-        "target_file": target,
-        "status": "collecting_source",
-        "source_windows": source_windows,
-        "rationale": (
-            "Verified repo_read source window captured. Continue by producing "
-            "ready_for_propose with edit_kind=unified_diff and complete "
-            "unified_diff or complete old_text/new_text, or blocked_incomplete "
-            "with an explicit blocker."
-        ),
-    }
-    state_text = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
-    if _code_product_build_state_duplicate_write(history or [], target_file=target, text=state_text):
-        return {}
-    return {
-        "action": "tool",
-        "tool": "planner_scratchpad_write",
-        "arguments": {
-            "kind": CODE_PRODUCT_BUILD_STATE_KIND,
-            "target_file": target,
-            "status": "collecting_source",
-            "section": _code_product_build_state_section(target),
-            "max_chars": 8000,
-            "text": state_text,
-        },
-        "reason": (
-            "Persist a valid internal code_product_build_state with real repo_read "
-            "source-window progress before attempting repo_propose_code_edit."
-        ),
-    }
+    return _code_product_build_state_write_action_impl(
+        target_file,
+        history,
+        same_tool_artifact_payload=_same_tool_artifact_payload,
+        repo_read_item_full_content=_repo_read_item_full_content,
+    )
 
 
 def _code_product_build_state_propose_action(
     state: dict[str, Any],
     latest_violations: list[str],
 ) -> dict[str, Any]:
-    args = state.get("ready_arguments") if isinstance(state.get("ready_arguments"), dict) else {}
-    if not args:
-        loaded_state = state.get("state") if isinstance(state.get("state"), dict) else {}
-        args = _code_product_build_state_ready_payload(loaded_state)
-    if not args:
-        return {}
-    return {
-        "action": "tool",
-        "tool": "repo_propose_code_edit",
-        "arguments": args,
-        "reason": (
-            "Use ready internal code_product_build_state to produce the required report-only code product. "
-            "Current violations: " + ", ".join(latest_violations or ["missing_code_product_candidate"])
-        ),
-    }
+    return _code_product_build_state_propose_action_impl(state, latest_violations)
 
 
 def _code_product_candidate_action(
@@ -2523,31 +2348,11 @@ def _code_product_candidate_action(
     latest_violations: list[str],
     goal: str = "",
 ) -> dict[str, Any]:
-    target = _repo_rel_token(target_file)
-    old_text = _goal_exact_text_block(goal, "old_text")
-    new_text = _goal_exact_text_block(goal, "new_text")
-    if not (old_text and new_text):
-        return {}
-    args: dict[str, Any] = {
-        "target_file": target,
-        "edit_kind": "unified_diff",
-        "rationale": (
-            "Report-only unified diff from exact old_text/new_text supplied by the user."
-        ),
-        "old_text": old_text,
-        "new_text": new_text,
-        "validation_commands": ["git apply --check <complete-unified-diff-from-tool-payload>"],
-    }
-    return {
-        "action": "tool",
-        "tool": "repo_propose_code_edit",
-        "arguments": args,
-        "reason": (
-            "Code-product final is blocked until repo_propose_code_edit returns ok=true "
-            f"with a complete inline payload for {target}. Current violations: "
-            + ", ".join(latest_violations or ["missing_code_product_candidate"])
-        ),
-    }
+    return _code_product_candidate_action_impl(
+        target_file=target_file,
+        latest_violations=latest_violations,
+        goal=goal,
+    )
 
 
 _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = {
