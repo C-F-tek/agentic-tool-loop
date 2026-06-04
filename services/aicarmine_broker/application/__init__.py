@@ -21,15 +21,15 @@ def __getattr__(name: str):
         "RegistryToolDispatcher",
         "build_default_dispatcher",
     }:
-        from . import tool_dispatcher
+        from .tool_surface import dispatcher
 
-        return getattr(tool_dispatcher, name)
+        return getattr(dispatcher, name)
     if name == "build_public_result_digest":
-        from .public_history_ledger import build_public_result_digest
+        from .public_payload.history_ledger import build_public_result_digest
 
         return build_public_result_digest
     if name == "normalize_planner_decision":
-        from .decision_normalizer import normalize_planner_decision
+        from .planner.decision_normalizer import normalize_planner_decision
 
         return normalize_planner_decision
     raise AttributeError(name)

@@ -88,7 +88,7 @@ from .planner_core.json_io import (
     post_json,
     post_json_stream_to_file,
 )
-from .application.decision_normalizer import (
+from .application.planner.decision_normalizer import (
     _final_answer_from_content_field,
     _native_tool_calls_decision,
     _normalize_final_answer_from_content,
@@ -97,11 +97,11 @@ from .application.decision_normalizer import (
     _single_embedded_json_decision,
     normalize_planner_decision,
 )
-from .application.available_tools_prompt import (
+from .application.prompt.available_tools import (
     available_tools_window_pack as _available_tools_window_pack_impl,
 )
-from .application.agent_flow_diagnostics import agent_flow_diagnostics as _agent_flow_diagnostics_impl
-from .application.prompt_context_windows import (
+from .application.controller.diagnostics import agent_flow_diagnostics as _agent_flow_diagnostics_impl
+from .application.prompt.context_windows import (
     evidence_contract_continuation_action as _evidence_contract_continuation_action_impl,
     forbidden_repeated_prompt_window_calls as _forbidden_repeated_prompt_window_calls_impl,
     planner_scratchpad_next_window_action_from_history as _planner_scratchpad_next_window_action_from_history_impl,
@@ -111,54 +111,54 @@ from .application.prompt_context_windows import (
     prompt_window_tracking_metadata_errors as _prompt_window_tracking_metadata_errors_impl,
     required_working_set_continuation_action as _required_working_set_continuation_action_impl,
 )
-from .application.required_working_set import (
+from .application.evidence.required_working_set import (
     latest_code_product_for_prompt as _latest_code_product_for_prompt_impl,
     repo_read_items_for_prompt as _repo_read_items_for_prompt_impl,
     required_working_set_for_prompt as _required_working_set_for_prompt_impl,
 )
-from .application.prompt_pack_builder import build_planner_user_payload as _build_planner_user_payload_impl
-from .application.evidence_prompt_contract import (
+from .application.prompt.pack_builder import build_planner_user_payload as _build_planner_user_payload_impl
+from .application.prompt.evidence_contract import (
     compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
     hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
 )
-from .application.evidence_builder import planner_evidence_contract as _planner_evidence_contract_impl
-from .application.planner_loop import run_agentic_planner_job as _run_agentic_planner_job_impl
-from .application.planner_system_prompt import planner_system_for_current_mode as _planner_system_for_current_mode_impl
-from .application.planner_turn import planner_decision as _planner_decision_impl
-from .application.validator import validate_planner_decision_against_evidence as _validate_planner_decision_against_evidence_impl
-from .application.final_state_result import compact_final_state_result as _compact_final_state_result_impl
-from .application.execution_evidence_digest import (
+from .application.evidence.builder import planner_evidence_contract as _planner_evidence_contract_impl
+from .application.planner.loop import run_agentic_planner_job as _run_agentic_planner_job_impl
+from .application.planner.system_prompt import planner_system_for_current_mode as _planner_system_for_current_mode_impl
+from .application.planner.turn import planner_decision as _planner_decision_impl
+from .application.planner.validator import validate_planner_decision_against_evidence as _validate_planner_decision_against_evidence_impl
+from .application.public_payload.final_state_result import compact_final_state_result as _compact_final_state_result_impl
+from .application.evidence.execution_digest import (
     execution_evidence_digest_text as _execution_evidence_digest_text_impl,
     repo_read_content_views as _repo_read_content_views_impl,
 )
-from .application.initial_orientation import (
+from .application.evidence.initial_orientation import (
     initial_orientation_surface_from_history as _initial_orientation_surface_from_history_impl,
 )
-from .application.openwebui_terminal_answer import (
+from .application.public_payload.openwebui_terminal_answer import (
     answer_for_openwebui as _answer_for_openwebui_impl,
     next_action_for_openwebui as _next_action_for_openwebui_impl,
 )
-from .application.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
-from .application.candidate_actions import (
+from .application.public_payload.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
+from .application.tool_surface.candidate_actions import (
     candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
     required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
 )
-from .application.controller_guards import (
+from .application.controller.guards import (
     controller_guard_count as _controller_guard_count_impl,
     controller_guard_rejection_signature as _controller_guard_rejection_signature_impl,
     controller_guard_rejection_signature_count as _controller_guard_rejection_signature_count_impl,
     recoverable_planner_block as _recoverable_planner_block_impl,
 )
-from .application.controller_memory import (
+from .application.controller.memory import (
     controller_memory_lesson_text as _controller_memory_lesson_text_impl,
     loop_turn_memory_text as _loop_turn_memory_text_impl,
     write_controller_memory_lesson as _write_controller_memory_lesson_impl,
     write_loop_turn_memory as _write_loop_turn_memory_impl,
 )
-from .application.controller_preseed import (
+from .application.controller.preseed import (
     controller_initial_area_list_plans as _controller_initial_area_list_plans_impl,
     controller_initial_area_read_plan as _controller_initial_area_read_plan_impl,
     controller_initial_doc_preseed_plan as _controller_initial_doc_preseed_plan_impl,
@@ -170,12 +170,12 @@ from .application.controller_preseed import (
     root_surface_entries as _root_surface_entries_impl,
     root_surface_file_paths as _root_surface_file_paths_impl,
 )
-from .application.core_discovery import (
+from .application.evidence.core_discovery import (
     add_core_discovery_candidate as _add_core_discovery_candidate_impl,
     core_discovery_candidates_from_intrinsic as _core_discovery_candidates_from_intrinsic_impl,
     core_discovery_read_paths as _core_discovery_read_paths_impl,
 )
-from .application.code_product_state import (
+from .application.code_product.state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
     CODE_PRODUCT_BUILD_STATE_SCHEMA,
     code_product_action_has_complete_payload as _code_product_action_has_complete_payload,
@@ -187,7 +187,7 @@ from .application.code_product_state import (
     copyable_example_text as _copyable_example_text,
     goal_exact_text_block as _goal_exact_text_block,
 )
-from .application.code_product_public_outputs import (
+from .application.code_product.public_outputs import (
     best_partial_product_for_30b as _best_partial_product_for_30b_impl,
     code_product_answer_text as _code_product_answer_text_impl,
     latest_code_product_payload as _latest_code_product_payload_impl,
@@ -195,7 +195,7 @@ from .application.code_product_public_outputs import (
     partial_product_clean_text as _partial_product_clean_text_impl,
     partial_products_for_30b as _partial_products_for_30b_impl,
 )
-from .application.code_product_history import (
+from .application.code_product.history import (
     CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS as _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL,
     apply_duplicate_window_replan_contract as _apply_duplicate_window_replan_contract_impl,
     code_product_build_state_duplicate_write as _code_product_build_state_duplicate_write_impl,
@@ -213,7 +213,7 @@ from .application.code_product_history import (
     successful_repo_read_window_ranges as _successful_repo_read_window_ranges_impl,
     successful_window_signatures as _successful_window_signatures_impl,
 )
-from .application.goal_classifier import (
+from .application.evidence.goal_classifier import (
     final_answer_has_inline_code_product as _final_answer_has_inline_code_product,
     final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
     goal_is_tool_envelope as _goal_is_tool_envelope,
@@ -225,24 +225,24 @@ from .application.goal_classifier import (
     semantic_goal_low as _semantic_goal_low,
     semantic_goal_text as _semantic_goal_text,
 )
-from .application.goal_scope import (
+from .application.evidence.goal_scope import (
     extract_existing_goal_path as _extract_existing_goal_path_impl,
     goal_requested_repo_scope as _goal_requested_repo_scope_impl,
     requested_file_limit_from_goal as _requested_file_limit_from_goal_impl,
 )
-from .application.history_queries import (
+from .application.shared.history_queries import (
     failed_code_edit_proposal_validation_row as _failed_code_edit_proposal_validation_row,
     history_tool_result as _history_tool_result_impl,
     history_has_tool,
     successful_code_edit_proposals,
 )
-from .application.clean_values import drop_empty_dict_values as _drop_empty_dict_values_impl
-from .application.history_ledger import (
+from .application.shared.clean_values import drop_empty_dict_values as _drop_empty_dict_values_impl
+from .application.shared.history_ledger import (
     history_item_ollama_turn as _history_item_ollama_turn_impl,
     planner_history_ledger as _planner_history_ledger_impl,
     planner_ollama_turn_from_decision as _planner_ollama_turn_from_decision_impl,
 )
-from .application.planner_history_messages import (
+from .application.prompt.history_messages import (
     LOCAL_ARTIFACT_KEYS as _LOCAL_ARTIFACT_KEYS_IMPL,
     OLLAMA_STREAM_META_KEYS as _OLLAMA_STREAM_META_KEYS_IMPL,
     PLANNER_HISTORY_NOISE_KEYS as _PLANNER_HISTORY_NOISE_KEYS_IMPL,
@@ -256,7 +256,7 @@ from .application.planner_history_messages import (
     planner_history_summary as _planner_history_summary_impl,
     planner_tool_result_message_payload as _planner_tool_result_message_payload_impl,
 )
-from .application.public_tool_context import (
+from .application.public_payload.tool_context import (
     PUBLIC_LOCAL_REFERENCE_KEYS as _PUBLIC_LOCAL_REFERENCE_KEYS_IMPL,
     decision_for_turn_memory as _decision_for_turn_memory_impl,
     final_summary_with_ollama_done_reasons as _final_summary_with_ollama_done_reasons_impl,
@@ -270,34 +270,34 @@ from .application.public_tool_context import (
     strip_public_local_references as _strip_public_local_references_impl,
     successful_tool_turns as _successful_tool_turns_impl,
 )
-from .application.public_terminal_sanitizer import (
+from .application.public_payload.terminal_sanitizer import (
     PUBLIC_TERMINAL_POINTER_KEYS as _PUBLIC_TERMINAL_POINTER_KEYS_IMPL,
     public_terminal_content_key as _public_terminal_content_key_impl,
     public_terminal_sanitize_text as _public_terminal_sanitize_text_impl,
     public_terminal_sanitize_value as _public_terminal_sanitize_value_impl,
 )
-from .application.public_terminal_result import (
+from .application.public_payload.terminal_result import (
     public_terminal_history_ledger as _public_terminal_history_ledger_impl,
     public_terminal_result_for_30b as _public_terminal_result_for_30b_impl,
 )
-from .application.terminal_context_rows import (
+from .application.public_payload.terminal_context_rows import (
     executed_tool_rows as _executed_tool_rows_impl,
     planner_decision_rows as _planner_decision_rows_impl,
     terminal_context_alias as _terminal_context_alias_impl,
     validation_rejection_rows as _validation_rejection_rows_impl,
 )
-from .application.history_prompt_contract import (
+from .application.prompt.history_contract import (
     compact_history_for_prompt as _compact_history_for_prompt_impl,
 )
-from .application.intrinsic_context_prompt import (
+from .application.prompt.intrinsic_context import (
     compact_intrinsic_context_for_prompt as _compact_intrinsic_context_for_prompt_impl,
 )
-from .application.path_tokens import repo_rel_token as _repo_rel_token
-from .application.planner_status import (
+from .application.shared.path_tokens import repo_rel_token as _repo_rel_token
+from .application.planner.status import (
     planner_done_token as _planner_done_token_impl,
     summarize_history_artifacts as _summarize_history_artifacts_impl,
 )
-from .application.prompt_budget import (
+from .application.prompt.budget import (
     planner_token_generation_reserve as _planner_token_generation_reserve,
     prompt_budget_report as _prompt_budget_report_impl,
     prompt_compaction_threshold as _prompt_compaction_threshold,
@@ -305,12 +305,12 @@ from .application.prompt_budget import (
     prompt_window_chars as _prompt_window_chars,
     report_exceeds_generation_headroom as _report_exceeds_generation_headroom_impl,
 )
-from .application.prompt_values import (
+from .application.prompt.values import (
     prompt_clip_text as _prompt_clip_text,
     prompt_clip_value as _prompt_clip_value,
     text_hash as _text_hash,
 )
-from .application.repo_path_policy import (
+from .application.evidence.repo_path_policy import (
     dynamic_read_candidate_paths as _dynamic_read_candidate_paths_impl,
     low_signal_top_dir as _low_signal_top_dir_impl,
     meaningful_read_candidates_from_evidence as _meaningful_read_candidates_from_evidence_impl,
@@ -326,7 +326,7 @@ from .application.repo_path_policy import (
     scope_read_candidates_from_evidence as _scope_read_candidates_from_evidence_impl,
     top_dir as _top_dir_impl,
 )
-from .application.repo_history_evidence import (
+from .application.evidence.repo_history import (
     append_unique as _append_unique_impl,
     extract_headings as _extract_headings_impl,
     extract_key_lines as _extract_key_lines_impl,
@@ -337,41 +337,41 @@ from .application.repo_history_evidence import (
     read_items_from_history as _read_items_from_history_impl,
     repo_list_evidence as _repo_list_evidence_impl,
 )
-from .application.scope_conflict_resolution import (
+from .application.evidence.scope_conflict_resolution import (
     SCOPE_CONFLICT_RATIONALE_TERMS as _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL,
     target_scope_conflict_resolved as _target_scope_conflict_resolved_impl,
 )
-from .application.prompt_context_windows import (
+from .application.prompt.context_windows import (
     PROMPT_CONTEXT_WINDOW_COMPACT_KEYS as _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL,
     PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS as _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL,
     compact_prompt_context_window_item as _compact_prompt_context_window_item_impl,
 )
-from .application.text_windows import diff_chunks as _diff_chunks, window_text as _window_text
-from .application.tool_manifest_builder import (
+from .application.prompt.text_windows import diff_chunks as _diff_chunks, window_text as _window_text
+from .application.tool_surface.manifest_builder import (
     compact_tool_manifest_for_prompt as _compact_tool_manifest_for_prompt,
     filter_tool_manifest_for_names as _filter_tool_manifest_for_names,
     json_char_len as _json_char_len,
     native_tools_schema_for_planner as _native_tools_schema_for_planner,
     tool_schema_name as _tool_schema_name,
 )
-from .application.tool_prompt_contract import (
+from .application.prompt.tool_contract import (
     available_tools_for_user_payload as _available_tools_for_user_payload_impl,
     tool_shape_examples_for_prompt as _tool_shape_examples_for_prompt_impl,
 )
-from .application.tool_result_digest import planner_last_result_digest as _planner_last_result_digest_impl
-from .application.tool_result_compaction import compact_tool_result_for_planner as _compact_tool_result_for_planner_impl
-from .application.turn_surface_policy import (
+from .application.tool_surface.result_digest import planner_last_result_digest as _planner_last_result_digest_impl
+from .application.tool_surface.result_compaction import compact_tool_result_for_planner as _compact_tool_result_for_planner_impl
+from .application.tool_surface.turn_surface_policy import (
     apply_turn_surface_policy as _apply_turn_surface_policy_impl,
     contract_final_required_now as _contract_final_required_now,
     tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
 )
-from .application.user_scope_claims import (
+from .application.evidence.user_scope_claims import (
     claim_area_from_user_token as _claim_area_from_user_token_impl,
     normalize_scope_claim_text as _normalize_scope_claim_text_impl,
     scope_claim_conflict_for_path as _scope_claim_conflict_for_path_impl,
     user_scope_claims as _user_scope_claims_impl,
 )
-from .application.validation_rejections import (
+from .application.planner.validation_rejections import (
     canonical_invalid_code_product_decision_signature as _canonical_invalid_code_product_decision_signature_impl,
     compact_validation_rejections_tail as _compact_validation_rejections_tail_impl,
     disallowed_invalid_code_product_signatures as _disallowed_invalid_code_product_signatures_impl,
@@ -379,7 +379,7 @@ from .application.validation_rejections import (
     invalid_code_product_decision_signature_from_history_item as _invalid_code_product_decision_signature_from_history_item_impl,
     invalid_decision_signature_key as _invalid_decision_signature_key_impl,
 )
-from .application.window_signatures import (
+from .application.prompt.window_signatures import (
     decision_paths as _decision_paths,
     planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
     repo_read_window_range_for_target as _repo_read_window_range_for_target,

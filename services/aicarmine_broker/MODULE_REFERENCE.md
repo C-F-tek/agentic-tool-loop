@@ -73,6 +73,31 @@ Read before edits:
 
 ## application Subpackage
 
+`application/` is no longer intended as a flat script bucket. Real owners live
+under capability superowner packages. Flat `application/*.py` modules are
+compatibility aliases that map to the owner module through `sys.modules`, so
+legacy imports and monkeypatches still mutate the real owner. New behavior must
+be added in the owner package, not in the alias.
+
+### Application Superowner Packages
+
+| Package | Owner responsibility | Public API control |
+| --- | --- | --- |
+| `application/planner/` | Planner-turn and planner-loop ownership: decision normalization, one 11434 turn, multi-step job loop, validator and system prompt. | `__init__.py` exposes controlled public names such as `run_agentic_planner_job`, `planner_decision`, `validate_planner_decision_against_evidence` and `normalize_planner_decision`. |
+| `application/prompt/` | Prompt construction, budget/headroom accounting, prompt windows, history-message transport and prompt value compaction. | `__init__.py` exposes only prompt-pack/budget/window primitives intended for consumers. |
+| `application/evidence/` | Evidence contract, repo evidence extraction, path policy, required working set, core discovery and scope/user-claim constraints. | `__init__.py` exposes evidence builder and classifier/path primitives; validation still belongs to `application/planner/validator.py`. |
+| `application/code_product/` | Report-only code-product build-state, history and public code-product text helpers. | `__init__.py` exposes code-product state/public-output helpers only. |
+| `application/public_payload/` | OpenWebUI/30B terminal payload shaping, public history ledger, terminal answer, public tool context and sanitization. | `__init__.py` exposes public payload builders while preserving inline evidence and stripping local-only pointers. |
+| `application/job/` | Job lifecycle, worker, action router, selector runner and compact job responses. | `__init__.py` exposes lifecycle/worker/router response services, not planner validation policy. |
+| `application/controller/` | Controller guards, controller memory, deterministic preseed and diagnostics. | `__init__.py` exposes guard/memory/preseed/diagnostic helpers; controller code validates or records, it does not replace planner decisions. |
+| `application/tool_surface/` | Tool surface, manifest, dispatch coordination and planner-facing tool-result compaction/digests. | `__init__.py` exposes dispatcher/surface/manifest primitives and keeps actual tool implementation in `tools/*`. |
+| `application/shared/` | Low-level shared value/history/path helpers. | `__init__.py` exposes small pure helpers used by owner packages. |
+
+Python privacy convention applies here: leading-underscore helpers inside owner
+modules are implementation details. Mutating runtime state should happen only
+through the owning service/package public API, not by reaching into flat aliases
+or internal helper dictionaries.
+
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |

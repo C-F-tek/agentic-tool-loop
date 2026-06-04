@@ -1,17 +1,14 @@
-"""Repository path token normalization shared by planner/controller helpers."""
+"""Compatibility alias for relocated application owner.
+
+Real owner: ``application/shared/path_tokens.py``.
+This module intentionally aliases ``sys.modules[__name__]`` to the owner so
+legacy imports and monkeypatches mutate the real owner module.
+"""
+
 from __future__ import annotations
 
-from typing import Any
+import sys
 
+from .shared import path_tokens as _owner
 
-def repo_rel_token(value: Any) -> str:
-    """Normalize repo-relative path tokens without corrupting dot-directories.
-
-    ``str.lstrip("./")`` removes all leading dots and slashes, so paths such as
-    ``.github/workflows/x.yml`` become ``github/workflows/x.yml``. This helper
-    removes only literal ``./`` prefixes and preserves real dot-directory names.
-    """
-    raw = str(value or "").strip().strip("\"'").replace("\\", "/")
-    while raw.startswith("./"):
-        raw = raw[2:]
-    return raw or "."
+sys.modules[__name__] = _owner

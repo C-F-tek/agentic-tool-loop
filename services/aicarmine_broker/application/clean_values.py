@@ -1,8 +1,14 @@
-"""Small value-cleaning helpers for application payloads."""
+"""Compatibility alias for relocated application owner.
+
+Real owner: ``application/shared/clean_values.py``.
+This module intentionally aliases ``sys.modules[__name__]`` to the owner so
+legacy imports and monkeypatches mutate the real owner module.
+"""
+
 from __future__ import annotations
 
-from typing import Any
+import sys
 
+from .shared import clean_values as _owner
 
-def drop_empty_dict_values(value: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in value.items() if v not in (None, "", [], {})}
+sys.modules[__name__] = _owner
