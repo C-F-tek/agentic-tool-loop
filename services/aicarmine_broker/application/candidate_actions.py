@@ -83,6 +83,33 @@ def required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any
     }
 
 
+def decision_matches_prompt_context_continuation(
+    decision: dict[str, Any],
+    continuation: dict[str, Any],
+) -> bool:
+    if not isinstance(decision, dict) or not isinstance(continuation, dict):
+        return True
+    if continuation.get("tool") != "planner_scratchpad_read":
+        return True
+    if normalize_tool_name(str(decision.get("tool") or "")) != "planner_scratchpad_read":
+        return False
+    args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+    expected = continuation.get("arguments") if isinstance(continuation.get("arguments"), dict) else {}
+    expected_kind = str(expected.get("kind") or "prompt_context_window")
+    if str(args.get("kind") or "") != expected_kind:
+        return False
+    if str(args.get("document_id") or "") != str(expected.get("document_id") or ""):
+        return False
+    try:
+        if int(args.get("offset") or 0) != int(expected.get("offset") or 0):
+            return False
+        if expected.get("max_chars") not in (None, ""):
+            return int(args.get("max_chars") or 0) == int(expected.get("max_chars") or 0)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def preserve_required_next_tool_call_for_prompt(
     payload: dict[str, Any],
     previous_evidence_contract: dict[str, Any],

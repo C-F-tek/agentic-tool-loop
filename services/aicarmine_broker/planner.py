@@ -102,6 +102,7 @@ from .application.evidence_prompt_contract import (
     compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
 )
 from .application.candidate_actions import (
+    decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
     required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
@@ -1835,27 +1836,7 @@ def _decision_matches_prompt_context_continuation(
     decision: dict[str, Any],
     continuation: dict[str, Any],
 ) -> bool:
-    if not isinstance(decision, dict) or not isinstance(continuation, dict):
-        return True
-    if continuation.get("tool") != "planner_scratchpad_read":
-        return True
-    if _normalize_tool_name(str(decision.get("tool") or "")) != "planner_scratchpad_read":
-        return False
-    args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
-    expected = continuation.get("arguments") if isinstance(continuation.get("arguments"), dict) else {}
-    expected_kind = str(expected.get("kind") or "prompt_context_window")
-    if str(args.get("kind") or "") != expected_kind:
-        return False
-    if str(args.get("document_id") or "") != str(expected.get("document_id") or ""):
-        return False
-    try:
-        if int(args.get("offset") or 0) != int(expected.get("offset") or 0):
-            return False
-        if expected.get("max_chars") not in (None, ""):
-            return int(args.get("max_chars") or 0) == int(expected.get("max_chars") or 0)
-        return True
-    except (TypeError, ValueError):
-        return False
+    return _decision_matches_prompt_context_continuation_impl(decision, continuation)
 
 
 def _required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any]:

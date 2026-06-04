@@ -13,6 +13,7 @@ from aicarmine_broker.application.candidate_actions import (  # noqa: E402
     candidate_action_is_build_state_read,
     candidate_action_is_build_state_write,
     candidate_action_tool,
+    decision_matches_prompt_context_continuation,
     dedupe_candidate_actions,
     final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt,
@@ -121,3 +122,49 @@ def test_preserve_required_next_tool_call_for_prompt_restores_exact_surface() ->
     assert evidence["required_next_progress"] == "read exact continuation"
     assert evidence["planner_may_choose_final"] is False
     assert evidence["finalization_contract"]["final_allowed"] is False
+
+
+def test_decision_matches_prompt_context_continuation_requires_exact_window() -> None:
+    continuation = {
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "doc-1",
+            "offset": 100,
+            "max_chars": 500,
+        },
+    }
+    decision = {
+        "tool": "planner.scratchpad.read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "doc-1",
+            "offset": 100,
+            "max_chars": 500,
+        },
+    }
+
+    assert decision_matches_prompt_context_continuation(decision, continuation) is True
+    assert decision_matches_prompt_context_continuation(
+        {**decision, "tool": "repo_read"},
+        continuation,
+    ) is False
+    assert decision_matches_prompt_context_continuation(
+        {"tool": "planner_scratchpad_read", "arguments": {**decision["arguments"], "document_id": "other"}},
+        continuation,
+    ) is False
+    assert decision_matches_prompt_context_continuation(
+        {"tool": "planner_scratchpad_read", "arguments": {**decision["arguments"], "offset": 101}},
+        continuation,
+    ) is False
+    assert decision_matches_prompt_context_continuation(
+        {"tool": "planner_scratchpad_read", "arguments": {**decision["arguments"], "max_chars": 400}},
+        continuation,
+    ) is False
+
+
+def test_decision_matches_prompt_context_continuation_ignores_non_read_continuation() -> None:
+    assert decision_matches_prompt_context_continuation(
+        {"tool": "repo_read", "arguments": {"path": "a.py"}},
+        {"tool": "repo_read"},
+    ) is True
