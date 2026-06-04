@@ -13,6 +13,12 @@ from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import BridgeConfig, int_env, bool_env, load_bridge_config_from_env
+from .application.request_payload import (
+    first_dict,
+    first_text,
+    payload_to_dict,
+    public_agent_arguments,
+)
 from .openapi_builder import build_native_helper_openapi
 
 try:
@@ -170,53 +176,19 @@ class VulkanHelperRequest(BaseModel):
 
 
 def _public_agent_arguments(raw_payload: dict[str, Any]) -> dict[str, Any]:
-    allowed = {
-        "request", "task", "query", "prompt", "instruction", "context",
-        "path", "paths", "file", "files", "pattern", "symbol", "command",
-        "approval_mode", "return_mode", "wait_seconds", "action", "job_action", "job_id",
-        "user_consent", "allow_command",
-    }
-    return {
-        key: value
-        for key, value in raw_payload.items()
-        if key in allowed and value not in (None, "", [], {})
-    }
+    return public_agent_arguments(raw_payload)
 
 
 def _payload_to_dict(payload: Any) -> dict[str, Any]:
-    if payload is None:
-        return {}
-    if isinstance(payload, dict):
-        data = dict(payload)
-    elif hasattr(payload, "model_dump"):
-        data = payload.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
-    else:
-        data = {"value": payload}
-
-    cleaned: dict[str, Any] = {}
-    for key, value in data.items():
-        if value in (None, ""):
-            continue
-        if isinstance(value, (dict, list)) and not value:
-            continue
-        cleaned[str(key)] = value
-    return cleaned
+    return payload_to_dict(payload)
 
 
 def _first_text(payload: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+    return first_text(payload, *keys)
 
 
 def _first_dict(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, dict) and value:
-            return dict(value)
-    return {}
+    return first_dict(payload, *keys)
 
 
 def _compact_text(value: Any, limit: int) -> str:

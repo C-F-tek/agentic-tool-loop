@@ -44,6 +44,13 @@ Read before edits:
 | `client.py` | Compatibility facade for HTTP client/helper functions currently implemented in `app.py`. Keep thin so old imports remain valid. |
 | `compact.py` | Compatibility facade for compaction helpers currently implemented in `app.py`. Keep thin unless compaction is intentionally split. |
 
+## application Subpackage
+
+| Module | Technical description |
+| --- | --- |
+| `application/__init__.py` | Package marker for 3571 application helpers extracted from `app.py`. |
+| `application/request_payload.py` | Pure request-payload normalization helpers for public agent arguments, model/dict payload conversion and first text/dict extraction. `app.py` keeps compatibility wrappers for existing call sites. |
+
 ## Public Result Contract
 
 For terminal jobs returned to OpenWebUI:
