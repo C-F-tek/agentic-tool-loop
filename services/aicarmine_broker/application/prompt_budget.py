@@ -95,3 +95,15 @@ def prompt_budget_report(
         "over_generation_headroom_budget": bool(headroom_budget > 0 and total > headroom_budget),
         "sections": sections,
     }
+
+
+def report_exceeds_generation_headroom(report: dict[str, Any], headroom_char_budget: int) -> bool:
+    if int(headroom_char_budget or 0) <= 0:
+        return False
+    total = int((report or {}).get("total_prompt_chars") or 0)
+    if total <= int(headroom_char_budget):
+        return False
+    native_reserve = int((report or {}).get("native_history_reserve_chars") or 0)
+    if native_reserve > 0 and max(0, total - native_reserve) <= int(headroom_char_budget):
+        return False
+    return True

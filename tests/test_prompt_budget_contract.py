@@ -66,3 +66,18 @@ def test_prompt_budget_report_marks_over_budget(monkeypatch) -> None:
 
     assert report["over_budget"] is True
     assert report["over_generation_headroom_budget"] is True
+
+
+def test_report_exceeds_generation_headroom_accounts_for_native_history_reserve() -> None:
+    assert budget.report_exceeds_generation_headroom(
+        {"total_prompt_chars": 1200},
+        1000,
+    ) is True
+    assert budget.report_exceeds_generation_headroom(
+        {"total_prompt_chars": 1200, "native_history_reserve_chars": 300},
+        1000,
+    ) is False
+    assert budget.report_exceeds_generation_headroom(
+        {"total_prompt_chars": 1200},
+        0,
+    ) is False

@@ -143,6 +143,7 @@ from .application.prompt_budget import (
     prompt_compaction_threshold as _prompt_compaction_threshold,
     prompt_generation_headroom_char_budget as _prompt_generation_headroom_char_budget,
     prompt_window_chars as _prompt_window_chars,
+    report_exceeds_generation_headroom as _report_exceeds_generation_headroom_impl,
 )
 from .application.prompt_values import (
     prompt_clip_text as _prompt_clip_text,
@@ -999,15 +1000,7 @@ def _hard_budget_evidence_contract_for_prompt(
 
 
 def _report_exceeds_generation_headroom(report: dict[str, Any], headroom_char_budget: int) -> bool:
-    if int(headroom_char_budget or 0) <= 0:
-        return False
-    total = int((report or {}).get("total_prompt_chars") or 0)
-    if total <= int(headroom_char_budget):
-        return False
-    native_reserve = int((report or {}).get("native_history_reserve_chars") or 0)
-    if native_reserve > 0 and max(0, total - native_reserve) <= int(headroom_char_budget):
-        return False
-    return True
+    return _report_exceeds_generation_headroom_impl(report, headroom_char_budget)
 
 
 def _preserve_required_next_tool_call_for_prompt(
