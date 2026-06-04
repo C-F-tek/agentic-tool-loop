@@ -104,6 +104,7 @@ from .application.evidence_prompt_contract import (
     compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
     hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
 )
+from .application.final_state_result import compact_final_state_result as _compact_final_state_result_impl
 from .application.candidate_actions import (
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
@@ -6525,30 +6526,10 @@ def planner_decision(
 
 
 def _compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(result, dict):
-        return {}
-    compact_result: dict[str, Any] = {}
-    for key in (
-        "auto_finalized_by", "blocked_by", "rejected_tool", "blocked_tool",
-        "error", "error_type",
-    ):
-        if result.get(key) not in (None, "", [], {}):
-            compact_result[key] = result.get(key)
-    history = result.get("history")
-    if isinstance(history, list):
-        compact_result["history_count"] = len(history)
-        compact_result["history_tail"] = planner_history_ledger(history[-8:])
-        diagnostics = result.get("agent_flow_diagnostics") if isinstance(result.get("agent_flow_diagnostics"), dict) else {}
-        if diagnostics:
-            compact_result["agent_flow_diagnostics"] = diagnostics
-    decision = result.get("planner_decision")
-    if isinstance(decision, dict):
-        compact_result["planner_decision"] = {
-            k: decision.get(k)
-            for k in ("action", "tool", "reason", "selected_by_3572", "coerced_by_3572")
-            if decision.get(k) not in (None, "", [], {})
-        }
-    return compact_result
+    return _compact_final_state_result_impl(
+        result,
+        history_ledger_builder=planner_history_ledger,
+    )
 
 
 _PUBLIC_TERMINAL_POINTER_KEYS = {
