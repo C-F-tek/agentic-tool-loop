@@ -35,6 +35,17 @@ def test_module_reference_declares_repo_tools_and_tool_dispatch_facades() -> Non
     assert "`tool_dispatch.py` | Compatibility facade" in text
     assert "application/tool_surface/dispatcher.py" in text
     assert "`application/job/worker.py` | Background job worker" in text
+    assert "`dispatcher.py` | Compatibility facade" not in text
+
+
+def test_broker_dispatcher_shim_is_removed() -> None:
+    assert not (ROOT / "services/aicarmine_broker/dispatcher.py").exists()
+    for path in (ROOT / "services/aicarmine_broker").glob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        assert "aicarmine_broker.dispatcher" not in text, str(path)
+        assert "from .dispatcher import" not in text, str(path)
 
 
 def test_agent_entry_worker_logic_is_extracted() -> None:
