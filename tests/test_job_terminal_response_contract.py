@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aicarmine_broker.application.job_terminal_response import (
+from aicarmine_broker.application.job.terminal_response import (
     build_compact_terminal_response,
     build_missing_job_response,
 )

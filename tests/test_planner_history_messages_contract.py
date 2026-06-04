@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.planner_history_messages import (  # noqa: E402
+from aicarmine_broker.application.prompt.history_messages import (  # noqa: E402
     clean_planner_history_value,
     planner_controller_guard_history_payload,
     planner_history_item_messages,

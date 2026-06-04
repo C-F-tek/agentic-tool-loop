@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.path_tokens import repo_rel_token  # noqa: E402
+from aicarmine_broker.application.shared.path_tokens import repo_rel_token  # noqa: E402
 
 
 def test_repo_rel_token_preserves_dot_directories() -> None:

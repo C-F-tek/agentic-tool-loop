@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.public_terminal_sanitizer import (  # noqa: E402
+from aicarmine_broker.application.public_payload.terminal_sanitizer import (  # noqa: E402
     public_terminal_content_key,
     public_terminal_sanitize_text,
     public_terminal_sanitize_value,

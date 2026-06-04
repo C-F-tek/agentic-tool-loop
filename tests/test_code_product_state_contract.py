@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.code_product_state import (  # noqa: E402
+from aicarmine_broker.application.code_product.state import (  # noqa: E402
     CODE_PRODUCT_BUILD_STATE_SCHEMA,
     code_product_action_has_complete_payload,
     code_product_build_state_has_collecting_progress,

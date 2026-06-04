@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.controller_guards import (  # noqa: E402
+from aicarmine_broker.application.controller.guards import (  # noqa: E402
     controller_guard_count,
     controller_guard_rejection_signature,
     controller_guard_rejection_signature_count,

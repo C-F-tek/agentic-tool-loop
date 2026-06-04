@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.text_windows import diff_chunks, window_text  # noqa: E402
+from aicarmine_broker.application.prompt.text_windows import diff_chunks, window_text  # noqa: E402
 
 
 def test_window_text_returns_complete_small_text() -> None:

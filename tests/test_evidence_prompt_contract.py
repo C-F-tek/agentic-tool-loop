@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.evidence_prompt_contract import (  # noqa: E402
+from aicarmine_broker.application.prompt.evidence_contract import (  # noqa: E402
     EVIDENCE_PROMPT_KEEP_KEYS,
     compact_evidence_contract_for_prompt,
     hard_budget_evidence_contract_summary,

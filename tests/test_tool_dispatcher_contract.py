@@ -50,7 +50,7 @@ def test_dispatch_unknown_tool_returns_unknown_internal_tool(tmp_path: Path) -> 
 
 
 def test_dispatch_known_tool_same_payload_shape(monkeypatch, tmp_path: Path) -> None:
-    import aicarmine_broker.application.tool_dispatcher as dispatcher_module
+    import aicarmine_broker.application.tool_surface.dispatcher as dispatcher_module
     from aicarmine_broker.application import DispatchRequest, build_default_dispatcher
 
     def fake_repo_status(args, root):
@@ -77,7 +77,7 @@ def test_dispatch_known_tool_same_payload_shape(monkeypatch, tmp_path: Path) -> 
 
 
 def test_dispatch_write_guarded_tool_receives_consent(monkeypatch, tmp_path: Path) -> None:
-    import aicarmine_broker.application.tool_dispatcher as dispatcher_module
+    import aicarmine_broker.application.tool_surface.dispatcher as dispatcher_module
     from aicarmine_broker.application import DispatchRequest, build_default_dispatcher
 
     captured = {}
@@ -113,7 +113,7 @@ def test_dispatch_write_guarded_tool_receives_consent(monkeypatch, tmp_path: Pat
 
 
 def test_dispatch_readonly_tool_does_not_require_consent(monkeypatch, tmp_path: Path) -> None:
-    import aicarmine_broker.application.tool_dispatcher as dispatcher_module
+    import aicarmine_broker.application.tool_surface.dispatcher as dispatcher_module
     from aicarmine_broker.application import DispatchRequest, build_default_dispatcher
 
     def fake_repo_tree(args, root):

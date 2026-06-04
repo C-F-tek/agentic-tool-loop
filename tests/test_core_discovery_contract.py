@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.core_discovery import (  # noqa: E402
+from aicarmine_broker.application.evidence.core_discovery import (  # noqa: E402
     add_core_discovery_candidate,
     core_discovery_candidates_from_intrinsic,
     core_discovery_read_paths,

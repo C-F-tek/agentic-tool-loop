@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.prompt_pack_builder import build_planner_user_payload  # noqa: E402
+from aicarmine_broker.application.prompt.pack_builder import build_planner_user_payload  # noqa: E402
 
 
 def _json_len(value: Any) -> int:

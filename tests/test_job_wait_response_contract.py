@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aicarmine_broker.application.job_wait_response import build_wait_timeout_response
+from aicarmine_broker.application.job.wait_response import build_wait_timeout_response
 
 
 def test_wait_timeout_response_preserves_status_and_adds_continuation() -> None:

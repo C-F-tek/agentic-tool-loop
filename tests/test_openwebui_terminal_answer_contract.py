@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.openwebui_terminal_answer import (  # noqa: E402
+from aicarmine_broker.application.public_payload.openwebui_terminal_answer import (  # noqa: E402
     answer_for_openwebui,
     next_action_for_openwebui,
 )

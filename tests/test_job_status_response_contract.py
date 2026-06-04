@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aicarmine_broker.application.job_status_response import build_compact_status_response
+from aicarmine_broker.application.job.status_response import build_compact_status_response
 
 
 def test_compact_status_response_builds_running_context() -> None:

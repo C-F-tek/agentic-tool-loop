@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-import aicarmine_broker.application.prompt_budget as budget  # noqa: E402
+import aicarmine_broker.application.prompt.budget as budget  # noqa: E402
 
 
 def test_planner_token_generation_reserve_clamps() -> None:

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.available_tools_prompt import (  # noqa: E402
+from aicarmine_broker.application.prompt.available_tools import (  # noqa: E402
     available_tools_window_pack,
 )
 

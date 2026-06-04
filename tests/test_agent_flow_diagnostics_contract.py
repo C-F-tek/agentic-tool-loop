@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.agent_flow_diagnostics import agent_flow_diagnostics  # noqa: E402
+from aicarmine_broker.application.controller.diagnostics import agent_flow_diagnostics  # noqa: E402
 
 
 def _contract(_goal: str, _history: list[dict]) -> dict:

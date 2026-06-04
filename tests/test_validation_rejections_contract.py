@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.validation_rejections import (  # noqa: E402
+from aicarmine_broker.application.planner.validation_rejections import (  # noqa: E402
     canonical_invalid_code_product_decision_signature,
     compact_validation_rejections_tail,
     disallowed_invalid_code_product_signatures,

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.terminal_context_rows import (  # noqa: E402
+from aicarmine_broker.application.public_payload.terminal_context_rows import (  # noqa: E402
     executed_tool_rows,
     planner_decision_rows,
     terminal_context_alias,

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.tool_manifest_builder import (  # noqa: E402
+from aicarmine_broker.application.tool_surface.manifest_builder import (  # noqa: E402
     compact_tool_manifest_for_prompt,
     filter_tool_manifest_for_names,
     json_char_len,

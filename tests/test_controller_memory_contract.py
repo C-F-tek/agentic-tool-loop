@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.controller_memory import (  # noqa: E402
+from aicarmine_broker.application.controller.memory import (  # noqa: E402
     controller_memory_lesson_text,
     loop_turn_memory_text,
     write_controller_memory_lesson,

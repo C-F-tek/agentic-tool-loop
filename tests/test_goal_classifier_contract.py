@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.goal_classifier import (  # noqa: E402
+from aicarmine_broker.application.evidence.goal_classifier import (  # noqa: E402
     final_answer_is_action_plan_without_code_product,
     goal_requests_apply,
     goal_requests_code_product,

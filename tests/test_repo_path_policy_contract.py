@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.repo_path_policy import (  # noqa: E402
+from aicarmine_broker.application.evidence.repo_path_policy import (  # noqa: E402
     dynamic_read_candidate_paths,
     low_signal_top_dir,
     meaningful_read_candidates_from_evidence,

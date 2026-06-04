@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.planner_system_prompt import (  # noqa: E402
+from aicarmine_broker.application.planner.system_prompt import (  # noqa: E402
     PLANNER_SYSTEM,
     planner_system_for_current_mode,
 )

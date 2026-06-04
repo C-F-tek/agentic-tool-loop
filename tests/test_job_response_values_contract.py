@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aicarmine_broker.application.job_response_values import (
+from aicarmine_broker.application.job.response_values import (
     compact_json,
     compact_text,
     event_digest,

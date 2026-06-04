@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.controller_preseed import (  # noqa: E402
+from aicarmine_broker.application.controller.preseed import (  # noqa: E402
     controller_initial_area_list_plans,
     controller_initial_area_read_plan,
     controller_initial_doc_preseed_plan,

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.code_product_history import (  # noqa: E402
+from aicarmine_broker.application.code_product.history import (  # noqa: E402
     apply_duplicate_window_replan_contract,
     code_product_build_state_duplicate_write,
     code_product_build_state_from_result,
@@ -24,11 +24,11 @@ from aicarmine_broker.application.code_product_history import (  # noqa: E402
     strip_duplicate_window_candidate,
     successful_window_signatures,
 )
-from aicarmine_broker.application.code_product_state import (  # noqa: E402
+from aicarmine_broker.application.code_product.state import (  # noqa: E402
     CODE_PRODUCT_BUILD_STATE_KIND,
     CODE_PRODUCT_BUILD_STATE_SCHEMA,
 )
-from aicarmine_broker.application.prompt_values import text_hash  # noqa: E402
+from aicarmine_broker.application.prompt.values import text_hash  # noqa: E402
 
 
 def _identity_artifact(result: dict) -> dict:

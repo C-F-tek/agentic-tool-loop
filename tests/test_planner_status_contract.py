@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.planner_status import (  # noqa: E402
+from aicarmine_broker.application.planner.status import (  # noqa: E402
     planner_done_token,
     summarize_history_artifacts,
 )

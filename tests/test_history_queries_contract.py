@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.history_queries import (  # noqa: E402
+from aicarmine_broker.application.shared.history_queries import (  # noqa: E402
     failed_code_edit_proposal_validation_row,
     history_has_tool,
     history_tool_result,

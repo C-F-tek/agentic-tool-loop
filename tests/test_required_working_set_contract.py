@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.required_working_set import (  # noqa: E402
+from aicarmine_broker.application.evidence.required_working_set import (  # noqa: E402
     latest_code_product_for_prompt,
     repo_read_items_for_prompt,
     required_working_set_for_prompt,

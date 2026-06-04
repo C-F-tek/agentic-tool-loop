@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "services"))
 
 
 def test_public_result_digest_keeps_existing_shape() -> None:
-    from aicarmine_broker.application.public_history_ledger import build_public_result_digest
+    from aicarmine_broker.application.public_payload.history_ledger import build_public_result_digest
 
     digest = build_public_result_digest(
         {

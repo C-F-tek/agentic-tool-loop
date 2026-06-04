@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.public_tool_context import (  # noqa: E402
+from aicarmine_broker.application.public_payload.tool_context import (  # noqa: E402
     final_summary_with_ollama_done_reasons,
     planner_turn_memory,
     public_tool_artifact_rows,

@@ -25,7 +25,7 @@ def test_tool_dispatch_docstring_declares_facade() -> None:
     text = _read("services/aicarmine_broker/tool_dispatch.py")
 
     assert "compatibility facade" in text.lower()
-    assert "application.tool_dispatcher" in text
+    assert "application.tool_surface.dispatcher" in text
 
 
 def test_module_reference_declares_repo_tools_and_tool_dispatch_facades() -> None:
@@ -33,17 +33,17 @@ def test_module_reference_declares_repo_tools_and_tool_dispatch_facades() -> Non
 
     assert "`repo_tools.py` | Compatibility facade" in text
     assert "`tool_dispatch.py` | Compatibility facade" in text
-    assert "application/tool_dispatcher.py" in text
-    assert "`application/job_worker.py` | Background job worker" in text
+    assert "application/tool_surface/dispatcher.py" in text
+    assert "`application/job/worker.py` | Background job worker" in text
 
 
 def test_agent_entry_worker_logic_is_extracted() -> None:
     text = _read("services/aicarmine_broker/agent_entry.py")
 
-    assert "from .application.job_worker import AgentJobWorker" in text
-    assert "from .application.job_lifecycle import AgentJobLifecycle" in text
-    assert "from .application.job_action_router import AgentJobActionRouter" in text
-    assert "from .application.selector_runner import SelectorRunner" in text
+    assert "from .application.job.worker import AgentJobWorker" in text
+    assert "from .application.job.lifecycle import AgentJobLifecycle" in text
+    assert "from .application.job.action_router import AgentJobActionRouter" in text
+    assert "from .application.job.selector_runner import SelectorRunner" in text
     assert "def build_job_worker" in text
     assert "def build_job_lifecycle" in text
     assert "def build_job_action_router" in text

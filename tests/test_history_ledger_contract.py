@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.clean_values import drop_empty_dict_values  # noqa: E402
-from aicarmine_broker.application.history_ledger import (  # noqa: E402
+from aicarmine_broker.application.shared.clean_values import drop_empty_dict_values  # noqa: E402
+from aicarmine_broker.application.shared.history_ledger import (  # noqa: E402
     history_item_ollama_turn,
     planner_history_ledger,
     planner_ollama_turn_from_decision,

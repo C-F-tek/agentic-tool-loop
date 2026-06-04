@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.openwebui_tool_context import build_tool_context_for_30b  # noqa: E402
+from aicarmine_broker.application.public_payload.openwebui_tool_context import build_tool_context_for_30b  # noqa: E402
 
 
 def test_build_tool_context_for_30b_preserves_public_shape_and_injected_sections() -> None:

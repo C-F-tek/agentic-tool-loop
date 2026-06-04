@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.application.selector_runner import SelectorRunner
+from aicarmine_broker.application.job.selector_runner import SelectorRunner
 
 
 def _runner_fixture(

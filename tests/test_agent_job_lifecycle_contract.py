@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.application.job_lifecycle import AgentJobLifecycle
+from aicarmine_broker.application.job.lifecycle import AgentJobLifecycle
 
 
 class FakeLock:

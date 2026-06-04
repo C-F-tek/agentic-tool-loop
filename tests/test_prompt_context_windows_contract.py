@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.prompt_context_windows import (  # noqa: E402
+from aicarmine_broker.application.prompt.context_windows import (  # noqa: E402
     PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS,
     bounded_prompt_context_tool_result_payload,
     compact_prompt_context_window_item,

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.tool_result_compaction import (  # noqa: E402
+from aicarmine_broker.application.tool_surface.result_compaction import (  # noqa: E402
     compact_tool_result_for_planner,
     python_static_evidence,
 )

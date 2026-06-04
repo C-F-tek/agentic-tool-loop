@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..application.path_tokens import repo_rel_token as _repo_rel_token
+from ..application.shared.path_tokens import repo_rel_token as _repo_rel_token
 from ..config import VALID_INTERNAL_TOOLS
 from ..tool_contract import normalize_tool_name as _normalize_tool_name
 

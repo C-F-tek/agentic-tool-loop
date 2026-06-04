@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.final_state_result import compact_final_state_result  # noqa: E402
+from aicarmine_broker.application.public_payload.final_state_result import compact_final_state_result  # noqa: E402
 
 
 def _ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:

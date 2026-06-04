@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.execution_evidence_digest import (  # noqa: E402
+from aicarmine_broker.application.evidence.execution_digest import (  # noqa: E402
     execution_evidence_digest_text,
     repo_read_content_views,
 )

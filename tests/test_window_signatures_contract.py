@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.window_signatures import (  # noqa: E402
+from aicarmine_broker.application.prompt.window_signatures import (  # noqa: E402
     decision_paths,
     planner_scratchpad_window_signature,
     repo_read_window_range_for_target,

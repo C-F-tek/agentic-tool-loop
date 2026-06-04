@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.code_product_public_outputs import (  # noqa: E402
+from aicarmine_broker.application.code_product.public_outputs import (  # noqa: E402
     best_partial_product_for_30b,
     code_product_answer_text,
     latest_code_product_payload,

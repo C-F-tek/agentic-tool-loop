@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.application.job_action_router import AgentJobActionRouter
+from aicarmine_broker.application.job.action_router import AgentJobActionRouter
 
 
 class FakeSelectorRunner:

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.intrinsic_context_prompt import (  # noqa: E402
+from aicarmine_broker.application.prompt.intrinsic_context import (  # noqa: E402
     compact_intrinsic_context_for_prompt,
 )
 

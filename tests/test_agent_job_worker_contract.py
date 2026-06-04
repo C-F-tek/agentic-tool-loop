@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.application.job_worker import AgentJobWorker
+from aicarmine_broker.application.job.worker import AgentJobWorker
 
 
 def _worker_fixture(

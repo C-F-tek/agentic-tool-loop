@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.candidate_actions import (  # noqa: E402
+from aicarmine_broker.application.tool_surface.candidate_actions import (  # noqa: E402
     candidate_action_args,
     candidate_action_is_build_state_read,
     candidate_action_is_build_state_write,

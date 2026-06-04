@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.goal_scope import (  # noqa: E402
+from aicarmine_broker.application.evidence.goal_scope import (  # noqa: E402
     extract_existing_goal_path,
     goal_requested_repo_scope,
     requested_file_limit_from_goal,

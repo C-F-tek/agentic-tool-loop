@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.initial_orientation import (  # noqa: E402
+from aicarmine_broker.application.evidence.initial_orientation import (  # noqa: E402
     initial_orientation_surface_from_history,
 )
 
