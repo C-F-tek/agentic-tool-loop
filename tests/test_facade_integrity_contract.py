@@ -42,8 +42,10 @@ def test_agent_entry_worker_logic_is_extracted() -> None:
 
     assert "from .application.job_worker import AgentJobWorker" in text
     assert "from .application.job_lifecycle import AgentJobLifecycle" in text
+    assert "from .application.selector_runner import SelectorRunner" in text
     assert "def build_job_worker" in text
     assert "def build_job_lifecycle" in text
+    assert "def build_selector_runner" in text
     forbidden = (
         "threading.Thread",
         "time.time()",
@@ -53,6 +55,8 @@ def test_agent_entry_worker_logic_is_extracted() -> None:
         "final.json",
         "final.md",
         "run_agentic_planner_job(job_id)",
+        "dispatcher_artifact",
+        "select_internal_tool(public_tool_name=",
     )
     for pattern in forbidden:
         assert pattern not in text, pattern

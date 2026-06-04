@@ -5,6 +5,7 @@ from typing import Any
 
 from .application.job_lifecycle import AgentJobLifecycle
 from .application.job_worker import AgentJobWorker
+from .application.selector_runner import SelectorRunner
 from .config import (
     AGENT_APPROVAL_MODE,
     AGENT_DEFAULT_MAX_STEPS,
@@ -92,6 +93,20 @@ def start_agent_job(
     return build_job_lifecycle().start(payload, public_tool_name, original_args, task)
 
 
+def build_selector_runner() -> SelectorRunner:
+    return SelectorRunner(
+        select_internal_tool=select_internal_tool,
+        selector_fallback_tool=selector_fallback_tool,
+        fail_selector=fail_selector,
+        sanitize_tool_args=sanitize_tool_args,
+        needs_composite_review=needs_composite_review,
+        dispatch_tool=dispatch_tool,
+        public_wrapper=deterministic_public_wrapper,
+        write_json=write_json,
+        now=now,
+    )
+
+
 def agent(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         payload = {'payload': payload}
@@ -141,30 +156,12 @@ def agent(payload: dict[str, Any]) -> dict[str, Any]:
         write_agent_job_state(state)
         append_agent_event(job_id, 'cancel_requested', 'Cancel requested by user.', {}, step=None)
         return compact_agent_status(job_id, include_events=True)
-    internal_tool, raw_internal_args, selector_response = select_internal_tool(public_tool_name=public_tool_name, task=task, original_args=original_args, timeout_seconds=timeout_seconds)
-    if not internal_tool:
-        fallback_tool, fallback_args = selector_fallback_tool(public_tool_name, task, original_args, selector_response if isinstance(selector_response, dict) else {})
-        if fallback_tool:
-            internal_tool = fallback_tool
-            raw_internal_args = fallback_args
-            selector_response = dict(selector_response or {}) if isinstance(selector_response, dict) else {}
-            selector_response['aicarmine_selector_fallback'] = {'forced_internal_tool': fallback_tool, 'reason': '11435/Vulkan was called but did not emit a usable native tool_call.'}
-        else:
-            envelope = fail_selector(public_tool_name, task, original_args, root, selector_response if isinstance(selector_response, dict) else {})
-            write_json(root / 'broker-session.json', envelope)
-            return envelope
-    internal_args = sanitize_tool_args(internal_tool, raw_internal_args, original_args, public_tool_name)
-    if needs_composite_review(public_tool_name, task, original_args, internal_tool, internal_args):
-        selector_response = dict(selector_response or {})
-        selector_response['aicarmine_selector_guard'] = {'reason': 'generic_repo_analysis_requires_composite_evidence', 'selected_tool_from_vulkan': internal_tool, 'selected_args_from_vulkan': internal_args, 'forced_internal_tool': 'vulkan_helper'}
-        internal_tool = 'vulkan_helper'
-        internal_args = {'public_tool_name': public_tool_name, 'public_tool_x': public_tool_name, 'task': task, 'reason': 'generic repo analysis must gather composite repo evidence, not a single broad search', 'arguments': original_args, 'original_30b_arguments': original_args, 'force_composite_review': True}
-    dispatcher_result = dispatch_tool(internal_tool, internal_args, root, allow_command, user_consent)
-    dispatcher_result = dict(dispatcher_result or {})
-    dispatcher_result.setdefault('called_by_vulkan', internal_tool)
-    dispatcher_artifact = root / 'tool-results' / f'{now()}-{internal_tool}-dispatcher-v6.json'
-    write_json(dispatcher_artifact, dispatcher_result)
-    dispatcher_result.setdefault('artifact', str(dispatcher_artifact))
-    envelope = deterministic_public_wrapper(public_tool_name=public_tool_name, original_args=original_args, internal_tool=internal_tool, internal_args=internal_args, dispatcher_result=dispatcher_result, selector_response=selector_response if isinstance(selector_response, dict) else {}, root=root)
-    write_json(root / 'broker-session.json', envelope)
-    return envelope
+    return build_selector_runner().run(
+        public_tool_name=public_tool_name,
+        task=task,
+        original_args=original_args,
+        root=root,
+        allow_command=allow_command,
+        user_consent=user_consent,
+        timeout_seconds=timeout_seconds,
+    )
