@@ -12,8 +12,8 @@ is an audit note only and does not change the 3571/3572 runtime contract.
 - Remote tracking branch: `origin/codex/refactor-agentic-tool-loop`
 - Base reference: `origin/main`
 - Base SHA: `5b9e4b916a90c12d9bfa469ceb7ab424a3a12cc5`
-- Head SHA: `c1d3cd0234b8b21f1d96ceaaec4c5318befc9456`
-- Commits ahead of `origin/main`: `70`
+- Head SHA: `c27ff836bdc36b3c4e4042611f01fc0a3d3fb33f`
+- Commits ahead of `origin/main`: `74`
 
 ## Baseline Verification
 
@@ -22,7 +22,8 @@ Commands run from `C:\Users\carmi\AI` with
 
 - `python -m compileall -q services`: passed.
 - Initial baseline `python -m pytest -q`: `222 passed in 0.73s`.
-- Current verification after job-store response split: `264 passed in 1.09s`.
+- Current verification after job-store SQLite and bridge helper splits:
+  `275 passed in 1.09s`.
 - `git pull --ff-only`: already up to date.
 
 PowerShell launcher inventory command was also run:
@@ -55,6 +56,13 @@ knowledge. That is expected until the launcher module split phase.
   builders: `job_response_values.py`, `job_terminal_response.py`,
   `job_status_response.py` and `job_wait_response.py`. `job_store.py` now
   loads persisted state/events/final JSON and delegates those compact payloads.
+- `job_store.py` SQLite schema/upsert/list/event insert primitives moved to
+  `infrastructure/job_sqlite_store.py`; filesystem state/events remain in
+  `job_store.py`.
+- `vulkan_bridge/app.py` request-payload and response-value helpers moved to
+  `vulkan_bridge/application/request_payload.py` and
+  `vulkan_bridge/application/response_values.py`, with compatibility wrappers
+  kept in `app.py`.
 
 ## Current Monolithic / Incomplete Areas
 
@@ -66,10 +74,11 @@ These areas still fail the final Definition of Done from the executive plan:
   to build compatibility adapters, but worker, lifecycle, selector dispatch and
   action routing behavior now live in `application/*`.
 - `services/aicarmine_broker/job_store.py` is not storage-only yet, but terminal,
-  status and wait-timeout response construction have been extracted to
-  `application/*`.
+  status, wait-timeout response construction and SQLite primitives have been
+  extracted to `application/*` / `infrastructure/*`.
 - `services/vulkan_bridge/app.py` still owns route plus public payload wrapping
-  behavior.
+  behavior, but first pure request/response helper slices have been extracted
+  to `application/*`.
 - `services/model_export/cli.py` is still monolithic.
 - `services/codex_bridge/mcp_server.py` is still monolithic.
 - `services/launch/*.ps1` still carry implementation logic and are not yet
