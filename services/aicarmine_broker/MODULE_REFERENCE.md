@@ -108,6 +108,7 @@ Read before edits:
 | `application/prompt_values.py` | Prompt clipping/value compaction and stable text hashing helpers. It converts large diff/structured-operation fields into bounded metadata for planner prompt use only. |
 | `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
 | `application/public_terminal_sanitizer.py` | Pure terminal payload sanitizer for OpenWebUI-visible result sections. It removes local path/pointer fields while preserving real content and diff text fields. |
+| `application/public_terminal_result.py` | Builds the public terminal result and history ledger for 30B/OpenWebUI using injected repo-read content rehydration. It preserves diff/code-product payloads inline while removing local-only pointers. |
 | `application/public_tool_context.py` | OpenWebUI-visible terminal tool-context shaping. It rehydrates successful tool payloads inline, strips local paths and keeps code-product diffs visible without exposing internal scratchpad build state. |
 | `application/repo_history_evidence.py` | Extracts repo-read memory, repo-list evidence, failed list paths and core area candidates from planner history using injected artifact rehydration and repo path safety callbacks. |
 | `application/repo_path_policy.py` | Repository path policy and read-candidate ranking helper. It owns repo-local existence checks, doc/code/readable classification, scope containment and dynamic read candidate ordering using injected repo root/path safety. |
