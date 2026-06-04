@@ -103,6 +103,7 @@ from .application.available_tools_prompt import (
 )
 from .application.evidence_prompt_contract import (
     compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
+    hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
 )
 from .application.candidate_actions import (
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
@@ -884,75 +885,7 @@ def _hard_budget_evidence_contract_for_prompt(
         max_chars=max(500, int(window_chars or 1000)),
         metadata={"kind": "evidence_contract", "format": "json", "reason": reason},
     )
-    compact: dict[str, Any] = {
-        "schema": "planner_evidence_contract_hard_budget.v1",
-        "windowed_due_to_prompt_budget": True,
-        "full_contract_available_from_sqlite_window": True,
-        "full_contract_sqlite_window_is_hard_gate": False,
-        "hard_budget_reason": reason,
-    }
-    for key in (
-        "semantic_goal_classification",
-        "goal_requests_code_product",
-        "goal_requires_code_product_report",
-        "goal_requests_apply",
-        "target_kind",
-        "resolved_goal_file",
-        "resolved_goal_scope",
-        "successful_repo_read_count",
-        "verified_content_read_count",
-        "planner_may_choose_final",
-        "required_next_progress",
-    ):
-        value = contract.get(key)
-        if value not in (None, "", [], {}):
-            compact[key] = _prompt_clip_value(value, text_limit=320, list_limit=6)
-    final_contract = contract.get("finalization_contract")
-    if isinstance(final_contract, dict):
-        compact["finalization_contract"] = {
-            key: _prompt_clip_value(final_contract.get(key), text_limit=260, list_limit=4)
-            for key in ("final_allowed", "planner_may_choose_final", "reason")
-            if final_contract.get(key) not in (None, "", [], {})
-        }
-    code_contract = contract.get("code_product_contract")
-    if isinstance(code_contract, dict):
-        compact["code_product_contract"] = {
-            key: _prompt_clip_value(code_contract.get(key), text_limit=320, list_limit=8)
-            for key in (
-                "required",
-                "required_tool",
-                "successful_proposal_count",
-                "latest_target_file",
-                "candidate_target_file",
-                "candidate_target_line_count",
-                "candidate_payload_must_be_generated_from_required_working_set",
-                "action_plan_candidate_available",
-                "latest_payload_complete",
-                "latest_violations",
-                "build_state_status",
-                "build_state_payload_loaded",
-                "build_state_complete_payload_ready",
-                "inline_payload_required",
-                "artifact_path_is_not_payload",
-                "full_payload_fields",
-            )
-            if code_contract.get(key) not in (None, "", [], {})
-        }
-    candidates = contract.get("candidate_next_actions")
-    if isinstance(candidates, list) and candidates:
-        compact["candidate_next_actions"] = _prompt_clip_value(
-            candidates,
-            text_limit=700,
-            list_limit=3,
-        )
-    for key in ("required_next_tool_call", "forbidden_repeated_tool_calls"):
-        value = contract.get(key)
-        if value not in (None, "", [], {}):
-            compact[key] = _prompt_clip_value(value, text_limit=500, list_limit=8)
-    for key in ("successful_repo_read_paths", "read_admissible_paths", "validator_admissible_repo_read_paths"):
-        value = contract.get(key)
-        if value not in (None, "", [], {}):
-            compact[key] = _prompt_clip_value(value, text_limit=160, list_limit=5)
+    compact = _hard_budget_evidence_contract_summary(contract, reason=reason)
     compact["full_evidence_contract_window"] = window
     if window.get("document_id") and window.get("has_more_after") is True:
         compact["planner_can_request_more_evidence_contract"] = {
