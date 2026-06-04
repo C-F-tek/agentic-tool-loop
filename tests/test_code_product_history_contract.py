@@ -10,14 +10,19 @@ sys.path.insert(0, str(ROOT / "services"))
 
 
 from aicarmine_broker.application.code_product_history import (  # noqa: E402
+    apply_duplicate_window_replan_contract,
     code_product_build_state_duplicate_write,
     code_product_build_state_from_result,
     code_product_build_state_propose_action,
     code_product_build_state_read_action,
     code_product_build_state_write_action,
     code_product_candidate_action,
+    code_product_payload_rejection_count,
+    code_product_source_window_candidate,
     code_product_source_windows_from_reads,
     latest_code_product_build_state,
+    strip_duplicate_window_candidate,
+    successful_window_signatures,
 )
 from aicarmine_broker.application.code_product_state import (  # noqa: E402
     CODE_PRODUCT_BUILD_STATE_KIND,
@@ -181,3 +186,103 @@ Required behavior: produce diff
     assert candidate["tool"] == "repo_propose_code_edit"
     assert candidate["arguments"]["old_text"] == "old"
     assert candidate["arguments"]["new_text"] == "new"
+
+
+def test_payload_rejection_count_filters_by_code_product_target() -> None:
+    rejections = [
+        {
+            "violations": ["invalid_code_product_candidate"],
+            "rejected_decision": {
+                "tool": "repo_propose_code_edit",
+                "arguments": {"target_file": "ia_carmine/x.py"},
+            },
+        },
+        {
+            "violations": ["missing_code_product_candidate"],
+            "rejected_decision": {
+                "tool": "repo_propose_code_edit",
+                "arguments": {"target_file": "ia_carmine/x.py"},
+            },
+        },
+    ]
+
+    assert code_product_payload_rejection_count(rejections, "ia_carmine/x.py") == 1
+    assert code_product_payload_rejection_count(rejections, "ia_carmine/y.py") == 0
+
+
+def test_source_window_candidate_advances_after_successful_repo_read_window() -> None:
+    history = [{
+        "decision": {
+            "tool": "repo_read",
+            "arguments": {
+                "path": "ia_carmine/x.py",
+                "line": 1,
+                "before": 0,
+                "after": 4,
+                "max_chars": 1000,
+            },
+        },
+        "tool_result": {
+            "tool": "repo_read",
+            "ok": True,
+            "items": [{"path": "ia_carmine/x.py", "content": "line\n"}],
+        },
+    }]
+
+    action = code_product_source_window_candidate(
+        "ia_carmine/x.py",
+        line_count=20,
+        history=history,
+        single_file_prompt_read_chars=1000,
+    )
+
+    assert action["tool"] == "repo_read"
+    assert action["arguments"]["line"] == 6
+    assert successful_window_signatures(history, "repo_read")
+    assert strip_duplicate_window_candidate([action], tool="repo_read", signature="") == [action]
+
+
+def test_duplicate_replan_contract_preserves_next_actions_without_repeating_repo_read() -> None:
+    duplicate_args = {
+        "path": "ia_carmine/x.py",
+        "line": 1,
+        "before": 0,
+        "after": 4,
+        "max_chars": 1000,
+    }
+    history = [{
+        "decision": {"tool": "repo_read", "arguments": duplicate_args},
+        "tool_result": {
+            "tool": "repo_read",
+            "ok": True,
+            "items": [{
+                "path": "ia_carmine/x.py",
+                "content": "def f():\n    return 1\n",
+                "window_start": 0,
+                "window_end": 22,
+                "full_chars": 22,
+                "complete": True,
+            }],
+        },
+    }]
+    contract = {
+        "verified_content_reads": [{"path": "ia_carmine/x.py", "line_count": 20}],
+        "candidate_next_actions": [{"tool": "repo_read", "arguments": duplicate_args}],
+    }
+
+    updated = apply_duplicate_window_replan_contract(
+        contract,
+        violation="repeated_same_tool_arguments_without_progress",
+        tool="repo_read",
+        args=duplicate_args,
+        history=history,
+        planner_scratchpad_next_window_action_from_history=lambda _args, _history: {},
+        same_tool_artifact_payload=_identity_artifact,
+        repo_read_item_full_content=_full_content,
+        single_file_prompt_read_chars=1000,
+    )
+
+    next_actions = updated["candidate_next_actions"]
+    assert updated["code_product_contract"]["duplicate_window_replan_required"] is True
+    assert not any(item.get("arguments") == duplicate_args for item in next_actions)
+    assert any(item.get("tool") == "planner_scratchpad_write" for item in next_actions)

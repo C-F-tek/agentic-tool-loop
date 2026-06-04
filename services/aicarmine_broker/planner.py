@@ -129,14 +129,22 @@ from .application.code_product_state import (
     goal_exact_text_block as _goal_exact_text_block,
 )
 from .application.code_product_history import (
+    CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS as _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL,
+    apply_duplicate_window_replan_contract as _apply_duplicate_window_replan_contract_impl,
     code_product_build_state_duplicate_write as _code_product_build_state_duplicate_write_impl,
     code_product_build_state_from_result as _code_product_build_state_from_result_impl,
     code_product_build_state_propose_action as _code_product_build_state_propose_action_impl,
     code_product_build_state_read_action as _code_product_build_state_read_action_impl,
     code_product_build_state_write_action as _code_product_build_state_write_action_impl,
     code_product_candidate_action as _code_product_candidate_action_impl,
+    code_product_low_signal_target as _code_product_low_signal_target_impl,
+    code_product_payload_rejection_count as _code_product_payload_rejection_count_impl,
+    code_product_source_window_candidate as _code_product_source_window_candidate_impl,
     code_product_source_windows_from_reads as _code_product_source_windows_from_reads_impl,
     latest_code_product_build_state as _latest_code_product_build_state_impl,
+    strip_duplicate_window_candidate as _strip_duplicate_window_candidate_impl,
+    successful_repo_read_window_ranges as _successful_repo_read_window_ranges_impl,
+    successful_window_signatures as _successful_window_signatures_impl,
 )
 from .application.goal_classifier import (
     final_answer_has_inline_code_product as _final_answer_has_inline_code_product,
@@ -2355,72 +2363,21 @@ def _code_product_candidate_action(
     )
 
 
-_CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = {
-    "repo_propose_code_edit_missing_unified_diff",
-    "repo_propose_code_edit_missing_structured_operations",
-    "code_product_payload_not_complete",
-    "invalid_code_product_candidate",
-}
+_CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL
 
 def _successful_window_signatures(history: list[dict[str, Any]], tool: str) -> set[str]:
-    wanted_tool = _normalize_tool_name(tool)
-    signatures: set[str] = set()
-    for row in history if isinstance(history, list) else []:
-        if not isinstance(row, dict):
-            continue
-        result = _history_tool_result(row)
-        if _normalize_tool_name(str(result.get("tool") or "")) != wanted_tool or result.get("ok") is not True:
-            continue
-        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-        args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
-        if wanted_tool == "repo_read":
-            signature = _repo_read_window_signature(args)
-        elif wanted_tool == "planner_scratchpad_read":
-            signature = _planner_scratchpad_window_signature(args)
-        else:
-            signature = ""
-        if signature:
-            signatures.add(signature)
-    return signatures
+    return _successful_window_signatures_impl(history, tool)
 
 
 def _successful_repo_read_window_ranges(history: list[dict[str, Any]], target_file: str) -> list[tuple[int, int]]:
-    ranges: list[tuple[int, int]] = []
-    for row in history if isinstance(history, list) else []:
-        if not isinstance(row, dict):
-            continue
-        result = _history_tool_result(row)
-        if result.get("tool") != "repo_read" or result.get("ok") is not True:
-            continue
-        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-        args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
-        item_range = _repo_read_window_range_for_target(args, target_file)
-        if item_range and item_range not in ranges:
-            ranges.append(item_range)
-    return ranges
+    return _successful_repo_read_window_ranges_impl(history, target_file)
 
 
 def _code_product_payload_rejection_count(
     validation_rejections: list[dict[str, Any]],
     target_file: str = "",
 ) -> int:
-    target = _repo_rel_token(target_file)
-    count = 0
-    for item in validation_rejections if isinstance(validation_rejections, list) else []:
-        if not isinstance(item, dict):
-            continue
-        violations = {str(v) for v in (item.get("violations") or [])}
-        if not violations.intersection(_CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS):
-            continue
-        rejected = item.get("rejected_decision") if isinstance(item.get("rejected_decision"), dict) else {}
-        if str(rejected.get("tool") or "") != "repo_propose_code_edit":
-            continue
-        args = rejected.get("arguments") if isinstance(rejected.get("arguments"), dict) else {}
-        rejected_target = _repo_rel_token(args.get("target_file") or args.get("path") or "")
-        if target and target != "." and rejected_target != target:
-            continue
-        count += 1
-    return count
+    return _code_product_payload_rejection_count_impl(validation_rejections, target_file)
 
 
 def _code_product_source_window_candidate(
@@ -2429,40 +2386,12 @@ def _code_product_source_window_candidate(
     line_count: int = 0,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    target = _repo_rel_token(target_file)
-    if not target or target == ".":
-        return {}
-    try:
-        total_lines = max(0, int(line_count or 0))
-    except (TypeError, ValueError):
-        total_lines = 0
-    ranges = _successful_repo_read_window_ranges(history or [], target)
-    next_line = 1
-    if ranges:
-        next_line = max(end for _, end in ranges) + 1
-    if total_lines and next_line > total_lines:
-        return {}
-    after = max(120, min(360, int(total_lines or 240)))
-    if total_lines:
-        after = max(0, min(after, total_lines - next_line))
-    args = {
-        "path": target,
-        "line": next_line,
-        "before": 0,
-        "after": after,
-        "max_chars": _single_file_prompt_read_chars(),
-    }
-    if _repo_read_window_signature(args) in _successful_window_signatures(history or [], "repo_read"):
-        return {}
-    return {
-        "action": "tool",
-        "tool": "repo_read",
-        "arguments": args,
-        "reason": (
-            "Route shift after invalid code-product payload: read a concrete source window "
-            f"from {target} before proposing another complete inline diff."
-        ),
-    }
+    return _code_product_source_window_candidate_impl(
+        target_file,
+        line_count=line_count,
+        history=history,
+        single_file_prompt_read_chars=_single_file_prompt_read_chars(),
+    )
 
 
 def _strip_duplicate_window_candidate(
@@ -2471,23 +2400,7 @@ def _strip_duplicate_window_candidate(
     tool: str,
     signature: str,
 ) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    wanted_tool = _normalize_tool_name(tool)
-    for item in actions if isinstance(actions, list) else []:
-        if not isinstance(item, dict) or _normalize_tool_name(str(item.get("tool") or "")) != wanted_tool:
-            out.append(item)
-            continue
-        args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
-        if wanted_tool == "repo_read":
-            item_signature = _repo_read_window_signature(args)
-        elif wanted_tool == "planner_scratchpad_read":
-            item_signature = _planner_scratchpad_window_signature(args)
-        else:
-            item_signature = ""
-        if item_signature and item_signature == signature:
-            continue
-        out.append(item)
-    return out
+    return _strip_duplicate_window_candidate_impl(actions, tool=tool, signature=signature)
 
 
 def _apply_duplicate_window_replan_contract(
@@ -2498,85 +2411,21 @@ def _apply_duplicate_window_replan_contract(
     args: dict[str, Any],
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    contract = contract if isinstance(contract, dict) else {}
-    signature = (
-        _repo_read_window_signature(args)
-        if tool == "repo_read"
-        else _planner_scratchpad_window_signature(args)
-        if tool == "planner_scratchpad_read"
-        else ""
-    )
-    existing = _strip_duplicate_window_candidate(
-        contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else [],
+    return _apply_duplicate_window_replan_contract_impl(
+        contract,
+        violation=violation,
         tool=tool,
-        signature=signature,
+        args=args,
+        history=history,
+        planner_scratchpad_next_window_action_from_history=_planner_scratchpad_next_window_action_from_history,
+        same_tool_artifact_payload=_same_tool_artifact_payload,
+        repo_read_item_full_content=_repo_read_item_full_content,
+        single_file_prompt_read_chars=_single_file_prompt_read_chars(),
     )
-    next_actions: list[dict[str, Any]] = []
-    if tool == "planner_scratchpad_read":
-        next_window = _planner_scratchpad_next_window_action_from_history(args, history)
-        if next_window:
-            next_actions.append(next_window)
-        contract["required_next_progress"] = (
-            "The requested SQLite window was already consumed. Replan now: read the next "
-            "unconsumed SQLite window if candidate_next_actions provides one; otherwise use "
-            "the already-read window evidence to produce a complete payload, write real "
-            "code_product_build_state progress, or return a typed block. Do not repeat the "
-            "same planner_scratchpad_read arguments."
-        )
-    elif tool == "repo_read":
-        target_paths = _decision_paths(args)
-        target = _repo_rel_token(target_paths[0]) if target_paths else ""
-        line_count = 0
-        for row in contract.get("verified_content_reads") or []:
-            if isinstance(row, dict) and _repo_rel_token(row.get("path") or "") == target:
-                try:
-                    line_count = int(row.get("line_count") or 0)
-                except (TypeError, ValueError):
-                    line_count = 0
-                break
-        route_candidate = _code_product_source_window_candidate(target, line_count=line_count, history=history)
-        if route_candidate:
-            next_actions.append(route_candidate)
-        if target:
-            build_state_action = _code_product_build_state_write_action(target, history)
-            if build_state_action:
-                next_actions.append(build_state_action)
-        contract["required_next_progress"] = (
-            "The requested repo_read window already succeeded and a cache hit would not be progress. "
-            "Replan now: read a different unconsumed source window if candidate_next_actions provides "
-            "one; otherwise use verified_content_reads/required_working_set for the target and call "
-            "repo_propose_code_edit only with a complete unified_diff or old_text/new_text, write "
-            "code_product_build_state with real progress, or return a typed block."
-        )
-    merged: list[dict[str, Any]] = []
-    for item in [*next_actions, *existing]:
-        if not isinstance(item, dict):
-            continue
-        key = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
-        if any(json.dumps(prev, ensure_ascii=False, sort_keys=True, default=str) == key for prev in merged):
-            continue
-        merged.append(item)
-    contract["candidate_next_actions"] = merged[:16]
-    code_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
-    code_contract["duplicate_window_replan_required"] = True
-    code_contract["duplicate_window_violation"] = violation
-    contract["code_product_contract"] = code_contract
-    return contract
 
 
 def _code_product_low_signal_target(path: str, contract: dict[str, Any]) -> bool:
-    target = _repo_rel_token(path)
-    if target.endswith("__init__.py") or target.endswith("__main__.py"):
-        return True
-    rows = contract.get("verified_content_reads") if isinstance(contract.get("verified_content_reads"), list) else []
-    for row in rows:
-        if not isinstance(row, dict) or _repo_rel_token(row.get("path") or "") != target:
-            continue
-        try:
-            return int(row.get("line_count") or 0) < 20
-        except Exception:
-            return True
-    return False
+    return _code_product_low_signal_target_impl(path, contract)
 
 
 def _canonical_invalid_code_product_decision_signature(
