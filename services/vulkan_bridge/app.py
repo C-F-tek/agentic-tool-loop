@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict, Field
 
+from .config import BridgeConfig, int_env, bool_env, load_bridge_config_from_env
 from .openapi_builder import build_native_helper_openapi
 
 try:
@@ -52,44 +53,29 @@ except Exception:  # pragma: no cover - keeps 3571 importable during partial dep
     )
 
 
+BRIDGE_CONFIG: BridgeConfig = load_bridge_config_from_env()
+
+
 def _int_env(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except (TypeError, ValueError):
-        return default
+    return int_env(name, default)
 
 
 def _bool_env(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+    return bool_env(name, default)
 
 
-AGENT_URL = os.environ.get("AICARMINE_VULKAN_AGENT_URL", "http://127.0.0.1:3572/vulkan/agent")
-BRIDGE_TIMEOUT_SECONDS = _int_env("AICARMINE_VULKAN_BRIDGE_TIMEOUT_SECONDS", 1200)
-BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS = _int_env("AICARMINE_BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS", 90000)
-BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = _int_env("AICARMINE_BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS", 24000)
-BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = _int_env("AICARMINE_BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS", 0)
-BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = _int_env("AICARMINE_BRIDGE_OPENWEBUI_INLINE_FILE_CHARS", 60000)
-BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = _int_env("AICARMINE_BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS", 160000)
-OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = max(0, _int_env("AICARMINE_OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS", 0))
-OPENWEBUI_FINAL_UNLOAD_PLANNER = _bool_env("AICARMINE_OPENWEBUI_FINAL_UNLOAD_PLANNER", True)
-OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = max(
-    1,
-    _int_env("AICARMINE_OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS", 10),
-)
-PLANNER_URL = (
-    os.environ.get("AICARMINE_AGENT_PLANNER_URL")
-    or os.environ.get("AICARMINE_PLANNER_URL")
-    or "http://127.0.0.1:11434/api/chat"
-)
-PLANNER_MODEL = (
-    os.environ.get("AICARMINE_AGENT_PLANNER_MODEL")
-    or os.environ.get("AICARMINE_PLANNER_MODEL")
-    or os.environ.get("AICARMINE_OLLAMA_PLANNER_MODEL")
-    or "qwen3-coder:30b"
-)
+AGENT_URL = BRIDGE_CONFIG.agent_url
+BRIDGE_TIMEOUT_SECONDS = BRIDGE_CONFIG.bridge_timeout_seconds
+BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS = BRIDGE_CONFIG.max_openwebui_response_chars
+BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = BRIDGE_CONFIG.max_openwebui_summary_chars
+BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = BRIDGE_CONFIG.max_openwebui_answer_chars
+BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = BRIDGE_CONFIG.openwebui_inline_file_chars
+BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = BRIDGE_CONFIG.openwebui_inline_evidence_chars
+OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = BRIDGE_CONFIG.final_tool_settle_seconds
+OPENWEBUI_FINAL_UNLOAD_PLANNER = BRIDGE_CONFIG.final_unload_planner
+OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = BRIDGE_CONFIG.final_unload_timeout_seconds
+PLANNER_URL = BRIDGE_CONFIG.planner_url
+PLANNER_MODEL = BRIDGE_CONFIG.planner_model
 DEFAULT_INTERNAL_TOOLS = list(PLANNER_INTERNAL_TOOLS)
 PUBLIC_TOOL_ALIASES = list(OPENWEBUI_PUBLIC_TOOLS)
 OPENWEBUI_VISIBLE_TOOL_ALIASES = ("vulkan_helper",)
