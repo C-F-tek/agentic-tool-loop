@@ -101,6 +101,7 @@ Read before edits:
 | `application/public_tool_context.py` | OpenWebUI-visible terminal tool-context shaping. It rehydrates successful tool payloads inline, strips local paths and keeps code-product diffs visible without exposing internal scratchpad build state. |
 | `application/repo_history_evidence.py` | Extracts repo-read memory, repo-list evidence, failed list paths and core area candidates from planner history using injected artifact rehydration and repo path safety callbacks. |
 | `application/repo_path_policy.py` | Repository path policy and read-candidate ranking helper. It owns repo-local existence checks, doc/code/readable classification, scope containment and dynamic read candidate ordering using injected repo root/path safety. |
+| `application/scope_conflict_resolution.py` | Resolves user-declared scope conflicts for code-product validation by requiring verified target reads, complete proposal payloads, rationale terms and anchors from file memory. |
 | `application/text_windows.py` | Text and diff window primitives with offsets, completeness flags and hashes for prompt/SQLite window composition. |
 | `application/tool_manifest_builder.py` | Planner tool manifest compaction and Ollama native tool schema builder. It keeps provider schema slim and leaves long internal contracts in the planner payload. |
 | `application/tool_prompt_contract.py` | Planner prompt contract helper for available-tool payloads and native/legacy tool-shape examples. It does not dispatch tools or alter provider schemas. |
