@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import ast
 from pathlib import Path
 
 
@@ -44,6 +45,28 @@ def test_tool_dispatch_facade_has_no_if_table() -> None:
         r"repo_[a-z_]+\(args",
         r"terminal_[a-z_]+\(args",
         r"runtime_sqlite_[a-z_]+\(args",
+    )
+    for pattern in forbidden:
+        assert not re.search(pattern, text), pattern
+
+
+def test_repo_tools_is_facade_only() -> None:
+    path = ROOT / "services/aicarmine_broker/repo_tools.py"
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text, filename=str(path))
+    function_names = {
+        node.name for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert function_names == {"run_ps", "compact"}
+    forbidden = (
+        r"subprocess\.run",
+        r"shutil\.which",
+        r"def\s+repo_",
+        r"def\s+terminal_",
+        r"def\s+_run_argv",
+        r"def\s+_resolve",
     )
     for pattern in forbidden:
         assert not re.search(pattern, text), pattern
