@@ -41,8 +41,13 @@ def test_agent_entry_worker_logic_is_extracted() -> None:
     text = _read("services/aicarmine_broker/agent_entry.py")
 
     assert "from .application.job_worker import AgentJobWorker" in text
+    assert "from .application.job_lifecycle import AgentJobLifecycle" in text
     assert "def build_job_worker" in text
+    assert "def build_job_lifecycle" in text
     forbidden = (
+        "threading.Thread",
+        "time.time()",
+        "uuid.uuid4()",
         "traceback.format_exception",
         "error.txt",
         "final.json",

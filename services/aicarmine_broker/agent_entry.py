@@ -1,11 +1,9 @@
 """Public agent entrypoint and background job lifecycle."""
 from __future__ import annotations
 
-import threading
-import time
-import uuid
 from typing import Any
 
+from .application.job_lifecycle import AgentJobLifecycle
 from .application.job_worker import AgentJobWorker
 from .config import (
     AGENT_APPROVAL_MODE,
@@ -62,35 +60,36 @@ def agent_job_worker(job_id: str) -> None:
     return build_job_worker().run(job_id)
 
 
-def start_agent_job(payload: dict[str, Any], public_tool_name: str, original_args: dict[str, Any], task: str) -> dict[str, Any]:
-    init_agent_job_db()
-    requested_job_id = str(original_args.get('job_id') or payload.get('job_id') or '').strip()
-    job_id = make_session_id(requested_job_id) if requested_job_id else make_session_id('job-' + uuid.uuid4().hex[:8])
-    root = agent_job_root(job_id)
-    return_mode = str(original_args.get('return_mode') or payload.get('return_mode') or 'wait').strip().lower()
-    state = {'job_id': job_id, 'status': 'queued', 'goal': task, 'public_tool_name': public_tool_name, 'created_at': time.time(), 'updated_at': time.time(), 'workspace': str(root), 'request_payload': payload, 'original_args': original_args, 'max_steps': int(original_args.get('max_steps') or payload.get('max_steps') or AGENT_DEFAULT_MAX_STEPS), 'approval_mode': str(original_args.get('approval_mode') or payload.get('approval_mode') or AGENT_APPROVAL_MODE), 'return_mode': return_mode, 'agentic_planner_enabled': AGENTIC_PLANNER_ENABLED, 'planner_url': PLANNER_URL, 'planner_model': PLANNER_MODEL, 'selector_url': OLLAMA_TASK_URL, 'selector_model': OLLAMA_TASK_MODEL}
-    write_agent_job_state(state)
-    append_agent_event(job_id, 'job_queued', 'Agent job queued.', {'goal': task}, step=0)
-    with AGENT_JOB_LOCK:
-        existing = AGENT_JOB_BACKGROUND_THREADS.get(job_id)
-        if not existing or not existing.is_alive():
-            thread = threading.Thread(target=agent_job_worker, args=(job_id,), daemon=True, name=f'aicarmine-agent-job-{job_id}')
-            AGENT_JOB_BACKGROUND_THREADS[job_id] = thread
-            thread.start()
-    started = {'ok': True, 'service': 'vulkan_agent', 'mode': 'agent_job_started', 'verdict': 'AGENT_JOB_STARTED', 'tool_name': public_tool_name, 'tool_result_for': public_tool_name, 'operation_id': public_tool_name, 'called_by_30b': public_tool_name, 'job_id': job_id, 'status': 'queued', 'workspace': str(root), 'job_url': job_url(job_id), 'message_for_30b': f'Agent job started internally: {job_id}. The tool call will wait for a terminal state before returning to OpenWebUI.', 'summary_for_30b': f'Agent job started internally: {job_id}. Waiting for terminal state.', 'content': f'Agent job started internally: {job_id}\nDashboard: {job_url(job_id)}'}
-    wait_seconds = int(original_args.get('wait_seconds') or payload.get('wait_seconds') or AGENT_RETURN_WAIT_SECONDS)
-    if return_mode in {'background', 'async', 'fire_and_forget'}:
-        return started
-    waited = wait_for_agent_terminal(job_id, wait_seconds)
-    waited['started_job'] = started
-    waited['job_id'] = job_id
-    waited['job_url'] = job_url(job_id)
-    waited['workspace'] = str(root)
-    waited['tool_name'] = public_tool_name
-    waited['tool_result_for'] = public_tool_name
-    waited['operation_id'] = public_tool_name
-    waited['called_by_30b'] = public_tool_name
-    return waited
+def build_job_lifecycle() -> AgentJobLifecycle:
+    return AgentJobLifecycle(
+        init_agent_job_db=init_agent_job_db,
+        make_session_id=make_session_id,
+        agent_job_root=agent_job_root,
+        write_state=write_agent_job_state,
+        append_event=append_agent_event,
+        job_url=job_url,
+        wait_for_terminal=wait_for_agent_terminal,
+        worker=agent_job_worker,
+        background_threads=AGENT_JOB_BACKGROUND_THREADS,
+        lock=AGENT_JOB_LOCK,
+        agent_default_max_steps=AGENT_DEFAULT_MAX_STEPS,
+        approval_mode=AGENT_APPROVAL_MODE,
+        return_wait_seconds=AGENT_RETURN_WAIT_SECONDS,
+        agentic_planner_enabled=AGENTIC_PLANNER_ENABLED,
+        planner_url=PLANNER_URL,
+        planner_model=PLANNER_MODEL,
+        selector_url=OLLAMA_TASK_URL,
+        selector_model=OLLAMA_TASK_MODEL,
+    )
+
+
+def start_agent_job(
+    payload: dict[str, Any],
+    public_tool_name: str,
+    original_args: dict[str, Any],
+    task: str,
+) -> dict[str, Any]:
+    return build_job_lifecycle().start(payload, public_tool_name, original_args, task)
 
 
 def agent(payload: dict[str, Any]) -> dict[str, Any]:
