@@ -111,20 +111,7 @@ from .application.goal_classifier import (
     semantic_goal_low as _semantic_goal_low,
     semantic_goal_text as _semantic_goal_text,
 )
-
-def _repo_rel_token(value: Any) -> str:
-    """Normalize repo-relative path tokens without corrupting dot-directories.
-
-    ``str.lstrip("./")`` removes *all* leading dots and slashes, so paths such
-    as ``.github/workflows/x.yml`` become ``github/workflows/x.yml``.  That
-    made the evidence contract advertise a non-existing path and the validator
-    reject a valid planner ``repo_read``.  This helper removes only a literal
-    ``./`` prefix repeatedly and preserves real dot-directory names.
-    """
-    raw = str(value or "").strip().strip("\"'").replace("\\", "/")
-    while raw.startswith("./"):
-        raw = raw[2:]
-    return raw or "."
+from .application.path_tokens import repo_rel_token as _repo_rel_token
 
 
 # ---------------------------------------------------------------------------

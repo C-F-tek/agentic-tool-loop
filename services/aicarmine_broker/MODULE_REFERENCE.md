@@ -78,6 +78,7 @@ Read before edits:
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
+| `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
 
