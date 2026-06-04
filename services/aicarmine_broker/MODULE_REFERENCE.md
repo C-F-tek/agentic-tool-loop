@@ -97,6 +97,7 @@ Read before edits:
 | `application/history_ledger.py` | Planner history ledger shaping, including Ollama turn extraction and preservation of code-product/window payloads. |
 | `application/planner_history_messages.py` | Planner history message shaping for Ollama/native turns. It removes transport noise, preserves bounded prompt windows and stores oversized history payloads through injected window storage. |
 | `application/history_prompt_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
+| `application/initial_orientation.py` | Builds the read-only initial orientation surface from controller preseed history rows. It summarizes root tree, docs read, listed areas and concrete files without deciding planner actions. |
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
 | `application/openwebui_terminal_answer.py` | Builds the terminal `answer_for_30b` text and `next_action_for_30b` instruction for OpenWebUI using injected code-product/evidence/partial-product text builders. |
 | `application/openwebui_tool_context.py` | Builds the structured terminal `tool_context_for_30b` payload from injected planner/job/output helpers, preserving the public OpenWebUI payload contract without owning validation policy. |
