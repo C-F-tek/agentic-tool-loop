@@ -79,6 +79,7 @@ Read before edits:
 | `application/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names and recognizes code-product build-state read/write actions. |
 | `application/code_product_state.py` | Deterministic code-product build-state parser/section helper, ready-payload extractor, inline proposal payload validator and exact old/new text parser. It does not read job history or execute tools. |
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
+| `application/evidence_prompt_contract.py` | Prompt-facing evidence contract compaction helper. It keeps the planner-visible keys bounded without storing windows or changing validation policy. |
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
 | `application/history_queries.py` | Small query helpers over planner history, including tool-presence checks and code-edit proposal success/failure extraction. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
