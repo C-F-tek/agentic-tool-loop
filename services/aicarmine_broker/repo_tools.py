@@ -38,6 +38,7 @@ from .tools.repo_list_files import repo_list_files
 from .tools.repo_read import repo_read
 from .tools.repo_search import repo_search
 from .tools.repo_tree import repo_tree
+from .tools.repo_validate import repo_validate
 
 
 # ---------------------------------------------------------------------------
@@ -1568,50 +1569,6 @@ def repo_write_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     artifact = root / "tool-results" / f"{now()}-repo_write_file.json"
     write_json(artifact, payload)
     payload["artifact"] = str(artifact)
-    return payload
-
-
-# ---------------------------------------------------------------------------
-# Tool: repo_validate
-# ---------------------------------------------------------------------------
-
-
-def repo_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    default_cmds = [
-        "git diff --check",
-        (
-            "python -m compileall -q ia_carmine; "
-            "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; "
-            "python -m compileall -q Tools"
-        ),
-    ]
-    commands = (
-        [str(c) for c in args["commands"][:10] if str(c).strip()]
-        if isinstance(args.get("commands"), list) and args["commands"]
-        else default_cmds
-    )
-    timeout = int(args.get("timeout_seconds") or 300)
-    continue_on_failure = parse_bool(args.get("continue_on_failure", False), False)
-
-    results = []
-    ok = True
-    for idx, cmd in enumerate(commands, start=1):
-        r = run_ps(cmd, timeout=timeout)
-        item = {
-            "index": idx,
-            "command": cmd,
-            "returncode": r["returncode"],
-            "stdout_tail": r["stdout_tail"],
-            "stderr_tail": r["stderr_tail"],
-            "ok": r["returncode"] == 0,
-        }
-        results.append(item)
-        ok = ok and item["ok"]
-        if not item["ok"] and not continue_on_failure:
-            break
-
-    payload = {"ok": ok, "tool": "repo_validate", "results": results}
-    write_json(root / "tool-results" / f"{now()}-repo_validate.json", payload)
     return payload
 
 
