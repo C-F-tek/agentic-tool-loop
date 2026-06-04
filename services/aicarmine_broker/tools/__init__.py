@@ -2,6 +2,7 @@
 
 from .command_safety import dangerous_command
 from .powershell_runner import run_ps
+from .repo_code_product import repo_propose_code_edit
 from .repo_command import repo_command
 from .repo_list_files import repo_list_files
 from .repo_patch import repo_apply_patch, repo_write_file
@@ -14,6 +15,7 @@ __all__ = [
     "dangerous_command",
     "repo_command",
     "repo_apply_patch",
+    "repo_propose_code_edit",
     "repo_list_files",
     "repo_read",
     "repo_search",

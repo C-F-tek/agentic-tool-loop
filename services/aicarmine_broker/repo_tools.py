@@ -34,6 +34,7 @@ from .job_store import now, write_json
 from .tool_registry import capability_map
 from .tools.command_safety import dangerous_command
 from .tools.powershell_runner import run_ps as _tool_run_ps
+from .tools.repo_code_product import repo_propose_code_edit
 from .tools.repo_command import repo_command
 from .tools.repo_list_files import repo_list_files
 from .tools.repo_patch import repo_apply_patch, repo_write_file
@@ -1336,74 +1337,3 @@ def repo_hyperfine_benchmark(
     payload["artifact"] = str(artifact)
     return payload
 
-
-# ---------------------------------------------------------------------------
-# Tool: repo_propose_code_edit
-# ---------------------------------------------------------------------------
-
-
-def repo_propose_code_edit(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    try:
-        from .code_edit_proposal_contract import build_code_edit_proposal
-    except Exception as exc:
-        return {
-            "ok": False,
-            "tool": "repo_propose_code_edit",
-            "error": "code_edit_proposal_helper_missing",
-            "error_type": type(exc).__name__,
-            "message": str(exc),
-        }
-
-    target_file = str(args.get("target_file") or args.get("path") or "").strip()
-    edit_kind = str(args.get("edit_kind") or "").strip()
-    rationale = str(args.get("rationale") or args.get("reason") or "").strip()
-    validation_commands = (
-        [str(cmd) for cmd in args.get("validation_commands") if str(cmd).strip()]
-        if isinstance(args.get("validation_commands"), list)
-        else None
-    )
-
-    tree_sitter_language = str(args.get("tree_sitter_language") or "").strip()
-    if not tree_sitter_language and target_file.replace("\\", "/").endswith(".py"):
-        tree_sitter_language = "python"
-
-    try:
-        proposal = build_code_edit_proposal(
-            repo_root=LAB_REPO,
-            target_file=target_file,
-            edit_kind=edit_kind,
-            rationale=rationale,
-            unified_diff=args.get("unified_diff"),
-            structured_operations=args.get("structured_operations") or args.get("operations"),
-            old_text=args.get("old_text") if isinstance(args.get("old_text"), str) else None,
-            new_text=args.get("new_text") if isinstance(args.get("new_text"), str) else None,
-            validation_commands=validation_commands,
-            require_unidiff=parse_bool(args.get("require_unidiff"), default=True),
-            ast_anchor=str(args.get("ast_anchor") or "").strip() or None,
-            ast_grep_rule=str(args.get("ast_grep_rule") or "").strip() or None,
-            tree_sitter_language=tree_sitter_language or None,
-        )
-    except Exception as exc:
-        proposal = {
-            "kind": "code_edit_proposal",
-            "target_file": target_file,
-            "edit_kind": edit_kind,
-            "rationale": rationale,
-            "source_writes_performed": False,
-            "patch_application_performed": False,
-            "manual_review_required": True,
-            "validation_commands": validation_commands or [],
-            "errors": [f"code_edit_proposal_build_failed:{type(exc).__name__}"],
-            "warnings": [],
-            "message": str(exc),
-        }
-
-    payload = {
-        "ok": not bool(proposal.get("errors")),
-        "tool": "repo_propose_code_edit",
-        **proposal,
-    }
-    artifact = root / "tool-results" / f"{now()}-repo_propose_code_edit.json"
-    write_json(artifact, payload)
-    payload["artifact"] = str(artifact)
-    return payload
