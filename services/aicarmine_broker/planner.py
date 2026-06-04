@@ -99,6 +99,18 @@ from .application.decision_normalizer import (
     _single_embedded_json_decision,
     normalize_planner_decision,
 )
+from .application.goal_classifier import (
+    final_answer_has_inline_code_product as _final_answer_has_inline_code_product,
+    final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
+    goal_is_tool_envelope as _goal_is_tool_envelope,
+    goal_requests_apply,
+    goal_requests_code_product,
+    has_any as _has_any,
+    input_error_goal as _input_error_goal,
+    semantic_goal_classification as _classify_goal_deliverable,
+    semantic_goal_low as _semantic_goal_low,
+    semantic_goal_text as _semantic_goal_text,
+)
 
 def _repo_rel_token(value: Any) -> str:
     """Normalize repo-relative path tokens without corrupting dot-directories.
@@ -4245,283 +4257,13 @@ def recoverable_planner_block(decision: dict[str, Any]) -> bool:
     return any(m in combined for m in markers)
 
 
-def _goal_report_only_code_product_marker(goal: str) -> bool:
-    low = str(goal or "").lower()
-    report_only = re.search(
-        r"\b("
-        r"report[-\s]?only|"
-        r"do\s+not\s+(?:actually\s+)?apply|"
-        r"without\s+(?:actually\s+)?applying(?:\s+changes?)?|"
-        r"non\s+applicare|"
-        r"senza\s+applicare"
-        r")\b",
-        low,
-    )
-    code_surface = re.search(
-        r"\b("
-        r"diff(?:\s+patch(?:es)?)?|"
-        r"patch(?:es)?|"
-        r"code\s+edit\s+proposal(?:s)?|"
-        r"code\s+product|"
-        r"refactor(?:ing)?"
-        r")\b",
-        low,
-    )
-    return bool(report_only and code_surface)
-
-
-def _goal_diff_output_not_apply_marker(goal: str) -> bool:
-    low = str(goal or "").lower()
-    diff_output = re.search(
-        r"\b("
-        r"generate\s+(?:complete\s+)?diff\s+patch(?:es)?|"
-        r"provide\s+(?:the\s+)?(?:full\s+)?diff\s+output|"
-        r"full\s+diff\s+output|"
-        r"comprehensive\s+diff\s+output(?:s)?|"
-        r"diff\s+output(?:s)?"
-        r")\b",
-        low,
-    )
-    apply_descriptor = re.search(
-        r"\b("
-        r"ready\s+to\s+apply|"
-        r"ready[-\s]?to[-\s]?apply|"
-        r"can\s+be\s+applied|"
-        r"patch(?:es)?\s+that\s+can\s+be\s+applied"
-        r")\b",
-        low,
-    )
-    explicit_apply_command = re.search(
-        r"\b("
-        r"apply\s+(?:the\s+)?patch|"
-        r"apply\s+(?:these\s+)?changes|"
-        r"actually\s+apply|"
-        r"applica(?:re)?\s+(?:la\s+)?patch"
-        r")\b",
-        low,
-    )
-    return bool(diff_output and apply_descriptor and not explicit_apply_command)
-
-
-def goal_requests_code_product(goal: str) -> bool:
-    low = str(goal or "").lower()
-    patterns = (
-        r"\bunified\s+diff\b",
-        r"\bcode\s+diff\b",
-        r"\bdetailed\s+code\s+diff\b",
-        r"\bcomplete\s+diff\s+patch(?:es)?\b",
-        r"\bdiff\s+patch(?:es)?\b",
-        r"\bcomplete\s+diff\s+information\b",
-        r"\bcomprehensive\s+diff\s+information\b",
-        r"\bcomplete\s+diff\s+output(?:s)?\b",
-        r"\bcomprehensive\s+diff\s+output(?:s)?\b",
-        r"\bdiff\s+completo\b",
-        r"\bdiff\s+concret[aoei]\b",
-        r"\bdifferenziale(?:\s+di\s+codice)?\b",
-        r"\bformato\s+diff\b",
-        r"\bin\s+formato\s+diff\b",
-        r"\bproposta\s+(?:di\s+)?patch\b",
-        r"\bproposte\s+(?:di\s+)?patch\b",
-        r"\bproponi(?:mi)?\s+(?:patch|diff)\b",
-        r"\bpropone\s+(?:patch|diff)\b",
-        r"\bproporre\s+(?:patch|diff)\b",
-        r"\bgenera(?:re)?\s+patch\b",
-        r"\bpatch\s+(?:diff|concret[aoei]|complet[aoei])\b",
-        r"\bpatch\s+candidate\b",
-        r"\bcandidate\s+patch\b",
-        r"\bcode\s+product\b",
-        r"\bcode\s+edit\s+proposal(?:s)?\b",
-        r"\breport[-\s]?only\s+code\s+edit\s+proposal(?:s)?\b",
-        r"\breport[-\s]?only\s+(?:diff|patch|code\s+product)\b",
-        r"\bproposta\s+(?:di\s+)?refactor(?:ing)?\b",
-        r"\bproponi(?:mi)?\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
-        r"\bproporre\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
-        r"\brefactor\s+concreto\b",
-        r"\brefactoring\s+concreto\b",
-        r"\bgenera(?:re)?\s+(?:un\s+)?diff\b",
-        r"\bgenerate\s+(?:a\s+)?(?:detailed\s+)?(?:code\s+)?diff\b",
-        r"\bproduce\s+(?:a\s+)?(?:code\s+)?diff\b",
-    )
-    return _goal_report_only_code_product_marker(goal) or any(re.search(pattern, low) for pattern in patterns)
-
-
-def goal_requests_apply(goal: str) -> bool:
-    low = str(goal or "").lower()
-    if _goal_report_only_code_product_marker(goal) or _goal_diff_output_not_apply_marker(goal):
-        return False
-    for negated in (
-        r"\bdo\s+not\s+apply\b",
-        r"\bdo\s+not\s+actually\s+apply\b",
-        r"\bdo\s+not\s+modify\b",
-        r"\bdo\s+not\s+change\b",
-        r"\bdo\s+not\s+edit\b",
-        r"\bdo\s+not\s+write\b",
-        r"\bdo\s+not\s+fix\b",
-        r"\bdon't\s+apply\b",
-        r"\bdon't\s+modify\b",
-        r"\bdon't\s+change\b",
-        r"\bdon't\s+edit\b",
-        r"\bdon't\s+write\b",
-        r"\bdon't\s+fix\b",
-        r"\bwithout\s+applying\b",
-        r"\bwithout\s+applying\s+changes?\b",
-        r"\bwithout\s+actually\s+applying(?:\s+changes?)?\b",
-        r"\bwithout\s+modifying\b",
-        r"\bwithout\s+changing\b",
-        r"\bwithout\s+editing\b",
-        r"\bwithout\s+writing\b",
-        r"\bno\s+apply\b",
-        r"\bno\s+changes?\b",
-        r"\bread[-\s]?only\b",
-        r"\bnon\s+applicare\b",
-        r"\bnon\s+modificare(?:\s+nulla)?\b",
-        r"\bnon\s+cambiare(?:\s+nulla)?\b",
-        r"\bnon\s+editare(?:\s+nulla)?\b",
-        r"\bnon\s+scrivere(?:\s+nulla)?\b",
-        r"\bnon\s+correggere(?:\s+nulla)?\b",
-        r"\bsenza\s+applicare\b",
-        r"\bsenza\s+modificare\b",
-        r"\bsenza\s+cambiare\b",
-        r"\bsenza\s+editare\b",
-        r"\bsenza\s+scrivere\b",
-        r"\bnon\s+applica(?:re)?\b",
-        r"\breport[-\s]?only\b",
-    ):
-        low = re.sub(negated, " ", low)
-    low = re.sub(r"\bcode\s+edit\s+proposal(?:s)?\b", " ", low)
-    if goal_requests_code_product(goal) and (
-        _goal_diff_output_not_apply_marker(goal) or re.search(
-        r"\b(report[-\s]?only|do\s+not\s+(?:actually\s+)?apply|without\s+(?:actually\s+)?applying(?:\s+changes?)?|non\s+applicare|senza\s+applicare)\b",
-        str(goal or "").lower(),
-        )
-    ):
-        return False
-    patterns = (
-        r"\bapplica(?:re)?\b", r"\bapplica\s+(?:la\s+)?patch\b",
-        r"\bapply\b", r"\bapply\s+(?:the\s+)?patch\b",
-        r"\bmodifica(?:re)?\b", r"\bscrivi\b", r"\bwrite\b",
-        r"\bedit\b", r"\bchange\b", r"\bfix(?:are)?\b",
-        r"\brisolvi(?:ere|re)?\b", r"\bcorreggi(?:ere|re)?\b",
-        r"\brepair\b", r"\bhotfix\b",
-    )
-    return any(re.search(pattern, low) for pattern in patterns)
-
-
 def semantic_goal_classification(goal: str) -> dict[str, Any]:
-    """Classify the requested deliverable without changing planner ownership.
-
-    This is a controller contract classifier, not a hidden tool plan. It only
-    decides which finalization gate applies before 11434 chooses the next step.
-    """
-    text = _semantic_goal_text(goal)
-    low = text.lower()
-    explicit_apply = goal_requests_apply(goal)
-    explicit_code_product = goal_requests_code_product(goal)
-
-    refactor_terms = (
-        "refactor", "refactoring", "ristruttura", "ristrutturazione",
-        "migliora il codice", "migliorare il codice",
-    )
-    proposal_verbs = (
-        "proponi", "proporre", "proposta", "proposte", "suggerisci",
-        "suggerire", "produce", "produci", "genera", "generate",
-    )
-    concrete_terms = (
-        "concreto", "concreta", "concreti", "concrete", "operativo",
-        "operativa", "codice", "code", "diff", "patch",
-    )
-    action_plan_markers = (
-        "recommendations", "recommendation", "next steps", "potential areas",
-        "areas for refactoring", "aree di miglioramento", "aree per",
-        "miglioramenti", "prossimi passi", "possibili refactor",
-        "potential refactor", "potenziali refactor",
-    )
-
-    concrete_refactor_request = (
-        any(term in low for term in refactor_terms)
-        and any(verb in low for verb in proposal_verbs)
-        and any(term in low for term in concrete_terms)
-    )
-    wants_plan = any(marker in low for marker in action_plan_markers)
-    repo_analysis = _repo_analysis_goal(goal)
-
-    if explicit_apply:
-        classification = "apply_write"
-        requested = "apply/edit/fix/write"
-        must_code_product = False
-        confidence = 0.98
-        reason = "explicit apply/write/fix intent"
-    elif explicit_code_product or concrete_refactor_request:
-        classification = "code_product_report"
-        requested = "report-only code product"
-        must_code_product = True
-        confidence = 0.96 if explicit_code_product else 0.86
-        reason = (
-            "explicit diff/patch/code-product wording"
-            if explicit_code_product else
-            "semantic concrete refactor proposal request"
-        )
-    elif wants_plan:
-        classification = "action_plan_only"
-        requested = "analysis with recommendations/action plan"
-        must_code_product = False
-        confidence = 0.82
-        reason = "recommendations/next-steps wording without concrete diff request"
-    elif repo_analysis:
-        classification = "analysis_only"
-        requested = "repository analysis"
-        must_code_product = False
-        confidence = 0.80
-        reason = "repository analysis wording"
-    else:
-        classification = "analysis_only"
-        requested = "general answer with evidence"
-        must_code_product = False
-        confidence = 0.55
-        reason = "no code-product or apply deliverable detected"
-
-    return {
-        "schema": "planner_goal_classification.v1",
-        "class": classification,
-        "confidence": confidence,
-        "reason": reason,
-        "requested_deliverable": requested,
-        "must_produce_code_product": bool(must_code_product),
-        "regex_code_product_override": bool(explicit_code_product),
-        "regex_apply_override": bool(explicit_apply),
-    }
+    return _classify_goal_deliverable(goal, repo_analysis=_repo_analysis_goal(goal))
 
 
 def goal_requires_code_product_report(goal: str) -> bool:
     classification = semantic_goal_classification(goal)
     return bool(classification.get("must_produce_code_product"))
-
-
-def _final_answer_has_inline_code_product(text: str) -> bool:
-    value = str(text or "")
-    return (
-        "```diff" in value
-        or "diff --git" in value
-        or "\n--- a/" in value
-        or "\n+++ b/" in value
-        or ("\n@@ " in value and "\n---" in value and "\n+++" in value)
-    )
-
-
-def _final_answer_is_action_plan_without_code_product(text: str) -> bool:
-    value = str(text or "").strip()
-    if not value or _final_answer_has_inline_code_product(value):
-        return False
-    low = value.lower()
-    markers = (
-        "recommendations", "recommendation", "next steps", "potential areas",
-        "potential areas for refactoring", "refactoring recommendations",
-        "areas for refactoring", "recommendations:", "next steps:",
-        "raccomandazioni", "consigli", "prossimi passi", "miglioramenti",
-        "aree di miglioramento", "possibili refactor", "potenziali refactor",
-        "review the", "begin by", "start with", "consider consolidating",
-    )
-    return any(marker in low for marker in markers)
 
 
 def goal_has_write_intent(goal: str) -> bool:
@@ -9623,66 +9365,6 @@ def controller_guard_result_for_validation(validation: dict[str, Any], decision:
                 "repo_propose_code_edit with a complete inline diff/ops payload."
             )
     return guard
-
-
-# ---------------------------------------------------------------------------
-# Goal text helpers
-# ---------------------------------------------------------------------------
-
-
-def _goal_low(goal: str) -> str:
-    return str(goal or "").lower()
-
-
-def _semantic_goal_text(goal: str) -> str:
-    """Return the real user-facing goal, never an invented fallback task."""
-    raw = str(goal or "").strip()
-    if not raw:
-        return raw
-    try:
-        decoded = json.loads(raw)
-    except Exception:
-        return raw
-    if not isinstance(decoded, dict):
-        return raw
-
-    for key in ("request", "task", "query", "prompt", "instruction", "command"):
-        value = decoded.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-
-    if any(key in decoded for key in ("function", "tool_name", "operation_id", "tool")):
-        return (
-            "__AICARMINE_INPUT_ERROR_MISSING_USER_REQUEST__ "
-            "Planner received a tool envelope without request/task/query/prompt/instruction. "
-            f"raw_goal={json.dumps(decoded, ensure_ascii=False, sort_keys=True)[:3000]}"
-        )
-    return raw
-
-
-def _semantic_goal_low(goal: str) -> str:
-    return _semantic_goal_text(goal).lower()
-
-
-def _goal_is_tool_envelope(goal: str) -> bool:
-    raw = str(goal or "").strip()
-    try:
-        decoded = json.loads(raw)
-    except Exception:
-        return False
-    return isinstance(decoded, dict) and any(
-        key in decoded for key in ("function", "tool_name", "operation_id", "tool")
-    )
-
-
-
-
-def _input_error_goal(goal: str) -> bool:
-    return str(goal or "").strip().startswith("__AICARMINE_INPUT_ERROR_MISSING_USER_REQUEST__")
-
-
-def _has_any(text: str, needles: tuple[str, ...]) -> bool:
-    return any(n in text for n in needles)
 
 
 # ---------------------------------------------------------------------------

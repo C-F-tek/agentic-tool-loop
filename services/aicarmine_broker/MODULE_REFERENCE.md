@@ -64,12 +64,22 @@ Read before edits:
 | `planner.py` | Main controlled agentic loop. It builds planner prompts, records turns, calls Ollama, validates decisions, separates code-product from apply intent, executes internal tools, handles repair routing, writes events/state and finalizes jobs. Highest-risk file in this package. |
 | `planner_intrinsic_context.py` | Internal pre-turn context builder for the planner. It reads controller memory and optional `rag.sqlite`/FTS5 chunks in read-only mode, bounds/deduplicates them, adds repo-map/failure-pattern/tool-purpose context and exposes `budget_report.num_ctx_effective`. It is not registered as a tool. |
 | `public_wrapper.py` | Deterministic public response helpers and selector failure formatting. Keep pure and deterministic. |
-| `repo_tools.py` | Internal deterministic tool implementations for repo operations, search/read/tree/list, report-only code edit proposals, patch/write/validate and terminal/command support. Security-sensitive: enforce repo roots, approval mode and command guardrails. |
+| `repo_tools.py` | Compatibility facade for deterministic repo/tool helpers. It re-exports tool implementations from `tools/` and keeps historical imports such as `compact`, `safe_rel_path` and `terminal_environment_contract` stable. Do not add new tool behavior here; update the owning `tools/*` module. |
 | `code_edit_proposal_contract.py` | Local stable contract builder for `repo_propose_code_edit`. It creates complete report-only `code_edit_proposal` payloads for `unified_diff`, `structured_edit` and `no_op`, validates diffs/operations/rationale, and attaches optional AST evidence. |
 | `tool_contract.py` | Shared tool contract: parse tool calls, normalize public/internal names, sanitize args, detect bad paths and extract user text. Keep pure so planner, selector and dispatcher agree. |
 | `tool_dispatch.py` | Dispatch table that maps normalized internal tool names to concrete implementations, including `repo_propose_code_edit`. Keep explicit; no hidden planner choices here. |
 | `tool_registry.py` | Canonical registry/schema for tools and capabilities. Prompt/tool metadata changes originate here, including the internal code-product schema. |
 | `tool_selection.py` | Lightweight classifier for public request routing and initial internal tool choice. It may use generic request shape, but must not assume fixed project architecture. |
+
+## application Subpackage
+
+| Module | Technical description |
+| --- | --- |
+| `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
+| `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
+| `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
+| `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
+| `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
 
 ## planner_core Subpackage
 
@@ -95,8 +105,8 @@ Read before edits:
    contract failures remain controller guards; they are not sent to GPU0/11435
    as repair candidates.
 6. Valid tool decisions call `tool_dispatch.dispatch_tool`.
-7. `tool_dispatch.py` calls `repo_tools.py`, `memory_tools.py` or helper
-   implementations.
+7. `tool_dispatch.py` calls `repo_tools.py` compatibility exports, concrete
+   `tools/*` modules, `memory_tools.py` or helper implementations.
 8. Tool results, events, turn memory and final state are written through
    `job_store.py`.
 9. 3571 reads terminal job state and transports successful real tool results to
