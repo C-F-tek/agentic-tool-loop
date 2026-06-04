@@ -122,6 +122,12 @@ from .application.goal_classifier import (
     semantic_goal_text as _semantic_goal_text,
 )
 from .application.path_tokens import repo_rel_token as _repo_rel_token
+from .application.window_signatures import (
+    decision_paths as _decision_paths,
+    planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
+    repo_read_window_range_for_target as _repo_read_window_range_for_target,
+    repo_read_window_signature as _repo_read_window_signature,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -4621,84 +4627,6 @@ _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = {
     "invalid_code_product_candidate",
 }
 
-_REPO_READ_WINDOW_SIGNATURE_KEYS = (
-    "line",
-    "line_start",
-    "start",
-    "start_line",
-    "end",
-    "end_line",
-    "offset",
-    "limit",
-    "line_count",
-    "before",
-    "after",
-    "max_chars",
-    "window",
-    "chunk",
-    "range",
-)
-
-
-def _window_signature_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            str(key): _window_signature_value(sub)
-            for key, sub in sorted(value.items(), key=lambda pair: str(pair[0]))
-            if sub not in (None, "", [], {})
-        }
-    if isinstance(value, list):
-        return [_window_signature_value(sub) for sub in value]
-    try:
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            return int(value)
-    except Exception:
-        pass
-    return value
-
-
-def _repo_read_window_signature(args: dict[str, Any]) -> str:
-    args = args if isinstance(args, dict) else {}
-    if not any(key in args and args.get(key) not in (None, "", [], {}) for key in _REPO_READ_WINDOW_SIGNATURE_KEYS):
-        return ""
-    paths = [_repo_rel_token(path) for path in _decision_paths(args)]
-    payload = {
-        "paths": paths,
-        "window": {
-            key: _window_signature_value(args.get(key))
-            for key in _REPO_READ_WINDOW_SIGNATURE_KEYS
-            if key in args and args.get(key) not in (None, "", [], {})
-        },
-    }
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-
-
-def _planner_scratchpad_window_signature(args: dict[str, Any]) -> str:
-    args = args if isinstance(args, dict) else {}
-    kind = str(args.get("kind") or "")
-    document_id = str(args.get("document_id") or args.get("id") or "").strip()
-    section = str(args.get("section") or args.get("tag") or "").strip()
-    has_window_coordinate = any(
-        key in args and args.get(key) not in (None, "", [], {})
-        for key in ("offset", "max_chars", "limit", "window", "chunk", "range")
-    )
-    if kind not in {"prompt_context", "prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND} and not (
-        document_id or section or has_window_coordinate
-    ):
-        return ""
-    normalized_kind = CODE_PRODUCT_BUILD_STATE_KIND if kind == CODE_PRODUCT_BUILD_STATE_KIND else "prompt_context_window"
-    payload = {
-        "kind": normalized_kind,
-        "document_id": document_id,
-        "section": section,
-        "target_file": _repo_rel_token(args.get("target_file") or "") if args.get("target_file") else "",
-        "offset": _window_signature_value(args.get("offset") or 0),
-        "max_chars": _window_signature_value(args.get("max_chars") or 3000),
-        "limit": _window_signature_value(args.get("limit") or 3),
-    }
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-
-
 def _successful_window_signatures(history: list[dict[str, Any]], tool: str) -> set[str]:
     wanted_tool = _normalize_tool_name(tool)
     signatures: set[str] = set()
@@ -4719,30 +4647,6 @@ def _successful_window_signatures(history: list[dict[str, Any]], tool: str) -> s
         if signature:
             signatures.add(signature)
     return signatures
-
-
-def _repo_read_window_range_for_target(args: dict[str, Any], target_file: str) -> tuple[int, int] | None:
-    args = args if isinstance(args, dict) else {}
-    target = _repo_rel_token(target_file)
-    if target not in {_repo_rel_token(path) for path in _decision_paths(args)}:
-        return None
-    if not any(key in args and args.get(key) not in (None, "") for key in ("line", "line_start", "start", "start_line")):
-        return None
-    try:
-        center = int(args.get("line") or args.get("line_start") or args.get("start_line") or args.get("start") or 1)
-    except (TypeError, ValueError):
-        center = 1
-    try:
-        before = int(args.get("before") or 0)
-    except (TypeError, ValueError):
-        before = 0
-    try:
-        after = int(args.get("after") or args.get("line_count") or 0)
-    except (TypeError, ValueError):
-        after = 0
-    start = max(1, center - max(0, before))
-    end = max(start, center + max(0, after))
-    return start, end
 
 
 def _successful_repo_read_window_ranges(history: list[dict[str, Any]], target_file: str) -> list[tuple[int, int]]:
@@ -5270,38 +5174,6 @@ def goal_requests_python_file_review(goal: str) -> bool:
     wants_read = _has_any(low, ("leggi", "read", "analizza", "analizzare", "descrivi", "dimmi", "serve", "servono"))
     wants_explain = _has_any(low, ("comportamento", "funzionamento", "cosa serv", "miglior", "improvement", "describe", "purpose"))
     return wants_python_files and wants_read and wants_explain
-
-
-def _decision_paths(args: dict[str, Any]) -> list[str]:
-    paths: list[str] = []
-    def add_item_path(item: Any) -> None:
-        if isinstance(item, dict):
-            for key in ("path", "file", "filename", "target_file", "target_path"):
-                value = item.get(key)
-                if value:
-                    paths.append(str(value))
-        elif isinstance(item, str) and item.strip():
-            paths.append(item)
-
-    if isinstance(args.get("paths"), list):
-        paths.extend(str(x) for x in args["paths"] if str(x).strip())
-    if args.get("path"):
-        paths.append(str(args.get("path")))
-    if args.get("target_file"):
-        paths.append(str(args.get("target_file")))
-    if args.get("target_path"):
-        paths.append(str(args.get("target_path")))
-    if args.get("item"):
-        add_item_path(args.get("item"))
-    if isinstance(args.get("items"), list):
-        for item in args["items"]:
-            add_item_path(item)
-    out: list[str] = []
-    for path in paths:
-        n = _repo_rel_token(path)
-        if n and n not in out:
-            out.append(n)
-    return out
 
 
 def _paths_from_result(result: dict[str, Any]) -> list[str]:

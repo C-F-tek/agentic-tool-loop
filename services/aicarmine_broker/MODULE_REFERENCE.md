@@ -82,6 +82,7 @@ Read before edits:
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
+| `application/window_signatures.py` | Pure signature/range helpers for repo_read and planner_scratchpad_read windows. Used to prevent repeated identical reads without embedding history policy. |
 
 ## planner_core Subpackage
 
