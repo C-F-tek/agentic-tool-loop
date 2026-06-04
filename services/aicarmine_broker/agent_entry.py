@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .application.job_action_router import AgentJobActionRouter
 from .application.job_lifecycle import AgentJobLifecycle
 from .application.job_worker import AgentJobWorker
 from .application.selector_runner import SelectorRunner
@@ -107,61 +108,23 @@ def build_selector_runner() -> SelectorRunner:
     )
 
 
-def agent(payload: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        payload = {'payload': payload}
-    public_tool_name = public_tool(payload)
-    original_args = public_args(payload)
-    session_id = make_session_id(str(payload.get('session_id') or original_args.get('session_id') or ''))
-    root = session_root(session_id)
-    task = text_from_payload(payload, original_args, public_tool_name)
-    allow_command = parse_bool(payload.get('allow_command', original_args.get('allow_command', True)), True)
-    user_consent = str(payload.get('user_consent') or original_args.get('user_consent') or '')
-    try:
-        timeout_seconds = int(payload.get('timeout_seconds') or original_args.get('timeout_seconds') or 120)
-    except Exception:
-        timeout_seconds = 120
-    timeout_seconds = max(15, min(timeout_seconds, 240))
-    raw_job_action = str(original_args.get('job_action') or payload.get('job_action') or original_args.get('action') or payload.get('action') or '').strip().lower()
-    job_id = str(original_args.get('job_id') or payload.get('job_id') or '').strip()
-    start_actions = {'', 'start', 'job_start', 'async', 'background', 'run', 'execute'}
-    status_actions = {'status', 'job_status'}
-    result_actions = {'result', 'job_result', 'final'}
-    cancel_actions = {'cancel', 'job_cancel'}
-    if public_tool_name == 'vulkan_helper' and (not job_id):
-        job_action = 'start'
-    elif raw_job_action in start_actions:
-        job_action = 'start'
-    elif raw_job_action in status_actions:
-        job_action = 'status'
-    elif raw_job_action in result_actions:
-        job_action = 'result'
-    elif raw_job_action in cancel_actions:
-        job_action = 'cancel'
-    elif public_tool_name == 'vulkan_helper':
-        job_action = 'start'
-    else:
-        job_action = raw_job_action
-    if job_action == 'start':
-        return start_agent_job(payload, public_tool_name, original_args, task)
-    if job_action == 'status':
-        return compact_agent_status(job_id, include_events=True)
-    if job_action == 'result':
-        return compact_agent_terminal_response(job_id)
-    if job_action == 'cancel':
-        state = load_agent_job_state(job_id)
-        if not state:
-            return compact_agent_status(job_id, include_events=True)
-        state['status'] = 'cancel_requested'
-        write_agent_job_state(state)
-        append_agent_event(job_id, 'cancel_requested', 'Cancel requested by user.', {}, step=None)
-        return compact_agent_status(job_id, include_events=True)
-    return build_selector_runner().run(
-        public_tool_name=public_tool_name,
-        task=task,
-        original_args=original_args,
-        root=root,
-        allow_command=allow_command,
-        user_consent=user_consent,
-        timeout_seconds=timeout_seconds,
+def build_job_action_router() -> AgentJobActionRouter:
+    return AgentJobActionRouter(
+        public_tool=public_tool,
+        public_args=public_args,
+        make_session_id=make_session_id,
+        session_root=session_root,
+        text_from_payload=text_from_payload,
+        parse_bool=parse_bool,
+        start_agent_job=start_agent_job,
+        compact_agent_status=compact_agent_status,
+        compact_agent_terminal_response=compact_agent_terminal_response,
+        load_state=load_agent_job_state,
+        write_state=write_agent_job_state,
+        append_event=append_agent_event,
+        selector_runner=build_selector_runner(),
     )
+
+
+def agent(payload: dict[str, Any]) -> dict[str, Any]:
+    return build_job_action_router().handle(payload)
