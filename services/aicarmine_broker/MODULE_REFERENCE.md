@@ -94,6 +94,7 @@ Read before edits:
 | `application/tool_prompt_contract.py` | Planner prompt contract helper for available-tool payloads and native/legacy tool-shape examples. It does not dispatch tools or alter provider schemas. |
 | `application/turn_surface_policy.py` | Dynamic planner turn tool-surface policy. It filters candidate actions and provider tool names according to required progress without executing fallback steps. |
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
+| `application/validation_rejections.py` | Validation rejection signature and prompt compaction helpers, including invalid code-product repeat detection. |
 | `application/window_signatures.py` | Pure signature/range helpers for repo_read and planner_scratchpad_read windows. Used to prevent repeated identical reads without embedding history policy. |
 
 ## planner_core Subpackage
