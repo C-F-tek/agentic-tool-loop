@@ -112,6 +112,7 @@ Read before edits:
 | `application/job_worker.py` | Background job worker application service. It owns running/failure state transitions, planner handoff and disabled-planner legacy one-shot execution through injected persistence/planner/agent dependencies. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/planner_status.py` | Pure planner status helpers for done-token detection and bounded artifact summaries. It does not call Ollama, dispatch tools or finalize jobs. |
+| `application/planner_turn.py` | Owner for one measured 11434 planner turn: prompt payload assembly, native/history transport, planner request capture, stream response handling and decision normalization. It does not validate decisions, dispatch tools or finalize jobs. |
 | `application/prompt_budget.py` | Prompt compaction/headroom/window-size calculations and serialized prompt budget reports derived from runtime config. It does not build prompts or decide planner actions. |
 | `application/prompt_context_windows.py` | Prompt-context window compaction and bounded planner_scratchpad_read result helpers. It preserves text plus tracking hashes/offsets for recursive SQLite windows. |
 | `application/prompt_values.py` | Prompt clipping/value compaction and stable text hashing helpers. It converts large diff/structured-operation fields into bounded metadata for planner prompt use only. |
