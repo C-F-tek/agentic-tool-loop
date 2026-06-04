@@ -78,11 +78,13 @@ Read before edits:
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
 | `application/available_tools_prompt.py` | Prompt window helper for available-tool manifests. It summarizes tool names and stores the complete manifest through an injected prompt-window writer. |
 | `application/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names, recognizes code-product build-state read/write actions and preserves exact required continuation tool calls across prompt compaction. |
+| `application/clean_values.py` | Small shared value-cleaning helpers used by application payload shapers. |
 | `application/code_product_state.py` | Deterministic code-product build-state parser/section helper, ready-payload extractor, inline proposal payload validator and exact old/new text parser. It does not read job history or execute tools. |
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
 | `application/evidence_prompt_contract.py` | Prompt-facing evidence contract compaction and hard-budget summary helpers. It keeps the planner-visible keys bounded without storing windows or changing validation policy. |
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
 | `application/history_queries.py` | Small query helpers over planner history, including normalized tool-result extraction, tool-presence checks and code-edit proposal success/failure extraction. |
+| `application/history_ledger.py` | Planner history ledger shaping, including Ollama turn extraction and preservation of code-product/window payloads. |
 | `application/history_prompt_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
