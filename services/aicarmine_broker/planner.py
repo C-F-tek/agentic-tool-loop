@@ -221,6 +221,12 @@ from .application.public_tool_context import (
     strip_public_local_references as _strip_public_local_references_impl,
     successful_tool_turns as _successful_tool_turns_impl,
 )
+from .application.public_terminal_sanitizer import (
+    PUBLIC_TERMINAL_POINTER_KEYS as _PUBLIC_TERMINAL_POINTER_KEYS_IMPL,
+    public_terminal_content_key as _public_terminal_content_key_impl,
+    public_terminal_sanitize_text as _public_terminal_sanitize_text_impl,
+    public_terminal_sanitize_value as _public_terminal_sanitize_value_impl,
+)
 from .application.history_prompt_contract import (
     compact_history_for_prompt as _compact_history_for_prompt_impl,
 )
@@ -6532,81 +6538,19 @@ def _compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]
     )
 
 
-_PUBLIC_TERMINAL_POINTER_KEYS = {
-    "artifact_path",
-    "producer_artifact",
-    "final_path",
-    "events_path",
-    "db",
-    "db_path",
-    "sqlite_path",
-    "document_id",
-    "evidence_contract",
-    "raw_planner_text_preview",
-    "raw_planner_text",
-    "raw_text",
-}
+_PUBLIC_TERMINAL_POINTER_KEYS = _PUBLIC_TERMINAL_POINTER_KEYS_IMPL
 
 
 def _public_terminal_content_key(key: Any) -> bool:
-    return str(key or "").lower() in {
-        "content",
-        "content_view",
-        "unified_diff",
-        "structured_operations",
-        "old_text",
-        "new_text",
-        "stdout",
-        "stderr",
-        "stdout_tail",
-        "stderr_tail",
-        "text",
-    }
+    return _public_terminal_content_key_impl(key)
 
 
 def _public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
-    text = str(value or "")
-    if not text:
-        return ""
-    if content:
-        return text
-    text = re.sub(r"\s+(?:backup_)?artifact=[^\s,}\]]+", "", text)
-    text = re.sub(r'"(?:artifact|artifact_path|producer_artifact|document_id|db|db_path|sqlite_path)"\s*:\s*"[^"]*",?', "", text)
-    text = re.sub(r"[A-Za-z]:\\[^\s,}\]]+", "[local_path_omitted]", text)
-    text = re.sub(r"https?://(?:127\.0\.0\.1|localhost)[^\s,}\]]*", "[local_url_omitted]", text, flags=re.I)
-    text = re.sub(r"\bqwen-agent-workspace[^\s,}\]]*", "[job_workspace_path_omitted]", text)
-    text = re.sub(r"\bagent-jobs[^\s,}\]]*", "[job_path_omitted]", text)
-    text = re.sub(r"\btool-results\\[^\s,}\]]*", "[tool_result_path_omitted]", text)
-    text = re.sub(r"\S+\.sqlite\b", "[sqlite_path_omitted]", text, flags=re.I)
-    return text
+    return _public_terminal_sanitize_text_impl(value, content=content)
 
 
 def _public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
-    if depth > 12:
-        return {}
-    key_text = str(key or "")
-    if key_text.lower() in _PUBLIC_TERMINAL_POINTER_KEYS:
-        return None
-    if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for child_key, child_value in value.items():
-            cleaned = _public_terminal_sanitize_value(child_value, key=str(child_key), depth=depth + 1)
-            if cleaned not in (None, "", [], {}):
-                out[str(child_key)] = cleaned
-        return out
-    if isinstance(value, list):
-        out_list: list[Any] = []
-        for item in value:
-            cleaned = _public_terminal_sanitize_value(item, key=key_text, depth=depth + 1)
-            if cleaned not in (None, "", [], {}):
-                out_list.append(cleaned)
-        return out_list
-    if isinstance(value, str):
-        return _public_terminal_sanitize_text(
-            value,
-            content=_public_terminal_content_key(key_text),
-        )
-    return value
+    return _public_terminal_sanitize_value_impl(value, key=key, depth=depth)
 
 
 def _public_terminal_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
