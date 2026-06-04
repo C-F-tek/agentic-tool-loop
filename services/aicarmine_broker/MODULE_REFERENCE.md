@@ -76,6 +76,7 @@ Read before edits:
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
+| `application/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names and recognizes code-product build-state read/write actions. |
 | `application/code_product_state.py` | Deterministic code-product build-state parser/section helper, ready-payload extractor, inline proposal payload validator and exact old/new text parser. It does not read job history or execute tools. |
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |

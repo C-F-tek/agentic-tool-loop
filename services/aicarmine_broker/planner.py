@@ -98,6 +98,14 @@ from .application.decision_normalizer import (
     _single_embedded_json_decision,
     normalize_planner_decision,
 )
+from .application.candidate_actions import (
+    candidate_action_args as _candidate_action_args,
+    candidate_action_is_build_state_read as _candidate_action_is_build_state_read,
+    candidate_action_is_build_state_write as _candidate_action_is_build_state_write,
+    candidate_action_tool as _candidate_action_tool,
+    dedupe_candidate_actions as _dedupe_candidate_actions,
+    final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
+)
 from .application.code_product_state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
     CODE_PRODUCT_BUILD_STATE_SCHEMA,
@@ -653,63 +661,6 @@ def _contract_final_required_now(contract: dict[str, Any]) -> bool:
     )
     next_instruction = str(operational.get("next_instruction") or "").strip().lower()
     return "produce action=final" in next_instruction
-
-
-def _final_composition_tool_names_from_candidates(contract: dict[str, Any]) -> set[str]:
-    names: set[str] = set()
-    actions = contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else []
-    for action in actions:
-        if not isinstance(action, dict):
-            continue
-        name = _normalize_tool_name(str(action.get("tool") or ""))
-        args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
-        if name == "planner_scratchpad_write" and str(args.get("kind") or "").strip() == "answer_chunk":
-            names.add(name)
-    return names
-
-
-def _candidate_action_tool(action: Any) -> str:
-    if not isinstance(action, dict):
-        return ""
-    return _normalize_tool_name(str(action.get("tool") or ""))
-
-
-def _candidate_action_args(action: Any) -> dict[str, Any]:
-    if not isinstance(action, dict):
-        return {}
-    args = action.get("arguments")
-    return args if isinstance(args, dict) else {}
-
-
-def _candidate_action_is_build_state_write(action: Any) -> bool:
-    return (
-        _candidate_action_tool(action) == "planner_scratchpad_write"
-        and str(_candidate_action_args(action).get("kind") or "").strip() == CODE_PRODUCT_BUILD_STATE_KIND
-    )
-
-
-def _candidate_action_is_build_state_read(action: Any) -> bool:
-    args = _candidate_action_args(action)
-    return (
-        _candidate_action_tool(action) == "planner_scratchpad_read"
-        and str(args.get("kind") or args.get("mode") or "").strip() == CODE_PRODUCT_BUILD_STATE_KIND
-    )
-
-
-def _dedupe_candidate_actions(actions: list[Any], *, limit: int = 16) -> list[dict[str, Any]]:
-    deduped: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for action in actions:
-        if not isinstance(action, dict):
-            continue
-        key = json.dumps(action, ensure_ascii=False, sort_keys=True, default=str)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(action)
-        if len(deduped) >= limit:
-            break
-    return deduped
 
 
 def _apply_turn_surface_policy(contract: dict[str, Any]) -> dict[str, Any]:
