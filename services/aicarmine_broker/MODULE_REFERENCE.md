@@ -115,6 +115,7 @@ Read before edits:
 | `application/scope_conflict_resolution.py` | Resolves user-declared scope conflicts for code-product validation by requiring verified target reads, complete proposal payloads, rationale terms and anchors from file memory. |
 | `application/selector_runner.py` | Non-job selector/dispatch path for public broker calls. It owns selector fallback, composite-review forcing, dispatcher artifact writing and deterministic public-wrapper invocation through injected adapters. |
 | `application/text_windows.py` | Text and diff window primitives with offsets, completeness flags and hashes for prompt/SQLite window composition. |
+| `application/terminal_context_rows.py` | Pure terminal-context row builders for decision, validation-rejection and executed-tool sections plus stable aliases to `tool_context_for_30b`. |
 | `application/tool_manifest_builder.py` | Planner tool manifest compaction and Ollama native tool schema builder. It keeps provider schema slim and leaves long internal contracts in the planner payload. |
 | `application/tool_prompt_contract.py` | Planner prompt contract helper for available-tool payloads and native/legacy tool-shape examples. It does not dispatch tools or alter provider schemas. |
 | `application/tool_result_compaction.py` | Planner-facing tool-result compaction policy. It preserves code-product diffs and prompt-context window tracking while bounding ordinary tool payloads. |

@@ -231,6 +231,12 @@ from .application.public_terminal_result import (
     public_terminal_history_ledger as _public_terminal_history_ledger_impl,
     public_terminal_result_for_30b as _public_terminal_result_for_30b_impl,
 )
+from .application.terminal_context_rows import (
+    executed_tool_rows as _executed_tool_rows_impl,
+    planner_decision_rows as _planner_decision_rows_impl,
+    terminal_context_alias as _terminal_context_alias_impl,
+    validation_rejection_rows as _validation_rejection_rows_impl,
+)
 from .application.history_prompt_contract import (
     compact_history_for_prompt as _compact_history_for_prompt_impl,
 )
@@ -6572,78 +6578,20 @@ def _public_terminal_result_for_30b(result: dict[str, Any] | None) -> dict[str, 
 
 
 def _terminal_context_alias() -> dict[str, Any]:
-    return {
-        "schema": "agentic_terminal_context_alias.v1",
-        "alias_of": "tool_context_for_30b",
-        "same_payload": True,
-    }
+    return _terminal_context_alias_impl()
 
 
 
 def _planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for item in history:
-        if not isinstance(item, dict):
-            continue
-        decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
-        if not decision:
-            continue
-        rows.append({
-            k: v for k, v in {
-                "step": item.get("step"),
-                "action": decision.get("action"),
-                "tool": decision.get("tool"),
-                "arguments": decision.get("arguments"),
-                "reason": decision.get("reason"),
-            }.items() if v not in (None, "", [], {})
-        })
-    return rows
+    return _planner_decision_rows_impl(history)
 
 
 def _validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for item in history:
-        if not isinstance(item, dict):
-            continue
-        result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
-        if result.get("tool") != "controller_guard":
-            continue
-        if result.get("guard_type") != "planner_decision_validation":
-            continue
-        rows.append({
-            k: v for k, v in {
-                "step": item.get("step"),
-                "violations": result.get("violations"),
-                "rejected_decision": result.get("rejected_decision"),
-                "evidence_contract": result.get("evidence_contract"),
-                "summary": result.get("summary"),
-            }.items() if v not in (None, "", [], {})
-        })
-    return rows
+    return _validation_rejection_rows_impl(history)
 
 
 def _executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for item in history:
-        if not isinstance(item, dict):
-            continue
-        result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
-        tool = result.get("tool")
-        if not tool or tool == "controller_guard":
-            continue
-        rows.append({
-            k: v for k, v in {
-                "step": item.get("step"),
-                "tool": tool,
-                "ok": result.get("ok"),
-                "path": result.get("path"),
-                "count": result.get("count"),
-                "total_matches": result.get("total_matches"),
-                "items_total": result.get("items_total"),
-                "paths_total": result.get("paths_total"),
-            }.items() if v not in (None, "", [], {})
-        })
-    return rows
+    return _executed_tool_rows_impl(history)
 
 
 def _repo_read_content_views(
