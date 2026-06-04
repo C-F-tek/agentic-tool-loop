@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, parse_bool
+from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.command_safety import dangerous_command
 
@@ -19,14 +20,14 @@ def strip_terminal_ansi(value: str) -> str:
 
 
 def _terminal_user_home() -> Path:
-    return Path(os.environ.get("USERPROFILE") or str(Path.home())).resolve(strict=False)
+    return Path(env_str("USERPROFILE", "") or str(Path.home())).resolve(strict=False)
 
 
 def terminal_preferred_cwd() -> Path:
     candidates = [
-        os.environ.get("AICARMINE_LAB_REPO"),
-        os.environ.get("AICARMINE_OPEN_TERMINAL_WORKDIR"),
-        os.environ.get("OPEN_TERMINAL_CWD"),
+        env_str("AICARMINE_LAB_REPO", ""),
+        env_str("AICARMINE_OPEN_TERMINAL_WORKDIR", ""),
+        env_str("OPEN_TERMINAL_CWD", ""),
         str(_terminal_user_home() / "AI" / "services"),
         str(_terminal_user_home()),
     ]

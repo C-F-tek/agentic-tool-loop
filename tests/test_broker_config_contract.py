@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import sys
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,23 @@ def test_broker_config_defaults_match_legacy_constants() -> None:
     assert config.BROKER_CONFIG.planner_model == config.PLANNER_MODEL
     assert config.BROKER_CONFIG.agent_max_steps == config.AGENT_MAX_STEPS
     assert config.BROKER_CONFIG.num_ctx_effective == config.AGENTIC_PLANNER_NUM_CTX
+
+
+def test_legacy_config_imports_core_runtime_constants() -> None:
+    from aicarmine_broker.config import AGENT_MAX_STEPS, LAB_REPO, PLANNER_URL
+
+    assert isinstance(PLANNER_URL, str) and PLANNER_URL
+    assert isinstance(AGENT_MAX_STEPS, int) and AGENT_MAX_STEPS > 0
+    assert isinstance(LAB_REPO, Path)
+
+
+def test_config_model_is_frozen() -> None:
+    from aicarmine_broker.config.models import load_broker_config_from_env
+
+    cfg = load_broker_config_from_env({})
+
+    with pytest.raises(FrozenInstanceError):
+        cfg.planner_url = "http://changed"  # type: ignore[misc]
 
 
 def test_env_alias_precedence_planner_url() -> None:
@@ -96,9 +114,25 @@ def test_config_does_not_read_env_outside_env_loader() -> None:
     for path in config_root.glob("*.py"):
         if path.name == "env_loader.py":
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "environ":
                 offenders.append(path.name)
+
+    assert offenders == []
+
+
+def test_broker_package_has_no_direct_env_reads_outside_env_loader() -> None:
+    broker_root = ROOT / "services" / "aicarmine_broker"
+    offenders: list[str] = []
+    for path in broker_root.rglob("*.py"):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.endswith("services/aicarmine_broker/config/env_loader.py"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {"environ", "getenv"}:
+                offenders.append(rel)
+                break
 
     assert offenders == []

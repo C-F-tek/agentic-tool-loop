@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO
+from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.terminal import strip_terminal_ansi
@@ -24,7 +25,7 @@ def active_venv_script(name: str) -> Path:
 
 
 def winget_package_executable(package_prefix: str, executable_name: str) -> Path | None:
-    local = os.environ.get("LOCALAPPDATA")
+    local = env_str("LOCALAPPDATA", "")
     if not local:
         return None
     packages = Path(local) / "Microsoft" / "WinGet" / "Packages"
