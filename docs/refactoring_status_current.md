@@ -12,8 +12,8 @@ is an audit note only and does not change the 3571/3572 runtime contract.
 - Remote tracking branch: `origin/codex/refactor-agentic-tool-loop`
 - Base reference: `origin/main`
 - Base SHA: `5b9e4b916a90c12d9bfa469ceb7ab424a3a12cc5`
-- Head SHA: `3d850e62e1463541f285b541f5fd410a8e9abab8`
-- Commits ahead of `origin/main`: `81`
+- Head SHA: `d8a179c204cf6b72be2f725ffd9fd3ffc060a80a`
+- Commits ahead of `origin/main`: `85`
 
 ## Baseline Verification
 
@@ -22,8 +22,8 @@ Commands run from `C:\Users\carmi\AI` with
 
 - `python -m compileall -q services`: passed.
 - Initial baseline `python -m pytest -q`: `222 passed in 0.73s`.
-- Current verification after public terminal result/row helper splits:
-  `294 passed in 1.13s`.
+- Current verification after execution evidence, code-product public output and
+  agent-flow diagnostic splits: `303 passed in 1.12s`.
 - `git pull --ff-only`: already up to date.
 
 PowerShell launcher inventory command was also run:
@@ -69,7 +69,10 @@ knowledge. That is expected until the launcher module split phase.
   `application/final_state_result.py`,
   `application/public_terminal_sanitizer.py`,
   `application/public_terminal_result.py` and
-  `application/terminal_context_rows.py`. These slices keep compatibility
+  `application/terminal_context_rows.py`,
+  `application/execution_evidence_digest.py`,
+  `application/code_product_public_outputs.py` and
+  `application/agent_flow_diagnostics.py`. These slices keep compatibility
   wrappers in `planner.py` and do not change validator, native tool gate,
   finalization rules or public 3571 payload contracts.
 
@@ -79,8 +82,9 @@ These areas still fail the final Definition of Done from the executive plan:
 
 - `services/aicarmine_broker/planner.py` is still operational and not yet a
   facade to `application/planner_loop.py`, but pure status, terminal digest,
-  terminal sanitization, public terminal result and terminal context row helpers
-  have been extracted with tests. Current line count is 8883.
+  terminal sanitization, public terminal result, terminal context row,
+  execution-evidence, code-product public-output and diagnostic helpers have
+  been extracted with tests. Current line count is 8426.
 - `services/aicarmine_broker/agent_entry.py` still imports runtime dependencies
   to build compatibility adapters, but worker, lifecycle, selector dispatch and
   action routing behavior now live in `application/*`.
