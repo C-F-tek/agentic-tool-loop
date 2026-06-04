@@ -76,6 +76,7 @@ Read before edits:
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
+| `application/agent_flow_diagnostics.py` | Deterministic terminal diagnostics builder for planner/tool/guard/memory counters. It receives evidence-contract and retry callbacks so it does not own validation policy. |
 | `application/available_tools_prompt.py` | Prompt window helper for available-tool manifests. It summarizes tool names and stores the complete manifest through an injected prompt-window writer. |
 | `application/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names, recognizes code-product build-state read/write actions and preserves exact required continuation tool calls across prompt compaction. |
 | `application/clean_values.py` | Small shared value-cleaning helpers used by application payload shapers. |
