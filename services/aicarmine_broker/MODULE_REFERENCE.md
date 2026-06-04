@@ -126,6 +126,7 @@ Read before edits:
 | Module | Technical description |
 | --- | --- |
 | `infrastructure/json_files.py` | JSON file adapter with atomic writes and same-tool artifact rehydration. Artifact loading is internal evidence reconstruction, not public payload substitution. |
+| `infrastructure/job_sqlite_store.py` | SQLite primitive adapter for job index rows and event rows. `job_store.py` still writes filesystem state/events and delegates DB schema/upsert/list/event insert here. |
 | `infrastructure/result_compaction.py` | Generic text/result compaction primitive shared by compatibility facades and planner-facing compaction code. |
 
 ## planner_core Subpackage

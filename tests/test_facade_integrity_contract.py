@@ -100,3 +100,11 @@ def test_repo_tools_is_facade_only() -> None:
     )
     for pattern in forbidden:
         assert not re.search(pattern, text), pattern
+
+
+def test_job_store_delegates_sqlite_primitives() -> None:
+    text = _read("services/aicarmine_broker/job_store.py")
+
+    assert "from .infrastructure.job_sqlite_store import AgentJobSQLiteStore" in text
+    assert "import sqlite3" not in text
+    assert "sqlite3.connect" not in text

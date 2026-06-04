@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import time
 import uuid
 from pathlib import Path
@@ -43,6 +42,7 @@ from .application.job_terminal_response import (
 from .application.job_status_response import build_compact_status_response
 from .application.job_wait_response import build_wait_timeout_response
 from .infrastructure.json_files import JsonFileStore
+from .infrastructure.job_sqlite_store import AgentJobSQLiteStore
 from .infrastructure.time_provider import TimeProvider
 
 
@@ -68,6 +68,10 @@ def write_json(path: Path, payload: Any) -> str:
 
 def read_json(path: Path, default: Any = None) -> Any:
     return JsonFileStore().read(path, default)
+
+
+def _job_sqlite_store() -> AgentJobSQLiteStore:
+    return AgentJobSQLiteStore(AGENT_JOB_DB, AGENT_JOB_ROOT)
 
 
 # ---------------------------------------------------------------------------
@@ -122,37 +126,7 @@ def job_url(job_id: str) -> str:
 
 
 def init_agent_job_db() -> None:
-    AGENT_JOB_ROOT.mkdir(parents=True, exist_ok=True)
-    AGENT_JOB_DB.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(AGENT_JOB_DB)) as db:
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS jobs (
-                job_id     TEXT PRIMARY KEY,
-                status     TEXT NOT NULL,
-                goal       TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                workspace  TEXT NOT NULL,
-                final_path TEXT,
-                error      TEXT
-            )
-            """
-        )
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS events (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id     TEXT NOT NULL,
-                ts         REAL NOT NULL,
-                step       INTEGER,
-                event_type TEXT NOT NULL,
-                message    TEXT NOT NULL,
-                payload_json TEXT NOT NULL
-            )
-            """
-        )
-        db.commit()
+    _job_sqlite_store().init()
 
 
 # ---------------------------------------------------------------------------
@@ -168,33 +142,7 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
     state["updated_at"] = time.time()
     write_json(agent_job_state_path(job_id), state)
     try:
-        init_agent_job_db()
-        with sqlite3.connect(str(AGENT_JOB_DB)) as db:
-            db.execute(
-                """
-                INSERT INTO jobs(job_id, status, goal, created_at, updated_at,
-                                 workspace, final_path, error)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(job_id) DO UPDATE SET
-                    status     = excluded.status,
-                    goal       = excluded.goal,
-                    updated_at = excluded.updated_at,
-                    workspace  = excluded.workspace,
-                    final_path = excluded.final_path,
-                    error      = excluded.error
-                """,
-                (
-                    job_id,
-                    str(state.get("status") or "unknown"),
-                    str(state.get("goal") or ""),
-                    float(state.get("created_at") or time.time()),
-                    float(state.get("updated_at") or time.time()),
-                    str(state.get("workspace") or root),
-                    str(state.get("final_path") or ""),
-                    str(state.get("error") or ""),
-                ),
-            )
-            db.commit()
+        _job_sqlite_store().upsert_job_state(state, root)
     except Exception:
         pass  # SQLite failure must not prevent filesystem state write
 
@@ -205,20 +153,7 @@ def load_agent_job_state(job_id: str) -> dict[str, Any]:
 
 
 def list_agent_jobs(limit: int = 50) -> list[dict[str, Any]]:
-    init_agent_job_db()
-    with sqlite3.connect(str(AGENT_JOB_DB)) as db:
-        db.row_factory = sqlite3.Row
-        rows = db.execute(
-            """
-            SELECT job_id, status, goal, created_at, updated_at,
-                   workspace, final_path, error
-            FROM jobs
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return _job_sqlite_store().list_jobs(limit)
 
 
 # ---------------------------------------------------------------------------
@@ -247,23 +182,7 @@ def append_agent_event(
     with agent_job_events_path(job_id).open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
     try:
-        init_agent_job_db()
-        with sqlite3.connect(str(AGENT_JOB_DB)) as db:
-            db.execute(
-                """
-                INSERT INTO events(job_id, ts, step, event_type, message, payload_json)
-                VALUES(?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    job_id,
-                    float(event["ts"]),
-                    step,
-                    event_type,
-                    message,
-                    json.dumps(payload or {}, ensure_ascii=False, default=str),
-                ),
-            )
-            db.commit()
+        _job_sqlite_store().append_event(event)
     except Exception:
         pass
 
