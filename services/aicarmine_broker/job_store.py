@@ -36,6 +36,10 @@ from .application.job_response_values import (
     compact_text,
     event_digest,
 )
+from .application.job_terminal_response import (
+    build_compact_terminal_response,
+    build_missing_job_response,
+)
 from .infrastructure.json_files import JsonFileStore
 from .infrastructure.time_provider import TimeProvider
 
@@ -292,106 +296,25 @@ def public_result_digest(result: Any) -> dict[str, Any]:
 def compact_agent_terminal_response(job_id: str) -> dict[str, Any]:
     state = load_agent_job_state(job_id)
     if not state:
-        return {
-            "ok": False,
-            "service": "vulkan_agent",
-            "tool_name": "vulkan_helper",
-            "error": "job_not_found",
-            "job_id": job_id,
-        }
+        return build_missing_job_response(job_id)
 
-    status = str(state.get("status") or "unknown")
-    public_tool = str(state.get("public_tool_name") or "vulkan_helper")
     final_path = str(state.get("final_path") or "")
-    final_markdown_path = str(state.get("final_markdown_path") or "")
-    events_path = str(agent_job_events_path(job_id))
-    summary = compact_text(state.get("final_summary") or state.get("error") or "", AGENT_PUBLIC_SUMMARY_CHARS)
-    events = [event_digest(ev) for ev in read_agent_events(job_id, 5)]
-
-    artifacts = [p for p in (final_path, final_markdown_path, events_path) if p]
-    result_digest = public_result_digest(state.get("result") or {})
-    tool_context = state.get("tool_context_for_30b")
     final_data: dict[str, Any] = {}
     if final_path:
         loaded_final = read_json(Path(final_path), {})
         if isinstance(loaded_final, dict):
             final_data = loaded_final
-    if not isinstance(tool_context, dict):
-        for key in ("tool_context_for_30b", "agent_context_for_30b", "structured_context_for_30b", "structured_result_for_30b"):
-            if isinstance(final_data.get(key), dict):
-                tool_context = final_data.get(key)
-                break
-    answer = (
-        state.get("answer_for_30b")
-        or final_data.get("answer_for_30b")
-        or (tool_context.get("answer_for_30b") if isinstance(tool_context, dict) else "")
-        or summary
+    return build_compact_terminal_response(
+        job_id=job_id,
+        state=state,
+        final_data=final_data,
+        events_tail=read_agent_events(job_id, 20),
+        events_path=str(agent_job_events_path(job_id)),
+        job_url_value=job_url(job_id),
+        public_result_inline_chars=AGENT_PUBLIC_RESULT_INLINE_CHARS,
+        public_summary_chars=AGENT_PUBLIC_SUMMARY_CHARS,
+        public_answer_chars=AGENT_PUBLIC_ANSWER_CHARS,
     )
-    answer = compact_text(answer, AGENT_PUBLIC_ANSWER_CHARS)
-    next_action = (
-        state.get("next_action_for_30b")
-        or final_data.get("next_action_for_30b")
-        or (tool_context.get("next_action_for_30b") if isinstance(tool_context, dict) else {})
-    )
-    if not isinstance(next_action, dict):
-        next_action = {}
-    if not isinstance(tool_context, dict):
-        tool_context = {
-            "type": "agentic_loop_complete_structured_context_unavailable",
-            "contract_type": "structured_agentic_loop_context_unavailable",
-            "job": {"job_id": job_id, "status": status, "goal": state.get("goal")},
-            "answer_for_30b": answer,
-            "next_action_for_30b": next_action,
-            "result": result_digest,
-            "events_tail_digest": [event_digest(ev) for ev in read_agent_events(job_id, 20)],
-        }
-
-    context_alias = {
-        "schema": "agentic_terminal_context_alias.v1",
-        "alias_of": "tool_context_for_30b",
-        "same_payload": True,
-    }
-    return {
-        "ok": True,
-        "job_ok": status == "completed",
-        "service": "vulkan_agent",
-        "mode": "agent_job_final_compact",
-        "tool_name": public_tool,
-        "tool_result_for": public_tool,
-        "called_by_30b": public_tool,
-        "job_id": job_id,
-        "status": status,
-        "goal": state.get("goal"),
-        "job_url": job_url(job_id),
-        "final_path": final_path,
-        "final_markdown_path": final_markdown_path,
-        "events_path": events_path,
-        "full_result_available": bool(final_path),
-        "full_result_hint": "Open final_path/final_markdown_path or the job_url for the complete untruncated result.",
-        "answer_for_30b": answer,
-        "summary_for_30b": summary,
-        "message_for_30b": answer,
-        "evidence_digest_for_30b": (
-            tool_context.get("evidence_digest_for_30b") if isinstance(tool_context, dict) else ""
-        ),
-        "final_summary": summary,
-        "next_action_for_30b": next_action,
-        "working_memory_for_30b": state.get("working_memory_for_30b") or final_data.get("working_memory_for_30b") or {},
-        "evidence_contract": state.get("evidence_contract") or final_data.get("evidence_contract") or {},
-        "planner_emission_interpreter": state.get("planner_emission_interpreter") or final_data.get("planner_emission_interpreter") or {},
-        "openwebui_usage": {
-            "primary_answer_field": "answer_for_30b",
-            "structured_context_field": "tool_context_for_30b",
-            "rule": "Answer the user from answer_for_30b; use structured context only for evidence-bound details.",
-        },
-        "result": result_digest,
-        "tool_context_for_30b": tool_context,
-        "agent_context_for_30b": context_alias,
-        "structured_context_for_30b": context_alias,
-        "structured_result_for_30b": context_alias,
-        "artifacts": artifacts,
-        "events_tail_digest": events,
-    }
 
 
 def compact_agent_status(
