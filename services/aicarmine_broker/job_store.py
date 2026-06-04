@@ -31,6 +31,11 @@ from .config import (
     AGENT_WAIT_POLL_SECONDS,
 )
 from .application.public_history_ledger import build_public_result_digest
+from .application.job_response_values import (
+    compact_json,
+    compact_text,
+    event_digest,
+)
 from .infrastructure.json_files import JsonFileStore
 from .infrastructure.time_provider import TimeProvider
 
@@ -278,39 +283,6 @@ def read_agent_events(
 # ---------------------------------------------------------------------------
 # Compact status helpers
 # ---------------------------------------------------------------------------
-
-
-def compact_text(value: Any, limit: int) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    if int(limit or 0) <= 0:
-        return text
-    if len(text) <= limit:
-        return text
-    return text[: max(0, limit - 40)] + "\n... <see final.md/final.json for full output>"
-
-
-def compact_json(value: Any, limit: int) -> str:
-    try:
-        text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    except Exception:
-        text = str(value)
-    return compact_text(text, limit)
-
-
-def event_digest(event: dict[str, Any]) -> dict[str, Any]:
-    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
-    digest: dict[str, Any] = {
-        "time": event.get("time") or event.get("ts"),
-        "step": event.get("step"),
-        "event_type": event.get("event_type"),
-        "message": event.get("message"),
-    }
-    if payload:
-        digest["payload_keys"] = sorted(str(k) for k in payload.keys())[:20]
-        for key in ("tool", "ok", "status", "path", "artifact", "returncode", "count", "truncated"):
-            if key in payload:
-                digest[key] = payload.get(key)
-    return {k: v for k, v in digest.items() if v not in (None, "", [], {})}
 
 
 def public_result_digest(result: Any) -> dict[str, Any]:

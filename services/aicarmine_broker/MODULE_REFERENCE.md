@@ -95,6 +95,7 @@ Read before edits:
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
 | `application/job_action_router.py` | Public broker payload router. It normalizes start/status/result/cancel actions, handles cancel state transitions and delegates non-job requests to the selector runner. |
 | `application/job_lifecycle.py` | Agent job lifecycle service. It creates queued job state, starts/reuses the background worker thread and returns start/wait responses through injected persistence, thread registry and wait helpers. |
+| `application/job_response_values.py` | Pure public job-response value helpers: text/JSON compaction and event digest shaping used by `job_store.py` compatibility exports. |
 | `application/job_worker.py` | Background job worker application service. It owns running/failure state transitions, planner handoff and disabled-planner legacy one-shot execution through injected persistence/planner/agent dependencies. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/prompt_budget.py` | Prompt compaction/headroom/window-size calculations and serialized prompt budget reports derived from runtime config. It does not build prompts or decide planner actions. |
