@@ -3338,6 +3338,145 @@ def _build_planner_user_payload(
         payload_report["over_generation_headroom_without_native_history_reserve"] = report["over_generation_headroom_without_native_history_reserve"]
         payload_report["history_message_char_budget"] = history_message_char_budget
         payload["prompt_budget_report"] = payload_report
+        if (
+            history_message_char_budget < 2500
+            and isinstance(payload.get("optional_context"), dict)
+            and payload["optional_context"].get("schema") == "planner_optional_context_window_pack.v1"
+            and isinstance(payload["optional_context"].get("successful_tool_payload_windows"), list)
+            and payload["optional_context"].get("successful_tool_payload_windows")
+        ):
+            optional_context_copy = dict(payload["optional_context"])
+            optional_context_copy.pop("successful_tool_payload_windows", None)
+            payload["optional_context"] = optional_context_copy
+            prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+            prompt_contract["compact_mode"] = True
+            prompt_contract["native_history_headroom_successful_payload_windows_omitted"] = True
+            prompt_contract["native_history_headroom_successful_payload_windows_reason"] = (
+                "successful tool payload windows are transported through native history messages; "
+                "duplicating them in optional_context consumed the history budget."
+            )
+            payload["prompt_pack_contract"] = prompt_contract
+            report = _prompt_budget_report(
+                payload,
+                system_prompt=system_prompt_for_budget,
+                extra_prompt_sections=extra_prompt_sections,
+            )
+            report["required_working_set_chars"] = required_chars
+            report["required_working_set_errors"] = required_errors
+            report["compact_mode"] = True
+            report["window_chars"] = (prompt_contract or {}).get("window_chars")
+            report["native_history_reserve_chars"] = native_history_reserve_chars
+            total_without_native_history_reserve = max(
+                0,
+                int(report.get("total_prompt_chars") or 0) - native_history_reserve_chars,
+            )
+            history_message_char_budget = (
+                max(0, headroom_char_budget - total_without_native_history_reserve)
+                if headroom_char_budget > 0
+                else max(0, AGENTIC_PLANNER_NUM_CTX * 2)
+            )
+            report["native_history_reserve_is_synthetic"] = True
+            report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+            report["over_budget_without_native_history_reserve"] = bool(
+                AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+                and total_without_native_history_reserve > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+            )
+            report["over_generation_headroom_without_native_history_reserve"] = bool(
+                headroom_char_budget > 0
+                and total_without_native_history_reserve > headroom_char_budget
+            )
+            report["history_message_char_budget"] = history_message_char_budget
+            payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
+            payload_report["schema"] = report.get("schema")
+            payload_report["char_budget"] = report.get("char_budget")
+            payload_report["generation_headroom_char_budget"] = report.get("generation_headroom_char_budget")
+            payload_report["generation_headroom_reserve_chars"] = report.get("generation_headroom_reserve_chars")
+            payload_report["total_prompt_chars"] = report.get("total_prompt_chars")
+            payload_report["over_budget"] = report.get("over_budget")
+            payload_report["over_generation_headroom_budget"] = report.get("over_generation_headroom_budget")
+            payload_report["extra_prompt_chars"] = report.get("extra_prompt_chars")
+            payload_report["native_tools_schema_chars"] = extra_prompt_sections.get("native_tools_schema", 0)
+            payload_report["native_history_reserve_chars"] = extra_prompt_sections.get("native_history_messages_reserve", 0)
+            payload_report["required_working_set_chars"] = report.get("required_working_set_chars")
+            payload_report["compact_mode"] = True
+            payload_report["window_chars"] = report.get("window_chars")
+            payload_report["native_history_reserve_is_synthetic"] = True
+            payload_report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+            payload_report["over_budget_without_native_history_reserve"] = report["over_budget_without_native_history_reserve"]
+            payload_report["over_generation_headroom_without_native_history_reserve"] = report["over_generation_headroom_without_native_history_reserve"]
+            payload_report["history_message_char_budget"] = history_message_char_budget
+            payload["prompt_budget_report"] = payload_report
+        if (
+            history_message_char_budget < 2500
+            and isinstance(payload.get("optional_context"), dict)
+            and payload["optional_context"].get("schema") != "planner_optional_context_window_pack.v1"
+        ):
+            optional_for_window = payload["optional_context"]
+            for hard_window_chars in (500,):
+                payload["optional_context"] = _optional_context_window_pack(
+                    root,
+                    goal=goal,
+                    optional_context=optional_for_window,
+                    window_chars=hard_window_chars,
+                    reason="planner_native_history_message_budget_low",
+                )
+                prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+                prompt_contract["compact_mode"] = True
+                prompt_contract["native_history_headroom_optional_context_windowed"] = True
+                prompt_contract["native_history_headroom_optional_context_window_chars"] = hard_window_chars
+                payload["prompt_pack_contract"] = prompt_contract
+                report = _prompt_budget_report(
+                    payload,
+                    system_prompt=system_prompt_for_budget,
+                    extra_prompt_sections=extra_prompt_sections,
+                )
+                report["required_working_set_chars"] = required_chars
+                report["required_working_set_errors"] = required_errors
+                report["compact_mode"] = True
+                report["window_chars"] = hard_window_chars
+                report["native_history_reserve_chars"] = native_history_reserve_chars
+                total_without_native_history_reserve = max(
+                    0,
+                    int(report.get("total_prompt_chars") or 0) - native_history_reserve_chars,
+                )
+                history_message_char_budget = (
+                    max(0, headroom_char_budget - total_without_native_history_reserve)
+                    if headroom_char_budget > 0
+                    else max(0, AGENTIC_PLANNER_NUM_CTX * 2)
+                )
+                report["native_history_reserve_is_synthetic"] = True
+                report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+                report["over_budget_without_native_history_reserve"] = bool(
+                    AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+                    and total_without_native_history_reserve > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+                )
+                report["over_generation_headroom_without_native_history_reserve"] = bool(
+                    headroom_char_budget > 0
+                    and total_without_native_history_reserve > headroom_char_budget
+                )
+                report["history_message_char_budget"] = history_message_char_budget
+                payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
+                payload_report["schema"] = report.get("schema")
+                payload_report["char_budget"] = report.get("char_budget")
+                payload_report["generation_headroom_char_budget"] = report.get("generation_headroom_char_budget")
+                payload_report["generation_headroom_reserve_chars"] = report.get("generation_headroom_reserve_chars")
+                payload_report["total_prompt_chars"] = report.get("total_prompt_chars")
+                payload_report["over_budget"] = report.get("over_budget")
+                payload_report["over_generation_headroom_budget"] = report.get("over_generation_headroom_budget")
+                payload_report["extra_prompt_chars"] = report.get("extra_prompt_chars")
+                payload_report["native_tools_schema_chars"] = extra_prompt_sections.get("native_tools_schema", 0)
+                payload_report["native_history_reserve_chars"] = extra_prompt_sections.get("native_history_messages_reserve", 0)
+                payload_report["required_working_set_chars"] = report.get("required_working_set_chars")
+                payload_report["compact_mode"] = True
+                payload_report["window_chars"] = hard_window_chars
+                payload_report["native_history_reserve_is_synthetic"] = True
+                payload_report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
+                payload_report["over_budget_without_native_history_reserve"] = report["over_budget_without_native_history_reserve"]
+                payload_report["over_generation_headroom_without_native_history_reserve"] = report["over_generation_headroom_without_native_history_reserve"]
+                payload_report["history_message_char_budget"] = history_message_char_budget
+                payload["prompt_budget_report"] = payload_report
+                if history_message_char_budget >= 2500:
+                    break
     return payload, report
 
 
@@ -10055,6 +10194,7 @@ def planner_decision(
         if (
             transportable_history_items > 0
             and int(history_messages_report.get("included_history_items") or 0) == 0
+            and not prompt_context_continuation_required
         ):
             return {
                 "action": "block",

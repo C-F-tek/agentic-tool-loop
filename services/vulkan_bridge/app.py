@@ -2995,10 +2995,10 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
     analysis_item = _agentic_v9_repo_analysis_priority_item(tool_context, planner_text)
     priority_items = []
     if not completed:
-        if analysis_item:
-            priority_items.append(analysis_item)
         priority_items.extend(partial_items)
         priority_items.extend(artifact_items)
+        if analysis_item:
+            priority_items.append(analysis_item)
     else:
         priority_items.extend(artifact_items)
         priority_items.extend(partial_items)
