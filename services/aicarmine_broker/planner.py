@@ -101,6 +101,16 @@ from .application.available_tools_prompt import (
     available_tools_window_pack as _available_tools_window_pack_impl,
 )
 from .application.agent_flow_diagnostics import agent_flow_diagnostics as _agent_flow_diagnostics_impl
+from .application.prompt_context_windows import (
+    evidence_contract_continuation_action as _evidence_contract_continuation_action_impl,
+    forbidden_repeated_prompt_window_calls as _forbidden_repeated_prompt_window_calls_impl,
+    planner_scratchpad_next_window_action_from_history as _planner_scratchpad_next_window_action_from_history_impl,
+    prompt_context_continuation_from_payload as _prompt_context_continuation_from_payload_impl,
+    prompt_context_continue_action as _prompt_context_continue_action_impl,
+    prompt_window_consumed_offsets as _prompt_window_consumed_offsets_impl,
+    prompt_window_tracking_metadata_errors as _prompt_window_tracking_metadata_errors_impl,
+    required_working_set_continuation_action as _required_working_set_continuation_action_impl,
+)
 from .application.evidence_prompt_contract import (
     compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
     hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
@@ -1030,152 +1040,40 @@ def _store_prompt_value_window(
 
 
 def _prompt_window_consumed_offsets(history: list[dict[str, Any]]) -> dict[str, int]:
-    consumed: dict[str, int] = {}
-    for row in history if isinstance(history, list) else []:
-        result = _history_tool_result(row)
-        if result.get("tool") != "planner_scratchpad_read" or result.get("ok") is not True:
-            continue
-        if str(result.get("mode") or "") not in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND}:
-            continue
-        for item in result.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            if any(key not in item for key in _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS):
-                continue
-            doc_id = str(item.get("document_id") or "").strip()
-            if not doc_id:
-                continue
-            try:
-                end = int(item.get("window_end") or 0)
-            except (TypeError, ValueError):
-                end = 0
-            if end > consumed.get(doc_id, 0):
-                consumed[doc_id] = end
-    return consumed
+    return _prompt_window_consumed_offsets_impl(
+        history,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
 
 
 def _prompt_window_tracking_metadata_errors(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    errors: list[dict[str, Any]] = []
-    for row in history if isinstance(history, list) else []:
-        result = _history_tool_result(row)
-        if result.get("tool") != "planner_scratchpad_read" or result.get("ok") is not True:
-            continue
-        if str(result.get("mode") or "") not in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND}:
-            continue
-        items = result.get("items") if isinstance(result.get("items"), list) else []
-        for index, item in enumerate(items):
-            if not isinstance(item, dict):
-                errors.append({
-                    "step": row.get("step"),
-                    "item_index": index,
-                    "error": "prompt_context_window_item_not_object",
-                })
-                continue
-            missing = [
-                key for key in _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS
-                if key not in item or item.get(key) in (None, "")
-            ]
-            if missing:
-                errors.append({
-                    "step": row.get("step"),
-                    "document_id": item.get("document_id"),
-                    "item_index": index,
-                    "missing": missing,
-                    "error": "prompt_context_window_tracking_metadata_missing",
-                })
-    return errors
+    return _prompt_window_tracking_metadata_errors_impl(
+        history,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
 
 
 def _prompt_context_continue_action(window: dict[str, Any], *, max_chars: int, reason: str) -> dict[str, Any] | None:
-    if not isinstance(window, dict) or window.get("has_more_after") is not True:
-        return None
-    doc_id = str(window.get("document_id") or "").strip()
-    if not doc_id:
-        return None
-    try:
-        offset = int(window.get("next_unconsumed_offset") or window.get("window_end") or 0)
-    except (TypeError, ValueError):
-        offset = int(window.get("window_end") or 0)
-    metadata = window.get("metadata") if isinstance(window.get("metadata"), dict) else {}
-    kind = (
-        CODE_PRODUCT_BUILD_STATE_KIND
-        if metadata.get("kind") == CODE_PRODUCT_BUILD_STATE_KIND
-        else "prompt_context_window"
+    return _prompt_context_continue_action_impl(
+        window,
+        max_chars=max_chars,
+        reason=reason,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
-    args: dict[str, Any] = {
-        "kind": kind,
-        "document_id": doc_id,
-        "offset": offset,
-        "max_chars": max(500, int(max_chars or 1000)),
-    }
-    if kind == CODE_PRODUCT_BUILD_STATE_KIND and metadata.get("target_file"):
-        args["target_file"] = metadata.get("target_file")
-    return {
-        "action": "tool",
-        "tool": "planner_scratchpad_read",
-        "arguments": args,
-        "reason": reason,
-    }
 
 
 def _planner_scratchpad_next_window_action_from_history(
     args: dict[str, Any],
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    args = args if isinstance(args, dict) else {}
-    document_id = str(args.get("document_id") or args.get("id") or "").strip()
-    if not document_id:
-        return {}
-    latest_window: dict[str, Any] = {}
-    for row in history if isinstance(history, list) else []:
-        result = _history_tool_result(row)
-        if result.get("tool") != "planner_scratchpad_read" or result.get("ok") is not True:
-            continue
-        for item in result.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("document_id") or "") != document_id:
-                continue
-            try:
-                item_end = int(item.get("window_end") or 0)
-            except (TypeError, ValueError):
-                item_end = 0
-            try:
-                latest_end = int(latest_window.get("window_end") or 0)
-            except (TypeError, ValueError):
-                latest_end = 0
-            if item_end >= latest_end:
-                latest_window = dict(item)
-    if not latest_window or latest_window.get("has_more_after") is not True:
-        return {}
-    consumed = _prompt_window_consumed_offsets(history).get(document_id, 0)
-    try:
-        current_end = int(latest_window.get("window_end") or 0)
-    except (TypeError, ValueError):
-        current_end = 0
-    try:
-        full_chars = int(latest_window.get("full_chars") or current_end)
-    except (TypeError, ValueError):
-        full_chars = current_end
-    next_offset = max(consumed, current_end)
-    if next_offset >= full_chars:
-        return {}
-    latest_window["next_unconsumed_offset"] = next_offset
-    if str(args.get("kind") or "") == CODE_PRODUCT_BUILD_STATE_KIND:
-        metadata = latest_window.get("metadata") if isinstance(latest_window.get("metadata"), dict) else {}
-        metadata = dict(metadata)
-        metadata["kind"] = CODE_PRODUCT_BUILD_STATE_KIND
-        if args.get("target_file"):
-            metadata["target_file"] = args.get("target_file")
-        latest_window["metadata"] = metadata
-    return _prompt_context_continue_action(
-        latest_window,
-        max_chars=int(args.get("max_chars") or 2500),
-        reason=(
-            "Repeated SQLite window was already consumed; continue with the next real "
-            "unconsumed window before deciding final or code-product output."
-        ),
-    ) or {}
+    return _planner_scratchpad_next_window_action_from_history_impl(
+        args,
+        history,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
 
 
 def _repo_read_items_for_prompt(
@@ -1379,48 +1277,13 @@ def _required_working_set_continuation_action(
     history: list[dict[str, Any]],
     window_chars: int,
 ) -> dict[str, Any] | None:
-    consumed = _prompt_window_consumed_offsets(history)
-    windows: list[dict[str, Any]] = []
-    for item in (required_working_set or {}).get("repo_reads") or []:
-        if isinstance(item, dict) and isinstance(item.get("content_window"), dict):
-            windows.append(item["content_window"])
-    code_product = (required_working_set or {}).get("code_product")
-    if isinstance(code_product, dict) and isinstance(code_product.get("unified_diff_window"), dict):
-        windows.append(code_product["unified_diff_window"])
-    build_state = (required_working_set or {}).get("code_product_build_state")
-    if isinstance(build_state, dict) and build_state.get("has_more_after") is True:
-        state_window = dict(build_state)
-        state_window["metadata"] = {
-            "kind": CODE_PRODUCT_BUILD_STATE_KIND,
-            "target_file": build_state.get("target_file"),
-            "status": build_state.get("status"),
-        }
-        windows.append(state_window)
-    for window in windows:
-        doc_id = str(window.get("document_id") or "").strip()
-        if not doc_id or window.get("has_more_after") is not True:
-            continue
-        try:
-            current_end = int(window.get("window_end") or 0)
-        except (TypeError, ValueError):
-            current_end = 0
-        try:
-            full_chars = int(window.get("full_chars") or current_end)
-        except (TypeError, ValueError):
-            full_chars = current_end
-        consumed_end = max(current_end, consumed.get(doc_id, 0))
-        if consumed_end >= full_chars:
-            continue
-        window["next_unconsumed_offset"] = consumed_end
-        return _prompt_context_continue_action(
-            window,
-            max_chars=window_chars,
-            reason=(
-                "Continue consuming the real required_working_set SQLite window before "
-                "deciding final or code-product output."
-            ),
-        )
-    return None
+    return _required_working_set_continuation_action_impl(
+        required_working_set,
+        history=history,
+        window_chars=window_chars,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
 
 
 def _evidence_contract_continuation_action(
@@ -1429,73 +1292,20 @@ def _evidence_contract_continuation_action(
     history: list[dict[str, Any]],
     window_chars: int,
 ) -> dict[str, Any] | None:
-    window = evidence_contract.get("full_evidence_contract_window") if isinstance(evidence_contract, dict) else {}
-    if not isinstance(window, dict) or window.get("has_more_after") is not True:
-        return None
-    doc_id = str(window.get("document_id") or "").strip()
-    if not doc_id:
-        return None
-    try:
-        current_end = int(window.get("window_end") or 0)
-    except (TypeError, ValueError):
-        current_end = 0
-    try:
-        full_chars = int(window.get("full_chars") or current_end)
-    except (TypeError, ValueError):
-        full_chars = current_end
-    consumed_end = max(current_end, _prompt_window_consumed_offsets(history).get(doc_id, 0))
-    if consumed_end >= full_chars:
-        return None
-    window["next_unconsumed_offset"] = consumed_end
-    return _prompt_context_continue_action(
-        window,
-        max_chars=window_chars,
-        reason=(
-            "Continue consuming the real evidence_contract SQLite window before "
-            "deciding final or code-product output."
-        ),
+    return _evidence_contract_continuation_action_impl(
+        evidence_contract,
+        history=history,
+        window_chars=window_chars,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
 
 
 def _prompt_context_continuation_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        return {}
-    evidence = payload.get("evidence_contract") if isinstance(payload.get("evidence_contract"), dict) else {}
-    required = evidence.get("required_next_tool_call") if isinstance(evidence.get("required_next_tool_call"), dict) else {}
-    if required.get("tool") == "planner_scratchpad_read":
-        args = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
-        kind = str(args.get("kind") or "")
-        if kind in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND} and str(args.get("document_id") or "").strip():
-            return {
-                "tool": "planner_scratchpad_read",
-                "arguments": {
-                    "kind": kind,
-                    "document_id": str(args.get("document_id") or ""),
-                    "offset": args.get("offset"),
-                    "max_chars": args.get("max_chars"),
-                    **({"target_file": args.get("target_file")} if args.get("target_file") else {}),
-                },
-                "reason": required.get("reason") or evidence.get("required_next_progress"),
-            }
-    actions = evidence.get("candidate_next_actions") if isinstance(evidence.get("candidate_next_actions"), list) else []
-    first = actions[0] if actions and isinstance(actions[0], dict) else {}
-    if first.get("tool") != "planner_scratchpad_read":
-        return {}
-    args = first.get("arguments") if isinstance(first.get("arguments"), dict) else {}
-    kind = str(args.get("kind") or "")
-    if kind not in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND} or not str(args.get("document_id") or "").strip():
-        return {}
-    return {
-        "tool": "planner_scratchpad_read",
-        "arguments": {
-            "kind": kind,
-            "document_id": str(args.get("document_id") or ""),
-            "offset": args.get("offset"),
-            "max_chars": args.get("max_chars"),
-            **({"target_file": args.get("target_file")} if args.get("target_file") else {}),
-        },
-        "reason": first.get("reason"),
-    }
+    return _prompt_context_continuation_from_payload_impl(
+        payload,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
 
 
 def _decision_matches_prompt_context_continuation(
@@ -1513,49 +1323,13 @@ def _forbidden_repeated_prompt_window_calls(
     history: list[dict[str, Any]],
     continuation_action: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    required = _required_next_tool_call_from_action(continuation_action)
-    required_args = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
-    required_doc_id = str(required_args.get("document_id") or "").strip()
-    if not required_doc_id:
-        return []
-    out: list[dict[str, Any]] = []
-    seen: set[tuple[str, int, int]] = set()
-    for row in history if isinstance(history, list) else []:
-        result = _history_tool_result(row)
-        if result.get("tool") != "planner_scratchpad_read" or result.get("ok") is not True:
-            continue
-        if str(result.get("mode") or "") not in {"prompt_context_window", CODE_PRODUCT_BUILD_STATE_KIND}:
-            continue
-        for item in result.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            doc_id = str(item.get("document_id") or "").strip()
-            if doc_id != required_doc_id:
-                continue
-            try:
-                start = int(item.get("window_start") or 0)
-                chars = int(item.get("window_chars") or 0)
-                end = int(item.get("window_end") or 0)
-            except (TypeError, ValueError):
-                continue
-            key = (doc_id, start, chars)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                {
-                    "tool": "planner_scratchpad_read",
-                    "arguments": {
-                        "kind": str(result.get("mode") or "prompt_context_window"),
-                        "document_id": doc_id,
-                        "offset": start,
-                        "max_chars": chars,
-                    },
-                    "window_end": end,
-                    "reason": "already_consumed",
-                }
-            )
-    return out[-20:]
+    return _forbidden_repeated_prompt_window_calls_impl(
+        history,
+        continuation_action,
+        history_tool_result=_history_tool_result,
+        required_next_tool_call_from_action=_required_next_tool_call_from_action,
+        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
 
 
 def _native_history_message_reserve_chars(history: list[dict[str, Any]], window_chars: int) -> int:
