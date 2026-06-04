@@ -127,6 +127,11 @@ from .application.history_queries import (
     successful_code_edit_proposals,
 )
 from .application.path_tokens import repo_rel_token as _repo_rel_token
+from .application.prompt_values import (
+    prompt_clip_text as _prompt_clip_text,
+    prompt_clip_value as _prompt_clip_value,
+    text_hash as _text_hash,
+)
 from .application.window_signatures import (
     decision_paths as _decision_paths,
     planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
@@ -590,51 +595,6 @@ def _json_char_len(value: Any) -> int:
         return len(json.dumps(value, ensure_ascii=False, default=str))
     except Exception:
         return len(str(value))
-
-
-def _prompt_clip_text(value: Any, limit: int | None = None) -> str:
-    text = str(value or "")
-    max_chars = int(limit or AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS)
-    if max_chars <= 0 or len(text) <= max_chars:
-        return text
-    return text[: max(0, max_chars - 40)] + "... <prompt_preview_truncated>"
-
-
-def _prompt_clip_value(value: Any, *, text_limit: int | None = None, list_limit: int = 12, depth: int = 0) -> Any:
-    if depth > 4:
-        return _prompt_clip_text(value, text_limit)
-    if isinstance(value, str):
-        return _prompt_clip_text(value, text_limit)
-    if isinstance(value, (int, float, bool)) or value is None:
-        return value
-    if isinstance(value, list):
-        out = [
-            _prompt_clip_value(item, text_limit=text_limit, list_limit=list_limit, depth=depth + 1)
-            for item in value[:list_limit]
-        ]
-        if len(value) > list_limit:
-            out.append({"omitted_items_for_prompt": len(value) - list_limit})
-        return out
-    if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for key, item in value.items():
-            if item in (None, "", [], {}):
-                continue
-            if key in {"content", "content_preview", "content_excerpt", "text", "text_preview", "stdout", "stderr", "raw_planner_text_preview"}:
-                out[key] = _prompt_clip_text(item, text_limit)
-            elif key == "unified_diff":
-                diff_text = str(item or "")
-                out["unified_diff_present"] = bool(diff_text.strip())
-                out["unified_diff_chars"] = len(diff_text)
-                out["unified_diff_markers_present"] = all(marker in diff_text for marker in ("---", "+++", "@@"))
-            elif key == "structured_operations":
-                ops = item if isinstance(item, list) else []
-                out["structured_operations_present"] = bool(ops)
-                out["structured_operations_count"] = len(ops)
-            else:
-                out[str(key)] = _prompt_clip_value(item, text_limit=text_limit, list_limit=list_limit, depth=depth + 1)
-        return out
-    return _prompt_clip_text(value, text_limit)
 
 
 def _compact_tool_manifest_for_prompt(tool_manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2016,12 +1976,6 @@ def _repo_read_item_full_content(item: dict[str, Any]) -> tuple[str, dict[str, A
         meta.update({"source": "content_preview_only", "artifact": artifact})
         return preview, meta
     return "", meta
-
-
-def _text_hash(text: str) -> str:
-    import hashlib
-
-    return hashlib.sha256(str(text or "").encode("utf-8", errors="replace")).hexdigest()
 
 
 def _window_text(
