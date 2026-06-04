@@ -223,6 +223,22 @@ from .application.prompt_values import (
     prompt_clip_value as _prompt_clip_value,
     text_hash as _text_hash,
 )
+from .application.repo_path_policy import (
+    dynamic_read_candidate_paths as _dynamic_read_candidate_paths_impl,
+    low_signal_top_dir as _low_signal_top_dir_impl,
+    meaningful_read_candidates_from_evidence as _meaningful_read_candidates_from_evidence_impl,
+    path_under_scope as _path_under_scope_impl,
+    read_candidate_sort_key as _read_candidate_sort_key_impl,
+    repo_code_file as _repo_code_file_impl,
+    repo_doc_or_config as _repo_doc_or_config_impl,
+    repo_existing_dir as _repo_existing_dir_impl,
+    repo_existing_file as _repo_existing_file_impl,
+    repo_path_kind as _repo_path_kind_impl,
+    repo_readable_evidence_file as _repo_readable_evidence_file_impl,
+    scope_candidate_source_paths as _scope_candidate_source_paths_impl,
+    scope_read_candidates_from_evidence as _scope_read_candidates_from_evidence_impl,
+    top_dir as _top_dir_impl,
+)
 from .application.prompt_context_windows import (
     PROMPT_CONTEXT_WINDOW_COMPACT_KEYS as _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL,
     PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS as _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL,
@@ -2823,23 +2839,11 @@ _GENERIC_READABLE_SUFFIXES = (
 
 
 def _repo_existing_file(path: str) -> bool:
-    try:
-        rel = safe_rel_path(_repo_rel_token(path))
-        full = (LAB_REPO / rel).resolve(strict=False)
-        full.relative_to(LAB_REPO)
-        return full.exists() and full.is_file()
-    except Exception:
-        return False
+    return _repo_existing_file_impl(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _repo_existing_dir(path: str) -> bool:
-    try:
-        rel = safe_rel_path(_repo_rel_token(path))
-        full = (LAB_REPO / rel).resolve(strict=False)
-        full.relative_to(LAB_REPO)
-        return full.exists() and full.is_dir()
-    except Exception:
-        return False
+    return _repo_existing_dir_impl(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _root_surface_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3019,79 +3023,31 @@ def _controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dic
 
 
 def _repo_path_kind(path: str) -> str:
-    p = _repo_rel_token(path)
-    try:
-        full = (LAB_REPO / p).resolve(strict=False)
-        full.relative_to(LAB_REPO)
-        if full.exists() and full.is_file():
-            return "file"
-        if full.exists() and full.is_dir():
-            return "dir"
-    except Exception:
-        pass
-    name = p.rsplit("/", 1)[-1].lower()
-    if "." in name and not p.endswith("/"):
-        return "file"
-    return "dir"
+    return _repo_path_kind_impl(path, repo_root=LAB_REPO)
 
 
 def _repo_doc_or_config(path: str) -> bool:
-    p = _repo_rel_token(path)
-    if not p or p == "." or _repo_path_kind(p) == "dir":
-        return False
-    name = p.rsplit("/", 1)[-1].lower()
-    return (
-        p.lower().endswith(".md")
-        or name in {"pyproject.toml", "package.json", "requirements.txt", "setup.py", "setup.cfg", "tox.ini"}
-        or name.startswith("modelfile")
-        or name in {"makefile", "dockerfile"}
-    )
+    return _repo_doc_or_config_impl(path, repo_root=LAB_REPO)
 
 
 def _repo_code_file(path: str) -> bool:
-    p = _repo_rel_token(path).lower()
-    return p.endswith((
-        ".py", ".ps1", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".cpp", ".c",
-        ".h", ".cs", ".java", ".kt", ".swift", ".sh", ".bat", ".cmd"
-    ))
+    return _repo_code_file_impl(path)
 
 
 def _repo_readable_evidence_file(path: str) -> bool:
-    p = _repo_rel_token(path)
-    if not p or p == "." or _repo_path_kind(p) == "dir":
-        return False
-    return _repo_doc_or_config(p) or _repo_code_file(p) or p.lower().endswith(_GENERIC_READABLE_SUFFIXES)
+    return _repo_readable_evidence_file_impl(
+        path,
+        repo_root=LAB_REPO,
+        generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
+    )
 
 
 def _read_candidate_sort_key(path: str) -> tuple[int, int, int, int, str]:
-    p = _repo_rel_token(path)
-    low = p.lower()
-    name = low.rsplit("/", 1)[-1]
-    if name in _NAMED_READ_PRIORITY:
-        return (_NAMED_READ_PRIORITY[name], 0, p.count("/"), 0, low)
-    package_marker = name in {"__init__.py", "__main__.py"}
-    fixture = "/fixtures/" in low or low.endswith("_fixture.json") or "/tests/fixtures/" in low
-    if _repo_code_file(p):
-        kind_rank = 0
-    elif _repo_doc_or_config(p):
-        kind_rank = 1
-    else:
-        kind_rank = 2
-    area_rank = 0
-    if "/_shared/" in low or low.startswith("ia_carmine/_shared/"):
-        area_rank = 0
-    elif low.startswith("ia_carmine/context/"):
-        area_rank = 1
-    elif low.startswith("ia_carmine/"):
-        area_rank = 2
-    penalty = 0
-    if package_marker:
-        penalty += 50
-    if fixture:
-        penalty += 40
-    if low.endswith(".json") and not _repo_doc_or_config(p):
-        penalty += 10
-    return (len(_NAMED_READ_PRIORITY) + kind_rank, penalty, area_rank, p.count("/"), low)
+    return _read_candidate_sort_key_impl(
+        path,
+        repo_root=LAB_REPO,
+        named_read_priority=_NAMED_READ_PRIORITY,
+    )
 
 
 def _dynamic_read_candidate_paths(
@@ -3100,43 +3056,18 @@ def _dynamic_read_candidate_paths(
     read_ok: set[str] | None = None,
     target_scope: str = "",
 ) -> list[str]:
-    already = read_ok or set()
-    target_scope = _repo_rel_token(target_scope)
-    priority: list[str] = []
-    regular: list[str] = []
-    seen: set[str] = set()
-
-    for raw in paths:
-        p = _repo_rel_token(raw)
-        if not p or p in seen or p in already:
-            continue
-        if target_scope and not _path_under_scope(p, target_scope):
-            continue
-        if not _repo_readable_evidence_file(p):
-            continue
-        seen.add(p)
-        name = p.rsplit("/", 1)[-1].lower()
-        if name in _NAMED_READ_PRIORITY:
-            priority.append(p)
-            continue
-        regular.append(p)
-
-    priority.sort(key=lambda p: (_NAMED_READ_PRIORITY[p.rsplit("/", 1)[-1].lower()], p.count("/"), p.lower()))
-    regular.sort(key=_read_candidate_sort_key)
-    return priority + regular
+    return _dynamic_read_candidate_paths_impl(
+        paths,
+        read_ok=read_ok,
+        target_scope=target_scope,
+        repo_root=LAB_REPO,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
+    )
 
 
 def _scope_candidate_source_paths(list_rows: list[dict[str, Any]], target_scope: str) -> list[str]:
-    target_scope = _repo_rel_token(target_scope)
-    paths: list[str] = []
-    if not target_scope:
-        return paths
-    for row in list_rows:
-        for raw in row.get("paths_preview") or []:
-            p = _repo_rel_token(raw)
-            if p and _path_under_scope(p, target_scope) and p not in paths:
-                paths.append(p)
-    return paths
+    return _scope_candidate_source_paths_impl(list_rows, target_scope)
 
 
 def _scope_read_candidates_from_evidence(
@@ -3145,11 +3076,13 @@ def _scope_read_candidates_from_evidence(
     *,
     read_ok: list[str] | set[str] | None = None,
 ) -> list[str]:
-    already = set(read_ok or [])
-    return _dynamic_read_candidate_paths(
-        _scope_candidate_source_paths(list_rows, target_scope),
-        read_ok=already,
-        target_scope=target_scope,
+    return _scope_read_candidates_from_evidence_impl(
+        list_rows,
+        target_scope,
+        read_ok=read_ok,
+        repo_root=LAB_REPO,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
     )
 
 
@@ -3158,21 +3091,13 @@ def _meaningful_read_candidates_from_evidence(
     *,
     read_ok: list[str] | set[str] | None = None,
 ) -> list[str]:
-    already = set(read_ok or [])
-    out: list[str] = []
-    for row in list_rows:
-        area = _repo_rel_token(row.get("path") or "")
-        if area in ("", ".") or _low_signal_top_dir(area):
-            continue
-        row_paths = [
-            _repo_rel_token(p)
-            for p in (row.get("paths_preview") or [])
-            if _path_under_scope(_repo_rel_token(p), area)
-        ]
-        for p in _dynamic_read_candidate_paths(row_paths, read_ok=already, target_scope=area):
-            if p not in out:
-                out.append(p)
-    return out
+    return _meaningful_read_candidates_from_evidence_impl(
+        list_rows,
+        read_ok=read_ok,
+        repo_root=LAB_REPO,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
+    )
 
 
 def _scoped_required_read_count(available_candidates: list[str]) -> int:
@@ -3188,18 +3113,11 @@ def _repo_required_read_count(available_candidates: list[str]) -> int:
 
 
 def _top_dir(path: str) -> str:
-    p = _repo_rel_token(path).strip("/")
-    return p.split("/", 1)[0] if "/" in p else p
+    return _top_dir_impl(path)
 
 
 def _low_signal_top_dir(path: str) -> bool:
-    top = _top_dir(path).lower()
-    return (
-        not top
-        or top in {".git", ".github", ".vscode", ".codex", "__pycache__", ".pytest_cache"}
-        or top in {"assets", "docs", "chatgpt", "examples", "patch_specs"}
-        or top.endswith(".md")
-    )
+    return _low_signal_top_dir_impl(path)
 
 
 def _append_unique(seq: list[Any], value: Any) -> None:
@@ -4784,13 +4702,7 @@ def _path_exists_repo_relative(path: str) -> bool:
 
 
 def _path_under_scope(path: str, scope: str) -> bool:
-    if not scope:
-        return True
-    p = _repo_rel_token(path)
-    s = _repo_rel_token(scope).strip("/")
-    if not s or s == ".":
-        return True
-    return p == s or p.startswith(s + "/")
+    return _path_under_scope_impl(path, scope)
 
 # --- agentic-loop-v2 progress/scope helpers ---
 def _agentic_v2_alias_repo_path(path: Any) -> str:
