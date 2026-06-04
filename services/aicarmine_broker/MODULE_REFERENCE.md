@@ -81,6 +81,7 @@ Read before edits:
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
 | `application/history_queries.py` | Small query helpers over planner history, including tool-presence checks and code-edit proposal success/failure extraction. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
+| `application/prompt_budget.py` | Prompt compaction/headroom/window-size calculations derived from runtime config. It does not build prompts or decide planner actions. |
 | `application/prompt_values.py` | Prompt clipping/value compaction and stable text hashing helpers. It converts large diff/structured-operation fields into bounded metadata for planner prompt use only. |
 | `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
 | `application/text_windows.py` | Text and diff window primitives with offsets, completeness flags and hashes for prompt/SQLite window composition. |
