@@ -97,6 +97,7 @@ Read before edits:
 | `application/planner_history_messages.py` | Planner history message shaping for Ollama/native turns. It removes transport noise, preserves bounded prompt windows and stores oversized history payloads through injected window storage. |
 | `application/history_prompt_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
+| `application/openwebui_terminal_answer.py` | Builds the terminal `answer_for_30b` text and `next_action_for_30b` instruction for OpenWebUI using injected code-product/evidence/partial-product text builders. |
 | `application/job_action_router.py` | Public broker payload router. It normalizes start/status/result/cancel actions, handles cancel state transitions and delegates non-job requests to the selector runner. |
 | `application/job_lifecycle.py` | Agent job lifecycle service. It creates queued job state, starts/reuses the background worker thread and returns start/wait responses through injected persistence, thread registry and wait helpers. |
 | `application/job_response_values.py` | Pure public job-response value helpers: text/JSON compaction and event digest shaping used by `job_store.py` compatibility exports. |
