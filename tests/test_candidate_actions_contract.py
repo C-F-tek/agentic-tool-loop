@@ -15,6 +15,8 @@ from aicarmine_broker.application.candidate_actions import (  # noqa: E402
     candidate_action_tool,
     dedupe_candidate_actions,
     final_composition_tool_names_from_candidates,
+    preserve_required_next_tool_call_for_prompt,
+    required_next_tool_call_from_action,
 )
 
 
@@ -52,3 +54,70 @@ def test_final_composition_tool_names_from_candidates() -> None:
     }
 
     assert final_composition_tool_names_from_candidates(contract) == {"planner_scratchpad_write"}
+
+
+def test_required_next_tool_call_from_action_keeps_only_window_arguments() -> None:
+    action = {
+        "tool": "planner.scratchpad.read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "doc-1",
+            "offset": 100,
+            "max_chars": 500,
+            "target_file": "a.py",
+            "ignored": "drop",
+        },
+        "reason": "continue window",
+    }
+
+    assert required_next_tool_call_from_action(action) == {
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "doc-1",
+            "offset": 100,
+            "max_chars": 500,
+            "target_file": "a.py",
+        },
+        "reason": "continue window",
+    }
+    assert required_next_tool_call_from_action({"tool": "repo_read", "arguments": {"path": "a.py"}}) == {}
+
+
+def test_preserve_required_next_tool_call_for_prompt_restores_exact_surface() -> None:
+    matched = {
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "doc-1",
+            "offset": 100,
+            "max_chars": 500,
+        },
+        "reason": "continue window",
+    }
+    payload = {
+        "evidence_contract": {
+            "candidate_next_actions": [
+                {"tool": "repo_read", "arguments": {"path": "a.py"}},
+            ],
+            "finalization_contract": {"final_allowed": True},
+        }
+    }
+    previous = {
+        "required_next_tool_call": required_next_tool_call_from_action(matched),
+        "forbidden_repeated_tool_calls": [{"document_id": "doc-1", "offset": 0}],
+        "candidate_next_actions": [matched],
+        "required_next_progress": "read exact continuation",
+        "finalization_contract": {"final_allowed": False, "reason": "required continuation"},
+    }
+
+    preserve_required_next_tool_call_for_prompt(payload, previous)
+
+    evidence = payload["evidence_contract"]
+    assert payload["required_next_tool_call"] == previous["required_next_tool_call"]
+    assert evidence["required_next_tool_call"] == previous["required_next_tool_call"]
+    assert evidence["forbidden_repeated_tool_calls"] == [{"document_id": "doc-1", "offset": 0}]
+    assert evidence["candidate_next_actions"][0] == matched
+    assert evidence["required_next_progress"] == "read exact continuation"
+    assert evidence["planner_may_choose_final"] is False
+    assert evidence["finalization_contract"]["final_allowed"] is False

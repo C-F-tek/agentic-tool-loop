@@ -103,6 +103,8 @@ from .application.evidence_prompt_contract import (
 )
 from .application.candidate_actions import (
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
+    preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
+    required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
 )
 from .application.code_product_state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
@@ -1007,60 +1009,7 @@ def _preserve_required_next_tool_call_for_prompt(
     payload: dict[str, Any],
     previous_evidence_contract: dict[str, Any],
 ) -> None:
-    if not isinstance(payload, dict) or not isinstance(previous_evidence_contract, dict):
-        return
-    evidence = payload.get("evidence_contract") if isinstance(payload.get("evidence_contract"), dict) else {}
-    required = (
-        previous_evidence_contract.get("required_next_tool_call")
-        if isinstance(previous_evidence_contract.get("required_next_tool_call"), dict)
-        else {}
-    )
-    if not required:
-        return
-    evidence["required_next_tool_call"] = required
-    payload["required_next_tool_call"] = required
-    for key in ("forbidden_repeated_tool_calls",):
-        value = previous_evidence_contract.get(key)
-        if isinstance(value, list) and value:
-            evidence[key] = value
-            payload[key] = value
-    prev_actions = (
-        previous_evidence_contract.get("candidate_next_actions")
-        if isinstance(previous_evidence_contract.get("candidate_next_actions"), list)
-        else []
-    )
-    current_actions = evidence.get("candidate_next_actions") if isinstance(evidence.get("candidate_next_actions"), list) else []
-    required_key = json.dumps(required, ensure_ascii=False, sort_keys=True, default=str)
-    matched_action = {}
-    for action in prev_actions:
-        if not isinstance(action, dict):
-            continue
-        action_required = _required_next_tool_call_from_action(action)
-        if json.dumps(action_required, ensure_ascii=False, sort_keys=True, default=str) == required_key:
-            matched_action = action
-            break
-    if matched_action:
-        action_key = json.dumps(matched_action, ensure_ascii=False, sort_keys=True, default=str)
-        evidence["candidate_next_actions"] = [matched_action] + [
-            item for item in current_actions
-            if json.dumps(item, ensure_ascii=False, sort_keys=True, default=str) != action_key
-        ][:10]
-    progress = previous_evidence_contract.get("required_next_progress")
-    if progress not in (None, "", [], {}):
-        evidence["required_next_progress"] = progress
-    final_contract = evidence.get("finalization_contract") if isinstance(evidence.get("finalization_contract"), dict) else {}
-    prev_final_contract = (
-        previous_evidence_contract.get("finalization_contract")
-        if isinstance(previous_evidence_contract.get("finalization_contract"), dict)
-        else {}
-    )
-    if prev_final_contract.get("final_allowed") is False or required.get("tool") == "planner_scratchpad_read":
-        final_contract["final_allowed"] = False
-        final_contract["planner_may_choose_final"] = False
-        final_contract["reason"] = prev_final_contract.get("reason") or evidence.get("required_next_progress")
-        evidence["planner_may_choose_final"] = False
-    evidence["finalization_contract"] = final_contract
-    payload["evidence_contract"] = evidence
+    _preserve_required_next_tool_call_for_prompt_impl(payload, previous_evidence_contract)
 
 
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
@@ -1910,21 +1859,7 @@ def _decision_matches_prompt_context_continuation(
 
 
 def _required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(action, dict):
-        return {}
-    tool = _normalize_tool_name(str(action.get("tool") or ""))
-    args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
-    if tool != "planner_scratchpad_read" or not args:
-        return {}
-    return {
-        "tool": "planner_scratchpad_read",
-        "arguments": {
-            key: args.get(key)
-            for key in ("kind", "document_id", "offset", "max_chars", "target_file")
-            if args.get(key) not in (None, "", [], {})
-        },
-        "reason": action.get("reason"),
-    }
+    return _required_next_tool_call_from_action_impl(action)
 
 
 def _forbidden_repeated_prompt_window_calls(
