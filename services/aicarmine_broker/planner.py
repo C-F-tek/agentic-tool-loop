@@ -227,6 +227,10 @@ from .application.intrinsic_context_prompt import (
     compact_intrinsic_context_for_prompt as _compact_intrinsic_context_for_prompt_impl,
 )
 from .application.path_tokens import repo_rel_token as _repo_rel_token
+from .application.planner_status import (
+    planner_done_token as _planner_done_token_impl,
+    summarize_history_artifacts as _summarize_history_artifacts_impl,
+)
 from .application.prompt_budget import (
     planner_token_generation_reserve as _planner_token_generation_reserve,
     prompt_budget_report as _prompt_budget_report_impl,
@@ -2524,27 +2528,11 @@ def _compact_validation_rejections_tail(
 
 
 def summarize_history_artifacts(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for item in history:
-        if not isinstance(item, dict):
-            continue
-        r = item.get("tool_result")
-        if not isinstance(r, dict):
-            continue
-        if r.get("artifact") or r.get("tool"):
-            out.append({
-                "step": item.get("step"), "tool": r.get("tool"),
-                "ok": r.get("ok"), "artifact": r.get("artifact"), "path": r.get("path"),
-            })
-    return out[-10:]
+    return _summarize_history_artifacts_impl(history)
 
 
 def planner_done_token(raw_text: str) -> bool:
-    text = str(raw_text or "").strip().strip("` \r\n\t.。").lower()
-    return text in {
-        "done", "completed", "complete", "finished",
-        "terminato", "completato", "fatto", "eseguito", "выполнено",
-    }
+    return _planner_done_token_impl(raw_text)
 
 
 def extract_existing_goal_path(goal: str) -> str:
