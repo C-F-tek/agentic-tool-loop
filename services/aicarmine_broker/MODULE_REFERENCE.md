@@ -81,6 +81,7 @@ Read before edits:
 | `application/clean_values.py` | Small shared value-cleaning helpers used by application payload shapers. |
 | `application/controller_guards.py` | Controller guard counting, rejection signature and recoverable planner-block helpers. It contains loop-integrity checks without dispatching tools or finalizing jobs. |
 | `application/controller_preseed.py` | Initial repository-orientation preseed planner. It builds the same read-only repo_tree/repo_list_files/repo_read plan dictionaries from real root/list surfaces without dispatching tools or finalizing jobs. |
+| `application/core_discovery.py` | Builds core-discovery read candidates and status from intrinsic RAG chunks or current repo evidence using injected repo path/scope/readability checks. |
 | `application/code_product_state.py` | Deterministic code-product build-state parser/section helper, ready-payload extractor, inline proposal payload validator and exact old/new text parser. It does not read job history or execute tools. |
 | `application/code_product_history.py` | Code-product build-state history and action helper. It detects duplicate scratchpad writes, extracts ready/window-only state from planner history, builds exact read/write/propose actions, handles duplicate window replan contract shaping and receives artifact/content rehydration callbacks from the planner. |
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
