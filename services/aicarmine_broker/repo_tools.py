@@ -15,9 +15,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +27,18 @@ from .config import (
 from .infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from .job_store import now, write_json
 from .tools.command_safety import dangerous_command
+from .tools.deterministic_common import (
+    TOOL_RESULT_ITEMS_LIMIT as _TOOL_RESULT_ITEMS_LIMIT,
+    bounded_text as _bounded_text,
+    deterministic_tool_missing as _deterministic_tool_missing,
+    parse_json_output as _parse_json_output,
+    repo_existing_path as _repo_existing_path,
+    repo_existing_paths as _repo_existing_paths,
+    resolve_deterministic_executable as _resolve_deterministic_executable,
+    run_argv as _run_argv,
+    tool_ok_returncode as _tool_ok_returncode,
+    write_tool_artifact as _write_tool_artifact,
+)
 from .tools.powershell_runner import run_ps as _tool_run_ps
 from .tools.repo_code_product import repo_propose_code_edit
 from .tools.repo_command import repo_command
@@ -42,7 +51,6 @@ from .tools.repo_tree import repo_tree
 from .tools.repo_validate import repo_validate
 from .tools.terminal import (
     normalize_terminal_path,
-    strip_terminal_ansi,
     terminal_environment_contract,
     terminal_list_files,
     terminal_preferred_cwd,
@@ -68,193 +76,6 @@ def compact(value: Any, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
     )
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text[:limit] + ("\n... <truncated>" if len(text) > limit else "")
-
-
-_TOOL_RESULT_TEXT_LIMIT = 120_000
-_TOOL_RESULT_ITEMS_LIMIT = 500
-
-
-def _active_venv_script(name: str) -> Path:
-    suffix = ".exe" if os.name == "nt" and not name.lower().endswith(".exe") else ""
-    return Path(sys.executable).resolve(strict=False).parent / f"{name}{suffix}"
-
-
-def _winget_package_executable(package_prefix: str, executable_name: str) -> Path | None:
-    local = os.environ.get("LOCALAPPDATA")
-    if not local:
-        return None
-    packages = Path(local) / "Microsoft" / "WinGet" / "Packages"
-    if not packages.exists():
-        return None
-    for package_dir in packages.glob(f"{package_prefix}*"):
-        if not package_dir.is_dir():
-            continue
-        for candidate in package_dir.rglob(executable_name):
-            if candidate.is_file():
-                return candidate.resolve(strict=False)
-    return None
-
-
-_EXE_FALLBACKS: dict[str, list[Path]] = {
-    "ctags": [
-        p for p in [
-            _winget_package_executable("UniversalCtags.Ctags", "ctags.exe"),
-        ] if p is not None
-    ],
-    "shellcheck": [
-        p for p in [
-            _winget_package_executable("koalaman.shellcheck", "shellcheck.exe"),
-        ] if p is not None
-    ],
-    "hyperfine": [
-        p for p in [
-            _winget_package_executable("sharkdp.hyperfine", "hyperfine.exe"),
-        ] if p is not None
-    ],
-    "ruff": [_active_venv_script("ruff")],
-    "pyright": [_active_venv_script("pyright")],
-    "pytest": [_active_venv_script("pytest")],
-    "semgrep": [_active_venv_script("semgrep")],
-}
-
-
-def _resolve_deterministic_executable(name: str) -> str | None:
-    normalized = str(name or "").strip()
-    if not normalized:
-        return None
-    for candidate in _EXE_FALLBACKS.get(normalized.lower(), []):
-        if candidate and candidate.exists():
-            return str(candidate)
-    found = shutil.which(normalized)
-    if found:
-        return found
-    return None
-
-
-def _deterministic_tool_missing(tool: str, executable: str) -> dict[str, Any]:
-    return {
-        "ok": False,
-        "tool": tool,
-        "error": "deterministic_tool_missing",
-        "missing_executable": executable,
-    }
-
-
-def _bounded_text(value: Any, limit: int = _TOOL_RESULT_TEXT_LIMIT) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    return text[:limit] + ("\n... <truncated>" if len(text) > limit else "")
-
-
-def _run_argv(
-    argv: list[str],
-    *,
-    cwd: Path | None = None,
-    timeout: int = COMMAND_TIMEOUT_SECONDS,
-    stdin: str | None = None,
-) -> dict[str, Any]:
-    try:
-        completed = subprocess.run(
-            argv,
-            cwd=str((cwd or LAB_REPO).resolve(strict=False)),
-            input=stdin,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-        stdout = strip_terminal_ansi(completed.stdout)
-        stderr = strip_terminal_ansi(completed.stderr)
-        return {
-            "returncode": completed.returncode,
-            "stdout": _bounded_text(stdout),
-            "stderr": _bounded_text(stderr),
-            "stdout_tail": stdout[-8000:],
-            "stderr_tail": stderr[-8000:],
-            "timed_out": False,
-        }
-    except subprocess.TimeoutExpired as exc:
-        stdout = strip_terminal_ansi(exc.stdout or "")
-        stderr = strip_terminal_ansi(exc.stderr or "")
-        return {
-            "returncode": None,
-            "stdout": _bounded_text(stdout),
-            "stderr": _bounded_text(stderr),
-            "stdout_tail": stdout[-8000:],
-            "stderr_tail": stderr[-8000:],
-            "timed_out": True,
-            "error": "timeout",
-        }
-    except Exception as exc:
-        return {
-            "returncode": None,
-            "stdout": "",
-            "stderr": "",
-            "stdout_tail": "",
-            "stderr_tail": "",
-            "timed_out": False,
-            "error": str(exc),
-            "error_type": type(exc).__name__,
-        }
-
-
-def _repo_existing_path(value: str | None, *, default: str = ".") -> tuple[str, Path]:
-    raw = str(value or default).strip() or default
-    rel = "." if raw in {"", "."} else safe_rel_path(raw)
-    full = (LAB_REPO / rel).resolve(strict=False)
-    full.relative_to(LAB_REPO)
-    if not full.exists():
-        raise FileNotFoundError(rel)
-    return rel, full
-
-
-def _repo_existing_paths(values: Any, *, default: str = ".") -> list[tuple[str, Path]]:
-    raw_values: list[str] = []
-    if isinstance(values, list):
-        raw_values.extend(str(item) for item in values if str(item).strip())
-    elif isinstance(values, str) and values.strip():
-        raw_values.append(values)
-    if not raw_values:
-        raw_values.append(default)
-    out: list[tuple[str, Path]] = []
-    seen: set[str] = set()
-    for raw in raw_values:
-        rel, full = _repo_existing_path(raw)
-        if rel not in seen:
-            seen.add(rel)
-            out.append((rel, full))
-    return out
-
-
-def _parse_json_output(stdout: str) -> Any:
-    text = str(stdout or "").strip()
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except Exception:
-        rows = []
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except Exception:
-                return None
-        return rows
-
-
-def _write_tool_artifact(root: Path, tool: str, payload: dict[str, Any]) -> Path:
-    artifact = root / "tool-results" / f"{now()}-{tool}.json"
-    write_json(artifact, payload)
-    return artifact
-
-
-def _tool_ok_returncode(returncode: Any, *, no_match_ok: bool = False) -> bool:
-    if returncode == 0:
-        return True
-    return bool(no_match_ok and returncode == 1)
 
 
 # ---------------------------------------------------------------------------
