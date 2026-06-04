@@ -41,6 +41,7 @@ from .application.job_terminal_response import (
     build_missing_job_response,
 )
 from .application.job_status_response import build_compact_status_response
+from .application.job_wait_response import build_wait_timeout_response
 from .infrastructure.json_files import JsonFileStore
 from .infrastructure.time_provider import TimeProvider
 
@@ -356,41 +357,9 @@ def wait_for_agent_terminal(
             return terminal
         time.sleep(AGENT_WAIT_POLL_SECONDS)
     last_status = compact_agent_status(job_id, include_events=False)
-    last_status["mode"] = "agent_job_wait_timeout"
-    last_status["wait_completed"] = False
-    last_status["wait_timeout_seconds"] = timeout_seconds
-    last_status["events_tail_digest"] = [event_digest(ev) for ev in read_agent_events(job_id, 5)]
-    memory = last_status.get("working_memory_for_30b") if isinstance(last_status.get("working_memory_for_30b"), dict) else {}
-    candidates = memory.get("candidate_next_actions") if isinstance(memory.get("candidate_next_actions"), list) else []
-    rejections = memory.get("rejections_tail") if isinstance(memory.get("rejections_tail"), list) else []
-    last_status["message_for_30b"] = (
-        f"Agent job {job_id} is still running after {timeout_seconds}s; "
-        f"status={last_status.get('status')} step={last_status.get('current_step')} "
-        f"message={last_status.get('status_message') or ''}. "
-        f"candidate_next_actions={len(candidates)} recent_rejections={len(rejections)}. "
-        "The structured working_memory_for_30b/evidence_contract fields are included in this same result; "
-        "use them before deciding whether to call action='status' or action='result'."
+    return build_wait_timeout_response(
+        job_id=job_id,
+        last_status=last_status,
+        timeout_seconds=timeout_seconds,
+        events_tail=read_agent_events(job_id, 5),
     )
-    last_status["answer_for_30b"] = last_status["message_for_30b"]
-    last_status["next_action_for_30b"] = {
-        "action": "continue_same_openwebui_context",
-        "status": last_status.get("status"),
-        "job_id": job_id,
-        "tool_call": {
-            "tool_name": "vulkan_helper",
-            "arguments": {"action": "status", "job_id": job_id},
-        },
-        "do_not": [
-            "do_not_drop_openwebui_context",
-            "do_not_treat_dashboard_url_as_only_result",
-            "do_not_start_duplicate_job_for_same_request",
-        ],
-    }
-    last_status["continuation_surface"] = {
-        "public_tool": "vulkan_helper",
-        "current_call_wait_timed_out": True,
-        "same_job_id": job_id,
-        "call_protocol": {"action": "status", "job_id": job_id},
-        "result_protocol": {"action": "result", "job_id": job_id},
-    }
-    return last_status

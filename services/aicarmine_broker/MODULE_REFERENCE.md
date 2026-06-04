@@ -98,6 +98,7 @@ Read before edits:
 | `application/job_response_values.py` | Pure public job-response value helpers: text/JSON compaction and event digest shaping used by `job_store.py` compatibility exports. |
 | `application/job_status_response.py` | Pure compact status response builder for running/queued jobs. `job_store.py` provides state/events and this module shapes the OpenWebUI-facing status payload. |
 | `application/job_terminal_response.py` | Pure compact terminal job-response builder. `job_store.py` still owns loading state/final JSON/events, then delegates payload construction here. |
+| `application/job_wait_response.py` | Pure wait-timeout response builder. Polling stays in `job_store.py`; this module adds timeout metadata, continuation guidance and event digest. |
 | `application/job_worker.py` | Background job worker application service. It owns running/failure state transitions, planner handoff and disabled-planner legacy one-shot execution through injected persistence/planner/agent dependencies. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/prompt_budget.py` | Prompt compaction/headroom/window-size calculations and serialized prompt budget reports derived from runtime config. It does not build prompts or decide planner actions. |
