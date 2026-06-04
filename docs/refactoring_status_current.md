@@ -12,8 +12,8 @@ is an audit note only and does not change the 3571/3572 runtime contract.
 - Remote tracking branch: `origin/codex/refactor-agentic-tool-loop`
 - Base reference: `origin/main`
 - Base SHA: `5b9e4b916a90c12d9bfa469ceb7ab424a3a12cc5`
-- Head SHA: `c27ff836bdc36b3c4e4042611f01fc0a3d3fb33f`
-- Commits ahead of `origin/main`: `74`
+- Head SHA: `45c6f041d48e84f43bee8ff6883564a116956718`
+- Commits ahead of `origin/main`: `78`
 
 ## Baseline Verification
 
@@ -22,8 +22,8 @@ Commands run from `C:\Users\carmi\AI` with
 
 - `python -m compileall -q services`: passed.
 - Initial baseline `python -m pytest -q`: `222 passed in 0.73s`.
-- Current verification after job-store SQLite and bridge helper splits:
-  `275 passed in 1.09s`.
+- Current verification after planner status/final-digest/sanitizer helper
+  splits: `286 passed in 1.02s`.
 - `git pull --ff-only`: already up to date.
 
 PowerShell launcher inventory command was also run:
@@ -63,13 +63,21 @@ knowledge. That is expected until the launcher module split phase.
   `vulkan_bridge/application/request_payload.py` and
   `vulkan_bridge/application/response_values.py`, with compatibility wrappers
   kept in `app.py`.
+- `planner.py` has begun the controlled facade migration with pure
+  planner-adjacent helpers moved to:
+  `application/planner_status.py`,
+  `application/final_state_result.py` and
+  `application/public_terminal_sanitizer.py`. These slices keep compatibility
+  wrappers in `planner.py` and do not change validator, native tool gate,
+  finalization rules or public 3571 payload contracts.
 
 ## Current Monolithic / Incomplete Areas
 
 These areas still fail the final Definition of Done from the executive plan:
 
 - `services/aicarmine_broker/planner.py` is still operational and not yet a
-  facade to `application/planner_loop.py`.
+  facade to `application/planner_loop.py`, but pure status, terminal digest and
+  terminal sanitization helpers have been extracted with tests.
 - `services/aicarmine_broker/agent_entry.py` still imports runtime dependencies
   to build compatibility adapters, but worker, lifecycle, selector dispatch and
   action routing behavior now live in `application/*`.
