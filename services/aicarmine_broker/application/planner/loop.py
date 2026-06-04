@@ -5,6 +5,8 @@ from __future__ import annotations
 import traceback
 from typing import Any, Mapping
 
+from .state import PlannerLoopState
+
 
 def run_agentic_planner_job(
     job_id: str,
@@ -79,6 +81,12 @@ def run_agentic_planner_job(
     original_args = dict(state.get("original_args") or {})
     public_tool_name = str(state.get("public_tool_name") or "vulkan_helper")
     history: list[dict[str, Any]] = []
+    loop_state = PlannerLoopState(
+        _state=state,
+        _history=history,
+        _history_ledger=planner_history_ledger,
+        _evidence_builder=lambda rows: planner_evidence_contract(str(state.get("goal") or ""), rows),
+    )
 
     def persist_loop_turn_memory(row: dict[str, Any]) -> None:
         state["controller_loop_turn_memory_last_write"] = _write_loop_turn_memory(
@@ -108,10 +116,7 @@ def run_agentic_planner_job(
             "decision": {k: v for k, v in planner_decision.items() if k != "raw_planner_text_preview"},
             "tool_result": cached_result,
         }
-        history.append(row)
-        state["history"] = planner_history_ledger(history)
-        state["history_count"] = len(history)
-        state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+        loop_state.append_history_row(row)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
 
@@ -141,10 +146,7 @@ def run_agentic_planner_job(
             "decision": {"action": "continue_required", "reason": "repeat guard rejected planner proposal"},
             "tool_result": guard_result,
         }
-        history.append(row)
-        state["history"] = planner_history_ledger(history)
-        state["history_count"] = len(history)
-        state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+        loop_state.append_history_row(row)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
 
@@ -205,9 +207,7 @@ def run_agentic_planner_job(
         }
         if substep is not None:
             row["substep"] = substep
-        history.append(row)
-        state["history"] = planner_history_ledger(history)
-        state["history_count"] = len(history)
+        loop_state.append_history_row(row, update_evidence=False)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
         return None
@@ -234,9 +234,7 @@ def run_agentic_planner_job(
             history,
             initial_orientation_skipped,
         )
-        state["history"] = planner_history_ledger(history)
-        state["history_count"] = len(history)
-        state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+        loop_state.refresh_history()
         state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
             str(state.get("goal") or ""),
             history,
@@ -327,7 +325,7 @@ def run_agentic_planner_job(
             },
             "tool_result": compact_preseed,
         }
-        history.append(row)
+        loop_state.append_history_row(row)
         persist_loop_turn_memory(row)
         update_initial_orientation_state()
         return preseed_result if isinstance(preseed_result, dict) else {}, compact_preseed
@@ -468,10 +466,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
                     str(state.get("goal") or ""),
                     history,
@@ -619,10 +614,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": batch_guard,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
@@ -711,10 +703,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
@@ -767,10 +756,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
                     str(state.get("goal") or ""),
                     history,
@@ -830,10 +816,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
@@ -864,10 +847,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 blocker_answer = (
@@ -923,10 +903,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 return finalize_agentic_job(
@@ -1101,10 +1078,7 @@ def run_agentic_planner_job(
                         },
                     },
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 if repaired_validation.get("ok"):
@@ -1173,10 +1147,7 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
-                state["evidence_contract"] = planner_evidence_contract(str(state.get("goal") or ""), history)
+                loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
@@ -1204,9 +1175,7 @@ def run_agentic_planner_job(
                         ),
                     },
                 }
-                history.append(row)
-                state["history"] = planner_history_ledger(history)
-                state["history_count"] = len(history)
+                loop_state.append_history_row(row, update_evidence=False)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
@@ -1298,9 +1267,7 @@ def run_agentic_planner_job(
             "decision": {k: v for k, v in decision.items() if k != "raw_planner_text_preview"},
             "tool_result": compact_result,
         }
-        history.append(row)
-        state["history"] = planner_history_ledger(history)
-        state["history_count"] = len(history)
+        loop_state.append_history_row(row, update_evidence=False)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
 

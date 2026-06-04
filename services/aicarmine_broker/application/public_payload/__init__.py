@@ -12,6 +12,7 @@ _PUBLIC_EXPORTS = {
     'answer_for_openwebui': 'openwebui_terminal_answer',
     'build_public_result_digest': 'history_ledger',
     'build_tool_context_for_30b': 'openwebui_tool_context',
+    'OpenWebUIPayloadBuilder': 'openwebui_tool_context',
     'public_terminal_result_for_30b': 'terminal_result',
     'public_tool_artifact_rows': 'tool_context',
 

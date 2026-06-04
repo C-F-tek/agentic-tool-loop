@@ -32,13 +32,13 @@ def test_flat_application_shims_are_removed() -> None:
 def test_application_superowners_expose_controlled_public_api() -> None:
     expected = {
         "planner": "run_agentic_planner_job",
-        "prompt": "build_planner_user_payload",
-        "evidence": "planner_evidence_contract",
+        "prompt": "PromptPackBuilder",
+        "evidence": "EvidenceBuilder",
         "code_product": "code_product_build_state_parse",
-        "public_payload": "build_tool_context_for_30b",
+        "public_payload": "OpenWebUIPayloadBuilder",
         "job": "AgentJobLifecycle",
         "controller": "controller_guard_count",
-        "tool_surface": "build_default_dispatcher",
+        "tool_surface": "ToolSurfacePolicy",
         "shared": "repo_rel_token",
     }
 
@@ -46,3 +46,26 @@ def test_application_superowners_expose_controlled_public_api() -> None:
         module = importlib.import_module(f"aicarmine_broker.application.{package}")
         assert public_name in module.__all__
         assert getattr(module, public_name) is not None
+
+
+def test_planner_loop_history_mutation_uses_state_owner() -> None:
+    loop_text = (ROOT / "services" / "aicarmine_broker" / "application" / "planner" / "loop.py").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    state_text = (ROOT / "services" / "aicarmine_broker" / "application" / "planner" / "state.py").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert "class PlannerLoopState" in state_text
+    assert "append_history_row" in state_text
+    assert "refresh_history" in state_text
+    forbidden = (
+        "history.append(",
+        'state["history"]',
+        'state["history_count"]',
+        'state["evidence_contract"]',
+    )
+    for pattern in forbidden:
+        assert pattern not in loop_text, pattern

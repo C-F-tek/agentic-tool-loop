@@ -98,6 +98,15 @@ modules are implementation details. Mutating runtime state should happen only
 through the owning service/package public API, not by reaching into flat aliases
 or internal helper dictionaries.
 
+Owner class convention applies where a capability owns mutable runtime state or
+large dependency sets: immutable inputs use `@dataclass(frozen=True)`, runtime
+dependencies are private attributes, and callers use public methods such as
+`PromptPackBuilder.build()`, `EvidenceBuilder.build()`,
+`OpenWebUIPayloadBuilder.build_terminal_payload()` and
+`ToolSurfacePolicy.tools_for_turn()`/`apply()`. Module-level functions may
+remain only as stable entrypoints that delegate to the owner class in the same
+module; they are not compatibility shims for old flat modules.
+
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
@@ -113,7 +122,7 @@ or internal helper dictionaries.
 | `application/code_product/history.py` | Code-product build-state history and action helper. It detects duplicate scratchpad writes, extracts ready/window-only state from planner history, builds exact read/write/propose actions, handles duplicate window replan contract shaping and receives artifact/content rehydration callbacks from the planner. |
 | `application/code_product/public_outputs.py` | Public code-product and partial-product text helpers for 30B/OpenWebUI. It formats accepted report-only proposals and rejected/partial code-product candidates without changing validator acceptance. |
 | `application/planner/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
-| `application/evidence/builder.py` | Owner for the planner evidence contract and finalization gate data. It computes verified reads, code-product requirements, candidate next actions and turn-surface policy without dispatching tools or calling models. |
+| `application/evidence/builder.py` | Owner for the planner evidence contract and finalization gate data. `EvidenceBuilder` encapsulates config/dependencies privately and computes verified reads, code-product requirements, candidate next actions and turn-surface policy without dispatching tools or calling models. |
 | `application/prompt/evidence_contract.py` | Prompt-facing evidence contract compaction and hard-budget summary helpers. It keeps the planner-visible keys bounded without storing windows or changing validation policy. |
 | `application/evidence/execution_digest.py` | Builds OpenWebUI follow-up evidence text and bounded repo-read content views from executed tool history. It rehydrates same-job repo_read artifacts but does not decide planner actions. |
 | `application/public_payload/final_state_result.py` | Pure final-state result compaction helper. It builds terminal digest fields with an injected history ledger builder and does not finalize jobs. |
@@ -125,9 +134,9 @@ or internal helper dictionaries.
 | `application/prompt/history_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
 | `application/evidence/initial_orientation.py` | Builds the read-only initial orientation surface from controller preseed history rows. It summarizes root tree, docs read, listed areas and concrete files without deciding planner actions. |
 | `application/prompt/intrinsic_context.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
-| `application/prompt/pack_builder.py` | Owner for measured planner prompt payload construction, including prompt budget reports, hard-budget windowing and required continuation surface preservation. It builds the payload but does not call Ollama, validate decisions or dispatch tools. |
+| `application/prompt/pack_builder.py` | Owner for measured planner prompt payload construction, including prompt budget reports, hard-budget windowing and required continuation surface preservation. `PromptPackBuilder` owns config/dependency access through private attributes. It builds the payload but does not call Ollama, validate decisions or dispatch tools. |
 | `application/public_payload/openwebui_terminal_answer.py` | Builds the terminal `answer_for_30b` text and `next_action_for_30b` instruction for OpenWebUI using injected code-product/evidence/partial-product text builders. |
-| `application/public_payload/openwebui_tool_context.py` | Builds the structured terminal `tool_context_for_30b` payload from injected planner/job/output helpers, preserving the public OpenWebUI payload contract without owning validation policy. |
+| `application/public_payload/openwebui_tool_context.py` | Builds the structured terminal `tool_context_for_30b` payload from injected planner/job/output helpers. `OpenWebUIPayloadBuilder` keeps those dependencies private and preserves the public OpenWebUI payload contract without owning validation policy. |
 | `application/job/action_router.py` | Public broker payload router. It normalizes start/status/result/cancel actions, handles cancel state transitions and delegates non-job requests to the selector runner. |
 | `application/job/lifecycle.py` | Agent job lifecycle service. It creates queued job state, starts/reuses the background worker thread and returns start/wait responses through injected persistence, thread registry and wait helpers. |
 | `application/job/response_values.py` | Pure public job-response value helpers: text/JSON compaction and event digest shaping used by `job_store.py` compatibility exports. |
@@ -137,7 +146,8 @@ or internal helper dictionaries.
 | `application/job/worker.py` | Background job worker application service. It owns running/failure state transitions, planner handoff and disabled-planner legacy one-shot execution through injected persistence/planner/agent dependencies. |
 | `application/shared/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/planner/status.py` | Pure planner status helpers for done-token detection and bounded artifact summaries. It does not call Ollama, dispatch tools or finalize jobs. |
-| `application/planner/loop.py` | Owner for the multi-step agentic planner job loop. It coordinates preseed reads, per-step decisions, validation guards, tool execution, repair routing and terminal handoff through injected dependencies while preserving the rule that the planner decides and the controller validates. |
+| `application/planner/loop.py` | Owner for the multi-step agentic planner job loop. It coordinates preseed reads, per-step decisions, validation guards, tool execution, repair routing and terminal handoff through injected dependencies while preserving the rule that the planner decides and the controller validates. Planner history/evidence mutation is delegated to `PlannerLoopState`. |
+| `application/planner/state.py` | Controlled mutable-state boundary for the planner loop. `PlannerLoopState` owns updates to history ledger, history count and evidence contract through public methods instead of letting loop branches mutate those keys directly. |
 | `application/planner/turn.py` | Owner for one measured 11434 planner turn: prompt payload assembly, native/history transport, planner request capture, stream response handling and decision normalization. It does not validate decisions, dispatch tools or finalize jobs. |
 | `application/planner/system_prompt.py` | Planner system-prompt contract for native and non-native tool modes. It owns the static planner instructions without calling models, validating decisions or dispatching tools. |
 | `application/prompt/budget.py` | Prompt compaction/headroom/window-size calculations and serialized prompt budget reports derived from runtime config. It does not build prompts or decide planner actions. |
@@ -158,7 +168,7 @@ or internal helper dictionaries.
 | `application/prompt/tool_contract.py` | Planner prompt contract helper for available-tool payloads and native/legacy tool-shape examples. It does not dispatch tools or alter provider schemas. |
 | `application/tool_surface/result_compaction.py` | Planner-facing tool-result compaction policy. It preserves code-product diffs and prompt-context window tracking while bounding ordinary tool payloads. |
 | `application/tool_surface/result_digest.py` | Planner-facing last-tool-result digest helper. It preserves code-product payloads and bounded prompt-context window metadata. |
-| `application/tool_surface/turn_surface_policy.py` | Dynamic planner turn tool-surface policy. It filters candidate actions and provider tool names according to required progress without executing fallback steps. |
+| `application/tool_surface/turn_surface_policy.py` | Dynamic planner turn tool-surface policy. `ToolSurfacePolicy` owns the public `tools_for_turn()` and `apply()` operations, filters candidate actions and provider tool names according to required progress, and does not execute fallback steps. |
 | `application/tool_surface/dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
 | `application/evidence/user_scope_claims.py` | Extracts user-declared scope claims, such as `_shared` not being core, as evidence constraints with injected repo-existence checks instead of hard-coded controller behavior. |
 | `application/planner/validator.py` | Owner for planner-decision validation against the current evidence contract. It rejects invalid native/text tool calls, repeated reads, missing required windows and code-product contract violations without dispatching tools or finalizing jobs. |

@@ -15,6 +15,8 @@ _PUBLIC_EXPORTS = {
     'candidate_actions_from_evidence': 'candidate_actions',
     'compact_tool_result_for_planner': 'result_compaction',
     'native_tools_schema_for_planner': 'manifest_builder',
+    'ToolSurfacePolicy': 'turn_surface_policy',
+    'apply_turn_surface_policy': 'turn_surface_policy',
     'tool_surface_names_for_turn': 'turn_surface_policy',
 
 }

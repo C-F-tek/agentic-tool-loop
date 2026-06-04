@@ -11,6 +11,7 @@ from __future__ import annotations
 _PUBLIC_EXPORTS = {
     'normalize_planner_decision': 'decision_normalizer',
     'planner_decision': 'turn',
+    'PlannerLoopState': 'state',
     'planner_system_for_current_mode': 'system_prompt',
     'run_agentic_planner_job': 'loop',
     'validate_planner_decision_against_evidence': 'validator',

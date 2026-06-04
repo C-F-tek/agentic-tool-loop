@@ -9,6 +9,7 @@ owner module, not depend on flat compatibility shims.
 from __future__ import annotations
 
 _PUBLIC_EXPORTS = {
+    'EvidenceBuilder': 'builder',
     'execution_evidence_digest_text': 'execution_digest',
     'goal_requests_apply': 'goal_classifier',
     'goal_requests_code_product': 'goal_classifier',

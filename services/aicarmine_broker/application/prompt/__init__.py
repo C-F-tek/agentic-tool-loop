@@ -10,6 +10,7 @@ from __future__ import annotations
 
 _PUBLIC_EXPORTS = {
     'build_planner_user_payload': 'pack_builder',
+    'PromptPackBuilder': 'pack_builder',
     'prompt_budget_report': 'budget',
     'prompt_clip_value': 'values',
     'prompt_compaction_threshold': 'budget',
