@@ -1,13 +1,12 @@
 """Public agent entrypoint and background job lifecycle."""
 from __future__ import annotations
 
-import json
 import threading
 import time
-import traceback
 import uuid
 from typing import Any
 
+from .application.job_worker import AgentJobWorker
 from .config import (
     AGENT_APPROVAL_MODE,
     AGENT_DEFAULT_MAX_STEPS,
@@ -44,56 +43,24 @@ from .tool_dispatch import dispatch_tool
 from .tool_selection import needs_composite_review, select_internal_tool, selector_fallback_tool
 
 
+def build_job_worker() -> AgentJobWorker:
+    return AgentJobWorker(
+        load_state=load_agent_job_state,
+        write_state=write_agent_job_state,
+        append_event=append_agent_event,
+        agent_job_root=agent_job_root,
+        write_json=write_json,
+        planner_runner=run_agentic_planner_job,
+        agent_runner=agent,
+        summary_from_result=summary_from_result,
+        agentic_planner_enabled=AGENTIC_PLANNER_ENABLED,
+        agentic_fallback_oneshot=AGENTIC_FALLBACK_ONESHOT,
+    )
+
+
 def agent_job_worker(job_id: str) -> None:
-    state = load_agent_job_state(job_id)
-    if not state:
-        return
-    state['status'] = 'running'
-    write_agent_job_state(state)
-    append_agent_event(job_id, 'job_started', 'Background agent job started.', {'job_id': job_id}, step=0)
-    try:
-        if AGENTIC_PLANNER_ENABLED:
-            final = run_agentic_planner_job(job_id)
-            return
-        if not AGENTIC_FALLBACK_ONESHOT:
-            raise RuntimeError(
-                "Agentic planner is disabled and AICARMINE_AGENTIC_FALLBACK_ONESHOT=0; "
-                "refusing legacy one-shot fallback for OpenWebUI wrapper job."
-            )
-        run_payload = dict(state.get('request_payload') or {})
-        run_args = dict(run_payload.get('arguments') or {})
-        for key in ('action', 'job_action', 'job_id'):
-            run_payload.pop(key, None)
-            run_args.pop(key, None)
-        run_payload['arguments'] = run_args
-        run_payload['mode'] = 'tool_helper'
-        run_payload['session_id'] = job_id
-        append_agent_event(job_id, 'agent_call', 'Running legacy one-shot broker pipeline in background.', {'payload_keys': sorted(run_payload.keys())}, step=1)
-        result = agent(run_payload)
-        root = agent_job_root(job_id)
-        write_json(root / 'final.json', result)
-        final_summary = summary_from_result(result if isinstance(result, dict) else {'result': result})
-        (root / 'final.md').write_text(final_summary, encoding='utf-8')
-        state = load_agent_job_state(job_id) or state
-        state['status'] = 'completed' if bool(result.get('ok')) else 'failed'
-        state['result_ok'] = bool(result.get('ok'))
-        state['final_path'] = str(root / 'final.json')
-        state['final_markdown_path'] = str(root / 'final.md')
-        state['final_summary'] = final_summary[:12000]
-        state['result'] = {'ok': bool(result.get('ok')), 'verdict': result.get('verdict'), 'internal_tool': (result.get('internal_vulkan') or {}).get('tool_called_by_vulkan') if isinstance(result.get('internal_vulkan'), dict) else None, 'artifacts': result.get('artifacts')}
-        write_agent_job_state(state)
-        append_agent_event(job_id, 'job_finished', f"Job finished with status={state['status']}.", state.get('result', {}), step=2)
-    except Exception as exc:
-        root = agent_job_root(job_id)
-        error_text = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-        (root / 'error.txt').write_text(error_text, encoding='utf-8')
-        state = load_agent_job_state(job_id) or state
-        state['status'] = 'failed'
-        state['error'] = error_text[-12000:]
-        state['final_path'] = str(root / 'error.txt')
-        state['final_summary'] = f'Agent job failed: {type(exc).__name__}: {exc}'
-        write_agent_job_state(state)
-        append_agent_event(job_id, 'job_failed', state['final_summary'], {'error_type': type(exc).__name__}, step=999)
+    return build_job_worker().run(job_id)
+
 
 def start_agent_job(payload: dict[str, Any], public_tool_name: str, original_args: dict[str, Any], task: str) -> dict[str, Any]:
     init_agent_job_db()
@@ -125,18 +92,6 @@ def start_agent_job(payload: dict[str, Any], public_tool_name: str, original_arg
     waited['called_by_30b'] = public_tool_name
     return waited
 
-from .tool_contract import (
-    public_args,
-    public_tool,
-    sanitize_tool_args,
-    text_from_payload,
-)
-
-from .tool_dispatch import dispatch_tool
-
-from .tool_selection import needs_composite_review, select_internal_tool, selector_fallback_tool
-
-from .public_wrapper import deterministic_public_wrapper, fail_selector, summary_from_result
 
 def agent(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):

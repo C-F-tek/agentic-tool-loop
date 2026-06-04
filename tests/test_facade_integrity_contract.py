@@ -34,6 +34,23 @@ def test_module_reference_declares_repo_tools_and_tool_dispatch_facades() -> Non
     assert "`repo_tools.py` | Compatibility facade" in text
     assert "`tool_dispatch.py` | Compatibility facade" in text
     assert "application/tool_dispatcher.py" in text
+    assert "`application/job_worker.py` | Background job worker" in text
+
+
+def test_agent_entry_worker_logic_is_extracted() -> None:
+    text = _read("services/aicarmine_broker/agent_entry.py")
+
+    assert "from .application.job_worker import AgentJobWorker" in text
+    assert "def build_job_worker" in text
+    forbidden = (
+        "traceback.format_exception",
+        "error.txt",
+        "final.json",
+        "final.md",
+        "run_agentic_planner_job(job_id)",
+    )
+    for pattern in forbidden:
+        assert pattern not in text, pattern
 
 
 def test_tool_dispatch_facade_has_no_if_table() -> None:

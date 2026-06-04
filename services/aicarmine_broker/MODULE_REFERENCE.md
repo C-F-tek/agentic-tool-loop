@@ -54,7 +54,7 @@ Read before edits:
 | --- | --- |
 | `__init__.py` | Package import compatibility. It imports the app package surface so historical uvicorn/import targets keep working. Keep import side effects minimal. |
 | `app.py` | FastAPI application factory and route registration for the 3572 broker. It exposes health, job index, job JSON, job events, final artifacts and `/vulkan/agent`. It should only route requests and delegate lifecycle to `agent_entry` and persistence to `job_store`. |
-| `agent_entry.py` | Job entrypoint and background worker orchestration. It creates queued job state, starts the worker, invokes `run_agentic_planner_job`, and returns public job metadata. It is not the finalization authority; planner/controller validation decides terminal state. |
+| `agent_entry.py` | Job entrypoint facade and start/status/result/cancel router. It creates queued job state, starts the thread and delegates background execution to `application/job_worker.py`. It is not the finalization authority; planner/controller validation decides terminal state. |
 | `config.py` | Central environment parser for planner URLs/models, timeouts, max steps, result limits, optional tool lists and Ollama options. This is the first file to inspect when runtime behavior differs between shells or launchers. |
 | `dispatcher.py` | Compatibility facade that re-exports dispatch and job helpers for older import paths. Do not add new behavior here; correct the owning module instead. |
 | `helper.py` | Composite helper logic for public-style requests and repository evidence summaries. It can gather repo context and useful next calls, but it must not replace real tool results with local artifact paths. |
@@ -93,6 +93,7 @@ Read before edits:
 | `application/planner_history_messages.py` | Planner history message shaping for Ollama/native turns. It removes transport noise, preserves bounded prompt windows and stores oversized history payloads through injected window storage. |
 | `application/history_prompt_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
+| `application/job_worker.py` | Background job worker application service. It owns running/failure state transitions, planner handoff and disabled-planner legacy one-shot execution through injected persistence/planner/agent dependencies. |
 | `application/path_tokens.py` | Shared repo-relative token normalizer used by planner/cache helpers. It preserves dot-directories while removing only literal `./` prefixes. |
 | `application/prompt_budget.py` | Prompt compaction/headroom/window-size calculations and serialized prompt budget reports derived from runtime config. It does not build prompts or decide planner actions. |
 | `application/prompt_context_windows.py` | Prompt-context window compaction and bounded planner_scratchpad_read result helpers. It preserves text plus tracking hashes/offsets for recursive SQLite windows. |
