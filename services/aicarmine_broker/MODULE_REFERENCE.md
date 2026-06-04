@@ -107,6 +107,7 @@ Read before edits:
 | `application/tool_result_digest.py` | Planner-facing last-tool-result digest helper. It preserves code-product payloads and bounded prompt-context window metadata. |
 | `application/turn_surface_policy.py` | Dynamic planner turn tool-surface policy. It filters candidate actions and provider tool names according to required progress without executing fallback steps. |
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
+| `application/user_scope_claims.py` | Extracts user-declared scope claims, such as `_shared` not being core, as evidence constraints with injected repo-existence checks instead of hard-coded controller behavior. |
 | `application/validation_rejections.py` | Validation rejection signature and prompt compaction helpers, including invalid code-product repeat detection. |
 | `application/window_signatures.py` | Pure signature/range helpers for repo_read and planner_scratchpad_read windows. Used to prevent repeated identical reads without embedding history policy. |
 

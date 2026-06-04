@@ -286,6 +286,12 @@ from .application.turn_surface_policy import (
     contract_final_required_now as _contract_final_required_now,
     tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
 )
+from .application.user_scope_claims import (
+    claim_area_from_user_token as _claim_area_from_user_token_impl,
+    normalize_scope_claim_text as _normalize_scope_claim_text_impl,
+    scope_claim_conflict_for_path as _scope_claim_conflict_for_path_impl,
+    user_scope_claims as _user_scope_claims_impl,
+)
 from .application.validation_rejections import (
     canonical_invalid_code_product_decision_signature as _canonical_invalid_code_product_decision_signature_impl,
     compact_validation_rejections_tail as _compact_validation_rejections_tail_impl,
@@ -3071,79 +3077,27 @@ def _rank_core_candidates(file_memory: list[dict[str, Any]], list_rows: list[dic
 
 
 def _normalize_scope_claim_text(text: str) -> str:
-    return (
-        str(text or "")
-        .lower()
-        .replace("\\", "/")
-        .replace("è", "e")
-        .replace("é", "e")
-        .replace("'", " ")
-    )
+    return _normalize_scope_claim_text_impl(text)
 
 
 def _claim_area_from_user_token(raw_area: str, target_scope: str = "") -> str:
-    area = _repo_rel_token(raw_area)
-    if area.lower() == "shared":
-        area = "_shared"
-    scope = _repo_rel_token(target_scope)
-    if area == "_shared" and scope and scope != ".":
-        if scope.endswith("/_shared") or scope == "_shared":
-            return scope
-        scoped_area = f"{scope.rstrip('/')}/_shared"
-        if _path_exists_repo_relative(scoped_area):
-            return scoped_area
-    if area == "_shared" and _path_exists_repo_relative("ia_carmine/_shared"):
-        return "ia_carmine/_shared"
-    return area
+    return _claim_area_from_user_token_impl(
+        raw_area,
+        target_scope,
+        path_exists_repo_relative=_path_exists_repo_relative,
+    )
 
 
 def _user_scope_claims(goal: str, target_scope: str = "") -> list[dict[str, Any]]:
-    """Extract user scope claims as evidence, not as a static blacklist."""
-    text = str(goal or "")
-    low = _normalize_scope_claim_text(text)
-    patterns = (
-        r"(?P<area>(?:[\w.+-]+/)*_shared|shared)\b.{0,180}\b(?:non\s+(?:e\s+)?(?:il\s+|la\s+)?core|not\s+(?:the\s+)?core)\b",
-        r"(?P<area>(?:[\w.+-]+/)*_shared|shared)\b.{0,180}\b(?:solo|only)\b.{0,120}\b(?:script|util|utility)\b",
+    return _user_scope_claims_impl(
+        goal,
+        target_scope,
+        path_exists_repo_relative=_path_exists_repo_relative,
     )
-    claims: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for pattern in patterns:
-        for match in re.finditer(pattern, low, flags=re.IGNORECASE | re.DOTALL):
-            area = _claim_area_from_user_token(match.group("area"), target_scope)
-            if not area or area == ".":
-                continue
-            key = (area, "not_core")
-            if key in seen:
-                continue
-            seen.add(key)
-            start = max(0, match.start() - 40)
-            end = min(len(text), match.end() + 40)
-            claims.append({
-                "area": area,
-                "claim": "not_core",
-                "source": "user_request",
-                "text": text[start:end].strip(),
-                "validator_effect": "requires_read_evidence_for_conflicting_patch_target",
-            })
-    return claims
 
 
 def _scope_claim_conflict_for_path(path: str, claims: list[dict[str, Any]]) -> dict[str, Any]:
-    p = _repo_rel_token(path).strip("/")
-    low = p.lower()
-    for claim in claims if isinstance(claims, list) else []:
-        if not isinstance(claim, dict) or str(claim.get("claim") or "") != "not_core":
-            continue
-        area = _repo_rel_token(claim.get("area") or "").strip("/").lower()
-        if not area:
-            continue
-        if area in {"_shared", "shared"}:
-            if low.startswith("_shared/") or "/_shared/" in f"/{low}/":
-                return claim
-            continue
-        if low == area or low.startswith(area + "/"):
-            return claim
-    return {}
+    return _scope_claim_conflict_for_path_impl(path, claims)
 
 
 def _add_core_discovery_candidate(
