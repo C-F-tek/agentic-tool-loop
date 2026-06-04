@@ -50,6 +50,7 @@ Read before edits:
 | --- | --- |
 | `application/__init__.py` | Package marker for 3571 application helpers extracted from `app.py`. |
 | `application/request_payload.py` | Pure request-payload normalization helpers for public agent arguments, model/dict payload conversion and first text/dict extraction. `app.py` keeps compatibility wrappers for existing call sites. |
+| `application/response_values.py` | Pure response value helpers for text compaction, JSON size measurement and compact bridge result digests. `app.py` keeps compatibility wrappers for existing call sites. |
 
 ## Public Result Contract
 
