@@ -10,6 +10,15 @@ from .repo_read import repo_read
 from .repo_search import repo_search
 from .repo_tree import repo_tree
 from .repo_validate import repo_validate
+from .terminal import (
+    normalize_terminal_path,
+    strip_terminal_ansi,
+    terminal_environment_contract,
+    terminal_list_files,
+    terminal_preferred_cwd,
+    terminal_run_command_wait,
+    terminal_search_files,
+)
 
 __all__ = [
     "dangerous_command",
@@ -23,4 +32,11 @@ __all__ = [
     "repo_validate",
     "repo_write_file",
     "run_ps",
+    "normalize_terminal_path",
+    "strip_terminal_ansi",
+    "terminal_environment_contract",
+    "terminal_list_files",
+    "terminal_preferred_cwd",
+    "terminal_run_command_wait",
+    "terminal_search_files",
 ]
