@@ -116,6 +116,18 @@ from .application.controller_guards import (
     controller_guard_rejection_signature_count as _controller_guard_rejection_signature_count_impl,
     recoverable_planner_block as _recoverable_planner_block_impl,
 )
+from .application.controller_preseed import (
+    controller_initial_area_list_plans as _controller_initial_area_list_plans_impl,
+    controller_initial_area_read_plan as _controller_initial_area_read_plan_impl,
+    controller_initial_doc_preseed_plan as _controller_initial_doc_preseed_plan_impl,
+    initial_area_file_sort_key as _initial_area_file_sort_key_impl,
+    initial_area_sort_key as _initial_area_sort_key_impl,
+    initial_doc_sort_key as _initial_doc_sort_key_impl,
+    list_result_file_paths as _list_result_file_paths_impl,
+    root_surface_dir_paths as _root_surface_dir_paths_impl,
+    root_surface_entries as _root_surface_entries_impl,
+    root_surface_file_paths as _root_surface_file_paths_impl,
+)
 from .application.code_product_state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
     CODE_PRODUCT_BUILD_STATE_SCHEMA,
@@ -2847,179 +2859,65 @@ def _repo_existing_dir(path: str) -> bool:
 
 
 def _root_surface_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any]] = []
-    for key in ("entries", "entries_preview", "files", "files_preview"):
-        value = result.get(key) if isinstance(result, dict) else None
-        if not isinstance(value, list):
-            continue
-        for raw in value:
-            if isinstance(raw, dict):
-                path = _repo_rel_token(raw.get("path") or "")
-                kind = str(raw.get("kind") or "")
-            else:
-                path = _repo_rel_token(raw)
-                kind = ""
-            if not path or path == ".":
-                continue
-            if not kind:
-                kind = _repo_path_kind(path)
-            row = {"path": path, "kind": kind}
-            if row not in entries:
-                entries.append(row)
-    return entries
+    return _root_surface_entries_impl(result, repo_root=LAB_REPO)
 
 
 def _root_surface_file_paths(result: dict[str, Any]) -> list[str]:
-    paths: list[str] = []
-    for entry in _root_surface_entries(result):
-        path = str(entry.get("path") or "")
-        if entry.get("kind") == "file" and _repo_existing_file(path) and path not in paths:
-            paths.append(path)
-    return paths
+    return _root_surface_file_paths_impl(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _root_surface_dir_paths(result: dict[str, Any]) -> list[str]:
-    paths: list[str] = []
-    for entry in _root_surface_entries(result):
-        path = str(entry.get("path") or "")
-        if entry.get("kind") == "dir" and _repo_existing_dir(path) and path not in paths:
-            paths.append(path)
-    return paths
+    return _root_surface_dir_paths_impl(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _initial_doc_sort_key(path: str) -> tuple[int, int, str]:
-    p = _repo_rel_token(path)
-    name = p.rsplit("/", 1)[-1].lower()
-    priority = _NAMED_READ_PRIORITY.get(name, len(_NAMED_READ_PRIORITY))
-    depth = p.count("/")
-    return (priority, depth, p.lower())
+    return _initial_doc_sort_key_impl(path, named_read_priority=_NAMED_READ_PRIORITY)
 
 
 def _controller_initial_doc_preseed_plan(root_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-    files = _root_surface_file_paths(root_result)
-    docs = [path for path in files if _repo_doc_or_config(path)]
-    docs = sorted(docs, key=_initial_doc_sort_key)
-    selected = docs[:SCOPED_CONCRETE_READ_TARGET]
-
-    skipped: list[dict[str, Any]] = []
-    seen_names = {p.rsplit("/", 1)[-1] for p in files}
-    for name in _INITIAL_DOC_NAME_PRIORITY:
-        if name not in seen_names:
-            skipped.append({
-                "candidate": name,
-                "reason": "not_seen_in_root_surface",
-                "stage": "initial_doc_read",
-            })
-    if docs and not selected:
-        skipped.append({
-            "candidate_count": len(docs),
-            "reason": "doc_candidate_budget_exhausted",
-            "stage": "initial_doc_read",
-        })
-    if not selected:
-        return None, skipped
-
-    return {
-        "event": "controller_preseed_initial_docs",
-        "result_event": "controller_preseed_initial_docs_result",
-        "tool": "repo_read",
-        "arguments": {"paths": selected, "max_chars": _multi_file_prompt_read_chars()},
-        "reason": "generic_repo_request_needs_existing_initial_docs_from_root_surface",
-        "artifact_suffix": "initial_docs-repo_read",
-        "dynamic_initial_orientation": True,
-    }, skipped
+    return _controller_initial_doc_preseed_plan_impl(
+        root_result,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        initial_doc_name_priority=_INITIAL_DOC_NAME_PRIORITY,
+        scoped_concrete_read_target=SCOPED_CONCRETE_READ_TARGET,
+        multi_file_prompt_read_chars=_multi_file_prompt_read_chars(),
+    )
 
 
 def _initial_area_sort_key(path: str) -> tuple[int, str]:
-    top = _top_dir(path)
-    return (top.count("/"), top.lower())
+    return _initial_area_sort_key_impl(path)
 
 
 def _controller_initial_area_list_plans(root_result: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    dirs: list[str] = []
-    for path in _root_surface_dir_paths(root_result):
-        top = _top_dir(path)
-        if (
-            top
-            and top not in dirs
-            and not _low_signal_top_dir(top)
-            and _repo_existing_dir(top)
-        ):
-            dirs.append(top)
-
-    selected = sorted(dirs, key=_initial_area_sort_key)[:3]
-    skipped: list[dict[str, Any]] = []
-
-    plans = [
-        {
-            "event": "controller_preseed_initial_area_list",
-            "result_event": "controller_preseed_initial_area_list_result",
-            "tool": "repo_list_files",
-            "arguments": {"path": area, "limit": 120, "max_depth": 3},
-            "reason": "generic_repo_request_needs_existing_useful_area_file_surface",
-            "artifact_suffix": f"initial_area_{safe_rel_path(area).replace('/', '__')}-repo_list_files",
-            "dynamic_initial_orientation": True,
-        }
-        for area in selected
-    ]
-    return plans, skipped
+    return _controller_initial_area_list_plans_impl(
+        root_result,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+    )
 
 
 def _list_result_file_paths(result: dict[str, Any]) -> list[str]:
-    paths: list[str] = []
-    for key in ("paths", "paths_preview"):
-        value = result.get(key) if isinstance(result, dict) else None
-        if isinstance(value, list):
-            for raw in value:
-                path = _repo_rel_token(raw)
-                if _repo_existing_file(path) and path not in paths:
-                    paths.append(path)
-    for key in ("files", "files_preview"):
-        value = result.get(key) if isinstance(result, dict) else None
-        if isinstance(value, list):
-            for raw in value:
-                path = _repo_rel_token(raw.get("path") if isinstance(raw, dict) else raw)
-                if _repo_existing_file(path) and path not in paths:
-                    paths.append(path)
-    return paths
+    return _list_result_file_paths_impl(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _initial_area_file_sort_key(path: str) -> tuple[int, int, str]:
-    p = _repo_rel_token(path)
-    name = p.rsplit("/", 1)[-1].lower()
-    priority = _NAMED_READ_PRIORITY.get(name, len(_NAMED_READ_PRIORITY))
-    if _repo_doc_or_config(p):
-        kind_rank = 0
-    elif _repo_code_file(p):
-        kind_rank = 1
-    else:
-        kind_rank = 2
-    return (priority, kind_rank, p.lower())
+    return _initial_area_file_sort_key_impl(
+        path,
+        repo_root=LAB_REPO,
+        named_read_priority=_NAMED_READ_PRIORITY,
+    )
 
 
 def _controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-    area = _repo_rel_token(list_result.get("path") or "")
-    candidates = [
-        path for path in _list_result_file_paths(list_result)
-        if (_repo_doc_or_config(path) or _repo_code_file(path))
-    ]
-    candidates = sorted(candidates, key=_initial_area_file_sort_key)
-    if not candidates:
-        return None, [{
-            "candidate": area,
-            "reason": "no_existing_doc_or_code_file_in_area_list_result",
-            "stage": "initial_area_read",
-        }]
-    selected = candidates[0]
-    return {
-        "event": "controller_preseed_initial_area_read",
-        "result_event": "controller_preseed_initial_area_read_result",
-        "tool": "repo_read",
-        "arguments": {"path": selected, "max_chars": _single_file_prompt_read_chars()},
-        "reason": "generic_repo_request_needs_concrete_file_read_inside_useful_area",
-        "artifact_suffix": f"initial_area_{safe_rel_path(selected).replace('/', '__')}-repo_read",
-        "dynamic_initial_orientation": True,
-    }, []
+    return _controller_initial_area_read_plan_impl(
+        list_result,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        single_file_prompt_read_chars=_single_file_prompt_read_chars(),
+    )
 
 
 def _repo_path_kind(path: str) -> str:
