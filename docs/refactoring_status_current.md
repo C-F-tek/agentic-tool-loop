@@ -12,8 +12,8 @@ is an audit note only and does not change the 3571/3572 runtime contract.
 - Remote tracking branch: `origin/codex/refactor-agentic-tool-loop`
 - Base reference: `origin/main`
 - Base SHA: `5b9e4b916a90c12d9bfa469ceb7ab424a3a12cc5`
-- Head SHA: `55de3d9ad1197c6c475b5f4064f7bc20a905b594`
-- Commits ahead of `origin/main`: `57`
+- Head SHA: `1f570c115485d006f84f07ae405da51bdefb5672`
+- Commits ahead of `origin/main`: `65`
 
 ## Baseline Verification
 
@@ -21,7 +21,8 @@ Commands run from `C:\Users\carmi\AI` with
 `C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe`:
 
 - `python -m compileall -q services`: passed.
-- `python -m pytest -q`: `222 passed in 0.73s`.
+- Initial baseline `python -m pytest -q`: `222 passed in 0.73s`.
+- Current verification after Fase 5 slices: `251 passed in 1.08s`.
 - `git pull --ff-only`: already up to date.
 
 PowerShell launcher inventory command was also run:
@@ -46,6 +47,10 @@ knowledge. That is expected until the launcher module split phase.
   user scope claims, core discovery and scope-conflict resolution.
 - Public OpenWebUI tool-context shaping has moved into
   `application/public_tool_context.py`.
+- `agent_entry.py` lifecycle responsibilities have been split into:
+  `application/job_worker.py`, `application/job_lifecycle.py`,
+  `application/selector_runner.py` and `application/job_action_router.py`.
+  The legacy entrypoint now builds/delegates to these application services.
 
 ## Current Monolithic / Incomplete Areas
 
@@ -53,8 +58,9 @@ These areas still fail the final Definition of Done from the executive plan:
 
 - `services/aicarmine_broker/planner.py` is still operational and not yet a
   facade to `application/planner_loop.py`.
-- `services/aicarmine_broker/agent_entry.py` still owns lifecycle/worker/router
-  behavior.
+- `services/aicarmine_broker/agent_entry.py` still imports runtime dependencies
+  to build compatibility adapters, but worker, lifecycle, selector dispatch and
+  action routing behavior now live in `application/*`.
 - `services/aicarmine_broker/job_store.py` is not storage-only yet.
 - `services/vulkan_bridge/app.py` still owns route plus public payload wrapping
   behavior.
