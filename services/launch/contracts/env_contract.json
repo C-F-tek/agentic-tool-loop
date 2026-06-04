@@ -1,0 +1,35 @@
+{
+  "schema": "aicarmine.launch.env_contract.v1",
+  "venvs": {
+    "bridge_and_broker": "venvs/labtools",
+    "openwebui": "venvs/openwebui",
+    "task_ollama": "external_ollama_task_instance"
+  },
+  "required_boundaries": [
+    {
+      "name": "3571_public_bridge",
+      "python_env": "bridge_and_broker",
+      "public_openwebui_tool": "vulkan_helper"
+    },
+    {
+      "name": "3572_internal_broker",
+      "python_env": "bridge_and_broker",
+      "public_openwebui_tool": null
+    },
+    {
+      "name": "openwebui_ui",
+      "python_env": "openwebui",
+      "public_openwebui_tool": null
+    },
+    {
+      "name": "ollama_task_repair",
+      "python_env": "task_ollama",
+      "public_openwebui_tool": null
+    }
+  ],
+  "persistent_env_notes": [
+    "Launcher changes must prove active process env before and after.",
+    "Ollama Desktop/main 11434 may inherit Windows user env, not OpenWebUI launcher process env.",
+    "Do not change planner model, num_ctx, max steps or venv from a refactor-only patch."
+  ]
+}
