@@ -12,8 +12,8 @@ is an audit note only and does not change the 3571/3572 runtime contract.
 - Remote tracking branch: `origin/codex/refactor-agentic-tool-loop`
 - Base reference: `origin/main`
 - Base SHA: `5b9e4b916a90c12d9bfa469ceb7ab424a3a12cc5`
-- Head SHA: `45c6f041d48e84f43bee8ff6883564a116956718`
-- Commits ahead of `origin/main`: `78`
+- Head SHA: `3d850e62e1463541f285b541f5fd410a8e9abab8`
+- Commits ahead of `origin/main`: `81`
 
 ## Baseline Verification
 
@@ -22,8 +22,8 @@ Commands run from `C:\Users\carmi\AI` with
 
 - `python -m compileall -q services`: passed.
 - Initial baseline `python -m pytest -q`: `222 passed in 0.73s`.
-- Current verification after planner status/final-digest/sanitizer helper
-  splits: `286 passed in 1.02s`.
+- Current verification after public terminal result/row helper splits:
+  `294 passed in 1.13s`.
 - `git pull --ff-only`: already up to date.
 
 PowerShell launcher inventory command was also run:
@@ -66,8 +66,10 @@ knowledge. That is expected until the launcher module split phase.
 - `planner.py` has begun the controlled facade migration with pure
   planner-adjacent helpers moved to:
   `application/planner_status.py`,
-  `application/final_state_result.py` and
-  `application/public_terminal_sanitizer.py`. These slices keep compatibility
+  `application/final_state_result.py`,
+  `application/public_terminal_sanitizer.py`,
+  `application/public_terminal_result.py` and
+  `application/terminal_context_rows.py`. These slices keep compatibility
   wrappers in `planner.py` and do not change validator, native tool gate,
   finalization rules or public 3571 payload contracts.
 
@@ -76,8 +78,9 @@ knowledge. That is expected until the launcher module split phase.
 These areas still fail the final Definition of Done from the executive plan:
 
 - `services/aicarmine_broker/planner.py` is still operational and not yet a
-  facade to `application/planner_loop.py`, but pure status, terminal digest and
-  terminal sanitization helpers have been extracted with tests.
+  facade to `application/planner_loop.py`, but pure status, terminal digest,
+  terminal sanitization, public terminal result and terminal context row helpers
+  have been extracted with tests. Current line count is 8883.
 - `services/aicarmine_broker/agent_entry.py` still imports runtime dependencies
   to build compatibility adapters, but worker, lifecycle, selector dispatch and
   action routing behavior now live in `application/*`.
