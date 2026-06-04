@@ -81,6 +81,7 @@ Read before edits:
 | `application/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names, recognizes code-product build-state read/write actions and preserves exact required continuation tool calls across prompt compaction. |
 | `application/clean_values.py` | Small shared value-cleaning helpers used by application payload shapers. |
 | `application/controller_guards.py` | Controller guard counting, rejection signature and recoverable planner-block helpers. It contains loop-integrity checks without dispatching tools or finalizing jobs. |
+| `application/controller_memory.py` | Controller-owned SQLite memory text and write helpers for job lessons and loop turns. It records searchable internal memory without changing planner decisions or OpenWebUI payload policy. |
 | `application/controller_preseed.py` | Initial repository-orientation preseed planner. It builds the same read-only repo_tree/repo_list_files/repo_read plan dictionaries from real root/list surfaces without dispatching tools or finalizing jobs. |
 | `application/core_discovery.py` | Builds core-discovery read candidates and status from intrinsic RAG chunks or current repo evidence using injected repo path/scope/readability checks. |
 | `application/code_product_state.py` | Deterministic code-product build-state parser/section helper, ready-payload extractor, inline proposal payload validator and exact old/new text parser. It does not read job history or execute tools. |
@@ -98,6 +99,7 @@ Read before edits:
 | `application/history_prompt_contract.py` | Prompt-facing history tail compaction helper. It receives a ledger builder callback and only clips the bounded planner history payload. |
 | `application/intrinsic_context_prompt.py` | Prompt compaction helper for intrinsic planner context, including bounded RAG and memory item surfaces. It does not retrieve or write memory. |
 | `application/openwebui_terminal_answer.py` | Builds the terminal `answer_for_30b` text and `next_action_for_30b` instruction for OpenWebUI using injected code-product/evidence/partial-product text builders. |
+| `application/openwebui_tool_context.py` | Builds the structured terminal `tool_context_for_30b` payload from injected planner/job/output helpers, preserving the public OpenWebUI payload contract without owning validation policy. |
 | `application/job_action_router.py` | Public broker payload router. It normalizes start/status/result/cancel actions, handles cancel state transitions and delegates non-job requests to the selector runner. |
 | `application/job_lifecycle.py` | Agent job lifecycle service. It creates queued job state, starts/reuses the background worker thread and returns start/wait responses through injected persistence, thread registry and wait helpers. |
 | `application/job_response_values.py` | Pure public job-response value helpers: text/JSON compaction and event digest shaping used by `job_store.py` compatibility exports. |

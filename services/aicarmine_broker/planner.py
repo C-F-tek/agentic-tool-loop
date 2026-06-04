@@ -114,6 +114,7 @@ from .application.openwebui_terminal_answer import (
     answer_for_openwebui as _answer_for_openwebui_impl,
     next_action_for_openwebui as _next_action_for_openwebui_impl,
 )
+from .application.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
 from .application.candidate_actions import (
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
@@ -125,6 +126,12 @@ from .application.controller_guards import (
     controller_guard_rejection_signature as _controller_guard_rejection_signature_impl,
     controller_guard_rejection_signature_count as _controller_guard_rejection_signature_count_impl,
     recoverable_planner_block as _recoverable_planner_block_impl,
+)
+from .application.controller_memory import (
+    controller_memory_lesson_text as _controller_memory_lesson_text_impl,
+    loop_turn_memory_text as _loop_turn_memory_text_impl,
+    write_controller_memory_lesson as _write_controller_memory_lesson_impl,
+    write_loop_turn_memory as _write_loop_turn_memory_impl,
 )
 from .application.controller_preseed import (
     controller_initial_area_list_plans as _controller_initial_area_list_plans_impl,
@@ -6707,134 +6714,35 @@ def build_tool_context_for_30b(
     final_summary: str,
     result: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Structured terminal context returned to OpenWebUI.
-
-    This is not a human summary. It is the compact-but-complete execution trace
-    the outer 30B needs to continue without losing the internal agent state.
-    """
-    result = result if isinstance(result, dict) else {}
-    history = result.get("history") if isinstance(result.get("history"), list) else []
-    terminal_decision = result.get("planner_decision") if isinstance(result.get("planner_decision"), dict) else {}
-    diagnostics = _agent_flow_diagnostics(
-        str(state.get("goal") or ""),
-        history,
-        state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else None,
+    return _build_tool_context_for_30b_impl(
+        job_id,
+        state,
+        status,
+        final_summary,
+        result,
+        planner_model=PLANNER_MODEL,
+        planner_url=PLANNER_URL,
+        job_root_for_id=agent_job_root,
+        planner_composed_answer=planner_composed_answer,
+        agent_flow_diagnostics=_agent_flow_diagnostics,
+        partial_products_for_30b=_partial_products_for_30b,
+        best_partial_product_for_30b=_best_partial_product_for_30b,
+        answer_for_openwebui=answer_for_openwebui,
+        execution_evidence_digest_text=_execution_evidence_digest_text,
+        repo_read_content_views=_repo_read_content_views,
+        next_action_for_openwebui=next_action_for_openwebui,
+        initial_orientation_surface_from_history=_initial_orientation_surface_from_history,
+        planner_decision_rows=_planner_decision_rows,
+        validation_rejection_rows=_validation_rejection_rows,
+        executed_tool_rows=_executed_tool_rows,
+        planner_turn_memory=_planner_turn_memory,
+        compact_final_state_result=_compact_final_state_result,
+        public_tool_artifact_rows=_public_tool_artifact_rows,
+        public_tool_context_limits=_public_tool_context_limits,
+        planner_evidence_contract=planner_evidence_contract,
+        planner_history_ledger=planner_history_ledger,
+        strip_public_local_references=_strip_public_local_references,
     )
-    if isinstance(result, dict):
-        result = dict(result)
-    partial_products = _partial_products_for_30b(history)
-    best_partial_product = _best_partial_product_for_30b(history)
-    if partial_products:
-        result["partial_products_for_30b"] = partial_products
-    if best_partial_product:
-        result["best_partial_product_for_30b"] = best_partial_product
-    controller_memory = state.get("controller_memory_last_write") if isinstance(state.get("controller_memory_last_write"), dict) else {}
-    if controller_memory:
-        diagnostics["controller_memory_records_written"] = 1 if controller_memory.get("ok") else 0
-        diagnostics["controller_memory_target_key"] = controller_memory.get("target_key")
-    result["agent_flow_diagnostics"] = diagnostics
-    answer = answer_for_openwebui(status, final_summary, result)
-    composed_answer = planner_composed_answer(agent_job_root(job_id))
-    if status == "completed" and composed_answer.get("ok") and str(composed_answer.get("text") or "").strip():
-        answer = str(composed_answer.get("text") or "").strip()
-    evidence_digest = _execution_evidence_digest_text(result)
-    evidence_view = _repo_read_content_views(history)
-    next_action = next_action_for_openwebui(status, result)
-    initial_orientation = (
-        state.get("initial_orientation_surface")
-        if isinstance(state.get("initial_orientation_surface"), dict)
-        else _initial_orientation_surface_from_history(
-            history,
-            state.get("initial_orientation_skipped")
-            if isinstance(state.get("initial_orientation_skipped"), list)
-            else [],
-        )
-    )
-    decisions = _planner_decision_rows(history)
-    if terminal_decision:
-        decisions.append({
-            "step": terminal_decision.get("step"),
-            "action": terminal_decision.get("action"),
-            "tool": terminal_decision.get("tool"),
-            "reason": terminal_decision.get("reason"),
-            "final_answer_preview": str(terminal_decision.get("final_answer") or "")[:700],
-            "terminal": True,
-        })
-    validation_rejections = _validation_rejection_rows(history)
-    executed_tools = _executed_tool_rows(history)
-    turn_memory = _planner_turn_memory(history, terminal_decision)
-    result_digest = _compact_final_state_result(result)
-    artifacts = _public_tool_artifact_rows(history)
-    context = {
-        "type": "agentic_loop_complete_structured_context",
-        "contract_type": "agentic_loop_complete_structured_context",
-        "not_a_summary": True,
-        "openwebui_usage": {
-            "primary_answer_field": "answer_for_30b",
-            "next_action_field": "next_action_for_30b",
-            "rule": (
-                "Use answer_for_30b to respond to the user. Use the structured "
-                "history/evidence only to justify or continue; never invent missing evidence."
-            ),
-        },
-        "job": {
-            "job_id": job_id,
-            "status": status,
-            "goal": state.get("goal"),
-            "workspace": str(agent_job_root(job_id)),
-            "planner_model": state.get("planner_model") or PLANNER_MODEL,
-            "planner_url": state.get("planner_url") or PLANNER_URL,
-        },
-        "contract": {
-            "planner_decides": True,
-            "controller_validates_only": True,
-            "controller_must_not_replace_planner_with_auto_tool_sequence": True,
-            "invalid_planner_decision_flow": "planner_decision -> planner_decision_rejected/controller_guard -> next planner_decision",
-            "final_requires_planner_final_action": True,
-        },
-        "execution_contract": {
-            "planner_decides": True,
-            "controller_validates_only": True,
-            "controller_must_not_replace_planner_with_auto_tool_sequence": True,
-            "invalid_planner_decision_flow": "planner_decision -> planner_decision_rejected/controller_guard -> next planner_decision",
-            "final_requires_planner_final_action": True,
-        },
-        "final_answer": final_summary,
-        "answer_for_30b": answer,
-        "composed_answer": composed_answer,
-        "artifacts": artifacts,
-        "partial_products_for_30b": partial_products,
-        "best_partial_product_for_30b": best_partial_product,
-        "limits": _public_tool_context_limits(artifacts),
-        "evidence_digest_for_30b": evidence_digest,
-        "evidence_view_for_30b": evidence_view,
-        "initial_orientation_surface": initial_orientation,
-        "next_action_for_30b": next_action,
-        "planner": {
-            "planner_model": state.get("planner_model") or PLANNER_MODEL,
-            "history_count": len(history),
-            "terminal_decision": terminal_decision or None,
-            "decisions": decisions,
-            "validation_rejections": validation_rejections,
-            "ollama_turns": turn_memory.get("ollama_turns", []),
-        },
-        "turn_memory": turn_memory,
-        "ollama_turns": turn_memory.get("ollama_turns", []),
-        "successful_tool_turns": turn_memory.get("successful_tool_turns", []),
-        "evidence_contract_at_finish": planner_evidence_contract(str(state.get("goal") or ""), history),
-        "evidence_contract_at_terminal": planner_evidence_contract(str(state.get("goal") or ""), history),
-        "planner_memory": state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else {},
-        "controller_memory": controller_memory,
-        "agent_flow_diagnostics": diagnostics,
-        "executed_tools": executed_tools,
-        "history_count": len(history),
-        "history": planner_history_ledger(history),
-        "result_digest": result_digest,
-        "planner_decision": result.get("planner_decision") if isinstance(result.get("planner_decision"), dict) else None,
-        "blocked_by": result.get("blocked_by"),
-        "local_references_omitted_for_openwebui": True,
-    }
-    return _strip_public_local_references(context)
 
 
 def _controller_memory_lesson_text(
@@ -6846,32 +6754,15 @@ def _controller_memory_lesson_text(
     contract: dict[str, Any],
     target_key: str,
 ) -> str:
-    history = result.get("history") if isinstance(result.get("history"), list) else []
-    rejections = contract.get("validation_rejections_tail") if isinstance(contract.get("validation_rejections_tail"), list) else []
-    last_rejection = next((r for r in reversed(rejections) if isinstance(r, dict) and r.get("summary")), {})
-    reads = contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []
-    lists = contract.get("repo_list_files_evidence") if isinstance(contract.get("repo_list_files_evidence"), list) else []
-    list_paths = [str(row.get("path")) for row in lists if isinstance(row, dict) and row.get("path")]
-    final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
-    lines = [
-        f"job={job_id}",
-        f"target={target_key}",
-        f"status={status}",
-        f"goal={str(state.get('goal') or '')[:240]}",
-        f"final_gate={str(final_contract.get('reason') or '')[:240]}",
-    ]
-    if reads:
-        lines.append("successful_reads=" + ", ".join(str(p) for p in reads[:8]))
-    if list_paths:
-        lines.append("listed_paths=" + ", ".join(list_paths[:8]))
-    if last_rejection:
-        lines.append("do_not_repeat_error=" + str(last_rejection.get("summary") or "")[:240])
-    blocker = result.get("blocked_by") or result.get("blocked_tool") or result.get("rejected_tool")
-    if blocker:
-        lines.append("blocker=" + str(blocker)[:240])
-    lines.append("correct_next=" + str(final_summary or final_contract.get("reason") or "")[:260])
-    lines.append(f"history_count={len(history)}")
-    return "\n".join(lines)[:1200]
+    return _controller_memory_lesson_text_impl(
+        job_id,
+        state,
+        status,
+        final_summary,
+        result,
+        contract,
+        target_key,
+    )
 
 
 def _write_controller_memory_lesson(
@@ -6882,37 +6773,17 @@ def _write_controller_memory_lesson(
     result: dict[str, Any],
     root: Path,
 ) -> dict[str, Any]:
-    result = result if isinstance(result, dict) else {}
-    history = result.get("history") if isinstance(result.get("history"), list) else []
-    goal = str(state.get("goal") or "")
-    contract = planner_evidence_contract(goal, history)
-    target_key = _controller_memory_target_key(goal, contract)
-    text = _controller_memory_lesson_text(job_id, state, status, final_summary, result, contract, target_key)
-    try:
-        written = runtime_sqlite_memory_write({
-            "kind": "controller_job_lesson",
-            "tag": target_key,
-            "text": text,
-            "metadata": {
-                "job_id": job_id,
-                "status": status,
-                "target_key": target_key,
-                "target_kind": contract.get("target_kind"),
-                "resolved_goal_scope": contract.get("resolved_goal_scope"),
-                "resolved_goal_file": contract.get("resolved_goal_file"),
-            },
-        }, root)
-    except Exception as exc:  # pragma: no cover - memory must not block job finalization
-        written = {
-            "ok": False,
-            "tool": "runtime_sqlite_memory_write",
-            "error": "controller_memory_lesson_write_failed",
-            "error_type": type(exc).__name__,
-            "details": str(exc)[:1000],
-        }
-    written["target_key"] = target_key
-    written["controller_owned"] = True
-    return written
+    return _write_controller_memory_lesson_impl(
+        job_id,
+        state,
+        status,
+        final_summary,
+        result,
+        root,
+        planner_evidence_contract=planner_evidence_contract,
+        controller_memory_target_key=_controller_memory_target_key,
+        runtime_sqlite_memory_write=runtime_sqlite_memory_write,
+    )
 
 
 def _loop_turn_memory_text(
@@ -6922,32 +6793,14 @@ def _loop_turn_memory_text(
     contract: dict[str, Any],
     target_key: str,
 ) -> str:
-    decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-    result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
-    args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
-    rejected = decision.get("rejected_decision") if isinstance(decision.get("rejected_decision"), dict) else {}
-    lines = [
-        f"loop_turn_key={job_id}:{row.get('step')}:{row.get('substep') or row.get('preseed_index') or ''}",
-        f"job={job_id}",
-        f"target={target_key}",
-        f"step={row.get('step')}",
-        f"substep={row.get('substep') or ''}",
-        f"preseed_index={row.get('preseed_index') or ''}",
-        f"goal={str(state.get('goal') or '')[:240]}",
-        f"decision_action={str(decision.get('action') or '')[:80]}",
-        f"decision_tool={str(decision.get('tool') or '')[:120]}",
-        f"decision_reason={str(decision.get('reason') or '')[:240]}",
-        f"decision_args={json.dumps(_prompt_clip_value(args, text_limit=180, list_limit=8), ensure_ascii=False, default=str)[:600]}",
-        f"rejected_decision={json.dumps(_prompt_clip_value(rejected, text_limit=180, list_limit=8), ensure_ascii=False, default=str)[:600]}",
-        f"result_tool={str(result.get('tool') or '')[:120]}",
-        f"result_ok={result.get('ok')}",
-        f"guard_type={str(result.get('guard_type') or '')[:120]}",
-        f"summary={str(result.get('summary') or result.get('error') or '')[:260]}",
-        f"successful_reads={', '.join(str(p) for p in (contract.get('successful_repo_read_paths') or [])[-8:])}",
-        f"required_next_progress={str(contract.get('required_next_progress') or '')[:320]}",
-        f"history_count_after_turn={contract.get('history_count') or ''}",
-    ]
-    return "\n".join(line for line in lines if not line.endswith("="))[:4000]
+    return _loop_turn_memory_text_impl(
+        job_id,
+        state,
+        row,
+        contract,
+        target_key,
+        prompt_clip_value=_prompt_clip_value,
+    )
 
 
 def _write_loop_turn_memory(
@@ -6957,49 +6810,17 @@ def _write_loop_turn_memory(
     root: Path,
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Persist one controller-visible loop turn in SQLite memory.
-
-    This is internal loop memory, not OpenWebUI public payload and not a planner
-    tool call. The planner still decides; this only makes prior turns searchable
-    without depending on how many message-history items fit in the next prompt.
-    """
-    goal = str(state.get("goal") or "")
-    contract = planner_evidence_contract(goal, history)
-    target_key = _controller_memory_target_key(goal, contract)
-    text = _loop_turn_memory_text(job_id, state, row, contract, target_key)
-    try:
-        written = runtime_sqlite_memory_write({
-            "kind": "controller_loop_turn",
-            "tag": target_key,
-            "text": text,
-            "metadata": {
-                "job_id": job_id,
-                "step": row.get("step"),
-                "substep": row.get("substep"),
-                "preseed_index": row.get("preseed_index"),
-                "target_key": target_key,
-                "decision_action": (row.get("decision") or {}).get("action")
-                if isinstance(row.get("decision"), dict) else None,
-                "decision_tool": (row.get("decision") or {}).get("tool")
-                if isinstance(row.get("decision"), dict) else None,
-                "result_tool": (row.get("tool_result") or {}).get("tool")
-                if isinstance(row.get("tool_result"), dict) else None,
-                "result_ok": (row.get("tool_result") or {}).get("ok")
-                if isinstance(row.get("tool_result"), dict) else None,
-            },
-        }, root)
-    except Exception as exc:  # pragma: no cover - loop memory must not block routing
-        written = {
-            "ok": False,
-            "tool": "runtime_sqlite_memory_write",
-            "error": "controller_loop_turn_memory_write_failed",
-            "error_type": type(exc).__name__,
-            "details": str(exc)[:1000],
-        }
-    written["target_key"] = target_key
-    written["controller_owned"] = True
-    written["loop_turn_memory"] = True
-    return written
+    return _write_loop_turn_memory_impl(
+        job_id,
+        state,
+        row,
+        root,
+        history,
+        planner_evidence_contract=planner_evidence_contract,
+        controller_memory_target_key=_controller_memory_target_key,
+        runtime_sqlite_memory_write=runtime_sqlite_memory_write,
+        prompt_clip_value=_prompt_clip_value,
+    )
 
 
 def finalize_agentic_job(
