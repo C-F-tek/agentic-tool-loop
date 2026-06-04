@@ -1,14 +1,14 @@
 """
 aicarmine_broker.repo_tools
-============================
-All deterministic local repository tools executed by the 3572 dispatcher:
+===========================
 
-    repo_capabilities, repo_status, repo_tree, repo_list_files,
-    repo_search, repo_read, repo_apply_patch, repo_write_file,
-    repo_validate, repo_command, vulkan_helper
+Compatibility facade for deterministic local repository tools.
 
-Each function takes ``(args: dict, root: Path)`` and returns a result dict.
-No HTTP calls are made here.  ``run_ps`` is the only subprocess boundary.
+This module preserves historical imports for planner, dispatcher and tests.
+Concrete implementations live under ``aicarmine_broker.tools.*`` and low-level
+adapters live under ``aicarmine_broker.infrastructure.*``.
+
+Do not add new tool behavior here.
 """
 from __future__ import annotations
 

@@ -3,6 +3,10 @@
 Launcher scripts are operational boundaries, not refactor scratch space. This
 contract records the process expectations that code extraction must preserve.
 
+Current refactoring progress and launcher split gaps are tracked in
+`docs/refactoring_status_current.md`. This document remains the launcher
+runtime contract to preserve during the split.
+
 ## Primary Launch Chain
 
 `openwebui.ps1` delegates to `services/launch/openwebui_runtime.ps1`.

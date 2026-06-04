@@ -67,7 +67,7 @@ Read before edits:
 | `repo_tools.py` | Compatibility facade for deterministic repo/tool helpers. It re-exports tool implementations from `tools/` and keeps historical imports such as `compact`, `safe_rel_path` and `terminal_environment_contract` stable. Do not add new tool behavior here; update the owning `tools/*` module. |
 | `code_edit_proposal_contract.py` | Local stable contract builder for `repo_propose_code_edit`. It creates complete report-only `code_edit_proposal` payloads for `unified_diff`, `structured_edit` and `no_op`, validates diffs/operations/rationale, and attaches optional AST evidence. |
 | `tool_contract.py` | Shared tool contract: parse tool calls, normalize public/internal names, sanitize args, detect bad paths and extract user text. Keep pure so planner, selector and dispatcher agree. |
-| `tool_dispatch.py` | Dispatch table that maps normalized internal tool names to concrete implementations, including `repo_propose_code_edit`. Keep explicit; no hidden planner choices here. |
+| `tool_dispatch.py` | Compatibility facade for internal tool dispatch. It builds a `DispatchRequest` and delegates to `application/tool_dispatcher.py`; do not add if/elif dispatch logic here. |
 | `tool_registry.py` | Canonical registry/schema for tools and capabilities. Prompt/tool metadata changes originate here, including the internal code-product schema. |
 | `tool_selection.py` | Lightweight classifier for public request routing and initial internal tool choice. It may use generic request shape, but must not assume fixed project architecture. |
 

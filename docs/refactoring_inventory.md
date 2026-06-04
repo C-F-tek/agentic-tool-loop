@@ -5,6 +5,7 @@ Baseline branch:
 - Source baseline: `origin/main`
 - Working branch: `codex/refactor-agentic-tool-loop`
 - Plan source: `C:\Users\carmi\Downloads\piano_refactoring_completo_agentic_tool_loop.md`
+- Current status snapshot: `docs/refactoring_status_current.md`
 
 This inventory records the verified starting point for the refactor. It is not
 runtime behavior and must not be used to change the 3571/3572 contract without a
@@ -58,6 +59,13 @@ OpenWebUI -> 3571 /vulkan_helper -> 3572 /vulkan/agent
 
 The next safe extraction step must move behavior behind these boundaries with
 adapter/facade compatibility tests before deleting any old entrypoint.
+
+## Current Status Pointer
+
+The original baseline above remains the historical starting point. The current
+branch status after the ongoing refactor is tracked in
+`docs/refactoring_status_current.md`, including current head/base SHA, latest
+test results and remaining monolithic areas.
 
 ## Non-Negotiable Transport Rules
 

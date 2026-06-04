@@ -3,6 +3,10 @@
 This document records the verified runtime boundaries that the refactor must
 preserve.
 
+Current refactoring progress and remaining gaps are tracked in
+`docs/refactoring_status_current.md`. That status document is audit metadata;
+the runtime boundaries below remain authoritative.
+
 ## Process Roles
 
 | Role | Endpoint | Owner | Expected runtime |
