@@ -133,6 +133,9 @@ from .application.history_queries import (
     history_has_tool,
     successful_code_edit_proposals,
 )
+from .application.intrinsic_context_prompt import (
+    compact_intrinsic_context_for_prompt as _compact_intrinsic_context_for_prompt_impl,
+)
 from .application.path_tokens import repo_rel_token as _repo_rel_token
 from .application.prompt_budget import (
     planner_token_generation_reserve as _planner_token_generation_reserve,
@@ -1067,22 +1070,10 @@ def _preserve_required_next_tool_call_for_prompt(
 
 
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(context, dict):
-        return {}
-    out = dict(context)
-    rag = out.get("retrieved_rag_chunks") if isinstance(out.get("retrieved_rag_chunks"), dict) else {}
-    if rag:
-        rag = dict(rag)
-        rag["items"] = _prompt_clip_value(rag.get("items") or [], text_limit=360, list_limit=3)
-        rag["count"] = len(rag.get("items") or [])
-        out["retrieved_rag_chunks"] = rag
-    mem = out.get("retrieved_memory") if isinstance(out.get("retrieved_memory"), dict) else {}
-    if mem:
-        mem = dict(mem)
-        mem["items"] = _prompt_clip_value(mem.get("items") or [], text_limit=360, list_limit=4)
-        mem["count"] = len(mem.get("items") or [])
-        out["retrieved_memory"] = mem
-    return _prompt_clip_value(out, text_limit=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS, list_limit=8)
+    return _compact_intrinsic_context_for_prompt_impl(
+        context,
+        prompt_preview_chars=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
+    )
 
 
 def _windowed_optional_context_value(
