@@ -12,8 +12,8 @@ is an audit note only and does not change the 3571/3572 runtime contract.
 - Remote tracking branch: `origin/codex/refactor-agentic-tool-loop`
 - Base reference: `origin/main`
 - Base SHA: `5b9e4b916a90c12d9bfa469ceb7ab424a3a12cc5`
-- Head SHA: `1f570c115485d006f84f07ae405da51bdefb5672`
-- Commits ahead of `origin/main`: `65`
+- Head SHA: `c1d3cd0234b8b21f1d96ceaaec4c5318befc9456`
+- Commits ahead of `origin/main`: `70`
 
 ## Baseline Verification
 
@@ -22,7 +22,7 @@ Commands run from `C:\Users\carmi\AI` with
 
 - `python -m compileall -q services`: passed.
 - Initial baseline `python -m pytest -q`: `222 passed in 0.73s`.
-- Current verification after Fase 5 slices: `251 passed in 1.08s`.
+- Current verification after job-store response split: `264 passed in 1.09s`.
 - `git pull --ff-only`: already up to date.
 
 PowerShell launcher inventory command was also run:
@@ -51,6 +51,10 @@ knowledge. That is expected until the launcher module split phase.
   `application/job_worker.py`, `application/job_lifecycle.py`,
   `application/selector_runner.py` and `application/job_action_router.py`.
   The legacy entrypoint now builds/delegates to these application services.
+- `job_store.py` public response shaping has started moving into application
+  builders: `job_response_values.py`, `job_terminal_response.py`,
+  `job_status_response.py` and `job_wait_response.py`. `job_store.py` now
+  loads persisted state/events/final JSON and delegates those compact payloads.
 
 ## Current Monolithic / Incomplete Areas
 
@@ -61,7 +65,9 @@ These areas still fail the final Definition of Done from the executive plan:
 - `services/aicarmine_broker/agent_entry.py` still imports runtime dependencies
   to build compatibility adapters, but worker, lifecycle, selector dispatch and
   action routing behavior now live in `application/*`.
-- `services/aicarmine_broker/job_store.py` is not storage-only yet.
+- `services/aicarmine_broker/job_store.py` is not storage-only yet, but terminal,
+  status and wait-timeout response construction have been extracted to
+  `application/*`.
 - `services/vulkan_bridge/app.py` still owns route plus public payload wrapping
   behavior.
 - `services/model_export/cli.py` is still monolithic.
