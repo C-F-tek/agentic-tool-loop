@@ -76,6 +76,7 @@ Read before edits:
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
+| `application/available_tools_prompt.py` | Prompt window helper for available-tool manifests. It summarizes tool names and stores the complete manifest through an injected prompt-window writer. |
 | `application/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names, recognizes code-product build-state read/write actions and preserves exact required continuation tool calls across prompt compaction. |
 | `application/code_product_state.py` | Deterministic code-product build-state parser/section helper, ready-payload extractor, inline proposal payload validator and exact old/new text parser. It does not read job history or execute tools. |
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
