@@ -85,6 +85,7 @@ Read before edits:
 | `application/decision_normalizer.py` | Normalizes planner JSON/native output into controller decisions without executing tools. |
 | `application/evidence_prompt_contract.py` | Prompt-facing evidence contract compaction and hard-budget summary helpers. It keeps the planner-visible keys bounded without storing windows or changing validation policy. |
 | `application/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
+| `application/goal_scope.py` | Goal path/scope extraction helper. It resolves requested file limits, existing repo files and explicit directory scopes using planner-injected repo root/path-safety callbacks instead of importing runtime state. |
 | `application/history_queries.py` | Small query helpers over planner history, including normalized tool-result extraction, tool-presence checks and code-edit proposal success/failure extraction. |
 | `application/history_ledger.py` | Planner history ledger shaping, including Ollama turn extraction and preservation of code-product/window payloads. |
 | `application/planner_history_messages.py` | Planner history message shaping for Ollama/native turns. It removes transport noise, preserves bounded prompt windows and stores oversized history payloads through injected window storage. |

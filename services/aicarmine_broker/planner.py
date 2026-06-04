@@ -158,6 +158,11 @@ from .application.goal_classifier import (
     semantic_goal_low as _semantic_goal_low,
     semantic_goal_text as _semantic_goal_text,
 )
+from .application.goal_scope import (
+    extract_existing_goal_path as _extract_existing_goal_path_impl,
+    goal_requested_repo_scope as _goal_requested_repo_scope_impl,
+    requested_file_limit_from_goal as _requested_file_limit_from_goal_impl,
+)
 from .application.history_queries import (
     failed_code_edit_proposal_validation_row as _failed_code_edit_proposal_validation_row,
     history_tool_result as _history_tool_result_impl,
@@ -2489,19 +2494,7 @@ def planner_done_token(raw_text: str) -> bool:
 
 
 def extract_existing_goal_path(goal: str) -> str:
-    for candidate in re.findall(
-        r"([A-Za-z0-9_./\\-]+?\.(?:py|ps1|md|json|toml|yml|yaml|txt))", str(goal or "")
-    ):
-        normalized = _repo_rel_token(candidate)
-        try:
-            rel = safe_rel_path(normalized)
-            full = (LAB_REPO / rel).resolve(strict=False)
-            full.relative_to(LAB_REPO)
-        except Exception:
-            continue
-        if full.exists() and full.is_file():
-            return rel
-    return ""
+    return _extract_existing_goal_path_impl(goal, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 
@@ -2511,51 +2504,11 @@ def extract_existing_goal_path(goal: str) -> str:
 
 
 def requested_file_limit_from_goal(goal: str, default: int = 0) -> int:
-    text = _semantic_goal_low(goal)
-    patterns = (
-        r"(?:first|primi|prime|top|limit|limite)\D{0,24}(\d{1,4})",
-        r"(\d{1,4})\D{0,24}(?:file|files|py|python)",
-    )
-    for pattern in patterns:
-        m = re.search(pattern, text)
-        if m:
-            try:
-                return max(1, min(int(m.group(1)), 1000))
-            except Exception:
-                pass
-    return default
+    return _requested_file_limit_from_goal_impl(goal, default)
 
 
 def goal_requested_repo_scope(goal: str) -> str:
-    """Resolve an explicit repo subdirectory mentioned by the user.
-
-    `ai_carmine` is accepted as a spelling alias only when the repository has
-    `ia_carmine` and no exact `ai_carmine` directory. The validator reports this
-    alias in the evidence contract; it does not silently change a planner step.
-    """
-    low = _semantic_goal_low(goal).replace("\\", "/")
-    candidates: list[str] = []
-    for match in re.findall(r"(?:dentro|in|under|sotto)\s+([A-Za-z0-9_./-]+)", low):
-        candidates.append(_repo_rel_token(match))
-    if "ai_carmine" in low:
-        candidates.append("ai_carmine")
-    if "ia_carmine" in low:
-        candidates.append("ia_carmine")
-    for raw in candidates:
-        if not raw:
-            continue
-        normalized = _repo_rel_token(raw)
-        if normalized == "ai_carmine" and not (LAB_REPO / normalized).exists() and (LAB_REPO / "ia_carmine").is_dir():
-            return "ia_carmine"
-        try:
-            rel = safe_rel_path(normalized)
-            full = (LAB_REPO / rel).resolve(strict=False)
-            full.relative_to(LAB_REPO)
-        except Exception:
-            continue
-        if full.exists() and full.is_dir():
-            return rel
-    return ""
+    return _goal_requested_repo_scope_impl(goal, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def goal_requests_python_file_review(goal: str) -> bool:
