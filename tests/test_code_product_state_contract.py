@@ -11,11 +11,13 @@ sys.path.insert(0, str(ROOT / "services"))
 
 from aicarmine_broker.application.code_product_state import (  # noqa: E402
     CODE_PRODUCT_BUILD_STATE_SCHEMA,
+    code_product_action_has_complete_payload,
     code_product_build_state_has_collecting_progress,
     code_product_build_state_parse,
     code_product_build_state_ready_payload,
     code_product_build_state_section,
     code_product_payload_violations,
+    copyable_example_text,
     goal_exact_text_block,
 )
 
@@ -89,3 +91,26 @@ Required behavior: produce diff
 
     assert goal_exact_text_block(goal, "old_text") == "    old line"
     assert goal_exact_text_block(goal, "new_text") == "    new line"
+
+
+def test_copyable_example_text_and_action_payload_completeness() -> None:
+    assert copyable_example_text("<insert old text>")
+    assert copyable_example_text("EXAMPLE_ONLY_DO_NOT_COPY")
+    assert not copyable_example_text("real code")
+
+    assert code_product_action_has_complete_payload({
+        "tool": "repo_propose_code_edit",
+        "arguments": {
+            "edit_kind": "unified_diff",
+            "old_text": "real old",
+            "new_text": "real new",
+        },
+    })
+    assert not code_product_action_has_complete_payload({
+        "tool": "repo_propose_code_edit",
+        "arguments": {
+            "edit_kind": "unified_diff",
+            "old_text": "old",
+            "new_text": "new",
+        },
+    })

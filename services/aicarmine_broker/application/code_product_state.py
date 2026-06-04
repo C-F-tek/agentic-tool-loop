@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .path_tokens import repo_rel_token
@@ -198,3 +199,48 @@ def goal_exact_text_block(goal: str, name: str) -> str:
     while block and not block[-1].strip():
         block.pop()
     return "\n".join(block)
+
+
+def copyable_example_text(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    low = re.sub(r"\s+", " ", text.lower()).strip()
+    if "<insert" in low or "insert old text" in low or "insert new text" in low:
+        return True
+    if "example_only" in low or "do_not_copy" in low:
+        return True
+    if low in {
+        "old",
+        "new",
+        "old phrase",
+        "new phrase",
+        "old text",
+        "new text",
+        "example old text",
+        "example new text",
+        "placeholder",
+    }:
+        return True
+    return bool(re.fullmatch(r"<[^<>]{1,120}>", text))
+
+
+def code_product_action_has_complete_payload(action: dict[str, Any]) -> bool:
+    if not isinstance(action, dict) or action.get("tool") != "repo_propose_code_edit":
+        return True
+    args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+    edit_kind = str(args.get("edit_kind") or "")
+    if edit_kind == "unified_diff":
+        return bool(str(args.get("unified_diff") or "").strip()) or (
+            isinstance(args.get("old_text"), str)
+            and isinstance(args.get("new_text"), str)
+            and not copyable_example_text(args.get("old_text"))
+            and not copyable_example_text(args.get("new_text"))
+        )
+    if edit_kind == "structured_edit":
+        return isinstance(args.get("structured_operations"), list) and bool(args.get("structured_operations"))
+    if edit_kind == "no_op":
+        return bool(str(args.get("rationale") or "").strip())
+    return False
