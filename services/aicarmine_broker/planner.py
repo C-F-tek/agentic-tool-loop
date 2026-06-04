@@ -136,6 +136,9 @@ from .application.history_queries import (
     history_has_tool,
     successful_code_edit_proposals,
 )
+from .application.history_prompt_contract import (
+    compact_history_for_prompt as _compact_history_for_prompt_impl,
+)
 from .application.intrinsic_context_prompt import (
     compact_intrinsic_context_for_prompt as _compact_intrinsic_context_for_prompt_impl,
 )
@@ -724,9 +727,12 @@ def _tool_shape_examples_for_prompt() -> dict[str, Any]:
 
 
 def _compact_history_for_prompt(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    tail = max(1, int(AGENTIC_PLANNER_HISTORY_PROMPT_TAIL or 1))
-    ledger = planner_history_ledger(history[-tail:])
-    return [_prompt_clip_value(row, text_limit=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS, list_limit=12) for row in ledger]
+    return _compact_history_for_prompt_impl(
+        history,
+        history_tail=AGENTIC_PLANNER_HISTORY_PROMPT_TAIL,
+        prompt_preview_chars=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
+        ledger_builder=planner_history_ledger,
+    )
 
 
 def _compact_evidence_contract_for_prompt(contract: dict[str, Any]) -> dict[str, Any]:
