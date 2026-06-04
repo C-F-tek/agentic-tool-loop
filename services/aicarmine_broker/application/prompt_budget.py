@@ -1,6 +1,9 @@
 """Planner prompt budget/headroom calculations."""
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from ..config import (
     AGENTIC_PLANNER_NUM_CTX,
     AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
@@ -41,3 +44,54 @@ def prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
         sequence = (4000, 3000, 2500, 1800, 1200, 900, 700, 500)
         return sequence[min(max(0, attempt), len(sequence) - 1)]
     return max(1000, min(6000, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET // 5))
+
+
+def _json_char_len(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        return len(str(value))
+
+
+def prompt_budget_report(
+    user_payload: dict[str, Any],
+    *,
+    system_prompt: str = "",
+    extra_prompt_sections: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    sections = {
+        key: _json_char_len(value)
+        for key, value in user_payload.items()
+        if key not in {"available_tools"}
+    }
+    sections["available_tools"] = _json_char_len(user_payload.get("available_tools"))
+    extra_sections = {
+        str(key): int(value)
+        for key, value in (extra_prompt_sections or {}).items()
+        if int(value or 0) > 0
+    }
+    sections.update(extra_sections)
+    total_user = _json_char_len(user_payload)
+    system_chars = len(str(system_prompt or ""))
+    extra_chars = sum(extra_sections.values())
+    total = total_user + system_chars + extra_chars
+    headroom_budget = prompt_generation_headroom_char_budget()
+    generation_reserve = max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - headroom_budget)
+    return {
+        "schema": "planner_prompt_budget.v1",
+        "char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
+        "generation_headroom_char_budget": headroom_budget,
+        "generation_headroom_reserve_chars": generation_reserve,
+        "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
+        "generation_token_reserve": planner_token_generation_reserve(),
+        "system_prompt_chars": system_chars,
+        "total_user_payload_chars": total_user,
+        "extra_prompt_chars": extra_chars,
+        "total_prompt_chars": total,
+        "over_budget": bool(
+            AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            and total > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+        ),
+        "over_generation_headroom_budget": bool(headroom_budget > 0 and total > headroom_budget),
+        "sections": sections,
+    }

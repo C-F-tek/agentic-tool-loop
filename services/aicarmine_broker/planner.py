@@ -139,6 +139,7 @@ from .application.intrinsic_context_prompt import (
 from .application.path_tokens import repo_rel_token as _repo_rel_token
 from .application.prompt_budget import (
     planner_token_generation_reserve as _planner_token_generation_reserve,
+    prompt_budget_report as _prompt_budget_report_impl,
     prompt_compaction_threshold as _prompt_compaction_threshold,
     prompt_generation_headroom_char_budget as _prompt_generation_headroom_char_budget,
     prompt_window_chars as _prompt_window_chars,
@@ -1274,39 +1275,11 @@ def _prompt_budget_report(
     system_prompt: str = "",
     extra_prompt_sections: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    sections = {
-        key: _json_char_len(value)
-        for key, value in user_payload.items()
-        if key not in {"available_tools"}
-    }
-    sections["available_tools"] = _json_char_len(user_payload.get("available_tools"))
-    extra_sections = {
-        str(key): int(value)
-        for key, value in (extra_prompt_sections or {}).items()
-        if int(value or 0) > 0
-    }
-    sections.update(extra_sections)
-    total_user = _json_char_len(user_payload)
-    system_chars = len(str(system_prompt or ""))
-    extra_chars = sum(extra_sections.values())
-    total = total_user + system_chars + extra_chars
-    headroom_budget = _prompt_generation_headroom_char_budget()
-    generation_reserve = max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - headroom_budget)
-    return {
-        "schema": "planner_prompt_budget.v1",
-        "char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
-        "generation_headroom_char_budget": headroom_budget,
-        "generation_headroom_reserve_chars": generation_reserve,
-        "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
-        "generation_token_reserve": _planner_token_generation_reserve(),
-        "system_prompt_chars": system_chars,
-        "total_user_payload_chars": total_user,
-        "extra_prompt_chars": extra_chars,
-        "total_prompt_chars": total,
-        "over_budget": bool(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0 and total > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET),
-        "over_generation_headroom_budget": bool(headroom_budget > 0 and total > headroom_budget),
-        "sections": sections,
-    }
+    return _prompt_budget_report_impl(
+        user_payload,
+        system_prompt=system_prompt,
+        extra_prompt_sections=extra_prompt_sections,
+    )
 
 
 def _read_json_file(path: str) -> dict[str, Any]:
