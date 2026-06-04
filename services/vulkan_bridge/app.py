@@ -10,8 +10,9 @@ import urllib.request
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict, Field
+
+from .openapi_builder import build_native_helper_openapi
 
 try:
     from aicarmine_broker.tool_registry import capability_map as _broker_capability_map
@@ -882,161 +883,12 @@ def help_for_all(req: HelperForAllRequest) -> dict[str, Any]:
     return _handle_helper(req, alias_called="help_for_all")
 
 
-def _vulkan_helper_completed_response_schema() -> dict[str, Any]:
-    return {
-        "type": "object",
-        "additionalProperties": True,
-        "properties": {
-            "ok": {"type": "boolean"},
-            "job_ok": {"type": "boolean"},
-            "service": {"type": "string"},
-            "mode": {"type": "string"},
-            "tool_name": {"type": "string"},
-            "tool_result_for": {"type": "string"},
-            "called_by_30b": {"type": "string"},
-            "required_top_level_keys": {
-                "type": "array",
-                "description": "Primary top-level fields expected by the public wrapper response.",
-                "items": {"type": "string"},
-            },
-            "result": {
-                "description": "Optional existing flow result. When present, it is preserved and not rewritten by the wrapper.",
-            },
-            "payload_index_for_30b": {
-                "type": "object",
-                "description": (
-                    "Expected top-level result field. Read this first. It separates concrete "
-                    "results from description/review metadata and points to exact fields containing diffs, "
-                    "structured operations or file content."
-                ),
-                "additionalProperties": True,
-                "properties": {
-                    "index_kind": {"type": "string", "example": "openwebui_payload_index.v1"},
-                    "job_completed": {"type": "boolean"},
-                    "same_request_rule": {
-                        "type": "string",
-                        "description": "For completed jobs, answer now from the indexed fields; do not call vulkan_helper again for the same request.",
-                    },
-                    "concrete_results": {
-                        "type": "array",
-                        "description": "Concrete useful payload locations: diffs, structured edits and full file contents.",
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": True,
-                            "properties": {
-                                "kind": {"type": "string"},
-                                "payload_type": {
-                                    "type": "string",
-                                    "description": "unified_diff, structured_operations, file_content or related concrete payload type.",
-                                },
-                                "target_file": {"type": "string"},
-                                "path": {"type": "string"},
-                                "payload_is_complete": {"type": "boolean"},
-                                "primary_location": {
-                                    "type": "string",
-                                    "description": "Exact top-level field path, for example priority_evidence_for_30b.items[0].unified_diff.",
-                                },
-                                "full_context_location": {
-                                    "type": "string",
-                                    "description": "Mirror location inside tool_context_for_30b.artifacts[*].artifact.",
-                                },
-                                "role": {"type": "string"},
-                            },
-                        },
-                    },
-                    "descriptive_only": {
-                        "type": "array",
-                        "description": "Fields that are prose/summary/description only, not concrete payloads.",
-                        "items": {"type": "object", "additionalProperties": True},
-                    },
-                    "suggestions_or_review_metadata_only": {
-                        "type": "array",
-                        "description": "Validation suggestions, manual review flags and limits; not reasons to repeat a completed call.",
-                        "items": {"type": "object", "additionalProperties": True},
-                    },
-                    "search_order": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-            },
-            "priority_evidence_for_30b": {
-                "type": "object",
-                "description": "High-priority inline concrete payloads. Code proposals expose unified_diff or structured_operations here.",
-                "additionalProperties": True,
-            },
-            "tool_context_for_30b": {
-                "type": "string",
-                "description": "Pretty-printed JSON string with all successful tool artifacts inline. Artifact means real tool result, not a local path.",
-            },
-            "openwebui_usage": {
-                "type": "object",
-                "description": "Runtime instructions naming the primary payload fields and concrete evidence locations.",
-                "additionalProperties": True,
-            },
-        },
-    }
-
-
-def _annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
-    operation = (
-        schema.get("paths", {})
-        .get("/vulkan_helper", {})
-        .get("post")
-    )
-    if not isinstance(operation, dict):
-        return
-    operation["description"] = (
-        str(operation.get("description") or "").rstrip()
-        + "\n\nCompleted response schema: read `payload_index_for_30b` first. "
-        "Its `concrete_results[*].primary_location` points to exact useful payload fields "
-        "such as `priority_evidence_for_30b.items[*].unified_diff`; "
-        "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
-        "`answer_for_30b`, `message_for_30b`, `summary_for_30b`, `next_action_for_30b` "
-        "and `full_result_hint` are not primary top-level result fields."
-    )
-    operation.setdefault("responses", {})
-    operation["responses"]["200"] = {
-        "description": (
-            "Terminal vulkan_helper response. Completed responses include payload_index_for_30b "
-            "near the top so the model can locate concrete results without repeating the same call."
-        ),
-        "content": {
-            "application/json": {
-                "schema": _vulkan_helper_completed_response_schema(),
-            },
-        },
-    }
-
-
 def _native_helper_openapi() -> dict[str, Any]:
-    registry = _broker_capability_map() if _broker_capability_map else {}
-    allowed = {f"/{name}" for name in OPENWEBUI_VISIBLE_TOOL_ALIASES}
-    visible_routes = [
-        route for route in app.routes
-        if getattr(route, "path", None) in allowed
-    ]
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=visible_routes,
+    return build_native_helper_openapi(
+        app,
+        visible_tool_aliases=OPENWEBUI_VISIBLE_TOOL_ALIASES,
+        registry_loader=_broker_capability_map if _broker_capability_map else None,
     )
-    schema["paths"] = {
-        path: methods
-        for path, methods in schema.get("paths", {}).items()
-        if path in allowed
-    }
-    schema["x-aicarmine-tool-surface"] = "single_openwebui_vulkan_helper"
-    schema["x-aicarmine-registry-hash"] = registry.get("registry_hash")
-    schema["x-aicarmine-public-surface"] = list(OPENWEBUI_VISIBLE_TOOL_ALIASES)
-    schema["x-aicarmine-contract"] = (
-        "OpenAPI exposes only vulkan_helper to OpenWebUI. Completed responses include "
-        "payload_index_for_30b as an expected result field plus inline successful tool evidence."
-    )
-    schema["x-aicarmine-register_this_in_openwebui"] = "http://127.0.0.1:3571/openapi.json"
-    _annotate_vulkan_helper_openapi_response(schema)
-    return schema
 
 
 app.openapi_schema = None
