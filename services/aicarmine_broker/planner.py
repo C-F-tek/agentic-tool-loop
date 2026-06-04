@@ -15,7 +15,6 @@ No FastAPI routes or HTTP server code here.
 from __future__ import annotations
 
 import ast
-import copy
 import json
 import re
 import time
@@ -139,6 +138,13 @@ from .application.prompt_values import (
     text_hash as _text_hash,
 )
 from .application.text_windows import diff_chunks as _diff_chunks, window_text as _window_text
+from .application.tool_manifest_builder import (
+    compact_tool_manifest_for_prompt as _compact_tool_manifest_for_prompt,
+    filter_tool_manifest_for_names as _filter_tool_manifest_for_names,
+    json_char_len as _json_char_len,
+    native_tools_schema_for_planner as _native_tools_schema_for_planner,
+    tool_schema_name as _tool_schema_name,
+)
 from .application.window_signatures import (
     decision_paths as _decision_paths,
     planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
@@ -597,88 +603,10 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in digest.items() if v not in (None, "", [], {})}
 
 
-def _json_char_len(value: Any) -> int:
-    try:
-        return len(json.dumps(value, ensure_ascii=False, default=str))
-    except Exception:
-        return len(str(value))
-
-
-def _compact_tool_manifest_for_prompt(tool_manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    compacted: list[dict[str, Any]] = []
-    for tool in tool_manifest:
-        params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
-        properties = params.get("properties") if isinstance(params.get("properties"), dict) else {}
-        argument_contract = tool.get("argument_contract") if isinstance(tool.get("argument_contract"), dict) else {}
-        description_limit = 700 if argument_contract else 180
-        row: dict[str, Any] = {
-            "name": tool.get("name"),
-            "description": _prompt_clip_text(tool.get("description"), description_limit),
-            "required": params.get("required") if isinstance(params.get("required"), list) else [],
-            "properties": list(properties.keys()),
-        }
-        any_of = params.get("anyOf") if isinstance(params.get("anyOf"), list) else []
-        if any_of:
-            row["schema_any_of"] = any_of
-        if argument_contract:
-            row["argument_contract"] = argument_contract
-        compacted.append(
-            row
-        )
-    return compacted
-
-
-def _tool_schema_name(item: dict[str, Any]) -> str:
-    function = item.get("function") if isinstance(item, dict) else {}
-    return str(function.get("name") or "").strip() if isinstance(function, dict) else ""
-
-
 def _ordered_tool_names(names: set[str]) -> list[str]:
     ordered = [name for name in internal_tools_list(exclude_vulkan=False) if name in names]
     ordered.extend(sorted(name for name in names if name not in ordered))
     return ordered
-
-
-def _filter_tool_manifest_for_names(
-    tool_manifest: list[dict[str, Any]],
-    allowed_names: set[str] | list[str] | tuple[str, ...],
-) -> list[dict[str, Any]]:
-    allowed = {str(name) for name in allowed_names if str(name).strip()}
-    if not allowed:
-        return []
-    return [
-        item
-        for item in tool_manifest
-        if str(item.get("name") or "") in allowed
-    ]
-
-
-def _native_tools_schema_for_planner(
-    tools_schema: list[dict[str, Any]],
-    allowed_names: set[str] | list[str] | tuple[str, ...] | None = None,
-) -> list[dict[str, Any]]:
-    """Return the provider-native Ollama schema for this turn.
-
-    The provider schema stays canonical: function name, brief description and
-    JSON Schema parameters. Internal argument contracts stay in the planner
-    payload/evidence contract; appending them here bloats the native ``tools``
-    section and makes small-context turns optimize for the wrong surface.
-    """
-    filter_enabled = allowed_names is not None
-    allowed = {str(name) for name in allowed_names or [] if str(name).strip()}
-    native_schema: list[dict[str, Any]] = []
-    for source_item in tools_schema:
-        name = _tool_schema_name(source_item)
-        if filter_enabled and name not in allowed:
-            continue
-        item = copy.deepcopy(source_item)
-        function = item.get("function") if isinstance(item, dict) else {}
-        if not isinstance(function, dict):
-            continue
-        function.pop("argument_contract", None)
-        function["description"] = _prompt_clip_text(function.get("description"), 420)
-        native_schema.append(item)
-    return native_schema
 
 
 def _intrinsic_context_declares_selective_memory_gap(intrinsic_context: dict[str, Any]) -> bool:

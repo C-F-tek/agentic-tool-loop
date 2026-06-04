@@ -85,6 +85,7 @@ Read before edits:
 | `application/prompt_values.py` | Prompt clipping/value compaction and stable text hashing helpers. It converts large diff/structured-operation fields into bounded metadata for planner prompt use only. |
 | `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
 | `application/text_windows.py` | Text and diff window primitives with offsets, completeness flags and hashes for prompt/SQLite window composition. |
+| `application/tool_manifest_builder.py` | Planner tool manifest compaction and Ollama native tool schema builder. It keeps provider schema slim and leaves long internal contracts in the planner payload. |
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
 | `application/window_signatures.py` | Pure signature/range helpers for repo_read and planner_scratchpad_read windows. Used to prevent repeated identical reads without embedding history policy. |
 
