@@ -116,6 +116,7 @@ from .application.openwebui_terminal_answer import (
 )
 from .application.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
 from .application.candidate_actions import (
+    candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
@@ -3235,175 +3236,32 @@ def _candidate_actions_from_evidence(
     failed_list_paths: list[str] | None = None,
     core_discovery_candidates: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    candidates: list[dict[str, Any]] = []
-    already = set(read_ok)
-    failed_lists = set(_repo_rel_token(p) for p in (failed_list_paths or []))
-    repo_goal = _repo_analysis_goal(goal)
-    doc_reads = [p for p in read_ok if _repo_doc_or_config(p)]
-
-    def add(action: dict[str, Any]) -> None:
-        key = json.dumps(action, sort_keys=True, default=str)
-        for existing in candidates:
-            if json.dumps(existing, sort_keys=True, default=str) == key:
-                return
-        candidates.append(action)
-
-    listed = []
-    for row in list_rows:
-        for p in row.get("paths_preview") or []:
-            if p not in listed:
-                listed.append(p)
-
-    meaningful_rows = [
-        row for row in list_rows
-        if row.get("path") not in (None, "", ".")
-        and not _low_signal_top_dir(str(row.get("path")))
-    ]
-
-    def add_core_list_candidates(limit: int = 5) -> None:
-        ranked_core = sorted(
-            _rank_core_candidates(file_memory, list_rows),
-            key=lambda item: (
-                -int(item.get("score") or 0),
-                str(item.get("path") or "").lower(),
-            ),
-        )
-        for core in ranked_core[:limit]:
-            p = core.get("path")
-            if (
-                p
-                and p not in failed_lists
-                and _path_exists_repo_relative(p)
-                and all((row.get("path") != p) for row in list_rows)
-            ):
-                add({
-                    "action": "tool",
-                    "tool": "repo_list_files",
-                    "arguments": {"path": p, "limit": 120},
-                    "reason": "Evidence-derived non-infra candidate directory: " + ", ".join(core.get("reasons") or []),
-                })
-
-    # Do not keep navigating when final evidence is already sufficient.
-    if final_allowed:
-        return candidates
-
-    target_scope = _goal_target_scope(goal)
-    discovery_selected = _core_discovery_read_paths(
-        core_discovery_candidates,
-        read_ok=already,
-        target_scope=target_scope,
-        limit=SCOPED_CONCRETE_READ_TARGET if target_scope else REPO_CONCRETE_READ_TARGET,
+    return _candidate_actions_from_evidence_impl(
+        goal,
+        file_memory,
+        list_rows,
+        read_ok,
+        final_allowed,
+        failed_list_paths=failed_list_paths,
+        core_discovery_candidates=core_discovery_candidates,
+        repo_rel_token=_repo_rel_token,
+        repo_analysis_goal=_repo_analysis_goal,
+        repo_doc_or_config=_repo_doc_or_config,
+        low_signal_top_dir=_low_signal_top_dir,
+        rank_core_candidates=_rank_core_candidates,
+        path_exists_repo_relative=_path_exists_repo_relative,
+        goal_target_scope=_goal_target_scope,
+        input_error_goal=_input_error_goal,
+        path_under_scope=_path_under_scope,
+        core_discovery_read_paths=_core_discovery_read_paths,
+        scoped_concrete_read_target=SCOPED_CONCRETE_READ_TARGET,
+        repo_concrete_read_target=REPO_CONCRETE_READ_TARGET,
+        scope_read_candidates_from_evidence=_scope_read_candidates_from_evidence,
+        multi_file_prompt_read_chars=_multi_file_prompt_read_chars,
+        meaningful_read_candidates_from_evidence=_meaningful_read_candidates_from_evidence,
+        single_file_prompt_read_chars=_single_file_prompt_read_chars,
+        repo_code_file=_repo_code_file,
     )
-    if discovery_selected:
-        add({
-            "action": "tool",
-            "tool": "repo_read",
-            "arguments": {"paths": discovery_selected, "max_chars": _multi_file_prompt_read_chars()},
-            "reason": (
-                "Read core_discovery_candidates from RAG/rerank or rebuilt LAB_REPO ranking; "
-                "ranking is discovery-only and does not authorize a patch."
-            ),
-        })
-
-    if target_scope and not _input_error_goal(goal):
-        scoped_rows = [
-            row for row in list_rows
-            if _path_under_scope(str(row.get("path") or ""), target_scope)
-            and str(row.get("path") or ".") not in ("", ".")
-        ]
-        if not scoped_rows:
-            add({
-                "action": "tool",
-                "tool": "repo_list_files",
-                "arguments": {"path": target_scope, "limit": 120},
-                "reason": f"Inspect requested scope {target_scope}; root tree alone is not enough evidence.",
-            })
-        else:
-            selected = _scope_read_candidates_from_evidence(
-                list_rows,
-                target_scope,
-                read_ok=already,
-            )[:SCOPED_CONCRETE_READ_TARGET]
-            if selected:
-                add({
-                    "action": "tool",
-                    "tool": "repo_read",
-                    "arguments": {"paths": selected, "max_chars": _multi_file_prompt_read_chars()},
-                    "reason": (
-                        f"Read up to {SCOPED_CONCRETE_READ_TARGET} dynamically discovered "
-                        f"readable files inside requested scope {target_scope} before finalizing."
-                    ),
-                })
-        if candidates:
-            return candidates[:16]
-
-    # If a meaningful non-root area has already been listed, read from that area
-    # before falling back to more root documentation.  Otherwise the planner can
-    # spend many turns reading low-signal root docs and still final with only a
-    # directory-name summary.
-    if repo_goal and meaningful_rows:
-        selected = _meaningful_read_candidates_from_evidence(
-            list_rows,
-            read_ok=already,
-        )[:REPO_CONCRETE_READ_TARGET]
-        if selected:
-            add({
-                "action": "tool",
-                "tool": "repo_read",
-                "arguments": {"paths": selected, "max_chars": _multi_file_prompt_read_chars()},
-                "reason": (
-                    f"Read up to {REPO_CONCRETE_READ_TARGET} dynamically discovered "
-                    "readable files from already listed meaningful non-root areas before finalizing."
-                ),
-            })
-            for p in selected[:REPO_CONCRETE_READ_TARGET]:
-                add({
-                    "action": "tool",
-                    "tool": "repo_read",
-                    "arguments": {"path": p, "max_chars": _single_file_prompt_read_chars()},
-                    "reason": "Read concrete readable file from meaningful non-root area before finalizing.",
-                })
-
-    # Once enough root docs exist, prefer opening a real core directory instead
-    # of continuing a root-doc crawl.  This remains a candidate list for the
-    # planner, not a controller-executed script.
-    if repo_goal and len(doc_reads) >= 3 and not meaningful_rows:
-        add_core_list_candidates(limit=5)
-
-    docs = [p for p in listed if _repo_doc_or_config(p) and p not in already]
-    # Generic repo analysis needs representative docs, not every support/template
-    # document.  After a small baseline, spend budget on core directories/files.
-    if not (repo_goal and len(doc_reads) >= 6):
-        if docs:
-            add({
-                "action": "tool",
-                "tool": "repo_read",
-                "arguments": {"paths": docs[:SCOPED_CONCRETE_READ_TARGET], "max_chars": _multi_file_prompt_read_chars()},
-                "reason": "Read repository documentation/config already discovered in evidence before finalizing.",
-            })
-
-        for p in docs[:SCOPED_CONCRETE_READ_TARGET]:
-            add({
-                "action": "tool",
-                "tool": "repo_read",
-                "arguments": {"path": p, "max_chars": _single_file_prompt_read_chars()},
-                "reason": "Unread repository documentation/config candidate from prior evidence.",
-            })
-
-    for p in listed:
-        if _repo_code_file(p) and p not in already:
-            add({
-                "action": "tool",
-                "tool": "repo_read",
-                "arguments": {"path": p, "max_chars": _single_file_prompt_read_chars()},
-                "reason": "Unread readable file discovered from evidence.",
-            })
-            if len(candidates) >= 12:
-                break
-
-    add_core_list_candidates(limit=5)
-
-    return candidates[:16]
 
 
 
