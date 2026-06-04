@@ -152,8 +152,8 @@ from .application.tool_manifest_builder import (
 )
 from .application.turn_surface_policy import (
     apply_turn_surface_policy as _apply_turn_surface_policy_impl,
-    candidate_tool_names as _candidate_tool_names,
     contract_final_required_now as _contract_final_required_now,
+    tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
 )
 from .application.window_signatures import (
     decision_paths as _decision_paths,
@@ -619,18 +619,6 @@ def _ordered_tool_names(names: set[str]) -> list[str]:
     return ordered
 
 
-def _intrinsic_context_declares_selective_memory_gap(intrinsic_context: dict[str, Any]) -> bool:
-    if not isinstance(intrinsic_context, dict):
-        return False
-    for key in ("retrieved_memory", "retrieved_rag_chunks"):
-        section = intrinsic_context.get(key)
-        if not isinstance(section, dict):
-            continue
-        if section.get("gap") or section.get("available") is False:
-            return True
-    return False
-
-
 def _apply_turn_surface_policy(contract: dict[str, Any]) -> dict[str, Any]:
     return _apply_turn_surface_policy_impl(contract, order_tool_names=_ordered_tool_names)
 
@@ -642,91 +630,13 @@ def _tool_surface_names_for_turn(
     intrinsic_context: dict[str, Any],
     prompt_context_continuation_required: dict[str, Any] | None = None,
 ) -> list[str]:
-    continuation = prompt_context_continuation_required if isinstance(prompt_context_continuation_required, dict) else {}
-    if continuation.get("tool") == "planner_scratchpad_read":
-        return ["planner_scratchpad_read"]
-
-    contract = evidence_contract if isinstance(evidence_contract, dict) else {}
-    surface_policy = (
-        contract.get("turn_tool_surface_policy")
-        if isinstance(contract.get("turn_tool_surface_policy"), dict)
-        else {}
+    return _tool_surface_names_for_turn_impl(
+        goal=goal,
+        evidence_contract=evidence_contract,
+        intrinsic_context=intrinsic_context,
+        order_tool_names=_ordered_tool_names,
+        prompt_context_continuation_required=prompt_context_continuation_required,
     )
-    policy_allowed = surface_policy.get("allowed_tool_names")
-    if isinstance(policy_allowed, list):
-        if policy_allowed or surface_policy.get("locked_empty_tool_surface") or _contract_final_required_now(contract):
-            return _ordered_tool_names({
-                _normalize_tool_name(str(name))
-                for name in policy_allowed
-                if _normalize_tool_name(str(name))
-            })
-
-    semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
-    goal_class = str(semantic.get("class") or "").strip()
-    code_product_required = bool((contract.get("code_product_contract") or {}).get("required")) if isinstance(contract.get("code_product_contract"), dict) else False
-    apply_required = bool(contract.get("goal_requests_apply")) or goal_requests_apply(goal)
-
-    if _contract_final_required_now(contract):
-        return _ordered_tool_names(_final_composition_tool_names_from_candidates(contract))
-
-    goal_low = str(goal or "").lower()
-    repo_discovery_tools = {
-        "repo_read",
-        "repo_list_files",
-        "repo_tree",
-        "repo_search",
-        "repo_fd_files",
-        "repo_rg_search",
-    }
-    ast_diff_tools = {
-        "repo_ast_grep_search",
-        "repo_ast_grep_dry_run",
-        "repo_tree_sitter_parse",
-        "repo_unidiff_validate",
-        "repo_git_apply_check",
-    }
-    validation_tools = {
-        "repo_validate",
-        "repo_ruff_check",
-        "repo_pyright_check",
-        "repo_pytest_run",
-    }
-    names: set[str] = set(repo_discovery_tools)
-    if code_product_required:
-        names.update(ast_diff_tools)
-        names.update({"repo_propose_code_edit", "planner_scratchpad_write"})
-    elif apply_required:
-        names.update(ast_diff_tools)
-        names.update(validation_tools)
-        names.update({"repo_apply_patch", "repo_command", "terminal_run_command_wait"})
-    elif goal_class == "analysis_only":
-        names = set(repo_discovery_tools)
-        names.add("repo_ctags_symbols")
-    else:
-        names.update({"repo_status"})
-
-    if any(token in goal_low for token in ("json", "payload", "schema", "openapi")):
-        names.add("repo_jq_query")
-    if any(token in goal_low for token in ("security", "sicurezza", "vulnerability", "vulnerabil", "sast", "semgrep")):
-        names.add("repo_semgrep_scan")
-    if any(token in goal_low for token in ("shell", "bash", ".sh", "shellcheck")):
-        names.add("repo_shellcheck")
-    if any(token in goal_low for token in ("benchmark", "performance", "prestazioni", "hyperfine")):
-        names.add("repo_hyperfine_benchmark")
-
-    candidate_names = _candidate_tool_names(contract)
-    for candidate in candidate_names:
-        if candidate.startswith("runtime_sqlite_memory_"):
-            continue
-        if candidate == "planner_scratchpad_read":
-            continue
-        names.add(candidate)
-
-    if _intrinsic_context_declares_selective_memory_gap(intrinsic_context):
-        names.add("runtime_sqlite_memory_search")
-    if "runtime_sqlite_memory_write" in candidate_names:
-        names.add("runtime_sqlite_memory_write")
-    return _ordered_tool_names(names)
 
 
 def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> Any:

@@ -12,6 +12,7 @@ from aicarmine_broker.application.turn_surface_policy import (  # noqa: E402
     apply_turn_surface_policy,
     candidate_tool_names,
     contract_final_required_now,
+    tool_surface_names_for_turn,
 )
 
 
@@ -92,3 +93,45 @@ def test_candidate_tool_names_reads_candidate_actions() -> None:
             {"tool": "planner_scratchpad_write"},
         ]
     }) == {"repo_read", "planner_scratchpad_write"}
+
+
+def test_tool_surface_names_honors_required_continuation() -> None:
+    names = tool_surface_names_for_turn(
+        goal="analizza",
+        evidence_contract={},
+        intrinsic_context={},
+        order_tool_names=_order,
+        prompt_context_continuation_required={"tool": "planner_scratchpad_read"},
+    )
+
+    assert names == ["planner_scratchpad_read"]
+
+
+def test_tool_surface_names_for_analysis_only_is_repo_inspection() -> None:
+    names = tool_surface_names_for_turn(
+        goal="analizza la repo",
+        evidence_contract={"semantic_goal_classification": {"class": "analysis_only"}},
+        intrinsic_context={},
+        order_tool_names=_order,
+    )
+
+    assert "repo_read" in names
+    assert "repo_ctags_symbols" in names
+    assert "repo_apply_patch" not in names
+
+
+def test_tool_surface_names_for_code_product_includes_diff_tools_and_memory_gap() -> None:
+    names = tool_surface_names_for_turn(
+        goal="proponi diff concreto",
+        evidence_contract={
+            "code_product_contract": {"required": True},
+            "candidate_next_actions": [{"tool": "runtime_sqlite_memory_write"}],
+        },
+        intrinsic_context={"retrieved_memory": {"gap": True}},
+        order_tool_names=_order,
+    )
+
+    assert "repo_propose_code_edit" in names
+    assert "repo_unidiff_validate" in names
+    assert "runtime_sqlite_memory_search" in names
+    assert "runtime_sqlite_memory_write" in names
