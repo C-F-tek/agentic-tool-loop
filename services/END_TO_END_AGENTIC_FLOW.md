@@ -74,7 +74,20 @@ sequenceDiagram
 | 3572 -> 11435 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_selection.py`, `services/aicarmine_broker/config.py` | Repair/selector paths use `OLLAMA_TASK_URL`; default is `http://127.0.0.1:11435/api/chat`. |
 | 3572 -> internal tools | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_dispatch.py` | Validated tool decisions call `dispatch_tool()`, which maps to repo, terminal, memory and helper tools. |
 | 3572 -> terminal compact result | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/job_store.py` | `finalize_agentic_job()` writes final state; `wait_for_agent_terminal()` returns `compact_agent_terminal_response()`. |
-| 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns the stable public surface: primary metadata, `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and pretty JSON `tool_context_for_30b`. It does not promote blocked/prose narrative fields as the primary answer. |
+| 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns the stable public surface for both ok and non-ok terminal jobs: primary metadata, `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and pretty JSON `tool_context_for_30b`. It does not promote blocked/prose narrative fields as the primary answer. |
+
+For non-completed terminal jobs, the wrapper may also surface useful rejected
+planner output, repair text or code-product attempts as explicit partial
+products. These live under `tool_context_for_30b.partial_products_for_30b` and
+`payload_index_for_30b.partial_results`, with `validator_accepted=false`; they
+are visible to OpenWebUI but do not satisfy the successful code-product gate.
+
+Non-ok terminal jobs must keep the same public shape as ok jobs. The difference
+is `job_ok=false` or the terminal status/warning metadata, not a different
+payload contract. If `final.json`/the terminal payload contains `result`, 3571
+must prefer that full `result` over the compact transport digest from
+`compact_agent_terminal_response()`. A compact `{ "preview": ... }` result is
+only a fallback when no full terminal `result` is available.
 
 ## 3572 IA Live Control View
 
@@ -352,6 +365,13 @@ Verified behavior:
   metadata, `payload_index_for_30b`, top-level `priority_evidence_for_30b` for
   the most important complete payloads, `openwebui_usage`, and a pretty-printed
   JSON string `tool_context_for_30b`.
+- The sealed terminal shape is identical for completed and non-completed
+  terminal jobs. Do not branch into a smaller blocked/failure response shape:
+  keep `payload_index_for_30b`, `priority_evidence_for_30b`,
+  `openwebui_usage`, `tool_context_for_30b` and full `result` when present.
+- `result` source precedence is terminal/final payload first, compact response
+  fallback second. The compact `result.preview` digest must not shadow the full
+  loop `result` loaded from the terminal payload.
 - `priority_evidence_for_30b` is an index for model navigation, not a
   replacement for `tool_context_for_30b`: code-edit proposals expose complete
   `unified_diff`/`structured_operations`, complete file requests expose full
@@ -378,6 +398,9 @@ narrative as the primary result.
 - Final job completion is controlled by the 3572 validator/finalization flow.
 - 3571 wraps terminal output for OpenWebUI; it must not expose continuation
   protocol as the final user-visible result.
+- 3571 must not regress non-ok terminal jobs to a reduced or preview-only
+  payload. The top-level shape stays the same as ok; only `job_ok` and terminal
+  status/warning indicate failure/block/max/cancel.
 
 ## Diagnostic Checklist
 

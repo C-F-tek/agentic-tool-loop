@@ -56,7 +56,20 @@ For terminal jobs returned to OpenWebUI:
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
 - `tool_context_for_30b`: a pretty-printed JSON string with successful internal
   tool artifacts and limits.
-- `result`: preserved unchanged when already produced by the current flow.
+- `result`: preserved unchanged when already produced by the current flow. In
+  terminal wrapping, prefer the full `result` loaded from the terminal/final
+  payload; use the compact result digest only if the full payload has no
+  `result`.
+- `completed`, `max_steps_reached`, `blocked_needs_attention`,
+  `blocked_needs_consent`, `failed`, `failed_tool_error`,
+  `failed_planner_error` and `cancelled` must use the same top-level public
+  shape. Only `job_ok` and terminal status/warning metadata differ.
+- When `job_ok=false`, rejected code-product attempts, action plans and repair
+  text may be exposed as `partial_products_for_30b` inside
+  `tool_context_for_30b` and indexed under `payload_index_for_30b.partial_results`.
+  These entries are explicitly `validator_accepted=false`; they are transported
+  for OpenWebUI visibility, not counted as completed diffs or successful tool
+  evidence.
 - The JSON string must contain real tool outputs, not local artifact paths.
 - Do not include continuation instructions, call protocol, tool examples,
   transport diagnostics, raw events, hashes, failed/rejected/blocked evidence as
@@ -130,7 +143,9 @@ limits, summaries or artifact references.
 5. 3571 reads terminal job payload/final JSON from 3572 response.
 6. 3571 builds `payload_index_for_30b`, `priority_evidence_for_30b`,
    `openwebui_usage` and `tool_context_for_30b`.
-7. OpenWebUI receives only public metadata plus model-usable inline
+7. 3571 carries full terminal `result` when present; compact previews are only
+   fallback transport and must not shadow the full payload.
+8. OpenWebUI receives only public metadata plus model-usable inline
    payload/context.
 
 ## Evidence Expansion Rules
@@ -151,7 +166,10 @@ limits, summaries or artifact references.
   successful artifacts. It may expose complete `unified_diff`,
   `structured_operations`, full file `content` and compact analysis evidence,
   but it does not replace `tool_context_for_30b`.
-- Do not synthesize evidence for failed, rejected, blocked or guard entries.
+- Do not synthesize successful evidence for failed, rejected, blocked or guard
+  entries. If a non-completed job contains useful rejected planner output,
+  repair text or code-product attempts, expose them only as explicit partial
+  products with `validator_accepted=false`.
 
 ## Safe Edit Checklist
 
@@ -160,4 +178,7 @@ limits, summaries or artifact references.
 3. Inspect exact JSON returned by `POST /vulkan_helper`.
 4. Verify all model-visible context is inline and does not require local file
    access.
-5. Re-run at least `python -m compileall -q services\vulkan_bridge`.
+5. Verify non-ok terminal responses still contain the same primary keys as ok
+   responses and that `result` is not reduced to `{ "preview": ... }` when a
+   full terminal `result` exists.
+6. Re-run at least `python -m compileall -q services\vulkan_bridge`.

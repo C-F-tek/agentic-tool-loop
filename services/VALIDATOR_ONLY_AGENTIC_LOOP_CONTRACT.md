@@ -437,6 +437,16 @@ OpenWebUI. Non usare `final_path`, `reads/*.json`, `tool-results/*.json` o
 La stessa regola vale per tutti gli stati terminali: `completed`,
 `max_steps_reached`, `blocked_needs_attention`, `failed`, `cancelled`.
 
+La shape pubblica 3571 deve restare la stessa anche quando `job_ok=false`.
+Campi primari come `payload_index_for_30b`, `priority_evidence_for_30b`,
+`openwebui_usage`, `tool_context_for_30b` e `result` non devono sparire solo
+perche' il job e' bloccato, fallito, arrivato a max step o cancellato. Se il
+payload terminale/final JSON contiene un `result` completo, quello e' la fonte
+primaria da riportare a OpenWebUI; il digest compatto
+`{ "preview": ... }` e' solo fallback quando non esiste un `result` completo.
+`job_ok=false` e lo stato terminale sono il warning, non un motivo per
+sostituire il payload con una risposta ridotta.
+
 ## Caso discriminante: richiesta 50 file
 
 Richiesta:

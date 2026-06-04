@@ -115,7 +115,17 @@ For terminal jobs returned to OpenWebUI:
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
 - `tool_context_for_30b`: pretty-printed JSON string containing only useful
   successful-tool evidence and declared limits.
-- `result`: preserved unchanged when already produced by the current flow.
+- `result`: preserved unchanged when already produced by the current flow. For
+  terminal jobs, the full terminal/final payload `result` is the primary source;
+  the compact response digest is only a fallback.
+- Completed and non-completed terminal jobs use the same public shape. Do not
+  create a smaller `blocked`/`failed` top-level shape and do not let compact
+  `{ "preview": ... }` shadow a full terminal `result`.
+- For `job_ok=false`, useful rejected code-product candidates, action plans and
+  repair text are transported as explicit partial products in
+  `tool_context_for_30b.partial_products_for_30b` and indexed through
+  `payload_index_for_30b.partial_results`. They remain
+  `validator_accepted=false` and do not satisfy the code-product gate.
 - No continuation protocol, no tool-call examples, no raw events, no transport
   diagnostics, no blocked/prose narrative as primary answer, no local artifact
   paths as content.

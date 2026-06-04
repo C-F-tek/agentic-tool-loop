@@ -1321,6 +1321,8 @@ _AGENTIC_V9_TERMINAL_STATUSES = {
     "blocked_needs_attention",
     "blocked_needs_consent",
     "failed",
+    "failed_tool_error",
+    "failed_planner_error",
     "max_steps_reached",
     "max_steps",
     "cancelled",
@@ -2788,15 +2790,23 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text):
         item = _agentic_v9_priority_item_from_artifact(row)
         if item:
             priority_items.append(item)
+    for row in _agentic_v9_as_list(tool_context.get("partial_products_for_30b")):
+        item = _agentic_v9_as_dict(row)
+        if item:
+            item = dict(item)
+            item.setdefault("payload_is_complete", False)
+            item.setdefault("validator_accepted", False)
+            priority_items.append(_agentic_v9_clean(item))
     analysis_item = _agentic_v9_repo_analysis_priority_item(tool_context, planner_text)
     if analysis_item:
         priority_items.append(analysis_item)
     return _agentic_v9_clean({
         "schema": "openwebui.priority_evidence_for_30b.v1",
         "purpose": (
-            "High-priority complete evidence for the 30B model. Payloads here "
-            "are real inline payloads selected from successful tool artifacts, "
-            "not previews or local paths."
+            "High-priority evidence for the 30B model. Complete payloads here "
+            "are real inline payloads selected from successful tool artifacts. "
+            "Partial products are explicitly marked validator_accepted=false and "
+            "must not be treated as completed diffs."
         ),
         "navigation_hint": (
             "Read priority_evidence_for_30b.items before searching the larger "
@@ -2867,6 +2877,30 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "full_context_location": _agentic_v9_payload_index_context_location(tool_context, item),
             "role": "risultato concreto: contenuto file letto",
         })
+    if kind in {"partial_code_product_candidate", "partial_code_product_build_state", "action_plan_candidate", "repair_candidate_text"}:
+        if item.get("unified_diff"):
+            field = "unified_diff"
+            payload_type = "partial_unified_diff"
+        elif item.get("structured_operations"):
+            field = "structured_operations"
+            payload_type = "partial_structured_operations"
+        elif item.get("state_text"):
+            field = "state_text"
+            payload_type = "partial_code_product_state"
+        else:
+            field = "text"
+            payload_type = "partial_text"
+        return _agentic_v9_clean({
+            "kind": kind,
+            "payload_type": payload_type,
+            "target_file": item.get("target_file"),
+            "edit_kind": item.get("edit_kind"),
+            "payload_is_complete": item.get("payload_is_complete", False),
+            "validator_accepted": item.get("validator_accepted", False),
+            "primary_location": f"{base}.{field}",
+            "full_context_location": "tool_context_for_30b.partial_products_for_30b[*]",
+            "role": "prodotto parziale/non validato: da mostrare all'utente se job_ok=false, non da spacciare come diff completato",
+        })
     return {}
 
 
@@ -2874,13 +2908,17 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
     priority_evidence = _agentic_v9_as_dict(priority_evidence)
     tool_context = _agentic_v9_as_dict(tool_context)
     concrete_results = []
+    partial_results = []
     descriptive_only = []
     suggestions_only = []
     for index, item in enumerate(_agentic_v9_as_list(priority_evidence.get("items"))):
         item = _agentic_v9_as_dict(item)
         location = _agentic_v9_payload_index_item_location(item, index, tool_context)
         if location:
-            concrete_results.append(location)
+            if str(location.get("kind") or "").startswith("partial_") or location.get("validator_accepted") is False:
+                partial_results.append(location)
+            else:
+                concrete_results.append(location)
             if item.get("kind") == "code_edit_proposal":
                 base = f"priority_evidence_for_30b.items[{index}]"
                 suggestions_only.extend([
@@ -2908,6 +2946,7 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
             "non richiamare vulkan_helper per la stessa richiesta."
         ),
         "concrete_results": concrete_results,
+        "partial_results": partial_results,
         "descriptive_only": descriptive_only + [
             {
                 "field": "priority_evidence_for_30b.items[*].summary",
@@ -2928,10 +2967,146 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
             "payload_index_for_30b.concrete_results",
             "priority_evidence_for_30b.items[*].unified_diff",
             "priority_evidence_for_30b.items[*].structured_operations",
+            "payload_index_for_30b.partial_results",
+            "priority_evidence_for_30b.items[*].unified_diff when validator_accepted=false",
+            "priority_evidence_for_30b.items[*].text when validator_accepted=false",
             "priority_evidence_for_30b.items[*].content",
             "tool_context_for_30b.artifacts[*].artifact",
+            "tool_context_for_30b.partial_products_for_30b",
         ],
     })
+
+
+def _agentic_v9_partial_products_from_decoded(decoded):
+    context_key, context = _agentic_v9_extract_context(decoded)
+    result = _agentic_v9_extract_result(decoded, context)
+    out = []
+    seen = set()
+    for source in (context, result, decoded):
+        source = _agentic_v9_as_dict(source)
+        rows = _agentic_v9_as_list(source.get("partial_products_for_30b"))
+        best = source.get("best_partial_product_for_30b") if isinstance(source.get("best_partial_product_for_30b"), dict) else {}
+        for row in ([best] if best else []) + rows:
+            item = _agentic_v9_as_dict(row)
+            if not item:
+                continue
+            key = _agentic_v9_json_dumps(item, indent=None)[:12000]
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(_agentic_v9_clean(item))
+    for item in _agentic_v9_partial_products_from_history(_agentic_v9_as_list(result.get("history"))):
+        key = _agentic_v9_json_dumps(item, indent=None)[:12000]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(_agentic_v9_clean(item))
+    return out[:20]
+
+
+def _agentic_v9_partial_products_from_history(history):
+    out = []
+    seen = set()
+
+    def add(item):
+        item = _agentic_v9_as_dict(item)
+        if not item or len(out) >= 12:
+            return
+        key = _agentic_v9_json_dumps(item, indent=None)[:12000]
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(_agentic_v9_clean(item))
+
+    for row in reversed(_agentic_v9_as_list(history)):
+        row = _agentic_v9_as_dict(row)
+        step = row.get("step")
+        result = _agentic_v9_as_dict(row.get("tool_result"))
+        rejected = _agentic_v9_as_dict(result.get("rejected_decision"))
+        args = _agentic_v9_as_dict(rejected.get("arguments"))
+        tool = str(rejected.get("tool") or "")
+        summary = str(result.get("summary") or "")
+        violations = _agentic_v9_as_list(result.get("violations"))
+        if tool == "repo_propose_code_edit":
+            add({
+                "kind": "partial_code_product_candidate",
+                "source": "validator_rejected_repo_propose_code_edit",
+                "step": step,
+                "payload_is_complete": False,
+                "validator_accepted": False,
+                "rejection_summary": summary,
+                "violations": violations,
+                "target_file": args.get("target_file"),
+                "edit_kind": args.get("edit_kind"),
+                "rationale": args.get("rationale"),
+                "unified_diff": args.get("unified_diff"),
+                "old_text": args.get("old_text"),
+                "new_text": args.get("new_text"),
+                "structured_operations": args.get("structured_operations") if isinstance(args.get("structured_operations"), list) else None,
+                "reason": rejected.get("reason"),
+            })
+        if tool == "planner_scratchpad_write" and str(args.get("kind") or "") == "code_product_build_state":
+            state_text = str(args.get("text") or args.get("content") or "").strip()
+            target_file = args.get("target_file")
+            status = None
+            edit_kind = None
+            rationale = None
+            if state_text:
+                parsed = _agentic_v9_parse_jsonish(state_text)
+                parsed = _agentic_v9_as_dict(parsed)
+                payload = _agentic_v9_as_dict(parsed.get("payload")) or parsed
+                target_file = target_file or payload.get("target_file")
+                status = payload.get("status")
+                edit_kind = payload.get("edit_kind")
+                rationale = payload.get("rationale")
+            add({
+                "kind": "partial_code_product_build_state",
+                "source": "validator_rejected_code_product_build_state",
+                "step": step,
+                "payload_is_complete": False,
+                "validator_accepted": False,
+                "rejection_summary": summary,
+                "violations": violations,
+                "target_file": target_file,
+                "status": status,
+                "edit_kind": edit_kind,
+                "rationale": rationale,
+                "state_text": state_text,
+            })
+        action_plan = str(result.get("action_plan_candidate") or "").strip()
+        if action_plan:
+            add({
+                "kind": "action_plan_candidate",
+                "source": "validator_rejected_final_for_code_product",
+                "step": step,
+                "payload_is_complete": False,
+                "validator_accepted": False,
+                "rejection_summary": summary,
+                "violations": violations,
+                "text": action_plan,
+            })
+        repair = _agentic_v9_as_dict(result.get("vulkan_repair"))
+        if repair:
+            repaired = _agentic_v9_as_dict(repair.get("repaired_decision"))
+            text = str(
+                repaired.get("final_answer")
+                or repair.get("raw_text_preview")
+                or repair.get("raw_planner_text_preview")
+                or ""
+            ).strip()
+            if text:
+                add({
+                    "kind": "repair_candidate_text",
+                    "source": "vulkan_gpu0_repair_rejected_or_unvalidated",
+                    "step": step,
+                    "payload_is_complete": False,
+                    "validator_accepted": False,
+                    "rejection_summary": summary,
+                    "violations": violations,
+                    "text": text,
+                    "repair_error": repair.get("error"),
+                })
+    return out
 
 
 def _agentic_v9_build_structured_tool_context(decoded):
@@ -2942,6 +3117,7 @@ def _agentic_v9_build_structured_tool_context(decoded):
     artifacts = _agentic_v9_order_artifacts(artifacts)
     return _agentic_v9_clean({
         "artifacts": artifacts,
+        "partial_products_for_30b": _agentic_v9_partial_products_from_decoded(decoded),
         "limits": _agentic_v9_structured_tool_limits(observation),
     })
 
@@ -3126,11 +3302,11 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         ]
         sealed["required_top_level_keys"] = stable_required_top_level_keys
         sealed["payload_index_for_30b"] = payload_index
-        result_value = out.get("result")
+        result_value = terminal_source.get("result")
         if result_value in (None, "", [], {}):
             result_value = decoded.get("result")
         if result_value in (None, "", [], {}):
-            result_value = terminal_source.get("result")
+            result_value = out.get("result")
         if result_value not in (None, "", [], {}):
             sealed["result"] = result_value
         sealed["openwebui_usage"] = {

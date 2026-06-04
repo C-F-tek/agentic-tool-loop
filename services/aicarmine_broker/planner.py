@@ -4411,11 +4411,97 @@ def _code_product_build_state_read_action(state: dict[str, Any], target_file: st
     }
 
 
-def _code_product_build_state_write_action(target_file: str) -> dict[str, Any]:
+def _code_product_source_windows_from_reads(
+    history: list[dict[str, Any]],
+    target_file: str,
+    *,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    target = _repo_rel_token(target_file)
+    if not target or target == ".":
+        return []
+    windows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in reversed(history if isinstance(history, list) else []):
+        result = _history_tool_result(item)
+        if result.get("tool") != "repo_read" or result.get("ok") is not True:
+            continue
+        source = _same_tool_artifact_payload(result)
+        raw_items = source.get("items") if isinstance(source.get("items"), list) else []
+        if not raw_items and source.get("path"):
+            raw_items = [source]
+        for sub in raw_items:
+            if not isinstance(sub, dict) or sub.get("ok") is False:
+                continue
+            path = _repo_rel_token(sub.get("path") or sub.get("repo_path") or "")
+            if path != target:
+                continue
+            text, _content_meta = _repo_read_item_full_content(sub)
+            if not text:
+                text = str(sub.get("content") or "")
+            if not text:
+                continue
+            digest = _text_hash(text)
+            if digest in seen:
+                continue
+            seen.add(digest)
+            windows.append({
+                "source_tool": "repo_read",
+                "target_file": target,
+                "section": f"repo_read:{target}",
+                "window_start": int(sub.get("window_start") or 0),
+                "window_end": int(sub.get("window_end") or len(text)),
+                "full_chars": int(sub.get("full_chars") or len(text)),
+                "window_chars": len(text),
+                "complete": bool(sub.get("complete", sub.get("truncated") is not True)),
+                "has_more_before": bool(sub.get("has_more_before", False)),
+                "has_more_after": bool(sub.get("has_more_after", False)),
+                "sha256": digest,
+                "window_sha256": _text_hash(text),
+            })
+            if len(windows) >= max(1, int(limit or 1)):
+                return windows
+    return windows
+
+
+def _code_product_build_state_write_action(
+    target_file: str,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     target = _repo_rel_token(target_file)
     if not target or target == ".":
         return {}
-    return {}
+    source_windows = _code_product_source_windows_from_reads(history or [], target)
+    if not source_windows:
+        return {}
+    state = {
+        "schema": CODE_PRODUCT_BUILD_STATE_SCHEMA,
+        "target_file": target,
+        "status": "collecting_source",
+        "source_windows": source_windows,
+        "rationale": (
+            "Verified repo_read source window captured. Continue by producing "
+            "ready_for_propose with edit_kind=unified_diff and complete "
+            "unified_diff or complete old_text/new_text, or blocked_incomplete "
+            "with an explicit blocker."
+        ),
+    }
+    return {
+        "action": "tool",
+        "tool": "planner_scratchpad_write",
+        "arguments": {
+            "kind": CODE_PRODUCT_BUILD_STATE_KIND,
+            "target_file": target,
+            "status": "collecting_source",
+            "section": _code_product_build_state_section(target),
+            "max_chars": 8000,
+            "text": json.dumps(state, ensure_ascii=False, separators=(",", ":")),
+        },
+        "reason": (
+            "Persist a valid internal code_product_build_state with real repo_read "
+            "source-window progress before attempting repo_propose_code_edit."
+        ),
+    }
 
 
 def _code_product_build_state_propose_action(
@@ -4831,7 +4917,7 @@ def _apply_duplicate_window_replan_contract(
         if route_candidate:
             next_actions.append(route_candidate)
         if target:
-            build_state_action = _code_product_build_state_write_action(target)
+            build_state_action = _code_product_build_state_write_action(target, history)
             if build_state_action:
                 next_actions.append(build_state_action)
         contract["required_next_progress"] = (
@@ -7362,7 +7448,8 @@ def planner_evidence_contract(
                 )
             ]
             progress_write_action = _code_product_build_state_write_action(
-                build_state_target or code_product_candidate_target
+                build_state_target or code_product_candidate_target,
+                history,
             )
             contract["candidate_next_actions"] = (
                 ([progress_write_action] if progress_write_action else []) + existing_candidates[:15]
@@ -7376,7 +7463,7 @@ def planner_evidence_contract(
             )
         elif code_product_candidate_target and code_product_candidate_target in successful_read_path_set:
             build_state_progress_handled = True
-            write_state_action = _code_product_build_state_write_action(code_product_candidate_target)
+            write_state_action = _code_product_build_state_write_action(code_product_candidate_target, history)
             existing_candidates = [
                 item for item in (contract.get("candidate_next_actions") or [])
                 if not (
@@ -8857,6 +8944,14 @@ def _should_attempt_vulkan_repair(
     decision = decision if isinstance(decision, dict) else {}
     action = str(decision.get("action") or "").strip().lower()
     reason = str(decision.get("reason") or "")
+    contract = validation.get("evidence_contract") if isinstance(validation.get("evidence_contract"), dict) else {}
+    semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
+    if (
+        contract.get("goal_requests_code_product")
+        or contract.get("goal_requires_code_product_report")
+        or bool(semantic.get("must_produce_code_product"))
+    ):
+        return False
     if action == "block":
         raw_planner_text = _decision_raw_planner_text(decision)
         reason_low = reason.lower()
@@ -10147,6 +10242,172 @@ def _code_product_answer_text(result: dict[str, Any] | None, limit: int = 180000
     return text[:limit] if int(limit or 0) > 0 else text
 
 
+def _partial_product_clean_text(value: Any, limit: int = 40000) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text[:limit] if len(text) > limit else text
+
+
+def _partial_products_for_30b(history: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
+    products: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(product: dict[str, Any]) -> None:
+        if not isinstance(product, dict) or len(products) >= max(1, int(limit or 1)):
+            return
+        key = json.dumps(product, ensure_ascii=False, sort_keys=True, default=str)[:12000]
+        if key in seen:
+            return
+        seen.add(key)
+        products.append({k: v for k, v in product.items() if v not in (None, "", [], {})})
+
+    for item in reversed(history if isinstance(history, list) else []):
+        if len(products) >= max(1, int(limit or 1)):
+            break
+        if not isinstance(item, dict):
+            continue
+        step = item.get("step")
+        result = _history_tool_result(item)
+        rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
+        rejected_tool = _normalize_tool_name(str(rejected.get("tool") or ""))
+        rejected_args = rejected.get("arguments") if isinstance(rejected.get("arguments"), dict) else {}
+        violations = result.get("violations") if isinstance(result.get("violations"), list) else []
+        summary = str(result.get("summary") or "").strip()
+
+        if rejected_tool == "repo_propose_code_edit":
+            add({
+                "kind": "partial_code_product_candidate",
+                "source": "validator_rejected_repo_propose_code_edit",
+                "step": step,
+                "payload_is_complete": False,
+                "validator_accepted": False,
+                "rejection_summary": summary,
+                "violations": violations,
+                "target_file": _repo_rel_token(rejected_args.get("target_file") or ""),
+                "edit_kind": rejected_args.get("edit_kind"),
+                "rationale": _partial_product_clean_text(rejected_args.get("rationale"), 8000),
+                "unified_diff": _partial_product_clean_text(rejected_args.get("unified_diff"), 80000),
+                "old_text": _partial_product_clean_text(rejected_args.get("old_text"), 30000),
+                "new_text": _partial_product_clean_text(rejected_args.get("new_text"), 30000),
+                "structured_operations": rejected_args.get("structured_operations") if isinstance(rejected_args.get("structured_operations"), list) else None,
+                "reason": _partial_product_clean_text(rejected.get("reason"), 8000),
+            })
+
+        if rejected_tool == "planner_scratchpad_write" and str(rejected_args.get("kind") or "") == CODE_PRODUCT_BUILD_STATE_KIND:
+            state_text = _partial_product_clean_text(
+                rejected_args.get("text") or rejected_args.get("content"),
+                80000,
+            )
+            parsed = _code_product_build_state_parse(state_text)
+            loose_payload: dict[str, Any] = {}
+            if not parsed:
+                try:
+                    loose = json.loads(state_text)
+                    if isinstance(loose, dict):
+                        loose_payload = loose.get("payload") if isinstance(loose.get("payload"), dict) else loose
+                except Exception:
+                    loose_payload = {}
+            add({
+                "kind": "partial_code_product_build_state",
+                "source": "validator_rejected_code_product_build_state",
+                "step": step,
+                "payload_is_complete": False,
+                "validator_accepted": False,
+                "rejection_summary": summary,
+                "violations": violations,
+                "target_file": _repo_rel_token(
+                    rejected_args.get("target_file")
+                    or (parsed or loose_payload).get("target_file")
+                    or ""
+                ),
+                "status": (parsed or loose_payload).get("status"),
+                "edit_kind": (parsed or loose_payload).get("edit_kind"),
+                "rationale": _partial_product_clean_text((parsed or loose_payload).get("rationale"), 8000),
+                "state_text": state_text,
+            })
+
+        action_plan = _partial_product_clean_text(result.get("action_plan_candidate"), 40000)
+        if action_plan:
+            add({
+                "kind": "action_plan_candidate",
+                "source": "validator_rejected_final_for_code_product",
+                "step": step,
+                "payload_is_complete": False,
+                "validator_accepted": False,
+                "rejection_summary": summary,
+                "violations": violations,
+                "text": action_plan,
+            })
+
+        repair = result.get("vulkan_repair") if isinstance(result.get("vulkan_repair"), dict) else {}
+        if repair:
+            repaired = repair.get("repaired_decision") if isinstance(repair.get("repaired_decision"), dict) else {}
+            text = _partial_product_clean_text(
+                repaired.get("final_answer")
+                or repair.get("raw_text_preview")
+                or repair.get("raw_planner_text_preview"),
+                40000,
+            )
+            if text:
+                add({
+                    "kind": "repair_candidate_text",
+                    "source": "vulkan_gpu0_repair_rejected_or_unvalidated",
+                    "step": step,
+                    "payload_is_complete": False,
+                    "validator_accepted": False,
+                    "rejection_summary": summary,
+                    "violations": violations,
+                    "text": text,
+                    "repair_error": repair.get("error"),
+                })
+    return products
+
+
+def _best_partial_product_for_30b(history: list[dict[str, Any]]) -> dict[str, Any]:
+    products = _partial_products_for_30b(history, limit=8)
+    for product in products:
+        if str(product.get("unified_diff") or "").strip():
+            return product
+    return products[0] if products else {}
+
+
+def _partial_product_answer_text(result: dict[str, Any] | None, limit: int = 60000) -> str:
+    result = result if isinstance(result, dict) else {}
+    history = result.get("history") if isinstance(result.get("history"), list) else []
+    product = result.get("best_partial_product_for_30b") if isinstance(result.get("best_partial_product_for_30b"), dict) else {}
+    if not product:
+        product = _best_partial_product_for_30b(history)
+    if not product:
+        return ""
+    lines = [
+        "Prodotto parziale non validato dal controller.",
+        f"- kind: {product.get('kind')}",
+        f"- source: {product.get('source')}",
+        f"- step: {product.get('step')}",
+        f"- validator_accepted: {str(product.get('validator_accepted')).lower()}",
+    ]
+    if product.get("target_file"):
+        lines.append(f"- target_file: {product.get('target_file')}")
+    if product.get("edit_kind"):
+        lines.append(f"- edit_kind: {product.get('edit_kind')}")
+    if product.get("rejection_summary"):
+        lines.append(f"- rejection_summary: {product.get('rejection_summary')}")
+    rationale = str(product.get("rationale") or "").strip()
+    if rationale:
+        lines.append(f"- rationale: {rationale}")
+    if str(product.get("unified_diff") or "").strip():
+        lines.extend(["", "```diff", str(product.get("unified_diff")).rstrip("\n"), "```"])
+    elif product.get("structured_operations"):
+        lines.extend(["", "```json", json.dumps(product.get("structured_operations"), ensure_ascii=False, indent=2, default=str), "```"])
+    elif str(product.get("text") or "").strip():
+        lines.extend(["", str(product.get("text")).strip()])
+    elif str(product.get("state_text") or "").strip():
+        lines.extend(["", "```json", str(product.get("state_text")).strip(), "```"])
+    text = "\n".join(lines)
+    return text[:limit] if int(limit or 0) > 0 else text
+
+
 def _agent_flow_diagnostics(
     goal: str,
     history: list[dict[str, Any]],
@@ -10292,6 +10553,9 @@ def answer_for_openwebui(status: str, final_summary: str, result: dict[str, Any]
     if status_text == "blocked_needs_attention":
         blocked_by = str(result.get("blocked_by") or "unknown")
         extra: list[str] = []
+        partial_answer = _partial_product_answer_text(result)
+        if partial_answer:
+            extra.append(partial_answer)
         raw_text = str(result.get("raw_planner_text") or "")
         if raw_text:
             extra.append("Raw planner output preview:\n" + raw_text[:3000])
@@ -10313,8 +10577,24 @@ def answer_for_openwebui(status: str, final_summary: str, result: dict[str, Any]
             f"Stato={status_text}; blocker={blocked_by}.\n\n{summary}{suffix}"
         )
     if status_text == "max_steps_reached":
+        partial_answer = _partial_product_answer_text(result)
+        if partial_answer:
+            return (
+                "Il loop agentico interno ha raggiunto il limite di step senza un final valido del planner.\n\n"
+                + partial_answer
+                + "\n\n"
+                + summary
+            )
         return (
             "Il loop agentico interno ha raggiunto il limite di step senza un final del planner.\n\n"
+            + summary
+        )
+    partial_answer = _partial_product_answer_text(result)
+    if partial_answer:
+        return (
+            f"Risultato terminale del loop agentico: status={status_text}.\n\n"
+            + partial_answer
+            + "\n\n"
             + summary
         )
     return f"Risultato terminale del loop agentico: status={status_text}.\n\n{summary}"
@@ -10341,6 +10621,8 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
         ],
         "use_fields_in_order": [
             "answer_for_30b",
+            "tool_context_for_30b.best_partial_product_for_30b",
+            "tool_context_for_30b.partial_products_for_30b",
             "tool_context_for_30b.artifacts",
             "tool_context_for_30b.evidence_contract_at_terminal",
             "tool_context_for_30b.history",
@@ -10370,6 +10652,12 @@ def build_tool_context_for_30b(
     )
     if isinstance(result, dict):
         result = dict(result)
+    partial_products = _partial_products_for_30b(history)
+    best_partial_product = _best_partial_product_for_30b(history)
+    if partial_products:
+        result["partial_products_for_30b"] = partial_products
+    if best_partial_product:
+        result["best_partial_product_for_30b"] = best_partial_product
     controller_memory = state.get("controller_memory_last_write") if isinstance(state.get("controller_memory_last_write"), dict) else {}
     if controller_memory:
         diagnostics["controller_memory_records_written"] = 1 if controller_memory.get("ok") else 0
@@ -10445,6 +10733,8 @@ def build_tool_context_for_30b(
         "answer_for_30b": answer,
         "composed_answer": composed_answer,
         "artifacts": artifacts,
+        "partial_products_for_30b": partial_products,
+        "best_partial_product_for_30b": best_partial_product,
         "limits": _public_tool_context_limits(artifacts),
         "evidence_digest_for_30b": evidence_digest,
         "evidence_view_for_30b": evidence_view,
@@ -10658,6 +10948,10 @@ def finalize_agentic_job(
     result["controller_memory_write"] = controller_memory
     state["controller_memory_last_write"] = controller_memory
     tool_context = build_tool_context_for_30b(job_id, state, status, final_summary_with_turns, result)
+    if tool_context.get("partial_products_for_30b") not in (None, "", [], {}):
+        result["partial_products_for_30b"] = tool_context.get("partial_products_for_30b")
+    if tool_context.get("best_partial_product_for_30b") not in (None, "", [], {}):
+        result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
     answer = tool_context.get("answer_for_30b") or final_summary_with_turns
     public_final_summary = (
         answer
