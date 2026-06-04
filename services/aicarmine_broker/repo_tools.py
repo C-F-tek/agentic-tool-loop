@@ -30,6 +30,8 @@ from .config import (
     VALID_INTERNAL_TOOLS,
     parse_bool,
 )
+from .infrastructure.command_runner import SubprocessCommandRunner
+from .infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from .job_store import now, write_json
 from .tool_registry import capability_map
 
@@ -40,12 +42,10 @@ from .tool_registry import capability_map
 
 
 def run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, Any]:
-    completed = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
-        cwd=str(LAB_REPO),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
+    completed = SubprocessCommandRunner().run(
+        ("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command),
+        cwd=LAB_REPO,
+        timeout_seconds=timeout,
     )
     return {
         "returncode": completed.returncode,
@@ -54,22 +54,6 @@ def run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, An
         "stdout_tail": completed.stdout[-4000:],
         "stderr_tail": completed.stderr[-4000:],
     }
-
-
-def safe_rel_path(value: str) -> str:
-    raw = str(value or "").strip().strip("\"'").replace("\\", "/")
-    if not raw:
-        raise ValueError("empty path")
-    if raw.startswith("/") or raw.startswith("../") or "/../" in raw or ":" in raw:
-        raise ValueError(f"path must be repo-relative: {raw}")
-    return raw
-
-
-def repo_rel(path: Path, root: Path) -> str:
-    try:
-        return path.resolve(strict=False).relative_to(root.resolve(strict=False)).as_posix()
-    except Exception:
-        return str(path)
 
 
 def dangerous_command(command: str) -> bool:

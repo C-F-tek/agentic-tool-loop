@@ -30,6 +30,8 @@ from .config import (
     AGENT_TERMINAL_STATUSES,
     AGENT_WAIT_POLL_SECONDS,
 )
+from .infrastructure.json_files import JsonFileStore
+from .infrastructure.time_provider import TimeProvider
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +40,7 @@ from .config import (
 
 
 def now() -> int:
-    return int(time.time())
+    return TimeProvider().now_seconds()
 
 
 def make_session_id(value: str = "") -> str:
@@ -49,19 +51,11 @@ def make_session_id(value: str = "") -> str:
 
 
 def write_json(path: Path, payload: Any) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    return str(path)
+    return str(JsonFileStore().write(path, payload))
 
 
 def read_json(path: Path, default: Any = None) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
+    return JsonFileStore().read(path, default)
 
 
 # ---------------------------------------------------------------------------
