@@ -93,6 +93,7 @@ Read before edits:
 | `application/prompt_context_windows.py` | Prompt-context window compaction and bounded planner_scratchpad_read result helpers. It preserves text plus tracking hashes/offsets for recursive SQLite windows. |
 | `application/prompt_values.py` | Prompt clipping/value compaction and stable text hashing helpers. It converts large diff/structured-operation fields into bounded metadata for planner prompt use only. |
 | `application/public_history_ledger.py` | Builds the public history ledger transported to 3571/OpenWebUI without leaking internal transport metadata. |
+| `application/public_tool_context.py` | OpenWebUI-visible terminal tool-context shaping. It rehydrates successful tool payloads inline, strips local paths and keeps code-product diffs visible without exposing internal scratchpad build state. |
 | `application/text_windows.py` | Text and diff window primitives with offsets, completeness flags and hashes for prompt/SQLite window composition. |
 | `application/tool_manifest_builder.py` | Planner tool manifest compaction and Ollama native tool schema builder. It keeps provider schema slim and leaves long internal contracts in the planner payload. |
 | `application/tool_prompt_contract.py` | Planner prompt contract helper for available-tool payloads and native/legacy tool-shape examples. It does not dispatch tools or alter provider schemas. |
