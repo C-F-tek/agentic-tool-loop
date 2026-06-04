@@ -93,6 +93,7 @@ Read before edits:
 | `application/text_windows.py` | Text and diff window primitives with offsets, completeness flags and hashes for prompt/SQLite window composition. |
 | `application/tool_manifest_builder.py` | Planner tool manifest compaction and Ollama native tool schema builder. It keeps provider schema slim and leaves long internal contracts in the planner payload. |
 | `application/tool_prompt_contract.py` | Planner prompt contract helper for available-tool payloads and native/legacy tool-shape examples. It does not dispatch tools or alter provider schemas. |
+| `application/tool_result_compaction.py` | Planner-facing tool-result compaction policy. It preserves code-product diffs and prompt-context window tracking while bounding ordinary tool payloads. |
 | `application/tool_result_digest.py` | Planner-facing last-tool-result digest helper. It preserves code-product payloads and bounded prompt-context window metadata. |
 | `application/turn_surface_policy.py` | Dynamic planner turn tool-surface policy. It filters candidate actions and provider tool names according to required progress without executing fallback steps. |
 | `application/tool_dispatcher.py` | Dispatch coordination helper for normalized tool decisions. |
@@ -104,6 +105,7 @@ Read before edits:
 | Module | Technical description |
 | --- | --- |
 | `infrastructure/json_files.py` | JSON file adapter with atomic writes and same-tool artifact rehydration. Artifact loading is internal evidence reconstruction, not public payload substitution. |
+| `infrastructure/result_compaction.py` | Generic text/result compaction primitive shared by compatibility facades and planner-facing compaction code. |
 
 ## planner_core Subpackage
 

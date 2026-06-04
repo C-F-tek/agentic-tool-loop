@@ -12,13 +12,13 @@ No HTTP calls are made here.  ``run_ps`` is the only subprocess boundary.
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from .config import (
     COMMAND_TIMEOUT_SECONDS,
     MAX_TOOL_RESULT_CHARS,
 )
+from .infrastructure.result_compaction import compact as _compact
 from .infrastructure.filesystem_repo import safe_rel_path
 from .tools.command_safety import dangerous_command
 from .tools.repo_deterministic import (
@@ -68,13 +68,7 @@ def run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, An
 
 
 def compact(value: Any, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
-    text = (
-        json.dumps(value, ensure_ascii=False, indent=2, default=str)
-        if not isinstance(value, str)
-        else value
-    )
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return text[:limit] + ("\n... <truncated>" if len(text) > limit else "")
+    return _compact(value, limit)
 
 
 # ---------------------------------------------------------------------------
