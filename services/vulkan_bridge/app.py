@@ -268,7 +268,7 @@ def _legacy_agentic_v2_compact_context_for_openwebui(ctx):
     keep = {}
     for key in (
         "type", "contract_type", "not_a_summary", "openwebui_usage", "job",
-        "contract", "execution_contract", "final_answer", "answer_for_30b",
+        "contract", "execution_contract", "final_answer",
         "next_action_for_30b", "evidence_contract_at_terminal",
         "evidence_contract_at_finish", "blocked_by", "artifacts", "result_digest",
     ):
@@ -296,7 +296,7 @@ def _legacy_agentic_v2_compact_context_for_openwebui(ctx):
     keep.setdefault("openwebui_usage", {})
     if isinstance(keep["openwebui_usage"], dict):
         keep["openwebui_usage"]["rule"] = (
-            "Answer from answer_for_30b. Use evidence_contract_at_terminal, "
+            "Read the top-level evidence_guide_for_30b first. Use evidence_contract_at_terminal, "
             "planner.validation_rejections, executed_tools and artifacts for diagnosis. "
             "Do not ask the user to invent a new plan when next_action_for_30b is present."
         )
@@ -468,7 +468,8 @@ def _build_agent_payload(raw_payload: dict[str, Any], public_tool_x: str = "help
                 "called_by_30b",
                 "arguments_from_30b",
                 "result",
-                "summary_for_30b",
+                "evidence_guide_for_30b",
+                "tool_context_for_30b",
             ],
         },
         "bridge_contract": (
@@ -599,7 +600,12 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
             "agent_url": url,
             "http_status": exc.code,
             "elapsed_seconds": round(time.time() - started, 3),
-            "message_for_30b": "3571 reached 3572, but 3572 returned an HTTP error.",
+            "evidence_guide_for_30b": "3571 reached 3572, but 3572 returned an HTTP error.",
+            "tool_context_for_30b": {
+                "type": "bridge_error_context",
+                "top_level_evidence_guide_field": "evidence_guide_for_30b",
+                "bridge_status": "AGENT_HTTP_ERROR",
+            },
             "agent_error_body": raw[:12000],
         }
     except Exception as exc:
@@ -613,7 +619,12 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
             "error_type": "BackendTimeout" if is_timeout else type(exc).__name__,
             "error": error_text,
             "elapsed_seconds": round(time.time() - started, 3),
-            "message_for_30b": "3571 forwarded the public repo/helper tool, but no valid 3572 result was received.",
+            "evidence_guide_for_30b": "3571 forwarded the public repo/helper tool, but no valid 3572 result was received.",
+            "tool_context_for_30b": {
+                "type": "bridge_error_context",
+                "top_level_evidence_guide_field": "evidence_guide_for_30b",
+                "bridge_status": "AGENT_TIMEOUT" if is_timeout else "AGENT_UNREACHABLE",
+            },
         }
 
     try:
@@ -629,7 +640,12 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
             "error_type": type(exc).__name__,
             "error": str(exc),
             "raw": raw[:12000],
-            "message_for_30b": "3572 responded, but not with valid JSON.",
+            "evidence_guide_for_30b": "3572 responded, but not with valid JSON.",
+            "tool_context_for_30b": {
+                "type": "bridge_error_context",
+                "top_level_evidence_guide_field": "evidence_guide_for_30b",
+                "bridge_status": "AGENT_INVALID_JSON",
+            },
         }
 
     if not isinstance(decoded, dict):
@@ -657,12 +673,8 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
     decoded.setdefault("operation_id", expected_tool)
     decoded.setdefault("wrapper_expected_contract", payload.get("wrapper_expected_contract"))
     decoded.setdefault(
-        "message_for_30b",
-        "The public repo/helper tool returned a local evidence-bound result. Use the result fields directly; do not invent missing evidence.",
-    )
-    decoded.setdefault(
-        "answer_for_30b",
-        decoded.get("message_for_30b") or decoded.get("summary_for_30b") or decoded.get("final_summary") or "",
+        "evidence_guide_for_30b",
+        "The public repo/helper tool returned a local evidence-bound result. Use the indexed result fields directly; do not invent missing evidence.",
     )
     _apply_openwebui_final_handoff(decoded)
     return _compact_for_openwebui(decoded)
@@ -681,9 +693,14 @@ def _handle_helper(req: HelperForAllRequest, alias_called: str) -> dict[str, Any
             "ok": False,
             "service": "vulkan_bridge",
             "bridge_status": "BRIDGE_TIMEOUT_CONFIGURATION_ERROR",
-            "message_for_30b": (
+            "evidence_guide_for_30b": (
                 "3571 bridge timeout is lower than the required agent wait plus final OpenWebUI handoff budget."
             ),
+            "tool_context_for_30b": {
+                "type": "bridge_configuration_error_context",
+                "top_level_evidence_guide_field": "evidence_guide_for_30b",
+                "bridge_status": "BRIDGE_TIMEOUT_CONFIGURATION_ERROR",
+            },
             "bridge_timeout_required_seconds": agent_payload.get("bridge_timeout_required_seconds"),
             "bridge_timeout_capacity_seconds": agent_payload.get("bridge_timeout_capacity_seconds"),
             "bridge_public_tool": public_tool_x,
@@ -3183,6 +3200,66 @@ def _agentic_v9_strip_tool_context_narrative_duplicates(tool_context):
     return cleaned
 
 
+def _agentic_v9_strip_public_narrative_duplicates(payload):
+    if not isinstance(payload, dict):
+        return payload
+    cleaned = dict(payload)
+    for key in (
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+        "text",
+        "tool_observation_for_30b",
+        "openwebui_tool_observation",
+        "openwebui_protocol_observation",
+    ):
+        cleaned.pop(key, None)
+    return cleaned
+
+
+def _agentic_v9_build_nonterminal_tool_context(decoded, out):
+    existing_context = (
+        _agentic_v9_explicit_tool_context(decoded)
+        or _agentic_v9_explicit_tool_context(out)
+    )
+    tool_context = dict(existing_context) if isinstance(existing_context, dict) else {}
+    tool_context = _agentic_v9_strip_tool_context_narrative_duplicates(tool_context)
+    tool_context.setdefault("type", "agentic_loop_nonterminal_structured_context")
+    tool_context["top_level_evidence_guide_field"] = "evidence_guide_for_30b"
+    tool_context["not_a_summary"] = True
+    job_status = _agentic_v9_clean({
+        "job_id": decoded.get("job_id") or out.get("job_id"),
+        "status": decoded.get("status") or out.get("status"),
+        "goal": decoded.get("goal") or out.get("goal"),
+        "bridge_status": decoded.get("bridge_status") or out.get("bridge_status"),
+        "bridge_forwarded_to_vulkan": decoded.get("bridge_forwarded_to_vulkan") or out.get("bridge_forwarded_to_vulkan"),
+    })
+    if job_status:
+        tool_context["job_status"] = job_status
+    for key in (
+        "payload_index_for_30b",
+        "priority_evidence_for_30b",
+        "working_memory_for_30b",
+        "runtime_debug_packet",
+        "controller_guard",
+    ):
+        value = decoded.get(key)
+        if value in (None, "", [], {}):
+            value = out.get(key)
+        if value not in (None, "", [], {}):
+            tool_context[key] = value
+    result_value = decoded.get("result")
+    if result_value in (None, "", [], {}):
+        result_value = out.get("result")
+    if result_value not in (None, "", [], {}):
+        result_digest = _bridge_result_digest(result_value)
+        result_digest.pop("evidence_guide_for_30b", None)
+        if result_digest:
+            tool_context["result_digest"] = result_digest
+    return _agentic_v9_public_sanitize_value(tool_context) or {}
+
+
 def _agentic_v9_completed_planner_text(decoded, answer):
     observation = _agentic_v9_build_observation_object(decoded)
     body = str(
@@ -3312,11 +3389,6 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         or decoded.get("final_summary")
         or ""
     )
-    if answer:
-        out["answer_for_30b"] = answer
-        out.setdefault("message_for_30b", answer)
-        out.setdefault("summary_for_30b", answer)
-
     if terminal:
         terminal_source = _agentic_v9_full_terminal_payload(decoded)
         terminal_observation = _agentic_v9_build_observation_object(terminal_source)
@@ -3449,13 +3521,26 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         _agentic_v9_build_protocol_text(decoded),
         BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS,
     )
-    out["answer_for_30b"] = protocol_text
-    out["message_for_30b"] = protocol_text
-    out["tool_observation_for_30b"] = protocol_text
-    out["openwebui_tool_observation"] = protocol_text
-    out["content"] = protocol_text
-    out["text"] = protocol_text
-    out["openwebui_protocol_observation"] = protocol_text
+    out = _agentic_v9_public_sanitize_value(out) or {}
+    out = _agentic_v9_strip_public_narrative_duplicates(out)
+    out["evidence_guide_for_30b"] = protocol_text
+    out["tool_context_for_30b"] = _agentic_v9_json_dumps(
+        _agentic_v9_build_nonterminal_tool_context(decoded, out),
+        indent=2,
+    )
+    usage = out.get("openwebui_usage") if isinstance(out.get("openwebui_usage"), dict) else {}
+    usage = dict(usage)
+    usage.update({
+        "evidence_guide_field": "evidence_guide_for_30b",
+        "structured_context_field": "tool_context_for_30b",
+        "rule": (
+            "Use evidence_guide_for_30b as the only top-level narrative guide. "
+            "Use tool_context_for_30b for structured non-terminal job status and "
+            "inline diagnostic context. Do not look for answer/message/summary/content "
+            "aliases; they are intentionally not emitted."
+        ),
+    })
+    out["openwebui_usage"] = usage
 
     return _attach_public_payload_lint(out)
 

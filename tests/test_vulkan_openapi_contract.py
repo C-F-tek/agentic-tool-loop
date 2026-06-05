@@ -227,6 +227,56 @@ def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payl
     assert result["public_payload_lint"]["ok"] is True
 
 
+def test_nonterminal_openwebui_response_uses_single_guide_and_structured_context() -> None:
+    from vulkan_bridge import app
+
+    result = app._compact_for_openwebui(
+        {
+            "ok": True,
+            "service": "vulkan_agent",
+            "status": "running",
+            "job_id": "job-running",
+            "goal": "analyze repo",
+            "answer_for_30b": "legacy answer",
+            "message_for_30b": "legacy answer",
+            "summary_for_30b": "legacy answer",
+            "content": "legacy answer",
+            "tool_context_for_30b": {
+                "answer_for_30b": "context answer",
+                "summary_for_30b": "context summary",
+                "working": True,
+            },
+            "result": {
+                "answer_for_30b": "result answer",
+                "summary_for_30b": "result answer",
+                "status": "running",
+                "history": [{"step": 1}],
+            },
+        }
+    )
+
+    tool_context = json.loads(result["tool_context_for_30b"])
+
+    assert result["evidence_guide_for_30b"]
+    assert result["openwebui_usage"]["evidence_guide_field"] == "evidence_guide_for_30b"
+    for duplicate_key in (
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+        "text",
+        "tool_observation_for_30b",
+        "openwebui_tool_observation",
+        "openwebui_protocol_observation",
+    ):
+        assert duplicate_key not in result
+        assert duplicate_key not in tool_context
+    assert tool_context["type"] == "agentic_loop_nonterminal_structured_context"
+    assert tool_context["top_level_evidence_guide_field"] == "evidence_guide_for_30b"
+    assert tool_context["working"] is True
+    assert "evidence_guide_for_30b" not in tool_context.get("result_digest", {})
+
+
 def test_terminal_openwebui_response_with_blocked_job_keeps_public_tool_ok_and_indexes_partial_old_new_text() -> None:
     from vulkan_bridge import app
 

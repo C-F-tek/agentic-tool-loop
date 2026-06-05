@@ -43,6 +43,31 @@ def test_deterministic_public_wrapper_uses_single_evidence_guide(tmp_path: Path)
     assert NARRATIVE_DUPLICATES.isdisjoint(result)
     assert result["openwebui_usage"]["evidence_guide_field"] == "evidence_guide_for_30b"
     assert result["tool_context_for_30b"] == {"artifact": {"content": "real artifact content"}}
+    assert "answer_for_30b" not in result["result"]
+    assert "message_for_30b" not in result["result"]
+    assert "summary_for_30b" not in result["result"]
+    assert "content" not in result["result"]
+    assert result["dispatcher_tool_result_l"] == result["result"]
+
+
+def test_deterministic_public_wrapper_preserves_non_duplicate_content_payload(tmp_path: Path) -> None:
+    result = deterministic_public_wrapper(
+        public_tool_name="vulkan_helper",
+        original_args={"task": "read"},
+        internal_tool="repo_read",
+        internal_args={},
+        dispatcher_result={
+            "ok": True,
+            "answer_for_30b": "read completed",
+            "content": "real file content",
+        },
+        selector_response={"message": {"tool_calls": [{"function": {"name": "repo_read"}}]}},
+        root=tmp_path,
+    )
+
+    assert result["evidence_guide_for_30b"] == "read completed"
+    assert "answer_for_30b" not in result["result"]
+    assert result["result"]["content"] == "real file content"
 
 
 def test_fail_selector_uses_single_evidence_guide(tmp_path: Path) -> None:

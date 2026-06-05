@@ -25,18 +25,20 @@ def bridge_result_digest(result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {"preview": compact_text(result, 2000)} if result else {}
     keep: dict[str, Any] = {}
+    evidence_guide = (
+        result.get("evidence_guide_for_30b")
+        or result.get("answer_for_30b")
+        or result.get("message_for_30b")
+        or result.get("summary_for_30b")
+    )
+    if evidence_guide not in (None, "", [], {}):
+        keep["evidence_guide_for_30b"] = compact_text(evidence_guide, 2000)
     for key in (
         "ok",
         "job_ok",
         "status",
         "job_id",
-        "answer_for_30b",
-        "summary_for_30b",
-        "message_for_30b",
         "next_action_for_30b",
-        "final_path",
-        "final_markdown_path",
-        "events_path",
         "full_result_available",
         "full_result_hint",
         "auto_finalized_by",
