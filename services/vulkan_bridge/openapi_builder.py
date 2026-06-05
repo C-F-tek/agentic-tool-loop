@@ -102,7 +102,12 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
             },
             "tool_context_for_30b": {
                 "type": "string",
-                "description": "Pretty-printed JSON string with all successful tool artifacts inline. Artifact means real tool result, not a local path.",
+                "description": (
+                    "Pretty-printed JSON string whose public useful payload is "
+                    "tool_context_for_30b.artifacts[*].artifact. Artifact means real "
+                    "tool result, not a local path. This is not the primary reading "
+                    "surface and is not a full job dump."
+                ),
             },
             "openwebui_usage": {
                 "type": "object",
@@ -127,6 +132,8 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
         "`evidence_guide_for_30b` is the single top-level narrative guide; "
         "`payload_index_for_30b.concrete_results[*].primary_location` points to exact useful payload fields "
         "such as `priority_evidence_for_30b.items[*].unified_diff`; "
+        "for file content, prefer `priority_evidence_for_30b.items[0].content`; "
+        "only after that inspect `tool_context_for_30b.artifacts[*].artifact`; "
         "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
         "`answer_for_30b`, `message_for_30b`, `summary_for_30b`, `next_action_for_30b` "
         "and `full_result_hint` are not primary top-level result fields."

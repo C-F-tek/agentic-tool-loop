@@ -227,6 +227,77 @@ def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payl
     assert result["public_payload_lint"]["ok"] is True
 
 
+def test_terminal_openwebui_response_tool_context_is_artifact_mirror_not_full_dump() -> None:
+    from vulkan_bridge import app
+
+    result = app._compact_for_openwebui(
+        {
+            "ok": True,
+            "job_ok": True,
+            "service": "vulkan_agent",
+            "status": "completed",
+            "tool_name": "vulkan_helper",
+            "job_id": "job-readable",
+            "final_summary": "README read.",
+            "tool_context_for_30b": {
+                "type": "agentic_loop_complete_structured_context",
+                "job": {
+                    "job_id": "job-readable",
+                    "status": "completed",
+                    "goal": "describe readme",
+                    "planner_model": "qwen3-coder:30b",
+                },
+                "planner_memory": {"records": [{"text": "noise"}]},
+                "controller_memory": {"record_id": 1},
+                "agent_flow_diagnostics": {"guard_count": 7},
+                "history": [{"step": 1, "tool": "repo_read"}],
+                "result_digest": {"history_count": 1},
+                "planner_decision": {"action": "final"},
+                "artifacts": [
+                    {
+                        "producer_step": 1,
+                        "tool": "repo_read",
+                        "arguments": {"paths": ["README.md"]},
+                        "ok": True,
+                        "artifact": {
+                            "kind": "repo_read",
+                            "repo_path": "README.md",
+                            "line_count": 1,
+                            "truncated": False,
+                            "content": "# Demo\n",
+                        },
+                    }
+                ],
+            },
+        }
+    )
+
+    tool_context = json.loads(result["tool_context_for_30b"])
+    search_order = result["payload_index_for_30b"]["search_order"]
+
+    assert "read_first_for_30b" not in result
+    assert result["openwebui_usage"]["primary_payload_fields"] == [
+        "evidence_guide_for_30b",
+        "payload_index_for_30b.concrete_results",
+        "priority_evidence_for_30b.items[0].content",
+        "tool_context_for_30b.artifacts[*].artifact",
+    ]
+    assert search_order[:4] == [
+        "evidence_guide_for_30b",
+        "payload_index_for_30b.concrete_results",
+        "priority_evidence_for_30b.items[0].content",
+        "priority_evidence_for_30b.items[*].unified_diff",
+    ]
+    assert result["priority_evidence_for_30b"]["items"][0]["content"] == "# Demo\n"
+    assert tool_context["artifacts"][0]["artifact"]["content"] == "# Demo\n"
+    assert "planner_memory" not in tool_context
+    assert "controller_memory" not in tool_context
+    assert "agent_flow_diagnostics" not in tool_context
+    assert "history" not in tool_context
+    assert "result_digest" not in tool_context
+    assert "planner_decision" not in tool_context
+
+
 def test_nonterminal_openwebui_response_uses_single_guide_and_structured_context() -> None:
     from vulkan_bridge import app
 

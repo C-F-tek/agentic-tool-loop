@@ -73,26 +73,27 @@ For terminal jobs returned to OpenWebUI:
   `openwebui_usage.internal_job_status`; it is not a primary top-level field.
 - `payload_index_for_30b.internal_job_status`: mirrored internal job status for
   navigation and diagnostics.
-- `tool_context_for_30b`: a pretty-printed JSON string with successful internal
-  tool artifacts and limits.
+- `tool_context_for_30b`: a pretty-printed JSON string whose public useful
+  payload is `tool_context_for_30b.artifacts[*].artifact`. It is an artifact
+  mirror, not a full job dump and not the primary reading surface.
 - `result`: carried from the terminal/final payload as the public result source.
   Terminal wrapping uses the compact digest only when the terminal payload has
   no `result`. Raw controller audit `result.history` is normalized to the
   public ledger schema instead of being inlined as raw transport history.
 - Public terminal `result.history` is a bounded
   `agentic_terminal_public_history_ledger.v1`, not raw controller audit history.
-  Keep complete file/diff payloads in `tool_context_for_30b`,
-  `priority_evidence_for_30b` and `payload_index_for_30b`; do not expose local
-  job paths, SQLite document ids or artifact paths as locations OpenWebUI must
-  open.
+  Keep complete file/diff payloads first in `priority_evidence_for_30b` and
+  `payload_index_for_30b`, with `tool_context_for_30b.artifacts[*].artifact`
+  only as the artifact mirror. Do not expose local job paths, SQLite document
+  ids or artifact paths as locations OpenWebUI must open.
 - `completed`, `max_steps_reached`, `blocked_needs_attention`,
   `blocked_needs_consent`, `failed`, `failed_tool_error`,
   `failed_planner_error` and `cancelled` must use the same top-level public
   shape. Internal status/warning metadata differs inside the payload index and
   usage blocks, not via a top-level `job_ok` field.
 - When the internal job did not complete, rejected code-product attempts,
-  action plans and repair text may be exposed as `partial_products_for_30b` inside
-  `tool_context_for_30b` and indexed under `payload_index_for_30b.partial_results`.
+  action plans and repair text may be exposed in `priority_evidence_for_30b`
+  and indexed under `payload_index_for_30b.partial_results`.
   These entries are explicitly `validator_accepted=false`; they are transported
   for OpenWebUI visibility, not counted as completed diffs or successful tool
   evidence.

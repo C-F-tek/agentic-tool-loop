@@ -2841,8 +2841,8 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
             "must not be treated as completed diffs."
         ),
         "navigation_hint": (
-            "Read priority_evidence_for_30b.items before searching the larger "
-            "tool_context_for_30b JSON. When the internal job did not complete, useful status or "
+            "Read priority_evidence_for_30b.items before opening the artifact "
+            "mirror in tool_context_for_30b.artifacts[*].artifact. When the internal job did not complete, useful status or "
             "partial products are intentionally first; do not stop at the "
             "terminal warning."
         ),
@@ -2941,7 +2941,7 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "payload_is_complete": item.get("payload_is_complete", False),
             "validator_accepted": item.get("validator_accepted", False),
             "primary_location": primary_location,
-            "full_context_location": "tool_context_for_30b.partial_products_for_30b[*]",
+            "full_context_location": "priority_evidence_for_30b.items[*]",
             "role": "prodotto parziale/non validato: da mostrare all'utente se il job interno non ha completato, non da spacciare come diff completato",
         })
     return {}
@@ -3014,7 +3014,9 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
             },
         ],
         "search_order": [
+            "evidence_guide_for_30b",
             "payload_index_for_30b.concrete_results",
+            "priority_evidence_for_30b.items[0].content",
             "priority_evidence_for_30b.items[*].unified_diff",
             "priority_evidence_for_30b.items[*].structured_operations",
             "payload_index_for_30b.partial_results",
@@ -3022,7 +3024,6 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
             "priority_evidence_for_30b.items[*].text when validator_accepted=false",
             "priority_evidence_for_30b.items[*].content",
             "tool_context_for_30b.artifacts[*].artifact",
-            "tool_context_for_30b.partial_products_for_30b",
         ],
     })
 
@@ -3193,11 +3194,46 @@ def _agentic_v9_strip_tool_context_narrative_duplicates(tool_context):
         usage["top_level_evidence_guide_field"] = "evidence_guide_for_30b"
         usage["rule"] = (
             "This tool_context_for_30b object is evidence/context only. "
-            "The global evidence_guide_for_30b field sits above it; use this "
-            "JSON for concrete payload, artifacts, history and evidence."
+            "The global evidence_guide_for_30b field sits above it. For the "
+            "external 30B surface, read tool_context_for_30b.artifacts[*].artifact "
+            "only after evidence_guide_for_30b, payload_index_for_30b.concrete_results "
+            "and priority_evidence_for_30b."
         )
         cleaned["openwebui_usage"] = usage
     return cleaned
+
+
+def _agentic_v9_build_external_tool_context_for_30b(tool_context):
+    """Return the public 30B tool context without job-memory/history noise."""
+
+    tool_context = _agentic_v9_as_dict(tool_context)
+    job = _agentic_v9_as_dict(tool_context.get("job"))
+    public_job = _agentic_v9_clean({
+        "job_id": job.get("job_id"),
+        "status": job.get("status"),
+        "goal": job.get("goal"),
+        "planner_model": job.get("planner_model"),
+    })
+    out = _agentic_v9_clean({
+        "type": "agentic_loop_complete_structured_context",
+        "contract_type": "agentic_loop_complete_structured_context",
+        "not_a_summary": True,
+        "top_level_evidence_guide_field": "evidence_guide_for_30b",
+        "openwebui_usage": {
+            "top_level_evidence_guide_field": "evidence_guide_for_30b",
+            "rule": (
+                "This tool_context_for_30b object is not a full job dump. "
+                "Use evidence_guide_for_30b first, then payload_index_for_30b."
+                "concrete_results, then priority_evidence_for_30b.items[0].content "
+                "when present. Only after that read tool_context_for_30b."
+                "artifacts[*].artifact as the complete artifact mirror."
+            ),
+        },
+        "job": public_job,
+        "artifacts": _agentic_v9_as_list(tool_context.get("artifacts")),
+        "limits": tool_context.get("limits"),
+    })
+    return _agentic_v9_public_sanitize_value(out) or {}
 
 
 def _agentic_v9_strip_public_narrative_duplicates(payload):
@@ -3327,7 +3363,7 @@ def _agentic_v9_build_outer_tool_text(decoded, answer):
 def _agentic_v9_build_completed_content_text(planner_text, evidence_text):
     parts = [
         "GUIDA ALL'EVIDENZA INLINE DEL PAYLOAD.",
-        "Il sommario seguente non sostituisce il payload: usalo per orientarti, poi rispondi leggendo payload_index_for_30b, priority_evidence_for_30b e tool_context_for_30b.",
+        "Il sommario seguente non sostituisce il payload: usalo per orientarti, poi rispondi leggendo payload_index_for_30b.concrete_results, quindi priority_evidence_for_30b.items[0].content quando presente, e solo dopo tool_context_for_30b.artifacts[*].artifact.",
     ]
     planner = str(planner_text or "").strip()
     evidence = str(evidence_text or "").strip()
@@ -3484,13 +3520,13 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         })
         if isinstance(payload_index, dict):
             payload_index["internal_job_status"] = internal_job_status
+        external_tool_context = _agentic_v9_build_external_tool_context_for_30b(tool_context)
         sealed["openwebui_usage"] = {
             "primary_payload_fields": [
                 "evidence_guide_for_30b",
-                "payload_index_for_30b",
-                "priority_evidence_for_30b",
-                "tool_context_for_30b",
-                "result",
+                "payload_index_for_30b.concrete_results",
+                "priority_evidence_for_30b.items[0].content",
+                "tool_context_for_30b.artifacts[*].artifact",
             ],
             "payload_index_field": "payload_index_for_30b",
             "evidence_guide_field": "evidence_guide_for_30b",
@@ -3501,18 +3537,21 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "rule": (
                 "Prima leggi evidence_guide_for_30b: e' una guida corposa "
                 "all'evidenza, non una frase conclusiva statica. Poi leggi "
-                "payload_index_for_30b. I risultati concreti sono nei campi indicati "
-                "in concrete_results; i risultati utili non validati sono in "
-                "partial_results. Descrizioni, suggerimenti, manual_review_required, "
+                "payload_index_for_30b.concrete_results. Poi leggi il payload "
+                "concreto indicato, per i repo_read di solito "
+                "priority_evidence_for_30b.items[0].content. Solo dopo usa "
+                "tool_context_for_30b.artifacts[*].artifact come mirror completo "
+                "degli artifact, non come dump completo del job. "
+                "I risultati concreti sono nei campi indicati in concrete_results; "
+                "i risultati utili non validati sono in partial_results. "
+                "Descrizioni, suggerimenti, manual_review_required, "
                 "validation_commands e limits non sono motivo per richiamare "
-                "vulkan_helper per la stessa richiesta. Lo stato del job interno "
-                "non sostituisce i payload: usa priority_evidence_for_30b e "
-                "tool_context_for_30b per rispondere in dettaglio."
+                "vulkan_helper per la stessa richiesta."
             ),
             "internal_job_status": internal_job_status,
         }
         sealed["priority_evidence_for_30b"] = priority_evidence
-        sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(tool_context, indent=2)
+        sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(external_tool_context, indent=2)
         _attach_public_payload_lint(sealed)
         sealed["openwebui_usage"]["top_level_present_fields"] = list(sealed.keys())
         return sealed
