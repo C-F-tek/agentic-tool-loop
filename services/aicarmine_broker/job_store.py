@@ -364,6 +364,63 @@ def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") 
     if not state:
         return build_missing_job_response(job_id)
 
+    job_root = agent_job_root(job_id)
+
+    def repo_read_item_full_content(item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if not isinstance(item, dict):
+            return "", {"source": "missing"}
+        for key in ("content", "full_content", "content_view"):
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                return value, {"source": f"state.{key}"}
+        artifact = str(item.get("artifact") or "")
+        if artifact:
+            try:
+                artifact_path = Path(artifact)
+                if not artifact_path.is_absolute():
+                    artifact_path = job_root / artifact_path
+                resolved_artifact = artifact_path.resolve()
+                resolved_root = job_root.resolve()
+                if str(resolved_artifact).lower().startswith(str(resolved_root).lower()):
+                    loaded = read_json(resolved_artifact, {})
+                    if (
+                        isinstance(loaded, dict)
+                        and str(loaded.get("path") or item.get("path") or "")
+                        == str(item.get("path") or loaded.get("path") or "")
+                    ):
+                        for key in ("content", "full_content", "content_view"):
+                            value = loaded.get(key)
+                            if isinstance(value, str) and value:
+                                return value, {"source": f"artifact.{key}"}
+            except Exception:
+                return "", {"source": "artifact_read_failed"}
+        return "", {"source": "missing"}
+
+    def same_tool_artifact_payload(result: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(result, dict) or not result.get("ok"):
+            return result if isinstance(result, dict) else {}
+        artifact = str(result.get("artifact") or "")
+        if not artifact:
+            return result
+        try:
+            artifact_path = Path(artifact)
+            if not artifact_path.is_absolute():
+                artifact_path = job_root / artifact_path
+            resolved_artifact = artifact_path.resolve()
+            resolved_root = job_root.resolve()
+            if not str(resolved_artifact).lower().startswith(str(resolved_root).lower()):
+                return result
+            loaded = read_json(resolved_artifact, {})
+        except Exception:
+            return result
+        if not isinstance(loaded, dict):
+            return result
+        expected_tool = str(result.get("tool") or "")
+        loaded_tool = str(loaded.get("tool") or "")
+        if expected_tool and loaded_tool and expected_tool != loaded_tool:
+            return result
+        return loaded
+
     final_path = str(state.get("final_path") or "")
     final_data: dict[str, Any] = {}
     if final_path:
@@ -381,6 +438,8 @@ def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") 
         public_summary_chars=AGENT_PUBLIC_SUMMARY_CHARS,
         public_answer_chars=AGENT_PUBLIC_ANSWER_CHARS,
         audience=audience,
+        repo_read_item_full_content=repo_read_item_full_content,
+        same_tool_artifact_payload=same_tool_artifact_payload,
     )
 
 

@@ -6,6 +6,8 @@ from pathlib import Path
 import traceback
 from typing import Any, Callable
 
+from ..public_payload.terminal_sanitizer import public_terminal_sanitize_text
+
 
 LoadState = Callable[[str], dict[str, Any]]
 WriteState = Callable[[dict[str, Any]], None]
@@ -15,6 +17,10 @@ WriteJson = Callable[[Path, Any], str]
 PlannerRunner = Callable[[str], Any]
 AgentRunner = Callable[[dict[str, Any]], dict[str, Any]]
 SummaryBuilder = Callable[[dict[str, Any]], str]
+TerminalFinalizer = Callable[
+    [str, dict[str, Any], str, str, dict[str, Any] | None],
+    dict[str, Any],
+]
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,7 @@ class AgentJobWorker:
     summary_from_result: SummaryBuilder
     agentic_planner_enabled: bool
     agentic_fallback_oneshot: bool
+    terminal_finalizer: TerminalFinalizer | None = None
 
     def run(self, job_id: str) -> None:
         state = self.load_state(job_id)
@@ -119,14 +126,62 @@ class AgentJobWorker:
         (root / "error.txt").write_text(error_text, encoding="utf-8")
         state = self.load_state(job_id) or state
         state["status"] = "failed"
-        state["error"] = error_text[-12000:]
+        state["runtime_error_type"] = type(exc).__name__
+        state["operator_error_path"] = str(root / "error.txt")
+        public_error = public_terminal_sanitize_text(str(exc))[:1200]
+        state["final_summary"] = (
+            f"Agent job failed with {type(exc).__name__}. "
+            "Inline evidence collected before the failure remains available in "
+            "tool_context_for_30b."
+        )
+        if public_error:
+            state["final_summary"] += f" Public error detail: {public_error}"
+        history = state.get("history") if isinstance(state.get("history"), list) else []
+        result = {
+            "ok": False,
+            "status": "failed",
+            "error_type": type(exc).__name__,
+            "error": public_error,
+            "failure": {
+                "error_type": type(exc).__name__,
+                "public_error": public_error,
+                "operator_error_written": True,
+                "operator_diagnostics_required": True,
+                "local_error_file_not_public_content": True,
+            },
+            "history": history,
+        }
+        if self.terminal_finalizer is not None:
+            self.terminal_finalizer(
+                job_id,
+                state,
+                "failed",
+                state["final_summary"],
+                result,
+            )
+            self.append_event(
+                job_id,
+                "job_failed",
+                state["final_summary"],
+                {
+                    "error_type": type(exc).__name__,
+                    "terminal_payload_written": True,
+                    "tool_context_for_30b_required": True,
+                },
+                step=999,
+            )
+            return
+        state["error"] = public_error
         state["final_path"] = str(root / "error.txt")
-        state["final_summary"] = f"Agent job failed: {type(exc).__name__}: {exc}"
         self.write_state(state)
         self.append_event(
             job_id,
             "job_failed",
             state["final_summary"],
-            {"error_type": type(exc).__name__},
+            {
+                "error_type": type(exc).__name__,
+                "terminal_payload_written": False,
+                "tool_context_for_30b_required": True,
+            },
             step=999,
         )

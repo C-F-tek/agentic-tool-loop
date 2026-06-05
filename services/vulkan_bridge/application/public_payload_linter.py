@@ -19,6 +19,7 @@ LOCAL_PATH_KEYS = {
     "local_events_path",
     "local_final_path",
     "local_workspace",
+    "operator_error_path",
     "planner_stream_path",
     "sqlite_path",
     "workspace",

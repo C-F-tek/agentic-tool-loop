@@ -174,6 +174,7 @@ def test_final_summary_with_ollama_done_reasons_appends_turns() -> None:
 def test_strip_public_local_references_removes_internal_pointers() -> None:
     cleaned = strip_public_local_references({
         "artifact": "reads/a.json",
+        "operator_error_path": r"C:\Users\carmi\AI\agent-jobs\job-x\error.txt",
         "store": "job_local_sqlite",
         "document_id": "doc",
         "content": {"final_path": "final.json", "text": "visible"},

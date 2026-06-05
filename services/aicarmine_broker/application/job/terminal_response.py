@@ -4,10 +4,29 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .response_values import compact_text, event_digest
 from ..public_payload.history_ledger import build_public_result_digest
+from ..public_payload.terminal_sanitizer import public_terminal_sanitize_text
+from ..public_payload.terminal_result import public_terminal_result_for_30b
+from ..public_payload.tool_context import public_tool_artifact_rows, successful_tool_turns
+
+
+RepoReadContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
+ArtifactPayloadLoader = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _inline_repo_read_item_content(item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    for key in ("content", "full_content", "content_view", "content_preview"):
+        value = item.get(key) if isinstance(item, dict) else None
+        if isinstance(value, str) and value:
+            return value, {"source": f"state.{key}"}
+    return "", {"source": "missing"}
+
+
+def _identity_artifact_payload(result: dict[str, Any]) -> dict[str, Any]:
+    return result if isinstance(result, dict) else {}
 
 
 def build_missing_job_response(job_id: str) -> dict[str, Any]:
@@ -90,20 +109,28 @@ def build_compact_terminal_response(
     public_summary_chars: int,
     public_answer_chars: int,
     audience: str = "operator",
+    repo_read_item_full_content: RepoReadContentLoader | None = None,
+    same_tool_artifact_payload: ArtifactPayloadLoader | None = None,
 ) -> dict[str, Any]:
     status = str(state.get("status") or "unknown")
     public_tool = str(state.get("public_tool_name") or "vulkan_helper")
     final_path = str(state.get("final_path") or "")
     final_markdown_path = str(state.get("final_markdown_path") or "")
     final_path_verification = verify_local_final_path(final_path, expected_type="json")
-    summary = compact_text(
-        state.get("final_summary") or state.get("error") or "",
-        public_summary_chars,
+    summary = public_terminal_sanitize_text(
+        compact_text(
+            state.get("final_summary") or state.get("error") or "",
+            public_summary_chars,
+        )
     )
     events = [event_digest(ev) for ev in events_tail[-5:]]
     artifacts = [p for p in (final_path, final_markdown_path, events_path) if p]
+    result_source = state.get("result") if isinstance(state.get("result"), dict) else {}
+    result_source = dict(result_source)
+    if "history" not in result_source and isinstance(state.get("history"), list):
+        result_source["history"] = state.get("history")
     result_digest = build_public_result_digest(
-        state.get("result") or {},
+        result_source,
         public_result_inline_chars,
     )
     tool_context = state.get("tool_context_for_30b")
@@ -123,7 +150,7 @@ def build_compact_terminal_response(
         or (tool_context.get("answer_for_30b") if isinstance(tool_context, dict) else "")
         or summary
     )
-    answer = compact_text(answer, public_answer_chars)
+    answer = public_terminal_sanitize_text(compact_text(answer, public_answer_chars))
     next_action = (
         state.get("next_action_for_30b")
         or final_data.get("next_action_for_30b")
@@ -132,14 +159,49 @@ def build_compact_terminal_response(
     if not isinstance(next_action, dict):
         next_action = {}
     if not isinstance(tool_context, dict):
+        content_loader = repo_read_item_full_content or _inline_repo_read_item_content
+        artifact_loader = same_tool_artifact_payload or _identity_artifact_payload
+        history = result_source.get("history") if isinstance(result_source.get("history"), list) else []
+        public_result = public_terminal_result_for_30b(
+            result_source,
+            repo_read_item_full_content=content_loader,
+        )
+        public_artifacts = public_tool_artifact_rows(
+            history,
+            same_tool_artifact_payload=artifact_loader,
+            repo_read_item_full_content=content_loader,
+            code_product_build_state_kind="code_product_build_state",
+        )
+        public_successful_turns = successful_tool_turns(
+            history,
+            same_tool_artifact_payload=artifact_loader,
+            repo_read_item_full_content=content_loader,
+            code_product_build_state_kind="code_product_build_state",
+        )
+        if status == "failed" and public_artifacts:
+            answer = public_terminal_sanitize_text(
+                "Il job interno e' terminato con status=failed, ma l'evidenza "
+                "raccolta prima del failure e' disponibile inline in "
+                "tool_context_for_30b.artifacts e tool_context_for_30b.history. "
+                "Non trattare il failure come assenza di contenuto; usa quei "
+                f"campi per rispondere. Dettaglio failure: {summary}"
+            )
         tool_context = {
-            "type": "agentic_loop_complete_structured_context_unavailable",
-            "contract_type": "structured_agentic_loop_context_unavailable",
+            "type": "agentic_loop_complete_structured_context",
+            "contract_type": "agentic_loop_complete_structured_context",
+            "not_a_summary": True,
+            "fallback_built_from_terminal_state": True,
             "job": {"job_id": job_id, "status": status, "goal": state.get("goal")},
             "answer_for_30b": answer,
             "next_action_for_30b": next_action,
-            "result": result_digest,
+            "result": public_result or result_digest,
+            "artifacts": public_artifacts,
+            "successful_tool_turns": public_successful_turns,
+            "history_count": public_result.get("history_count") if isinstance(public_result, dict) else None,
+            "history_schema": public_result.get("history_schema") if isinstance(public_result, dict) else None,
+            "history": public_result.get("history") if isinstance(public_result, dict) else [],
             "events_tail_digest": [event_digest(ev) for ev in events_tail[-20:]],
+            "local_references_omitted_for_openwebui": True,
         }
 
     context_alias = {

@@ -37,7 +37,18 @@ def test_public_payload_linter_allows_operator_diagnostics_path() -> None:
     })
 
     assert result["ok"] is True
-    assert result["violations"] == []
+
+
+def test_public_payload_linter_warns_operator_error_path_outside_diagnostics() -> None:
+    result = lint_public_payload(
+        {
+            "tool_context_for_30b": "{}",
+            "operator_error_path": r"C:\Users\carmi\AI\agent-jobs\job-x\error.txt",
+        }
+    )
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "local_pointer_key_outside_operator_diagnostics"
 
 
 def test_public_payload_linter_rejects_artifact_path() -> None:

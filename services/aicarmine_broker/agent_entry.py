@@ -36,7 +36,7 @@ from .job_store import (
     write_agent_job_state,
     write_json,
 )
-from .planner import run_agentic_planner_job
+from .planner import finalize_agentic_job, run_agentic_planner_job
 from .public_wrapper import deterministic_public_wrapper, fail_selector, summary_from_result
 from .tool_contract import public_args, public_tool, sanitize_tool_args, text_from_payload
 from .tool_dispatch import dispatch_tool
@@ -55,6 +55,7 @@ def build_job_worker() -> AgentJobWorker:
         summary_from_result=summary_from_result,
         agentic_planner_enabled=AGENTIC_PLANNER_ENABLED,
         agentic_fallback_oneshot=AGENTIC_FALLBACK_ONESHOT,
+        terminal_finalizer=finalize_agentic_job,
     )
 
 

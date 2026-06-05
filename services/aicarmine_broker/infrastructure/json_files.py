@@ -3,12 +3,22 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
 
 class JsonFileStore:
     """Small JSON file adapter with atomic replace writes."""
+
+    def __init__(
+        self,
+        *,
+        replace_retries: int = 5,
+        replace_retry_delay_seconds: float = 0.05,
+    ) -> None:
+        self._replace_retries = max(0, int(replace_retries))
+        self._replace_retry_delay_seconds = max(0.0, float(replace_retry_delay_seconds))
 
     def read(self, path: Path, default: Any = None) -> Any:
         try:
@@ -29,7 +39,20 @@ class JsonFileStore:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, ensure_ascii=False, indent=2, default=str)
-            tmp_path.replace(target)
+            last_error: PermissionError | None = None
+            for attempt in range(self._replace_retries + 1):
+                try:
+                    tmp_path.replace(target)
+                    last_error = None
+                    break
+                except PermissionError as exc:
+                    last_error = exc
+                    if attempt >= self._replace_retries:
+                        raise
+                    if self._replace_retry_delay_seconds:
+                        time.sleep(self._replace_retry_delay_seconds * (attempt + 1))
+            if last_error is not None:
+                raise last_error
         finally:
             if tmp_path.exists():
                 tmp_path.unlink()

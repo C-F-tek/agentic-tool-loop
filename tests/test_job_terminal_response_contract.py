@@ -145,14 +145,28 @@ def test_compact_terminal_response_uses_final_data_context_when_state_missing() 
     assert response["working_memory_for_30b"] == {"k": "v"}
 
 
-def test_compact_terminal_response_builds_unavailable_context_fallback() -> None:
+def test_compact_terminal_response_builds_structured_context_from_state_history() -> None:
     response = build_compact_terminal_response(
         job_id="job-x",
         state={
             "status": "failed",
             "goal": "analyze",
             "final_summary": "failed summary",
-            "result": {"ok": False},
+            "history": [
+                {
+                    "step": 1,
+                    "tool": "repo_read",
+                    "ok": True,
+                    "items": [
+                        {
+                            "ok": True,
+                            "path": "README.md",
+                            "content_preview": "preview only",
+                        }
+                    ],
+                }
+            ],
+            "result": {"ok": False, "status": "failed"},
         },
         final_data={},
         events_tail=[],
@@ -163,11 +177,46 @@ def test_compact_terminal_response_builds_unavailable_context_fallback() -> None
         public_answer_chars=100,
     )
 
-    assert response["answer_for_30b"] == "failed summary"
+    assert "tool_context_for_30b.artifacts" in response["answer_for_30b"]
+    assert "failed summary" in response["answer_for_30b"]
     assert response["tool_context_for_30b"]["type"] == (
-        "agentic_loop_complete_structured_context_unavailable"
+        "agentic_loop_complete_structured_context"
     )
-    assert response["tool_context_for_30b"]["answer_for_30b"] == "failed summary"
+    assert response["tool_context_for_30b"]["not_a_summary"] is True
+    assert response["tool_context_for_30b"]["history_count"] == 1
+    assert response["tool_context_for_30b"]["history"][0]["items"][0]["content_chars"] == len("preview only")
+    assert response["tool_context_for_30b"]["answer_for_30b"] == response["answer_for_30b"]
+
+
+def test_failed_terminal_response_sanitizes_local_path_from_public_answer() -> None:
+    raw = (
+        r"PermissionError: [WinError 5] Accesso negato: "
+        r"'C:\Users\carmi\AI\agent-jobs\job-x\.job.json.tmp' -> "
+        r"'C:\Users\carmi\AI\agent-jobs\job-x\job.json'"
+    )
+
+    response = build_compact_terminal_response(
+        job_id="job-x",
+        state={
+            "status": "failed",
+            "goal": "analyze",
+            "final_summary": raw,
+            "result": {"ok": False, "error_type": "PermissionError"},
+        },
+        final_data={},
+        events_tail=[],
+        events_path="events.ndjson",
+        job_url_value="http://127.0.0.1:3572/jobs/job-x",
+        public_result_inline_chars=1000,
+        public_summary_chars=1000,
+        public_answer_chars=1000,
+        audience="openwebui",
+    )
+
+    assert r"C:\Users\carmi" not in response["answer_for_30b"]
+    assert r"C:\Users\carmi" not in response["summary_for_30b"]
+    assert "[local_path_omitted]" in response["answer_for_30b"]
+    assert response["operator_diagnostics"]["local_events_path"] == "events.ndjson"
 
 
 def test_final_path_claim_requires_absolute_existing_valid_json(tmp_path: Path) -> None:
