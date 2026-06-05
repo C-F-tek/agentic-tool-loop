@@ -6,12 +6,14 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # End-To-End Agentic Flow
 
-Updated: 2026-06-02
+Updated: 2026-06-05
 
 This document describes the real runtime chain verified against the current
 code. It is documentation only. It must not be used to justify changing
 launcher, model, context, max steps or validator logic without separate
 evidence.
+
+Visual runtime map: [`../flow.svg`](../flow.svg).
 
 ## Canonical Flow
 
@@ -30,10 +32,13 @@ sequenceDiagram
     participant P11434 as "11434 planner Ollama"
     participant R11435 as "11435 repair/task Ollama"
     participant Tools as "3572 internal tool dispatcher"
+    participant Store as "job filesystem + SQLite index"
 
     OWUI->>B3571: POST /vulkan_helper
     B3571->>B3572: POST /vulkan/agent
     B3572->>B3572: create job + start worker
+    B3572->>Store: write job.json/events.ndjson primary
+    B3572->>Store: update SQLite secondary index if available
     loop planner steps until terminal state
         B3572->>B3572: build measured prompt pack(required_working_set + optional intrinsic_context)
         opt prompt > compaction threshold
@@ -51,15 +56,16 @@ sequenceDiagram
         alt valid tool decision
             B3572->>Tools: dispatch_tool(tool, args)
             Tools-->>B3572: full tool result
-            B3572->>B3572: store tool result + update history
+            B3572->>Store: store raw tool result + update history
         else valid final decision
-            B3572->>B3572: finalize_agentic_job(completed)
+            B3572->>Store: finalize_agentic_job(completed)
         else terminal block/max/fail
-            B3572->>B3572: finalize_agentic_job(non-completed terminal)
+            B3572->>Store: finalize_agentic_job(non-completed terminal)
         end
     end
     B3572-->>B3571: compact terminal job response
-    B3571->>B3571: load terminal/final payload + build tool_context_for_30b
+    B3571->>Store: rehydrate terminal/final JSON when referenced
+    B3571->>B3571: sanitize local pointers + build tool_context_for_30b
     B3571-->>OWUI: payload_index_for_30b + priority_evidence_for_30b + pretty JSON tool_context_for_30b
 ```
 
@@ -76,6 +82,35 @@ sequenceDiagram
 | 3572 -> terminal compact result | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/job_store.py` | `finalize_agentic_job()` writes final state; `wait_for_agent_terminal()` returns `compact_agent_terminal_response()`. |
 | 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns the stable public surface for both ok and non-ok terminal jobs: primary metadata, `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and pretty JSON `tool_context_for_30b`. It does not promote blocked/prose narrative fields as the primary answer. |
 
+## Operational Storage And Public Payload Guarantees
+
+The same terminal job can have multiple internal storage surfaces, but only one
+public payload contract.
+
+- Filesystem job state and event files are the operational source of truth.
+  SQLite is a secondary dashboard/index cache. If SQLite fails, the job still
+  writes `job.json` and `events.ndjson`, records a typed persistence warning and
+  remains recoverable from filesystem fallback listing.
+- `final_path`, `final_json`, `reads/*.json`, `tool-results/*.json`,
+  job-local SQLite document ids and `C:\Users\...` paths are operator/internal
+  pointers. 3571 may read a verified local JSON only to rehydrate the same
+  terminal/tool payload before returning to OpenWebUI.
+- The public OpenWebUI payload must not require local filesystem access. Real
+  content is transported inline through `payload_index_for_30b`,
+  `priority_evidence_for_30b`, `openwebui_usage`, `tool_context_for_30b` and
+  `result` when present.
+- The public shape is stable across `completed`, `blocked_needs_attention`,
+  `max_steps_reached`, `failed` and `cancelled`. Internal completion/block
+  status is payload metadata under `openwebui_usage.internal_job_status` and
+  `payload_index_for_30b.internal_job_status`, not a top-level `job_ok` field
+  and not permission to drop inline payloads.
+- Command tools classify every command as `readonly`, `validation`, `write`,
+  `destructive` or `unknown`. Non-readonly/non-validation commands require the
+  explicit consent path and return typed policy payloads when blocked.
+- Runtime SQLite memory cleanup is dry-run unless `apply=true` has explicit
+  consent. Planner memory surfaces report `memory_feature_available`,
+  `memory_query_ok` and `memory_records_available` separately.
+
 For non-completed terminal jobs, the wrapper may also surface useful rejected
 planner output, repair text or code-product attempts as explicit partial
 products. These live under `tool_context_for_30b.partial_products_for_30b` and
@@ -83,8 +118,8 @@ products. These live under `tool_context_for_30b.partial_products_for_30b` and
 are visible to OpenWebUI but do not satisfy the successful code-product gate.
 
 Non-ok terminal jobs must keep the same public shape as ok jobs. The difference
-is `job_ok=false` or the terminal status/warning metadata, not a different
-payload contract. If `final.json`/the terminal payload contains `result`, 3571
+is terminal status/warning metadata inside the indexed payload, not a different
+payload contract or a top-level `job_ok` flag. If `final.json`/the terminal payload contains `result`, 3571
 must prefer that terminal `result` over the compact transport digest from
 `compact_agent_terminal_response()`. Raw `result.history` is normalized to the
 public ledger schema; a compact `{ "preview": ... }` result is only a fallback
@@ -418,8 +453,9 @@ narrative as the primary result.
 - 3571 wraps terminal output for OpenWebUI; it must not expose continuation
   protocol as the final user-visible result.
 - 3571 must not regress non-ok terminal jobs to a reduced or preview-only
-  payload. The top-level shape stays the same as ok; only `job_ok` and terminal
-  status/warning indicate failure/block/max/cancel.
+  payload. The top-level shape stays the same as ok; terminal
+  status/warning metadata inside `openwebui_usage` and `payload_index_for_30b`
+  indicates failure/block/max/cancel.
 - 3572 must keep the native tool surface coherent with
   `required_next_progress`. If code-product progress says the target is already
   read and asks for `code_product_build_state`, repo navigation tools must not

@@ -38,10 +38,12 @@ DEFAULT_BROKER_BASE_URL = "http://127.0.0.1:3572"
 MAX_TEXT = int(os.environ.get("AICARMINE_MCP_MAX_TEXT_CHARS", "24000"))
 DEBUG = os.environ.get("AICARMINE_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 
-try:
-    from aicarmine_broker.tool_registry import capability_map as _broker_registry_capability_map
-except Exception:  # pragma: no cover - MCP startup must remain lazy/robust
-    _broker_registry_capability_map = None
+def _load_broker_registry_capability_map():
+    try:
+        from aicarmine_broker.tool_registry import capability_map  # noqa: PLC0415
+    except Exception:  # pragma: no cover - MCP startup must remain lazy/robust
+        return None
+    return capability_map
 
 
 def _log(message: str) -> None:
@@ -398,7 +400,8 @@ INSTRUCTIONS = (
 
 def _health() -> dict[str, Any]:
     health_url = f"{_broker_base_url()}/health"
-    registry = _broker_registry_capability_map() if _broker_registry_capability_map else {}
+    registry_loader = _load_broker_registry_capability_map()
+    registry = registry_loader() if registry_loader else {}
     try:
         value = _http_json("GET", health_url, timeout=5)
         return {"ok": True, "url": health_url, "result": value, "registry": registry}

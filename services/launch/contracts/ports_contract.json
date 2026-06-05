@@ -1,0 +1,32 @@
+{
+  "schema": "aicarmine.launch.ports_contract.v1",
+  "ports": {
+    "3560": {
+      "role": "safe_command_executor",
+      "public_to_openwebui": false
+    },
+    "3571": {
+      "role": "public_openwebui_bridge",
+      "public_to_openwebui": true,
+      "openapi": "http://127.0.0.1:3571/openapi.json"
+    },
+    "3572": {
+      "role": "internal_agent_broker",
+      "public_to_openwebui": false,
+      "agent_endpoint": "http://127.0.0.1:3572/vulkan/agent"
+    },
+    "8080": {
+      "role": "openwebui_ui",
+      "public_to_openwebui": false
+    },
+    "11434": {
+      "role": "main_planner_ollama",
+      "public_to_openwebui": false
+    },
+    "11435": {
+      "role": "task_repair_ollama",
+      "public_to_openwebui": false
+    }
+  },
+  "stop_rule": "Verify port owner command line before stopping any process."
+}

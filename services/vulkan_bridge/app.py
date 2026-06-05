@@ -10,85 +10,86 @@ import urllib.request
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict, Field
 
-try:
-    from aicarmine_broker.tool_registry import capability_map as _broker_capability_map
-    from aicarmine_broker.tool_registry import OPENWEBUI_PUBLIC_TOOLS, PLANNER_INTERNAL_TOOLS
-except Exception:  # pragma: no cover - keeps 3571 importable during partial deploys
-    _broker_capability_map = None
-    OPENWEBUI_PUBLIC_TOOLS = (
-        "helper_for_all",
-        "help_for_all",
-        "repo_capabilities",
-        "repo_status",
-        "repo_search",
-        "repo_read",
-        "repo_command",
-        "vulkan_helper",
-    )
-    PLANNER_INTERNAL_TOOLS = (
-        "repo_capabilities",
-        "repo_status",
-        "repo_tree",
-        "repo_search",
-        "repo_read",
-        "repo_list_files",
-        "repo_apply_patch",
-        "repo_write_file",
-        "repo_validate",
-        "repo_command",
-        "terminal_run_command_wait",
-        "terminal_search_files",
-        "terminal_list_files",
-        "planner_scratchpad_read",
-        "planner_scratchpad_write",
-        "runtime_sqlite_memory_search",
-        "runtime_sqlite_memory_write",
-        "runtime_sqlite_memory_cleanup",
-        "vulkan_helper",
-    )
+from .config import BridgeConfig, int_env, bool_env, load_bridge_config_from_env
+from .application.request_payload import (
+    first_dict,
+    first_text,
+    payload_to_dict,
+    public_agent_arguments,
+)
+from .application.response_values import (
+    bridge_result_digest,
+    compact_text,
+    json_size,
+)
+from .openapi_builder import build_native_helper_openapi
+
+OPENWEBUI_PUBLIC_TOOLS = (
+    "helper_for_all",
+    "help_for_all",
+    "repo_capabilities",
+    "repo_status",
+    "repo_search",
+    "repo_read",
+    "repo_command",
+    "vulkan_helper",
+)
+PLANNER_INTERNAL_TOOLS = (
+    "repo_capabilities",
+    "repo_status",
+    "repo_tree",
+    "repo_search",
+    "repo_read",
+    "repo_list_files",
+    "repo_apply_patch",
+    "repo_write_file",
+    "repo_validate",
+    "repo_command",
+    "terminal_run_command_wait",
+    "terminal_search_files",
+    "terminal_list_files",
+    "planner_scratchpad_read",
+    "planner_scratchpad_write",
+    "runtime_sqlite_memory_search",
+    "runtime_sqlite_memory_write",
+    "runtime_sqlite_memory_cleanup",
+    "vulkan_helper",
+)
+
+
+def _broker_capability_map() -> dict[str, Any]:
+    try:
+        from aicarmine_broker.tool_registry import capability_map  # noqa: PLC0415
+    except Exception:  # pragma: no cover - keeps 3571 importable during partial deploys
+        return {}
+    return capability_map()
+
+
+BRIDGE_CONFIG: BridgeConfig = load_bridge_config_from_env()
 
 
 def _int_env(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except (TypeError, ValueError):
-        return default
+    return int_env(name, default)
 
 
 def _bool_env(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+    return bool_env(name, default)
 
 
-AGENT_URL = os.environ.get("AICARMINE_VULKAN_AGENT_URL", "http://127.0.0.1:3572/vulkan/agent")
-BRIDGE_TIMEOUT_SECONDS = _int_env("AICARMINE_VULKAN_BRIDGE_TIMEOUT_SECONDS", 1200)
-BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS = _int_env("AICARMINE_BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS", 90000)
-BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = _int_env("AICARMINE_BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS", 24000)
-BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = _int_env("AICARMINE_BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS", 0)
-BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = _int_env("AICARMINE_BRIDGE_OPENWEBUI_INLINE_FILE_CHARS", 60000)
-BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = _int_env("AICARMINE_BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS", 160000)
-OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = max(0, _int_env("AICARMINE_OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS", 0))
-OPENWEBUI_FINAL_UNLOAD_PLANNER = _bool_env("AICARMINE_OPENWEBUI_FINAL_UNLOAD_PLANNER", True)
-OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = max(
-    1,
-    _int_env("AICARMINE_OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS", 10),
-)
-PLANNER_URL = (
-    os.environ.get("AICARMINE_AGENT_PLANNER_URL")
-    or os.environ.get("AICARMINE_PLANNER_URL")
-    or "http://127.0.0.1:11434/api/chat"
-)
-PLANNER_MODEL = (
-    os.environ.get("AICARMINE_AGENT_PLANNER_MODEL")
-    or os.environ.get("AICARMINE_PLANNER_MODEL")
-    or os.environ.get("AICARMINE_OLLAMA_PLANNER_MODEL")
-    or "qwen3-coder:30b"
-)
+AGENT_URL = BRIDGE_CONFIG.agent_url
+BRIDGE_TIMEOUT_SECONDS = BRIDGE_CONFIG.bridge_timeout_seconds
+BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS = BRIDGE_CONFIG.max_openwebui_response_chars
+BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = BRIDGE_CONFIG.max_openwebui_summary_chars
+BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = BRIDGE_CONFIG.max_openwebui_answer_chars
+BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = BRIDGE_CONFIG.openwebui_inline_file_chars
+BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = BRIDGE_CONFIG.openwebui_inline_evidence_chars
+OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = BRIDGE_CONFIG.final_tool_settle_seconds
+OPENWEBUI_FINAL_UNLOAD_PLANNER = BRIDGE_CONFIG.final_unload_planner
+OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = BRIDGE_CONFIG.final_unload_timeout_seconds
+PLANNER_URL = BRIDGE_CONFIG.planner_url
+PLANNER_MODEL = BRIDGE_CONFIG.planner_model
 DEFAULT_INTERNAL_TOOLS = list(PLANNER_INTERNAL_TOOLS)
 PUBLIC_TOOL_ALIASES = list(OPENWEBUI_PUBLIC_TOOLS)
 OPENWEBUI_VISIBLE_TOOL_ALIASES = ("vulkan_helper",)
@@ -183,92 +184,31 @@ class VulkanHelperRequest(BaseModel):
 
 
 def _public_agent_arguments(raw_payload: dict[str, Any]) -> dict[str, Any]:
-    allowed = {
-        "request", "task", "query", "prompt", "instruction", "context",
-        "path", "paths", "file", "files", "pattern", "symbol", "command",
-        "approval_mode", "return_mode", "wait_seconds", "action", "job_action", "job_id",
-        "user_consent", "allow_command",
-    }
-    return {
-        key: value
-        for key, value in raw_payload.items()
-        if key in allowed and value not in (None, "", [], {})
-    }
+    return public_agent_arguments(raw_payload)
 
 
 def _payload_to_dict(payload: Any) -> dict[str, Any]:
-    if payload is None:
-        return {}
-    if isinstance(payload, dict):
-        data = dict(payload)
-    elif hasattr(payload, "model_dump"):
-        data = payload.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
-    else:
-        data = {"value": payload}
-
-    cleaned: dict[str, Any] = {}
-    for key, value in data.items():
-        if value in (None, ""):
-            continue
-        if isinstance(value, (dict, list)) and not value:
-            continue
-        cleaned[str(key)] = value
-    return cleaned
+    return payload_to_dict(payload)
 
 
 def _first_text(payload: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+    return first_text(payload, *keys)
 
 
 def _first_dict(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, dict) and value:
-            return dict(value)
-    return {}
+    return first_dict(payload, *keys)
 
 
 def _compact_text(value: Any, limit: int) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    if int(limit or 0) <= 0:
-        return text
-    if len(text) <= limit:
-        return text
-    return text[: max(0, limit - 64)] + "\n... <full result is available in job_url/final_path>"
+    return compact_text(value, limit)
 
 
 def _json_size(value: Any) -> int:
-    try:
-        return len(json.dumps(value, ensure_ascii=False, default=str))
-    except Exception:
-        return len(str(value))
+    return json_size(value)
 
 
 def _bridge_result_digest(result: Any) -> dict[str, Any]:
-    if not isinstance(result, dict):
-        return {"preview": _compact_text(result, 2000)} if result else {}
-    keep: dict[str, Any] = {}
-    for key in (
-        "ok", "job_ok", "status", "job_id", "answer_for_30b", "summary_for_30b",
-        "message_for_30b", "next_action_for_30b", "final_path", "final_markdown_path",
-        "events_path", "full_result_available", "full_result_hint", "auto_finalized_by",
-        "blocked_by", "rejected_tool", "blocked_tool", "error", "error_type",
-    ):
-        if result.get(key) not in (None, "", [], {}):
-            keep[key] = result.get(key)
-    history = result.get("history")
-    if isinstance(history, list):
-        keep["history_count"] = len(history)
-    if isinstance(result.get("history_tail"), list):
-        keep["history_tail"] = result.get("history_tail")[-5:]
-    artifacts = result.get("artifacts")
-    if isinstance(artifacts, list):
-        keep["artifacts"] = [x for x in artifacts[:10] if isinstance(x, str)]
-    return keep or {"preview": _compact_text(result, 2000)}
+    return bridge_result_digest(result)
 
 
 
@@ -307,7 +247,7 @@ def _agentic_v2_strip_large_for_openwebui(value, depth=0):
     return _compact_text(str(value), 500)
 
 
-def _agentic_v2_compact_context_for_openwebui(ctx):
+def _legacy_agentic_v2_compact_context_for_openwebui(ctx):
     if not isinstance(ctx, dict):
         return ctx
     keep = {}
@@ -347,13 +287,13 @@ def _agentic_v2_compact_context_for_openwebui(ctx):
         )
     return keep
 
-def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
+def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
     if _json_size(decoded) <= BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS:
         return decoded
 
     compacted: dict[str, Any] = {}
     keep_keys = (
-        "ok", "job_ok", "service", "mode", "tool_name", "tool_result_for",
+        "ok", "service", "mode", "tool_name", "tool_result_for",
         "called_by_30b", "required_top_level_keys", "payload_index_for_30b",
         "priority_evidence_for_30b", "openwebui_usage", "tool_context_for_30b",
         "result",
@@ -364,7 +304,6 @@ def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
 
     compacted.setdefault("required_top_level_keys", [
         "ok",
-        "job_ok",
         "service",
         "mode",
         "tool_name",
@@ -882,161 +821,12 @@ def help_for_all(req: HelperForAllRequest) -> dict[str, Any]:
     return _handle_helper(req, alias_called="help_for_all")
 
 
-def _vulkan_helper_completed_response_schema() -> dict[str, Any]:
-    return {
-        "type": "object",
-        "additionalProperties": True,
-        "properties": {
-            "ok": {"type": "boolean"},
-            "job_ok": {"type": "boolean"},
-            "service": {"type": "string"},
-            "mode": {"type": "string"},
-            "tool_name": {"type": "string"},
-            "tool_result_for": {"type": "string"},
-            "called_by_30b": {"type": "string"},
-            "required_top_level_keys": {
-                "type": "array",
-                "description": "Primary top-level fields expected by the public wrapper response.",
-                "items": {"type": "string"},
-            },
-            "result": {
-                "description": "Optional existing flow result. When present, it is preserved and not rewritten by the wrapper.",
-            },
-            "payload_index_for_30b": {
-                "type": "object",
-                "description": (
-                    "Expected top-level result field. Read this first. It separates concrete "
-                    "results from description/review metadata and points to exact fields containing diffs, "
-                    "structured operations or file content."
-                ),
-                "additionalProperties": True,
-                "properties": {
-                    "index_kind": {"type": "string", "example": "openwebui_payload_index.v1"},
-                    "job_completed": {"type": "boolean"},
-                    "same_request_rule": {
-                        "type": "string",
-                        "description": "For completed jobs, answer now from the indexed fields; do not call vulkan_helper again for the same request.",
-                    },
-                    "concrete_results": {
-                        "type": "array",
-                        "description": "Concrete useful payload locations: diffs, structured edits and full file contents.",
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": True,
-                            "properties": {
-                                "kind": {"type": "string"},
-                                "payload_type": {
-                                    "type": "string",
-                                    "description": "unified_diff, structured_operations, file_content or related concrete payload type.",
-                                },
-                                "target_file": {"type": "string"},
-                                "path": {"type": "string"},
-                                "payload_is_complete": {"type": "boolean"},
-                                "primary_location": {
-                                    "type": "string",
-                                    "description": "Exact top-level field path, for example priority_evidence_for_30b.items[0].unified_diff.",
-                                },
-                                "full_context_location": {
-                                    "type": "string",
-                                    "description": "Mirror location inside tool_context_for_30b.artifacts[*].artifact.",
-                                },
-                                "role": {"type": "string"},
-                            },
-                        },
-                    },
-                    "descriptive_only": {
-                        "type": "array",
-                        "description": "Fields that are prose/summary/description only, not concrete payloads.",
-                        "items": {"type": "object", "additionalProperties": True},
-                    },
-                    "suggestions_or_review_metadata_only": {
-                        "type": "array",
-                        "description": "Validation suggestions, manual review flags and limits; not reasons to repeat a completed call.",
-                        "items": {"type": "object", "additionalProperties": True},
-                    },
-                    "search_order": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-            },
-            "priority_evidence_for_30b": {
-                "type": "object",
-                "description": "High-priority inline concrete payloads. Code proposals expose unified_diff or structured_operations here.",
-                "additionalProperties": True,
-            },
-            "tool_context_for_30b": {
-                "type": "string",
-                "description": "Pretty-printed JSON string with all successful tool artifacts inline. Artifact means real tool result, not a local path.",
-            },
-            "openwebui_usage": {
-                "type": "object",
-                "description": "Runtime instructions naming the primary payload fields and concrete evidence locations.",
-                "additionalProperties": True,
-            },
-        },
-    }
-
-
-def _annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
-    operation = (
-        schema.get("paths", {})
-        .get("/vulkan_helper", {})
-        .get("post")
-    )
-    if not isinstance(operation, dict):
-        return
-    operation["description"] = (
-        str(operation.get("description") or "").rstrip()
-        + "\n\nCompleted response schema: read `payload_index_for_30b` first. "
-        "Its `concrete_results[*].primary_location` points to exact useful payload fields "
-        "such as `priority_evidence_for_30b.items[*].unified_diff`; "
-        "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
-        "`answer_for_30b`, `message_for_30b`, `summary_for_30b`, `next_action_for_30b` "
-        "and `full_result_hint` are not primary top-level result fields."
-    )
-    operation.setdefault("responses", {})
-    operation["responses"]["200"] = {
-        "description": (
-            "Terminal vulkan_helper response. Completed responses include payload_index_for_30b "
-            "near the top so the model can locate concrete results without repeating the same call."
-        ),
-        "content": {
-            "application/json": {
-                "schema": _vulkan_helper_completed_response_schema(),
-            },
-        },
-    }
-
-
 def _native_helper_openapi() -> dict[str, Any]:
-    registry = _broker_capability_map() if _broker_capability_map else {}
-    allowed = {f"/{name}" for name in OPENWEBUI_VISIBLE_TOOL_ALIASES}
-    visible_routes = [
-        route for route in app.routes
-        if getattr(route, "path", None) in allowed
-    ]
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=visible_routes,
+    return build_native_helper_openapi(
+        app,
+        visible_tool_aliases=OPENWEBUI_VISIBLE_TOOL_ALIASES,
+        registry_loader=_broker_capability_map if _broker_capability_map else None,
     )
-    schema["paths"] = {
-        path: methods
-        for path, methods in schema.get("paths", {}).items()
-        if path in allowed
-    }
-    schema["x-aicarmine-tool-surface"] = "single_openwebui_vulkan_helper"
-    schema["x-aicarmine-registry-hash"] = registry.get("registry_hash")
-    schema["x-aicarmine-public-surface"] = list(OPENWEBUI_VISIBLE_TOOL_ALIASES)
-    schema["x-aicarmine-contract"] = (
-        "OpenAPI exposes only vulkan_helper to OpenWebUI. Completed responses include "
-        "payload_index_for_30b as an expected result field plus inline successful tool evidence."
-    )
-    schema["x-aicarmine-register_this_in_openwebui"] = "http://127.0.0.1:3571/openapi.json"
-    _annotate_vulkan_helper_openapi_response(schema)
-    return schema
 
 
 app.openapi_schema = None
@@ -1169,6 +959,7 @@ _AGENTIC_V9_PUBLIC_POINTER_KEYS = {
     "raw_planner_text_preview",
     "raw_planner_text",
     "raw_text",
+    "workspace",
 }
 
 
@@ -1370,6 +1161,13 @@ def _agentic_v9_extract_context(decoded):
             ):
                 return key, parsed
     return "", {}
+
+
+def _agentic_v9_explicit_tool_context(decoded):
+    if not isinstance(decoded, dict):
+        return {}
+    parsed = _agentic_v9_parse_jsonish(decoded.get("tool_context_for_30b"))
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _agentic_v9_extract_result(decoded, context):
@@ -3016,7 +2814,7 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
         ),
         "navigation_hint": (
             "Read priority_evidence_for_30b.items before searching the larger "
-            "tool_context_for_30b JSON. For job_ok=false, useful status or "
+            "tool_context_for_30b JSON. When the internal job did not complete, useful status or "
             "partial products are intentionally first; do not stop at the "
             "terminal warning."
         ),
@@ -3092,12 +2890,21 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
         elif item.get("structured_operations"):
             field = "structured_operations"
             payload_type = "partial_structured_operations"
+        elif item.get("old_text") is not None or item.get("new_text") is not None:
+            field = "old_text_new_text"
+            payload_type = "partial_old_text_new_text"
         elif item.get("state_text"):
             field = "state_text"
             payload_type = "partial_code_product_state"
         else:
             field = "text"
             payload_type = "partial_text"
+        primary_location = f"{base}.{field}"
+        if field == "old_text_new_text":
+            primary_location = {
+                "old_text": f"{base}.old_text",
+                "new_text": f"{base}.new_text",
+            }
         return _agentic_v9_clean({
             "kind": kind,
             "payload_type": payload_type,
@@ -3105,9 +2912,9 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "edit_kind": item.get("edit_kind"),
             "payload_is_complete": item.get("payload_is_complete", False),
             "validator_accepted": item.get("validator_accepted", False),
-            "primary_location": f"{base}.{field}",
+            "primary_location": primary_location,
             "full_context_location": "tool_context_for_30b.partial_products_for_30b[*]",
-            "role": "prodotto parziale/non validato: da mostrare all'utente se job_ok=false, non da spacciare come diff completato",
+            "role": "prodotto parziale/non validato: da mostrare all'utente se il job interno non ha completato, non da spacciare come diff completato",
         })
     return {}
 
@@ -3154,7 +2961,7 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
             "Rispondi usando i campi indicizzati qui quando esistono "
             "concrete_results, partial_results o descriptive_only. Non "
             "richiamare vulkan_helper per la stessa richiesta solo perche' "
-            "job_completed=false/job_ok=false; quello e' uno stato del job "
+            "job_completed=false; quello e' uno stato del job "
             "interno, non assenza di payload."
             if has_indexed_payload else
             "Nessun payload indicizzato disponibile; solo in questo caso una "
@@ -3474,7 +3281,17 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             planner_text = _agentic_v9_terminal_planner_text(terminal_source, terminal_answer)
         if not planner_text:
             planner_text = "Agentic job ended without a planner final answer."
-        tool_context = _agentic_v9_build_structured_tool_context(terminal_source)
+        existing_tool_context = (
+            _agentic_v9_explicit_tool_context(terminal_source)
+            or _agentic_v9_explicit_tool_context(decoded)
+            or _agentic_v9_explicit_tool_context(out)
+        )
+        tool_context = dict(existing_tool_context)
+        built_tool_context = _agentic_v9_build_structured_tool_context(terminal_source)
+        for key, value in built_tool_context.items():
+            if key not in tool_context and value not in (None, "", [], {}):
+                tool_context[key] = value
+        tool_context = _agentic_v9_public_sanitize_value(tool_context) or {}
         priority_evidence = _agentic_v9_build_priority_evidence_for_30b(
             tool_context,
             planner_text,
@@ -3486,7 +3303,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             completed=terminal_completed,
         )
         safe_keys = (
-            "ok", "job_ok", "service", "mode",
+            "ok", "service", "mode",
             "tool_name", "tool_result_for", "called_by_30b",
         )
         sealed = {}
@@ -3501,13 +3318,14 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         sealed.setdefault("tool_name", decoded.get("tool_name") or "vulkan_helper")
         sealed.setdefault("tool_result_for", decoded.get("tool_result_for") or sealed["tool_name"])
         sealed.setdefault("called_by_30b", decoded.get("called_by_30b") or sealed["tool_name"])
-        sealed.setdefault("ok", decoded.get("ok", True))
-        sealed.setdefault("job_ok", bool(terminal_completed))
+        # The public OpenWebUI tool call succeeded when this terminal payload is
+        # shaped and returned. The internal job result is exposed as diagnostic
+        # payload, not as a primary top-level field that can stop OpenWebUI.
+        sealed["ok"] = True
         sealed.setdefault("service", decoded.get("service") or terminal_source.get("service") or "vulkan_agent")
         sealed.setdefault("mode", decoded.get("mode") or terminal_source.get("mode") or "agent_job_final_waited_compact")
         stable_required_top_level_keys = [
             "ok",
-            "job_ok",
             "service",
             "mode",
             "tool_name",
@@ -3528,6 +3346,21 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             result_value = out.get("result")
         if result_value not in (None, "", [], {}):
             sealed["result"] = _agentic_v9_public_result_for_30b(result_value)
+        internal_job_status = _agentic_v9_clean({
+            "completed": bool(terminal_completed),
+            "status": (
+                terminal_observation.get("status")
+                or terminal_source.get("status")
+                or decoded.get("status")
+                or ("completed" if terminal_completed else "not_completed")
+            ),
+            "payload_available": bool(priority_evidence.get("items") or tool_context or result_value not in (None, "", [], {})),
+            "source": "internal_3572_job_status",
+            "primary_response_status_field": "ok",
+            "primary_response_status_meaning": "3571 public tool call returned a readable payload",
+        })
+        if isinstance(payload_index, dict):
+            payload_index["internal_job_status"] = internal_job_status
         sealed["openwebui_usage"] = {
             "primary_payload_fields": [
                 "payload_index_for_30b",
@@ -3545,10 +3378,11 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
                 "nei campi indicati in concrete_results; i risultati utili non "
                 "validati sono in partial_results. Descrizioni, suggerimenti, "
                 "manual_review_required, validation_commands e limits non sono motivo "
-                "per richiamare vulkan_helper per la stessa richiesta. job_ok=false "
-                "dichiara lo stato del job interno senza sostituire i payload: usa "
+                "per richiamare vulkan_helper per la stessa richiesta. Lo stato del "
+                "job interno non sostituisce i payload: usa "
                 "prima priority_evidence_for_30b e tool_context_for_30b."
             ),
+            "internal_job_status": internal_job_status,
         }
         sealed["priority_evidence_for_30b"] = priority_evidence
         sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(tool_context, indent=2)
@@ -3570,82 +3404,26 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
     return out
 
 
-def _agentic_v9_wrap_compactor(name):
-    fn = globals().get(name)
-    if not callable(fn) or getattr(fn, "_agentic_v9_wrapped", False):
-        return False
-
-    def wrapped(*args, **kwargs):
-        source = args[0] if args and isinstance(args[0], dict) else None
-        previous = fn(*args, **kwargs)
-        decoded = source if isinstance(source, dict) else (previous if isinstance(previous, dict) else None)
-        if isinstance(decoded, dict):
-            return _agentic_v9_build_openwebui_response(decoded, previous=previous)
-        return previous
-
-    wrapped._agentic_v9_wrapped = True
-    wrapped.__name__ = getattr(fn, "__name__", name)
-    wrapped.__doc__ = "agentic-loop-v9 wrapper: post-wait protocol-aware tool observation for OpenWebUI"
-    globals()[name] = wrapped
-    return True
+def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
+    previous = _legacy_compact_for_openwebui(decoded)
+    if isinstance(decoded, dict):
+        return _agentic_v9_build_openwebui_response(decoded, previous=previous)
+    return previous
 
 
-def _agentic_v9_wrap_context_compactor(name):
-    fn = globals().get(name)
-    if not callable(fn) or getattr(fn, "_agentic_v9_wrapped", False):
-        return False
-
-    def wrapped(*args, **kwargs):
-        context = fn(*args, **kwargs)
-        if not isinstance(context, dict):
-            return context
-        fake = {
-            "ok": True,
-            "job_ok": True,
-            "service": "vulkan_agent",
-            "status": _agentic_v9_as_dict(context.get("job")).get("status"),
-            "goal": _agentic_v9_as_dict(context.get("job")).get("goal"),
-            "tool_context_for_30b": context,
-        }
-        return _agentic_v9_build_openwebui_response(fake, previous=context)
-
-    wrapped._agentic_v9_wrapped = True
-    wrapped.__name__ = getattr(fn, "__name__", name)
-    wrapped.__doc__ = "agentic-loop-v9 wrapper: context as protocol-aware tool observation"
-    globals()[name] = wrapped
-    return True
-
-
-for _agentic_v9_name in (
-    "_compact_for_openwebui",
-    "_compact_agent_result_for_openwebui",
-    "_compact_agent_response_for_openwebui",
-    "_bridge_compact_for_openwebui",
-    "_shape_openwebui_result",
-    "_compact_agent_result",
-    "_compact_final_result_for_openwebui",
-):
-    _agentic_v9_wrap_compactor(_agentic_v9_name)
-
-for _agentic_v9_name in (
-    "_agentic_v2_compact_context_for_openwebui",
-    "_compact_context_for_openwebui",
-    "_compact_tool_context_for_openwebui",
-):
-    _agentic_v9_wrap_context_compactor(_agentic_v9_name)
-
-for _agentic_v9_name in (
-    "_looks_like_truncated_user_request",
-    "_is_truncated_user_request",
-    "_should_block_truncated_user_request",
-    "_requires_full_user_request",
-):
-    if callable(globals().get(_agentic_v9_name)) and not getattr(globals()[_agentic_v9_name], "_agentic_v9_wrapped", False):
-        def _agentic_v9_false_predicate(*args, **kwargs):
-            return _agentic_v9_preforward_block_allowed() and False
-        _agentic_v9_false_predicate._agentic_v9_wrapped = True
-        _agentic_v9_false_predicate.__name__ = _agentic_v9_name
-        globals()[_agentic_v9_name] = _agentic_v9_false_predicate
+def _agentic_v2_compact_context_for_openwebui(ctx):
+    context = _legacy_agentic_v2_compact_context_for_openwebui(ctx)
+    if not isinstance(context, dict):
+        return context
+    fake = {
+        "ok": True,
+        "job_ok": True,
+        "service": "vulkan_agent",
+        "status": _agentic_v9_as_dict(context.get("job")).get("status"),
+        "goal": _agentic_v9_as_dict(context.get("job")).get("goal"),
+        "tool_context_for_30b": context,
+    }
+    return _agentic_v9_build_openwebui_response(fake, previous=context)
 
 _AGENTIC_V9_OPENWEBUI_PROTOCOL_OBSERVATION_ACTIVE = True
 

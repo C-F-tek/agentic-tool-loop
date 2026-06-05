@@ -1,8 +1,5 @@
 """Compatibility wrapper for the Codex Ollama Responses bridge."""
 
-from codex_bridge import ollama_responses_bridge as _impl
+from codex_bridge.ollama_responses_bridge import app
 
-globals().update(
-    {name: value for name, value in vars(_impl).items() if not name.startswith("__")}
-)
-app = _impl.app
+__all__ = ["app"]

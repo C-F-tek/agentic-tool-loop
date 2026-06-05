@@ -43,7 +43,7 @@ from .config import (
     VULKAN_AGENT_PATH,
     WORKSPACE,
 )
-from .dispatcher import agent
+from .agent_entry import agent
 from .job_html import (
     agent_job_events_view_html,
     agent_job_final_json_view_html,

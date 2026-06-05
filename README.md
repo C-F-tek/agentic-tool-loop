@@ -218,6 +218,8 @@ OpenWebUI / external 30B
   -> OpenWebUI content + inline tool_context_for_30b
 ```
 
+Visual runtime map: [flow.svg](flow.svg).
+
 ### Public Surface
 
 `3571` is the OpenWebUI-facing service. Its public tool surface is
@@ -227,7 +229,10 @@ responses for OpenWebUI.
 The public response must remain model-usable without local filesystem access:
 
 - `content` contains the compact final answer or terminal message.
+- `payload_index_for_30b` is the first navigation surface for concrete payload
+  locations.
 - `priority_evidence_for_30b` indexes important complete evidence when present.
+- `openwebui_usage` tells the external model how to read the indexed payload.
 - `tool_context_for_30b` is a pretty-printed JSON string containing successful
   internal tool results inline.
 
@@ -235,6 +240,11 @@ OpenWebUI cannot open local paths such as `C:\Users\...`, `reads/*.json`,
 `tool-results/*.json` or SQLite document IDs. Those can exist internally only
 as audit/storage surfaces. If a successful tool result is needed by OpenWebUI,
 3571 must expand the real payload inline.
+
+`final_path`, `reads/*.json`, `tool-results/*.json` and job-local SQLite may be
+used by 3571/3572 only as internal rehydration sources. They are not public
+content. A public result can mention local paths only as operator diagnostics,
+never as a location OpenWebUI must open.
 
 ### Planner Context Vs Public Payload
 
@@ -384,6 +394,28 @@ This compaction applies to the planner prompt sent to 11434. It must not degrade
 the terminal `tool_context_for_30b` sent to OpenWebUI: successful tool payloads
 still need to be reconstructed inline.
 
+### Persistence, Safety And Diagnostics
+
+The runtime uses filesystem job files as the operational source of truth.
+SQLite is a secondary index/cache for dashboards and lookup. If SQLite write or
+event indexing fails, the filesystem state/event remains authoritative and the
+job records a typed persistence warning instead of silently disappearing from
+the dashboard.
+
+Command execution is classified before running:
+
+- `readonly` and allowed `validation` commands can run under the configured
+  command policy;
+- `write`, `destructive` and `unknown` commands require explicit consent or are
+  blocked with a typed `command_requires_consent` payload;
+- Unix-like shell auto-repair is limited to read-only commands and records the
+  original/repaired command.
+
+`runtime_sqlite_memory_cleanup apply=true` is write-guarded and requires user
+consent. Planner memory surfaces distinguish feature availability from query
+success through `memory_feature_available`, `memory_query_ok` and
+`memory_records_available`.
+
 ### IA Live Control View
 
 3572 also exposes an operator-only read-only dashboard:
@@ -403,6 +435,7 @@ metadata-only or artifact-path-only regressions.
 
 - [AGENTS.md](AGENTS.md)
 - [README.md](README.md)
+- [flow.svg](flow.svg)
 - [.gitignore](.gitignore)
 - [services/](services/)
 - [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)

@@ -12,15 +12,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..application.shared.path_tokens import repo_rel_token as _repo_rel_token
 from ..config import VALID_INTERNAL_TOOLS
 from ..tool_contract import normalize_tool_name as _normalize_tool_name
-
-
-def _repo_rel_token(value: Any) -> str:
-    raw = str(value or "").strip().strip("\"'").replace("\\", "/")
-    while raw.startswith("./"):
-        raw = raw[2:]
-    return raw or "."
 
 
 def _decision_paths(args: dict[str, Any]) -> list[str]:

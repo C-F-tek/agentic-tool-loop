@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="920" viewBox="0 0 1280 920" role="img" aria-labelledby="title desc">
+  <title id="title">Agentic Tool Loop Runtime Flow</title>
+  <desc id="desc">OpenWebUI calls 3571 vulkan_helper, 3571 forwards to 3572 broker, 3572 runs planner validation and tools, local storage is rehydrated internally, and 3571 returns inline payloads to OpenWebUI.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#047857"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b91c1c"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .lane { fill: #eef2ff; stroke: #c7d2fe; stroke-width: 1.5; }
+      .lane2 { fill: #ecfdf5; stroke: #bbf7d0; stroke-width: 1.5; }
+      .lane3 { fill: #fff7ed; stroke: #fed7aa; stroke-width: 1.5; }
+      .box { fill: #ffffff; stroke: #334155; stroke-width: 1.6; rx: 10; }
+      .boxBlue { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.6; rx: 10; }
+      .boxGreen { fill: #ecfdf5; stroke: #047857; stroke-width: 1.6; rx: 10; }
+      .boxOrange { fill: #fff7ed; stroke: #ea580c; stroke-width: 1.6; rx: 10; }
+      .boxRed { fill: #fef2f2; stroke: #b91c1c; stroke-width: 1.6; rx: 10; }
+      .boxGray { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.6; rx: 10; }
+      .title { font-family: Segoe UI, Arial, sans-serif; font-size: 26px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 14px; fill: #475569; }
+      .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12.5px; fill: #334155; }
+      .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11.5px; fill: #475569; }
+      .warn { font-family: Segoe UI, Arial, sans-serif; font-size: 12.5px; fill: #991b1b; font-weight: 700; }
+      .arrow { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .arrowGreen { stroke: #047857; stroke-width: 2.2; fill: none; marker-end: url(#arrowGreen); }
+      .arrowRed { stroke: #b91c1c; stroke-width: 2.2; fill: none; marker-end: url(#arrowRed); stroke-dasharray: 7 5; }
+      .dash { stroke: #64748b; stroke-width: 1.8; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="920"/>
+  <text class="title" x="40" y="44">Agentic Tool Loop Runtime Flow</text>
+  <text class="subtitle" x="40" y="68">3571 exposes only vulkan_helper to OpenWebUI. 3572 owns planner loop, validation, storage and internal tools.</text>
+
+  <rect class="lane" x="32" y="100" width="285" height="740" rx="18"/>
+  <text class="label" x="54" y="128">Public OpenWebUI Surface</text>
+  <text class="tiny" x="54" y="148">No local filesystem access</text>
+
+  <rect class="lane2" x="347" y="100" width="545" height="740" rx="18"/>
+  <text class="label" x="369" y="128">Internal 3572 Broker Runtime</text>
+  <text class="tiny" x="369" y="148">Planner decides; controller validates</text>
+
+  <rect class="lane3" x="922" y="100" width="326" height="740" rx="18"/>
+  <text class="label" x="944" y="128">Local Storage And Diagnostics</text>
+  <text class="tiny" x="944" y="148">Operator/dashboard only</text>
+
+  <rect class="boxBlue" x="62" y="180" width="225" height="96"/>
+  <text class="label" x="82" y="208">OpenWebUI / 30B</text>
+  <text class="small" x="82" y="231">calls one public tool</text>
+  <text class="small" x="82" y="252">POST /vulkan_helper</text>
+
+  <rect class="boxBlue" x="62" y="340" width="225" height="126"/>
+  <text class="label" x="82" y="368">3571 vulkan_bridge</text>
+  <text class="small" x="82" y="391">OpenAPI exposes only</text>
+  <text class="small" x="82" y="412">/vulkan_helper</text>
+  <text class="small" x="82" y="434">forwards to 3572</text>
+
+  <rect class="boxGreen" x="384" y="180" width="228" height="112"/>
+  <text class="label" x="404" y="208">3572 /vulkan/agent</text>
+  <text class="small" x="404" y="231">create job + worker</text>
+  <text class="small" x="404" y="252">state/events written</text>
+  <text class="small" x="404" y="273">filesystem first</text>
+
+  <rect class="boxGreen" x="384" y="340" width="228" height="132"/>
+  <text class="label" x="404" y="368">Prompt Pack</text>
+  <text class="small" x="404" y="391">required_working_set</text>
+  <text class="small" x="404" y="412">optional intrinsic_context</text>
+  <text class="small" x="404" y="433">budget + headroom</text>
+  <text class="small" x="404" y="454">real SQLite windows</text>
+
+  <rect class="boxGreen" x="654" y="180" width="224" height="112"/>
+  <text class="label" x="674" y="208">11434 Planner</text>
+  <text class="small" x="674" y="231">native tool_calls for tools</text>
+  <text class="small" x="674" y="252">JSON final/block allowed</text>
+  <text class="small" x="674" y="273">done_reason is turn data</text>
+
+  <rect class="boxGreen" x="654" y="340" width="224" height="132"/>
+  <text class="label" x="674" y="368">Validator Gate</text>
+  <text class="small" x="674" y="391">native tool in turn surface</text>
+  <text class="small" x="674" y="412">verified repo evidence</text>
+  <text class="small" x="674" y="433">code product contract</text>
+  <text class="small" x="674" y="454">typed guard/rejection</text>
+
+  <rect class="boxGreen" x="384" y="536" width="228" height="134"/>
+  <text class="label" x="404" y="564">Internal Tools</text>
+  <text class="small" x="404" y="587">repo_read/search/tree</text>
+  <text class="small" x="404" y="608">repo_propose_code_edit</text>
+  <text class="small" x="404" y="629">repo_validate/command</text>
+  <text class="small" x="404" y="650">terminal + memory tools</text>
+
+  <rect class="boxOrange" x="654" y="536" width="224" height="134"/>
+  <text class="label" x="674" y="564">11435 Task/Repair</text>
+  <text class="small" x="674" y="587">selector/repair support</text>
+  <text class="small" x="674" y="608">not main planner</text>
+  <text class="small" x="674" y="629">not semantic fallback</text>
+  <text class="small" x="674" y="650">revalidates before use</text>
+
+  <rect class="boxGray" x="952" y="180" width="260" height="138"/>
+  <text class="label" x="972" y="208">Filesystem Primary</text>
+  <text class="small" x="972" y="231">job.json</text>
+  <text class="small" x="972" y="252">events.ndjson</text>
+  <text class="small" x="972" y="273">final.json / final.md</text>
+  <text class="small" x="972" y="294">tool result artifacts</text>
+
+  <rect class="boxGray" x="952" y="360" width="260" height="138"/>
+  <text class="label" x="972" y="388">SQLite Secondary</text>
+  <text class="small" x="972" y="411">job index/events cache</text>
+  <text class="small" x="972" y="432">prompt text windows</text>
+  <text class="small" x="972" y="453">memory/RAG substrate</text>
+  <text class="small" x="972" y="474">typed warning on failure</text>
+
+  <rect class="boxGray" x="952" y="540" width="260" height="138"/>
+  <text class="label" x="972" y="568">Operator Views</text>
+  <text class="small" x="972" y="591">/jobs/{id}</text>
+  <text class="small" x="972" y="612">/jobs/{id}/ia-view</text>
+  <text class="small" x="972" y="633">raw payload inspection</text>
+  <text class="small" x="972" y="654">read-only diagnostics</text>
+
+  <rect class="boxBlue" x="62" y="610" width="225" height="140"/>
+  <text class="label" x="82" y="638">3571 Public Result</text>
+  <text class="small" x="82" y="661">payload_index_for_30b</text>
+  <text class="small" x="82" y="682">priority_evidence_for_30b</text>
+  <text class="small" x="82" y="703">openwebui_usage</text>
+  <text class="small" x="82" y="724">tool_context_for_30b JSON</text>
+
+  <rect class="boxRed" x="384" y="730" width="828" height="70"/>
+  <text class="warn" x="406" y="758">Public payload rule</text>
+  <text class="small" x="406" y="782">OpenWebUI never reads final_path, artifact_path, workspace, SQLite ids, reads/*.json or tool-results/*.json. 3571 may load them only to expand inline content.</text>
+
+  <path class="arrow" d="M 174 276 L 174 340"/>
+  <path class="arrow" d="M 287 403 L 384 236"/>
+  <path class="arrow" d="M 612 236 L 654 236"/>
+  <path class="arrow" d="M 766 292 L 766 340"/>
+  <path class="arrow" d="M 654 406 L 612 406"/>
+  <path class="arrow" d="M 498 472 L 498 536"/>
+  <path class="arrow" d="M 612 603 L 654 603"/>
+  <path class="dash" d="M 766 536 L 766 472"/>
+  <path class="arrowGreen" d="M 498 292 L 498 340"/>
+  <path class="arrowGreen" d="M 612 236 C 820 236 820 248 952 248"/>
+  <path class="arrowGreen" d="M 612 603 C 820 603 820 250 952 250"/>
+  <path class="dash" d="M 612 406 C 820 406 820 430 952 430"/>
+  <path class="dash" d="M 878 406 C 920 406 920 430 952 430"/>
+  <path class="dash" d="M 498 670 C 800 720 900 626 952 626"/>
+  <path class="arrowGreen" d="M 952 250 C 820 250 840 670 287 680"/>
+  <path class="arrowGreen" d="M 287 680 L 62 680"/>
+  <path class="arrowRed" d="M 952 760 L 300 760"/>
+
+  <text class="tiny" x="310" y="214">forward request</text>
+  <text class="tiny" x="617" y="220">planner turn</text>
+  <text class="tiny" x="685" y="326">validate</text>
+  <text class="tiny" x="520" y="520">valid tool</text>
+  <text class="tiny" x="815" y="584">repair only when allowed</text>
+  <text class="tiny" x="812" y="235">write/read local evidence</text>
+  <text class="tiny" x="610" y="704">rehydrate internally, sanitize public output</text>
+
+  <text class="subtitle" x="40" y="874">Test-backed invariants: filesystem survives SQLite failure; 3571 OpenAPI exposes only /vulkan_helper; command tools classify consent; final_path rehydration does not leak local paths.</text>
+</svg>

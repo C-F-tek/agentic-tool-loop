@@ -78,7 +78,7 @@ $OPENVINO_PROVIDER_PORT = Set-UserEnvValue "OPENVINO_PROVIDER_PORT" "$($config.O
 $OPENVINO_PROVIDER_DEVICE = Set-UserEnvValue "OPENVINO_PROVIDER_DEVICE" "GPU.0"
 $OPENVINO_PROVIDER_HEALTH_URL = Set-UserEnvValue "OPENVINO_PROVIDER_HEALTH_URL" "http://$($config.HOSTNAME):$($config.OPENVINO_PORT)/v2/models/BAAI%2Fbge-reranker-v2-m3/ready"
 
-# Default OFF finchÃƒÆ’Ã‚Â© il provider NPU HTTP non esiste davvero.
+# Default ON: provider OpenVINO/reranker esterno su 3550 quando il launcher lo avvia.
 $ENABLE_OPENVINO_PROVIDER = Set-UserEnvValue "ENABLE_OPENVINO_PROVIDER" "1"
 $ENABLE_EXTERNAL_RERANKER = Set-UserEnvValue "ENABLE_EXTERNAL_RERANKER" "1"
 $RAG_RERANKING_MODEL = Set-UserEnvValue "RAG_RERANKING_MODEL" "BAAI/bge-reranker-v2-m3"

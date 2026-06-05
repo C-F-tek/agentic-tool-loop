@@ -176,14 +176,17 @@ env aliases, planner/tool lists and Ollama options.
   code reads env dynamically.
 - Verify: inspect running process env, not only user env or file values.
 
-### `aicarmine_broker/dispatcher.py`
+### Removed: `aicarmine_broker/dispatcher.py`
 
-Compatibility facade for old imports of app/job/dispatch helpers.
+The old compatibility facade was removed after the broker app and tests moved
+to real owners. HTTP routing imports `agent_entry` directly, while validated
+tool dispatch remains in `tool_dispatch.py` and
+`application/tool_surface/dispatcher.py`.
 
-- Reads: owning modules.
+- Reads: none.
 - Writes: none.
-- Risk: adding behavior here creates duplicate paths.
-- Verify: import compatibility only.
+- Risk: reintroducing this file creates duplicate import paths.
+- Verify: no imports of `aicarmine_broker.dispatcher` remain.
 
 ### `aicarmine_broker/helper.py`
 
