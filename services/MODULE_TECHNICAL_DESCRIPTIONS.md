@@ -299,20 +299,23 @@ messages.
 
 ### `aicarmine_broker/repo_tools.py`
 
-Internal deterministic tools for repo and terminal operations. It handles safe
-relative paths, repo tree/list/search/read, report-only code edit proposals,
-patch/write/validate, command execution, terminal path normalization and command
-repair.
+Compatibility facade for deterministic repo and terminal operations. Concrete
+tool behavior now lives under `aicarmine_broker/tools/`: repo
+tree/list/search/read, report-only code edit proposals, patch/write/validate,
+command classification, compile target resolution, terminal path normalization
+and readonly command repair.
 
 - Reads: lab/main repo filesystem, process env, command outputs.
-- Writes: repo files only through explicit write/patch tools; command tools may
-  write through guarded shell operations. `repo_propose_code_edit` writes only
-  its audit JSON under `tool-results` and never writes/applies source changes.
+- Writes: delegated tools may write repo files only through explicit
+  write/patch paths; command tools may write only through guarded/classified
+  shell operations. `repo_propose_code_edit` writes only its audit JSON under
+  `tool-results` and never writes/applies source changes.
 - Risk: filesystem and shell security boundary. Results must include real
   useful output, not only artifact metadata. Code-product results must include
   the full diff/operations inline.
-- Verify: path stays under intended repo, tool result has expected `content`,
-  `entries`, `paths`, `stdout`, `stderr` or complete `unified_diff`.
+- Verify: facade imports delegate to the owning `tools/*` module; path stays
+  under intended repo, and tool result has expected `content`, `entries`,
+  `paths`, `stdout`, `stderr` or complete `unified_diff`.
 
 ### `aicarmine_broker/code_edit_proposal_contract.py`
 
@@ -346,15 +349,16 @@ internal tool arguments.
 
 ### `aicarmine_broker/tool_dispatch.py`
 
-Explicit dispatch table from normalized internal tool names to concrete tool
-functions.
+Compatibility facade for the explicit registry dispatcher in
+`application/tool_surface/dispatcher.py`.
 
 - Reads: normalized name/args, repo root, command permission flag.
-- Writes: through delegated tool only.
+- Writes: through delegated dispatcher/tool only.
 - Risk: do not add hidden planner decisions or fallback behavior here.
   `repo_propose_code_edit` must dispatch only to the report-only tool, not to
   apply/write paths.
-- Verify: each registered tool name calls the expected function.
+- Verify: the facade builds a dispatch request and delegates; registered tool
+  names are owned by the application dispatcher/registry.
 
 ### `aicarmine_broker/tool_registry.py`
 
@@ -445,7 +449,8 @@ instead of replacing the diff with previews, summaries or local paths.
   config.
 - Risk: highest-risk 3571 file. Public payload must not include 3572 internal
   call protocol, continuation examples, debug blocks or local artifact paths.
-- Verify: `POST /vulkan_helper` terminal response has compact `content` and
+- Verify: `POST /vulkan_helper` terminal response exposes
+  `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and a
   pretty JSON string `tool_context_for_30b` with real successful tool outputs;
   for code products, `artifact.unified_diff` or `artifact.structured_operations`
   is complete.

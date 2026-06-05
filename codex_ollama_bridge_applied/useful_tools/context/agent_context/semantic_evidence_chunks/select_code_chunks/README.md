@@ -25,9 +25,9 @@ Core code entry points:
 - [services/vulkan_bridge/app.py](../../../../../../services/vulkan_bridge/app.py)
   - Public OpenWebUI wrapper surface.
 - [services/aicarmine_broker/planner.py](../../../../../../services/aicarmine_broker/planner.py)
-  - Planner/controller contract and validation loop.
+  - Planner/controller facade and high-risk loop entry; owner modules live under application/.
 - [services/aicarmine_broker/repo_tools.py](../../../../../../services/aicarmine_broker/repo_tools.py)
-  - Repository inspection, command, validation, and code-product tool implementations.
+  - Compatibility facade for repo/tool helpers; concrete implementations live under services/aicarmine_broker/tools/.
 - [services/aicarmine_broker/memory_tools.py](../../../../../../services/aicarmine_broker/memory_tools.py)
   - Runtime memory tool support.
 

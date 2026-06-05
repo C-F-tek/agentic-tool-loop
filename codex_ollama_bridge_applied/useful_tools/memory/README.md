@@ -39,13 +39,13 @@ Core code entry points:
 - [services/aicarmine_broker/app.py](../../../services/aicarmine_broker/app.py)
   - Internal broker application.
 - [services/aicarmine_broker/planner.py](../../../services/aicarmine_broker/planner.py)
-  - Planner/controller contract and validation loop.
+  - Planner/controller facade and high-risk loop entry; owner modules live under application/.
 - [services/aicarmine_broker/repo_tools.py](../../../services/aicarmine_broker/repo_tools.py)
-  - Repository inspection, command, validation, and code-product tool implementations.
+  - Compatibility facade for repo/tool helpers; concrete implementations live under services/aicarmine_broker/tools/.
 - [services/aicarmine_broker/tool_registry.py](../../../services/aicarmine_broker/tool_registry.py)
   - Internal tool registry.
 - [services/aicarmine_broker/tool_dispatch.py](../../../services/aicarmine_broker/tool_dispatch.py)
-  - Tool dispatch layer.
+  - Compatibility facade for the explicit registry dispatcher in application/tool_surface/dispatcher.py.
 - [services/aicarmine_broker/job_store.py](../../../services/aicarmine_broker/job_store.py)
   - Job state and artifact persistence.
 - [services/aicarmine_broker/public_wrapper.py](../../../services/aicarmine_broker/public_wrapper.py)

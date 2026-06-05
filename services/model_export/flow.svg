@@ -25,7 +25,7 @@
   </defs>
   <rect class="bg" x="0" y="0" width="980" height="640"/>
   <text class="title" x="34" y="42">Model Export Flow</text>
-  <text class="subtitle" x="34" y="64">CLI export helper split: parse args, route task, call exporter, write serving config.</text>
+  <text class="subtitle" x="34" y="64">Current model export helper surface: CLI entry, config facade and lazy exporter compatibility module.</text>
   <path class="arrow" d="M 284 170 L 370 170"/>
   <text class="tiny" x="304" y="158">request</text>
   <path class="arrow" d="M 600 170 L 682 170"/>
@@ -39,33 +39,33 @@
     <text class="small" x="80" y="188">no heavy export logic</text>
     <text class="small" x="80" y="207">delegates service</text>
   </a>
-  <a href="application/">
+  <a href="cli.py">
     <rect class="box green" x="370" y="118" width="230" height="104" rx="10"/>
-    <text class="label" x="386" y="145">Export service</text>
-    <text class="small" x="386" y="169">validate request</text>
-    <text class="small" x="386" y="188">route task</text>
-    <text class="small" x="386" y="207">collect result</text>
+    <text class="label" x="386" y="145">CLI workflow</text>
+    <text class="small" x="386" y="169">parse request</text>
+    <text class="small" x="386" y="188">select export task</text>
+    <text class="small" x="386" y="207">write export result</text>
   </a>
-  <a href="application/">
+  <a href="config.py">
     <rect class="box orange" x="682" y="118" width="220" height="104" rx="10"/>
-    <text class="label" x="698" y="145">Task router</text>
-    <text class="small" x="698" y="169">text generation</text>
-    <text class="small" x="698" y="188">embeddings/rerank</text>
-    <text class="small" x="698" y="207">speech/image/tokenizer</text>
+    <text class="label" x="698" y="145">Config facade</text>
+    <text class="small" x="698" y="169">model/export settings</text>
+    <text class="small" x="698" y="188">compatibility helpers</text>
+    <text class="small" x="698" y="207">shared runtime env</text>
   </a>
-  <a href="exporters/">
+  <a href="exporters.py">
     <rect class="box gray" x="220" y="332" width="230" height="104" rx="10"/>
-    <text class="label" x="236" y="359">Exporter adapters</text>
-    <text class="small" x="236" y="383">task-specific modules</text>
-    <text class="small" x="236" y="402">lazy dependencies</text>
-    <text class="small" x="236" y="421">contract result</text>
+    <text class="label" x="236" y="359">Lazy exporters</text>
+    <text class="small" x="236" y="383">historical names</text>
+    <text class="small" x="236" y="402">lazy compatibility</text>
+    <text class="small" x="236" y="421">no runtime bridge role</text>
   </a>
-  <a href="infrastructure/">
+  <a href="MODULE_REFERENCE.md">
     <rect class="box gray" x="566" y="332" width="230" height="104" rx="10"/>
-    <text class="label" x="582" y="359">Infrastructure</text>
-    <text class="small" x="582" y="383">filesystem</text>
-    <text class="small" x="582" y="402">OpenVINO runtime</text>
-    <text class="small" x="582" y="421">process runner</text>
+    <text class="label" x="582" y="359">Refactor target</text>
+    <text class="small" x="582" y="383">documented future split</text>
+    <text class="small" x="582" y="402">not current folder path</text>
+    <text class="small" x="582" y="421">see module reference</text>
   </a>
   <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
   <a href="../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
