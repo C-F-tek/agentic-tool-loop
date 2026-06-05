@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="920" viewBox="0 0 1280 920" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1080" viewBox="0 0 1280 1080" role="img" aria-labelledby="title desc">
   <title id="title">Agentic Tool Loop Runtime Flow</title>
   <desc id="desc">OpenWebUI calls 3571 vulkan_helper, 3571 forwards to 3572 broker, 3572 runs planner validation and tools, local storage is rehydrated internally, and 3571 returns inline payloads to OpenWebUI.</desc>
   <defs>
@@ -36,7 +36,7 @@
     </style>
   </defs>
 
-  <rect class="bg" x="0" y="0" width="1280" height="920"/>
+  <rect class="bg" x="0" y="0" width="1280" height="1080"/>
   <text class="title" x="40" y="44">Agentic Tool Loop Runtime Flow</text>
   <text class="subtitle" x="40" y="68">3571 exposes only vulkan_helper to OpenWebUI. 3572 owns planner loop, validation, storage and internal tools.</text>
 
@@ -161,5 +161,19 @@
   <text class="tiny" x="812" y="235">write/read local evidence</text>
   <text class="tiny" x="610" y="704">rehydrate internally, sanitize public output</text>
 
-  <text class="subtitle" x="40" y="874">Test-backed invariants: filesystem survives SQLite failure; 3571 OpenAPI exposes only /vulkan_helper; command tools classify consent; final_path rehydration does not leak local paths.</text>
+  <rect class="boxGray" x="40" y="850" width="1208" height="134" rx="14"/>
+  <text class="label" x="62" y="878">Folder Flow Index</text>
+  <text class="tiny" x="62" y="900">Each linked SVG is stored in the owning folder and links back to this runtime flow.</text>
+  <a href="services/flow.svg"><rect class="box" x="62" y="922" width="210" height="30" rx="8"/><text class="small" x="76" y="942">services</text></a>
+  <a href="services/aicarmine_broker/flow.svg"><rect class="box" x="300" y="922" width="210" height="30" rx="8"/><text class="small" x="314" y="942">3572 broker</text></a>
+  <a href="services/vulkan_bridge/flow.svg"><rect class="box" x="538" y="922" width="210" height="30" rx="8"/><text class="small" x="552" y="942">3571 bridge</text></a>
+  <a href="services/launch/flow.svg"><rect class="box" x="776" y="922" width="210" height="30" rx="8"/><text class="small" x="790" y="942">launch</text></a>
+  <a href="services/codex_bridge/flow.svg"><rect class="box" x="1014" y="922" width="210" height="30" rx="8"/><text class="small" x="1028" y="942">codex bridge</text></a>
+  <a href="services/model_export/flow.svg"><rect class="box" x="62" y="964" width="210" height="30" rx="8"/><text class="small" x="76" y="984">model export</text></a>
+  <a href="codex_ollama_bridge_applied/flow.svg"><rect class="box" x="300" y="964" width="210" height="30" rx="8"/><text class="small" x="314" y="984">applied bridge</text></a>
+  <a href="codex_ollama_bridge_applied/useful_tools/flow.svg"><rect class="box" x="538" y="964" width="210" height="30" rx="8"/><text class="small" x="552" y="984">useful tools</text></a>
+  <a href="codex_ollama_bridge_applied/useful_tools/context/flow.svg"><rect class="box" x="776" y="964" width="210" height="30" rx="8"/><text class="small" x="790" y="984">context</text></a>
+  <a href="codex_ollama_bridge_applied/useful_tools/memory/flow.svg"><rect class="box" x="1014" y="964" width="210" height="30" rx="8"/><text class="small" x="1028" y="984">memory</text></a>
+
+  <text class="subtitle" x="40" y="1040">Test-backed invariants: filesystem survives SQLite failure; 3571 OpenAPI exposes only /vulkan_helper; command tools classify consent; final_path rehydration does not leak local paths.</text>
 </svg>

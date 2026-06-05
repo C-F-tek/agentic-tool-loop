@@ -84,6 +84,21 @@ Supporting runtime surfaces:
 - [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
   - Applied bridge/tool material used by the local integration.
 
+
+## Flow Map Index
+
+- [Root runtime flow](flow.svg)
+- [services flow](services/flow.svg)
+- [3572 broker flow](services/aicarmine_broker/flow.svg)
+- [3571 bridge flow](services/vulkan_bridge/flow.svg)
+- [launcher flow](services/launch/flow.svg)
+- [Codex bridge flow](services/codex_bridge/flow.svg)
+- [model export flow](services/model_export/flow.svg)
+- [applied bridge flow](codex_ollama_bridge_applied/flow.svg)
+- [useful tools flow](codex_ollama_bridge_applied/useful_tools/flow.svg)
+- [applied context flow](codex_ollama_bridge_applied/useful_tools/context/flow.svg)
+- [applied memory flow](codex_ollama_bridge_applied/useful_tools/memory/flow.svg)
+
 ## Folder README Index
 
 Core runtime folders:

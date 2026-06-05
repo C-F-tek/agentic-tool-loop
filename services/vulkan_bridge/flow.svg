@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="980" height="640"/>
+  <text class="title" x="34" y="42">3571 Public Bridge Flow</text>
+  <text class="subtitle" x="34" y="64">OpenWebUI-facing surface: one public tool, inline payloads, no local path dependency.</text>
+  <path class="arrow" d="M 268 164 L 360 164"/>
+  <text class="tiny" x="286" y="152">public call</text>
+  <path class="arrow" d="M 590 164 L 676 164"/>
+  <text class="tiny" x="612" y="152">forward</text>
+  <path class="arrow" d="M 676 362 L 590 362"/>
+  <text class="tiny" x="602" y="350">terminal data</text>
+  <path class="arrow" d="M 268 362 L 360 362"/>
+  <text class="tiny" x="290" y="350">shape</text>
+  <rect class="box blue" x="48" y="112" width="220" height="104" rx="10"/>
+    <text class="label" x="64" y="139">OpenWebUI call</text>
+    <text class="small" x="64" y="163">POST /vulkan_helper</text>
+    <text class="small" x="64" y="182">request/action/job_id</text>
+    <text class="small" x="64" y="201">wait_seconds</text>
+  <a href="app.py">
+    <rect class="box green" x="360" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="376" y="139">Request routing</text>
+    <text class="small" x="376" y="163">normalize payload</text>
+    <text class="small" x="376" y="182">select 3572 action</text>
+    <text class="small" x="376" y="201">post to agent URL</text>
+  </a>
+  <a href="../aicarmine_broker/flow.svg">
+    <rect class="box gray" x="676" y="112" width="220" height="104" rx="10"/>
+    <text class="label" x="692" y="139">3572 broker</text>
+    <text class="small" x="692" y="163">start/status/result</text>
+    <text class="small" x="692" y="182">terminal response</text>
+    <text class="small" x="692" y="201">internal job state</text>
+  </a>
+  <a href="app.py">
+    <rect class="box green" x="48" y="310" width="220" height="112" rx="10"/>
+    <text class="label" x="64" y="337">Terminal wrapper</text>
+    <text class="small" x="64" y="361">rehydrate final_path internally</text>
+    <text class="small" x="64" y="380">sanitize local paths</text>
+    <text class="small" x="64" y="399">preserve inline evidence</text>
+  </a>
+  <a href="openapi_builder.py">
+    <rect class="box blue" x="360" y="310" width="230" height="112" rx="10"/>
+    <text class="label" x="376" y="337">Public payload</text>
+    <text class="small" x="376" y="361">payload_index_for_30b</text>
+    <text class="small" x="376" y="380">priority_evidence_for_30b</text>
+    <text class="small" x="376" y="399">tool_context_for_30b</text>
+  </a>
+  <a href="openapi_builder.py">
+    <rect class="box orange" x="676" y="310" width="220" height="112" rx="10"/>
+    <text class="label" x="692" y="337">OpenAPI contract</text>
+    <text class="small" x="692" y="361">only vulkan_helper visible</text>
+    <text class="small" x="692" y="380">no internal tools</text>
+    <text class="small" x="692" y="399">schema names payload fields</text>
+  </a>
+  <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
+  <a href="../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="602">Services flow</text></a>
+  <a href="MODULE_REFERENCE.md"><text class="link" x="300" y="602">Module ref</text></a>
+  <a href="README.md"><text class="link" x="414" y="602">README</text></a>
+</svg>
