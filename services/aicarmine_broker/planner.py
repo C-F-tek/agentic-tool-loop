@@ -138,6 +138,9 @@ from .application.public_payload.openwebui_terminal_answer import (
     answer_for_openwebui as _answer_for_openwebui_impl,
     next_action_for_openwebui as _next_action_for_openwebui_impl,
 )
+from .application.public_payload.evidence_materializer import (
+    materialize_public_evidence as _materialize_public_evidence_impl,
+)
 from .application.public_payload.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
 from .application.tool_surface.candidate_actions import (
     candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
@@ -4070,6 +4073,17 @@ def finalize_agentic_job(
         else final_summary_with_turns
     )
     next_action = tool_context.get("next_action_for_30b") or {}
+    materialized = _materialize_public_evidence_impl(
+        tool_context=tool_context,
+        evidence_guide=evidence_guide,
+        completed=status == "completed",
+        internal_job_status={
+            "completed": status == "completed",
+            "status": status,
+            "payload_available": bool(tool_context.get("artifacts")),
+            "source": "internal_3572_job_status",
+        },
+    )
     final = {
         "ok": status == "completed",
         "job_id": job_id,
@@ -4078,6 +4092,9 @@ def finalize_agentic_job(
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
         "evidence_guide_for_30b": evidence_guide,
+        "payload_index_for_30b": materialized["payload_index_for_30b"],
+        "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
+        "materialization_report": materialized["materialization_report"],
         "next_action_for_30b": next_action,
         "result": public_result,
         "agent_flow_diagnostics": tool_context.get("agent_flow_diagnostics"),
@@ -4097,6 +4114,9 @@ def finalize_agentic_job(
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
         "evidence_guide_for_30b": evidence_guide,
+        "payload_index_for_30b": materialized["payload_index_for_30b"],
+        "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
+        "materialization_report": materialized["materialization_report"],
         "next_action_for_30b": next_action,
         "result": _compact_final_state_result(public_result),
         "tool_context_for_30b": tool_context,

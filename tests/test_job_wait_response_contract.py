@@ -101,4 +101,4 @@ def test_wait_terminal_response_uses_openwebui_audience(tmp_path: Path, monkeypa
     assert "final_path" not in response
     assert response["operator_diagnostics"]["local_final_path"] == str(final_path)
     assert response["openwebui_usage"]["structured_context_field"] == "tool_context_for_30b"
-    assert "payload_index_for_30b" in response["openwebui_usage"]["primary_payload_fields"]
+    assert "payload_index_for_30b.concrete_results" in response["openwebui_usage"]["primary_payload_fields"]

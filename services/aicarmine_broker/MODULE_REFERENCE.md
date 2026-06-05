@@ -56,6 +56,11 @@ Read before edits:
 - Runtime memory cleanup is write-guarded when `apply=true`; dry-run cleanup is
   allowed without consent. Planner memory surfaces separate feature availability
   from query success.
+- 3572 is the owner for OpenWebUI public evidence materialization. It builds
+  `payload_index_for_30b`, `priority_evidence_for_30b` and
+  `materialization_report` from inline `tool_context_for_30b` artifacts before
+  3571 transports the payload. 3571 may lint or recover, but it must preserve a
+  valid `materialization_report.owner=3572_broker` payload.
 
 ## Module Map
 
@@ -95,7 +100,7 @@ package directly, for example `application/planner/loop.py`,
 | `application/prompt/` | Prompt construction, budget/headroom accounting, prompt windows, history-message transport and prompt value compaction. | `__init__.py` exposes only prompt-pack/budget/window primitives intended for consumers. |
 | `application/evidence/` | Evidence contract, repo evidence extraction, path policy, required working set, core discovery and scope/user-claim constraints. | `__init__.py` exposes evidence builder and classifier/path primitives; validation still belongs to `application/planner/validator.py`. |
 | `application/code_product/` | Report-only code-product build-state, history and public code-product text helpers. | `__init__.py` exposes code-product state/public-output helpers only. |
-| `application/public_payload/` | OpenWebUI/30B terminal payload shaping, public history ledger, terminal answer, public tool context and sanitization. | `__init__.py` exposes public payload builders while preserving inline evidence and stripping local-only pointers. |
+| `application/public_payload/` | OpenWebUI/30B terminal payload shaping, public history ledger, terminal answer, public tool context, evidence materialization, payload-index resolution and sanitization. | `__init__.py` exposes public payload builders while preserving inline evidence and stripping local-only pointers. |
 | `application/job/` | Job lifecycle, worker, action router, selector runner and compact job responses. | `__init__.py` exposes lifecycle/worker/router response services, not planner validation policy. |
 | `application/controller/` | Controller guards, controller memory, deterministic preseed and diagnostics. | `__init__.py` exposes guard/memory/preseed/diagnostic helpers; controller code validates or records, it does not replace planner decisions. |
 | `application/tool_surface/` | Tool surface, manifest, dispatch coordination and planner-facing tool-result compaction/digests. | `__init__.py` exposes dispatcher/surface/manifest primitives and keeps actual tool implementation in `tools/*`. |
@@ -167,6 +172,8 @@ When debugging a path mismatch, inspect the job capture field
 | `application/prompt/evidence_contract.py` | Prompt-facing evidence contract compaction and hard-budget summary helpers. It keeps the planner-visible keys bounded without storing windows or changing validation policy. |
 | `application/evidence/execution_digest.py` | Builds OpenWebUI follow-up evidence text and bounded repo-read content views from executed tool history. It rehydrates same-job repo_read artifacts but does not decide planner actions. |
 | `application/public_payload/final_state_result.py` | Pure final-state result compaction helper. It builds terminal digest fields with an injected history ledger builder and does not finalize jobs. |
+| `application/public_payload/evidence_materializer.py` | Broker-side owner for OpenWebUI inline evidence materialization. It promotes complete inline repo reads and code-edit proposals from `tool_context_for_30b.artifacts[*].artifact` into `priority_evidence_for_30b`, builds non-duplicating `payload_index_for_30b` pointers and emits `materialization_report owner=3572_broker` without reading local files or changing finalization gates. |
+| `application/public_payload/payload_index_resolver.py` | Pure resolver for broker public payload-index paths. It verifies locations such as `priority_evidence_for_30b.items[0].content` and `tool_context_for_30b.artifacts[0].artifact.unified_diff` against inline JSON so materialization reports can distinguish resolved, missing and empty targets. |
 | `application/evidence/goal_classifier.py` | Pure goal text and deliverable classifier helpers for analysis/code-product/apply intent, input-envelope detection and final-summary code-product checks. Repo-specific scope evidence stays in `planner.py`. |
 | `application/evidence/goal_scope.py` | Goal path/scope extraction helper. It resolves requested file limits, existing repo files and explicit directory scopes using planner-injected repo root/path-safety callbacks instead of importing runtime state. |
 | `application/shared/history_queries.py` | Small query helpers over planner history, including normalized tool-result extraction, tool-presence checks and code-edit proposal success/failure extraction. |

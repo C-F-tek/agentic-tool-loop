@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from .response_values import compact_text, event_digest, strip_narrative_duplicates_from_context
 from ..public_payload.history_ledger import build_public_result_digest
+from ..public_payload.evidence_materializer import materialize_public_evidence
 from ..public_payload.terminal_sanitizer import public_terminal_sanitize_text
 from ..public_payload.terminal_result import public_terminal_result_for_30b
 from ..public_payload.tool_context import public_tool_artifact_rows, successful_tool_turns
@@ -282,24 +283,43 @@ def build_compact_terminal_response(
         openwebui_usage = {
             "primary_payload_fields": [
                 "evidence_guide_for_30b",
-                "payload_index_for_30b",
-                "priority_evidence_for_30b",
-                "tool_context_for_30b",
-                "openwebui_usage",
+                "payload_index_for_30b.concrete_results",
+                "priority_evidence_for_30b.items[0].content",
+                "tool_context_for_30b.artifacts[*].artifact",
             ],
+            "payload_index_field": "payload_index_for_30b",
             "evidence_guide_field": "evidence_guide_for_30b",
+            "concrete_results_field": "payload_index_for_30b.concrete_results",
+            "priority_evidence_field": "priority_evidence_for_30b.items",
+            "full_tool_evidence_field": "tool_context_for_30b.artifacts[*].artifact",
             "structured_context_field": "tool_context_for_30b",
             "rule": (
                 "OpenWebUI cannot read local filesystem paths. Start from "
                 "evidence_guide_for_30b, then use inline payload_index_for_30b, "
-                "priority_evidence_for_30b and tool_context_for_30b. The guide "
-                "is an evidence index, not a replacement for the concrete payload."
+                "priority_evidence_for_30b.items[0].content when present, and "
+                "only after that tool_context_for_30b.artifacts[*].artifact. "
+                "The guide is an evidence index, not a replacement for the "
+                "concrete payload."
             ),
         }
 
     public_final_path_verification = dict(final_path_verification)
     if audience == "openwebui":
         public_final_path_verification.pop("final_path", None)
+
+    materialized = materialize_public_evidence(
+        tool_context=tool_context,
+        evidence_guide=evidence_guide,
+        completed=status == "completed",
+        internal_job_status={
+            "completed": status == "completed",
+            "status": status,
+            "payload_available": bool(
+                tool_context.get("artifacts") if isinstance(tool_context, dict) else False
+            ),
+            "source": "internal_3572_job_status",
+        },
+    )
 
     response = {
         "ok": True,
@@ -317,6 +337,9 @@ def build_compact_terminal_response(
         "full_result_hint": full_result_hint,
         "final_path_verification": public_final_path_verification,
         "evidence_guide_for_30b": evidence_guide,
+        "payload_index_for_30b": materialized["payload_index_for_30b"],
+        "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
+        "materialization_report": materialized["materialization_report"],
         "evidence_digest_for_30b": (
             tool_context.get("evidence_digest_for_30b")
             if isinstance(tool_context, dict)
@@ -334,8 +357,8 @@ def build_compact_terminal_response(
         or final_data.get("planner_emission_interpreter")
         or {},
         "openwebui_usage": openwebui_usage,
-        "result": result_digest,
         "tool_context_for_30b": tool_context,
+        "result": result_digest,
         "agent_context_for_30b": context_alias,
         "structured_context_for_30b": context_alias,
         "structured_result_for_30b": context_alias,

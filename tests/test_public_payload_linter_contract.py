@@ -92,5 +92,72 @@ def test_public_payload_linter_warns_missing_priority_evidence() -> None:
         "tool_context_for_30b": "{}",
     })
 
-    assert result["ok"] is True
-    assert result["warnings"][0]["rule"] == "payload_index_references_missing_priority_evidence"
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "payload_index_references_missing_priority_evidence"
+
+
+def test_public_payload_linter_rejects_tool_context_string_that_is_not_json_object() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "tool_context_for_30b": "not json",
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "tool_context_for_30b_string_not_json_object"
+
+
+def test_public_payload_linter_rejects_payload_index_dangling_reference() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "payload_index_for_30b": {
+            "concrete_results": [
+                {"primary_location": "priority_evidence_for_30b.items[0].content"}
+            ]
+        },
+        "priority_evidence_for_30b": {"items": []},
+        "tool_context_for_30b": "{}",
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "payload_index_target_missing"
+
+
+def test_public_payload_linter_rejects_payload_index_content_copy() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "payload_index_for_30b": {
+            "concrete_results": [
+                {
+                    "primary_location": "priority_evidence_for_30b.items[0].content",
+                    "content": "# duplicated copy\n",
+                }
+            ]
+        },
+        "priority_evidence_for_30b": {"items": [{"content": "# duplicated copy\n"}]},
+        "tool_context_for_30b": "{}",
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "payload_index_contains_concrete_payload_copy"
+
+
+def test_public_payload_linter_rejects_tool_context_root_narrative_alias() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "tool_context_for_30b": {"answer_for_30b": "duplicate"},
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "tool_context_root_narrative_alias"
+
+
+def test_public_payload_linter_rejects_completed_payload_without_materialization_report() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "status": "completed",
+        "tool_context_for_30b": {"artifacts": [{"artifact": {"content": "inline"}}]},
+        "priority_evidence_for_30b": {"items": [{"content": "inline"}]},
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "terminal_payload_missing_materialization_report"

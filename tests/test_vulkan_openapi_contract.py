@@ -75,6 +75,7 @@ def test_vulkan_helper_response_schema_names_primary_payload_fields() -> None:
     assert "evidence_guide_for_30b" in properties
     assert "payload_index_for_30b" in properties
     assert "priority_evidence_for_30b" in properties
+    assert "materialization_report" in properties
     assert "tool_context_for_30b" in properties
     assert "openwebui_usage" in properties
     assert "job_ok" not in properties
@@ -290,6 +291,9 @@ def test_terminal_openwebui_response_tool_context_is_artifact_mirror_not_full_du
     ]
     assert result["priority_evidence_for_30b"]["items"][0]["content"] == "# Demo\n"
     assert tool_context["artifacts"][0]["artifact"]["content"] == "# Demo\n"
+    assert result["materialization_report"]["schema"] == "public_evidence_materialization.v1"
+    assert result["materialization_report"]["ok"] is True
+    assert result["materialization_report"]["payload_index"]["resolved_count"] > 0
     assert "planner_memory" not in tool_context
     assert "controller_memory" not in tool_context
     assert "agent_flow_diagnostics" not in tool_context
@@ -472,7 +476,118 @@ def test_terminal_openwebui_response_rehydrates_final_path_without_exposing_loca
     assert priority_items[0]["kind"] == "code_edit_proposal"
     assert priority_items[0]["unified_diff"] == diff
     assert result["payload_index_for_30b"]["concrete_results"][0]["payload_type"] == "unified_diff"
+    assert result["materialization_report"]["bridge_emergency_rehydration_used"] is True
+    assert result["materialization_report"]["payload_index"]["unresolved"] == []
     assert str(tmp_path) not in payload
     assert "artifact_path" not in payload
     assert "final_path" not in payload
     assert "workspace" not in payload
+
+
+def test_terminal_openwebui_response_preserves_broker_materialization_without_rehydrating() -> None:
+    from vulkan_bridge import app
+
+    result = app._compact_for_openwebui(
+        {
+            "ok": True,
+            "job_ok": True,
+            "service": "vulkan_agent",
+            "status": "completed",
+            "tool_name": "vulkan_helper",
+            "job_id": "job-broker-materialized",
+            "evidence_guide_for_30b": "Read indexed content.",
+            "payload_index_for_30b": {
+                "index_kind": "openwebui_payload_index.v1",
+                "job_completed": True,
+                "concrete_results": [
+                    {
+                        "kind": "repo_file_full_content",
+                        "payload_type": "file_content",
+                        "path": "README.md",
+                        "primary_location": "priority_evidence_for_30b.items[0].content",
+                        "full_context_location": "tool_context_for_30b.artifacts[0].artifact.content",
+                    }
+                ],
+                "search_order": ["evidence_guide_for_30b"],
+            },
+            "priority_evidence_for_30b": {
+                "schema": "openwebui.priority_evidence_for_30b.v1",
+                "items": [
+                    {
+                        "kind": "repo_file_full_content",
+                        "path": "README.md",
+                        "payload_is_complete": True,
+                        "content": "# Broker\n",
+                    }
+                ],
+            },
+            "materialization_report": {
+                "schema": "public_evidence_materialization.v1",
+                "owner": "3572_broker",
+                "ok": True,
+                "diagnostic_only": True,
+            },
+            "tool_context_for_30b": {
+                "not_a_summary": True,
+                "artifacts": [
+                    {
+                        "tool": "repo_read",
+                        "ok": True,
+                        "artifact": {
+                            "kind": "repo_read",
+                            "repo_path": "README.md",
+                            "truncated": False,
+                            "content": "# Broker\n",
+                        },
+                    }
+                ],
+            },
+            "result": {"compact_placeholder": True},
+        }
+    )
+
+    tool_context = json.loads(result["tool_context_for_30b"])
+
+    assert result["materialization_report"]["owner"] == "3572_broker"
+    assert "bridge_emergency_rehydration_used" not in result["materialization_report"]
+    assert result["priority_evidence_for_30b"]["items"][0]["content"] == "# Broker\n"
+    assert tool_context["artifacts"][0]["artifact"]["content"] == "# Broker\n"
+
+
+def test_terminal_openwebui_response_orders_result_after_primary_evidence() -> None:
+    from vulkan_bridge import app
+
+    result = app._compact_for_openwebui(
+        {
+            "ok": True,
+            "job_ok": True,
+            "service": "vulkan_agent",
+            "status": "completed",
+            "tool_name": "vulkan_helper",
+            "job_id": "job-order",
+            "final_summary": "README read.",
+            "tool_context_for_30b": {
+                "type": "agentic_loop_complete_structured_context",
+                "job": {"job_id": "job-order", "status": "completed"},
+                "artifacts": [
+                    {
+                        "tool": "repo_read",
+                        "ok": True,
+                        "artifact": {
+                            "kind": "repo_read",
+                            "repo_path": "README.md",
+                            "truncated": False,
+                            "content": "# Demo\n",
+                        },
+                    }
+                ],
+            },
+            "result": {"history": [{"step": 1}]},
+        }
+    )
+
+    keys = list(result.keys())
+
+    assert keys.index("payload_index_for_30b") < keys.index("priority_evidence_for_30b")
+    assert keys.index("priority_evidence_for_30b") < keys.index("tool_context_for_30b")
+    assert keys.index("tool_context_for_30b") < keys.index("result")

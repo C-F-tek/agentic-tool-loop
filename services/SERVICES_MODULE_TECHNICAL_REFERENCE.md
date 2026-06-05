@@ -60,7 +60,12 @@ OpenWebUI
       -> invalid/dirty planner emission: optional 11435 repair, then validation again
       -> semantic tool-contract failure: controller_guard, no hidden substitute
       -> valid final: finalize_agentic_job(...)
-  -> 3572 compact terminal job response
+  -> 3572 materialized terminal payload
+      -> evidence_guide_for_30b
+      -> payload_index_for_30b
+      -> priority_evidence_for_30b
+      -> materialization_report owner=3572_broker
+      -> tool_context_for_30b
   -> 3571 terminal wrapper
   -> OpenWebUI payload_index_for_30b + priority_evidence_for_30b + tool_context_for_30b
 ```
@@ -77,6 +82,17 @@ Critical protocol notes:
   tool, not a local JSON path.
 - OpenWebUI cannot read `C:\Users\...` paths. Tool results needed by the 30B
   must be transported inline in `tool_context_for_30b`.
+- OpenWebUI may stringify the returned tool JSON into a single `role=tool`
+  message. The public response therefore keeps `evidence_guide_for_30b`,
+  `payload_index_for_30b`, `priority_evidence_for_30b`,
+  `materialization_report`, `openwebui_usage` and `tool_context_for_30b` ahead
+  of the optional generic `result` field.
+- 3572 is the primary owner for materializing OpenWebUI public evidence.
+  `aicarmine_broker.application.public_payload.evidence_materializer` builds
+  `priority_evidence_for_30b`, `payload_index_for_30b` and
+  `materialization_report owner=3572_broker` from inline artifacts. 3571
+  preserves that payload and only uses bridge-owned materialization as explicit
+  emergency recovery/final lint.
 - For diff/refactoring/code-product goals, `repo_propose_code_edit` is the
   internal report-only tool surface. Its complete diff or structured operations
   are evidence, not metadata, and must stay inline in `tool_context_for_30b`.
@@ -126,7 +142,13 @@ For terminal jobs returned to OpenWebUI:
   navigation and diagnostics.
 - `tool_context_for_30b`: pretty-printed JSON string containing only useful
   successful-tool evidence and declared limits.
-- `result`: carried from the terminal/final payload as the public result source.
+- `materialization_report`: diagnostic-only report proving the payload was
+  materialized as inline JSON and that `payload_index_for_30b` targets resolve
+  to real non-empty public fields. The normal owner is `3572_broker`; a
+  `3571_bridge` owner means transport-side recovery/lint, not primary
+  materialization. It is metadata, not a duplicate answer.
+- `result`: carried from the terminal/final payload as the public result source
+  after the primary evidence fields.
   The compact response digest is only a fallback. Raw controller audit
   `result.history` is normalized to `agentic_terminal_public_history_ledger.v1`
   so OpenWebUI receives useful step/tool/result facts without local job paths,

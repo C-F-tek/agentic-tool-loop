@@ -70,6 +70,9 @@ def test_compact_terminal_response_uses_state_tool_context_first() -> None:
     assert response["evidence_digest_for_30b"] == "evidence"
     assert response["next_action_for_30b"] == {"action": "done"}
     assert "answer_for_30b" not in response["tool_context_for_30b"]
+    assert response["materialization_report"]["owner"] == "3572_broker"
+    assert "payload_index_for_30b" in response
+    assert "priority_evidence_for_30b" in response
     assert response["artifacts"] == ["final.json", "final.md", "events.ndjson"]
     assert len(response["events_tail_digest"]) == 5
     assert response["events_tail_digest"][0]["time"] == "t2"
@@ -339,3 +342,55 @@ def test_openwebui_terminal_response_keeps_local_paths_under_diagnostics(tmp_pat
     assert "answer_for_30b" not in response["tool_context_for_30b"]
     assert "inline answer" in response["evidence_guide_for_30b"]
     assert "OpenWebUI cannot read local paths" in response["full_result_hint"]
+    assert response["openwebui_usage"]["primary_payload_fields"] == [
+        "evidence_guide_for_30b",
+        "payload_index_for_30b.concrete_results",
+        "priority_evidence_for_30b.items[0].content",
+        "tool_context_for_30b.artifacts[*].artifact",
+    ]
+
+
+def test_openwebui_terminal_response_materializes_repo_read_content() -> None:
+    response = build_compact_terminal_response(
+        job_id="job-materialized",
+        state={
+            "status": "completed",
+            "goal": "describe readme",
+            "final_summary": "summary",
+            "tool_context_for_30b": {
+                "not_a_summary": True,
+                "evidence_digest_for_30b": "repo_read README.md",
+                "artifacts": [
+                    {
+                        "producer_step": 1,
+                        "tool": "repo_read",
+                        "ok": True,
+                        "artifact": {
+                            "kind": "repo_read",
+                            "repo_path": "README.md",
+                            "truncated": False,
+                            "content": "# Demo\n",
+                        },
+                    }
+                ],
+            },
+            "result": {"ok": True},
+        },
+        final_data={},
+        events_tail=[],
+        events_path="events.ndjson",
+        job_url_value="http://127.0.0.1:3572/jobs/job-materialized",
+        public_result_inline_chars=1000,
+        public_summary_chars=100,
+        public_answer_chars=1000,
+        audience="openwebui",
+    )
+
+    priority_item = response["priority_evidence_for_30b"]["items"][0]
+    index_row = response["payload_index_for_30b"]["concrete_results"][0]
+
+    assert response["materialization_report"]["owner"] == "3572_broker"
+    assert response["materialization_report"]["ok"] is True
+    assert priority_item["content"] == "# Demo\n"
+    assert index_row["primary_location"] == "priority_evidence_for_30b.items[0].content"
+    assert "content" not in index_row

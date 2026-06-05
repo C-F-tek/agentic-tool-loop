@@ -53,9 +53,11 @@ Read before edits:
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for 3571 application helpers extracted from `app.py`. |
+| `application/materialization_report.py` | Diagnostic-only fallback builder for top-level `materialization_report` when 3572 did not already provide a valid `owner=3572_broker` report. It certifies the current 3571 public payload without duplicating payload content: `tool_context_for_30b` JSON-object parseability, artifact materialization counts and payload-index resolution status. |
+| `application/payload_index_resolver.py` | Pure resolver for public payload-index field paths such as `priority_evidence_for_30b.items[0].content` and `tool_context_for_30b.artifacts[0].artifact.unified_diff`. It reports missing and empty targets for linter/report diagnostics. |
 | `application/request_payload.py` | Pure request-payload normalization helpers for public agent arguments, model/dict payload conversion and first text/dict extraction. `app.py` keeps compatibility wrappers for existing call sites. |
 | `application/response_values.py` | Pure response value helpers for text compaction, JSON size measurement and compact bridge result digests. `app.py` keeps compatibility wrappers for existing call sites. |
-| `application/public_payload_linter.py` | Warn-only public payload linter for OpenWebUI responses. It detects local path leaks, artifact/final path keys outside operator diagnostics and missing priority-evidence references without blocking or changing payload shaping gates. |
+| `application/public_payload_linter.py` | Warn-only public payload linter for OpenWebUI responses. It detects local path leaks, artifact/final path keys outside operator diagnostics, non-JSON `tool_context_for_30b` strings, narrative aliases in the tool-context root, concrete payload copies inside `payload_index_for_30b`, dangling/empty index targets and terminal payloads missing `materialization_report`. |
 
 ## Public Result Contract
 
@@ -68,6 +70,11 @@ For terminal jobs returned to OpenWebUI:
 - `payload_index_for_30b`: first navigation surface for concrete payload fields.
 - `priority_evidence_for_30b`: high-priority inline concrete payloads and
   compact analysis evidence.
+- `materialization_report`: diagnostic-only report with schema
+  `public_evidence_materialization.v1`. It states whether inline JSON evidence
+  was materialized, whether `tool_context_for_30b` is JSON-object parseable and
+  whether `payload_index_for_30b` resolves to real non-empty public fields. It
+  is not a duplicate answer or payload layer.
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
   Internal 3572 completion/block status lives under
   `openwebui_usage.internal_job_status`; it is not a primary top-level field.
@@ -76,7 +83,10 @@ For terminal jobs returned to OpenWebUI:
 - `tool_context_for_30b`: a pretty-printed JSON string whose public useful
   payload is `tool_context_for_30b.artifacts[*].artifact`. It is an artifact
   mirror, not a full job dump and not the primary reading surface.
-- `result`: carried from the terminal/final payload as the public result source.
+- `result`: carried from the terminal/final payload as the public result source
+  after the primary evidence fields. OpenWebUI can stringify tool results, so
+  `result` must not appear before `payload_index_for_30b`,
+  `priority_evidence_for_30b`, `openwebui_usage` and `tool_context_for_30b`.
   Terminal wrapping uses the compact digest only when the terminal payload has
   no `result`. Raw controller audit `result.history` is normalized to the
   public ledger schema instead of being inlined as raw transport history.
@@ -172,9 +182,12 @@ limits, summaries or artifact references.
    repair/selector support and internal tool dispatch.
 4. 3571 waits for terminal state according to configured wait settings.
 5. 3571 reads terminal job payload/final JSON from 3572 response.
-6. 3571 builds `payload_index_for_30b`, `priority_evidence_for_30b`,
-   `openwebui_usage` and `tool_context_for_30b`.
-7. 3571 carries terminal `result` when present; compact previews are only
+6. 3572 normally materializes `payload_index_for_30b`,
+   `priority_evidence_for_30b` and `materialization_report owner=3572_broker`.
+   3571 preserves that materialization, adds transport usage/lint, and uses
+   `owner=3571_bridge` only for explicit emergency rehydration/fallback.
+7. 3571 carries terminal `result` after the primary evidence fields when
+   present; compact previews are only
    fallback transport and must not shadow the payload. Raw `result.history` is
    exposed as the bounded public ledger, not raw audit history.
 8. OpenWebUI receives only public metadata plus model-usable inline
@@ -214,7 +227,10 @@ limits, summaries or artifact references.
 3. Inspect exact JSON returned by `POST /vulkan_helper`.
 4. Verify all model-visible context is inline and does not require local file
    access.
-5. Verify non-ok terminal responses still contain the same primary keys as ok
+5. Verify `public_payload_lint.ok=true`, and verify
+   `materialization_report.ok=true` when a terminal payload has concrete inline
+   evidence.
+6. Verify non-ok terminal responses still contain the same primary keys as ok
    responses and that `result` is not reduced to `{ "preview": ... }` when a
    terminal `result` with public history ledger exists.
-6. Re-run at least `python -m compileall -q services\vulkan_bridge`.
+7. Re-run at least `python -m compileall -q services\vulkan_bridge`.

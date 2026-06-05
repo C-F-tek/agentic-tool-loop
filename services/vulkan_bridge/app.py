@@ -24,6 +24,7 @@ from .application.response_values import (
     compact_text,
     json_size,
 )
+from .application.materialization_report import build_materialization_report
 from .application.public_payload_linter import lint_public_payload
 from .openapi_builder import build_native_helper_openapi
 
@@ -3389,6 +3390,25 @@ def _agentic_v9_has_agent_result(decoded):
     return False
 
 
+def _agentic_v9_broker_materialized_public_evidence(payload):
+    payload = _agentic_v9_as_dict(payload)
+    report = _agentic_v9_as_dict(payload.get("materialization_report"))
+    priority = _agentic_v9_as_dict(payload.get("priority_evidence_for_30b"))
+    payload_index = _agentic_v9_as_dict(payload.get("payload_index_for_30b"))
+    if (
+        report.get("ok") is True
+        and str(report.get("owner") or "") == "3572_broker"
+        and priority
+        and payload_index
+    ):
+        return {
+            "report": report,
+            "priority_evidence": priority,
+            "payload_index": payload_index,
+        }
+    return {}
+
+
 def _agentic_v9_build_openwebui_response(decoded, previous=None):
     """Return a JSON object for FastAPI/OpenWebUI, never a bare string.
 
@@ -3426,7 +3446,8 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         or ""
     )
     if terminal:
-        terminal_source = _agentic_v9_full_terminal_payload(decoded)
+        decoded_materialized = _agentic_v9_broker_materialized_public_evidence(decoded)
+        terminal_source = decoded if decoded_materialized else _agentic_v9_full_terminal_payload(decoded)
         terminal_observation = _agentic_v9_build_observation_object(terminal_source)
         terminal_completed = terminal_observation.get("status") == "completed" or terminal_observation.get("job_ok") is True
         terminal_answer = (
@@ -3454,16 +3475,27 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
                 tool_context[key] = value
         tool_context = _agentic_v9_strip_tool_context_narrative_duplicates(tool_context)
         tool_context = _agentic_v9_public_sanitize_value(tool_context) or {}
-        priority_evidence = _agentic_v9_build_priority_evidence_for_30b(
-            tool_context,
-            planner_text,
-            completed=terminal_completed,
-        )
-        payload_index = _agentic_v9_build_payload_index_for_30b(
-            priority_evidence,
-            tool_context,
-            completed=terminal_completed,
-        )
+        broker_materialized = _agentic_v9_broker_materialized_public_evidence(terminal_source)
+        if broker_materialized:
+            priority_evidence = (
+                _agentic_v9_public_sanitize_value(broker_materialized["priority_evidence"])
+                or {}
+            )
+            payload_index = (
+                _agentic_v9_public_sanitize_value(broker_materialized["payload_index"])
+                or {}
+            )
+        else:
+            priority_evidence = _agentic_v9_build_priority_evidence_for_30b(
+                tool_context,
+                planner_text,
+                completed=terminal_completed,
+            )
+            payload_index = _agentic_v9_build_payload_index_for_30b(
+                priority_evidence,
+                tool_context,
+                completed=terminal_completed,
+            )
         evidence_guide = _agentic_v9_build_completed_content_text(
             planner_text,
             tool_context.get("evidence_digest_for_30b") if isinstance(tool_context, dict) else "",
@@ -3492,6 +3524,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "evidence_guide_for_30b",
             "payload_index_for_30b",
             "priority_evidence_for_30b",
+            "materialization_report",
             "openwebui_usage",
             "tool_context_for_30b",
         ]
@@ -3503,8 +3536,6 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             result_value = decoded.get("result")
         if result_value in (None, "", [], {}):
             result_value = out.get("result")
-        if result_value not in (None, "", [], {}):
-            sealed["result"] = _agentic_v9_public_result_for_30b(result_value)
         internal_job_status = _agentic_v9_clean({
             "completed": bool(terminal_completed),
             "status": (
@@ -3552,6 +3583,16 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         }
         sealed["priority_evidence_for_30b"] = priority_evidence
         sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(external_tool_context, indent=2)
+        if broker_materialized:
+            sealed["materialization_report"] = broker_materialized["report"]
+        else:
+            sealed["materialization_report"] = build_materialization_report(
+                sealed,
+                owner="3571_bridge",
+                bridge_emergency_rehydration_used=terminal_source is not decoded,
+            )
+        if result_value not in (None, "", [], {}):
+            sealed["result"] = _agentic_v9_public_result_for_30b(result_value)
         _attach_public_payload_lint(sealed)
         sealed["openwebui_usage"]["top_level_present_fields"] = list(sealed.keys())
         return sealed

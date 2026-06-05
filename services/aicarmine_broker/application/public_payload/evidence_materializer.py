@@ -1,0 +1,510 @@
+"""Broker-side inline evidence materializer for OpenWebUI payloads.
+
+The materializer is the 3572 owner for public evidence fields. It does not
+load local files and does not duplicate payload content inside the index; it
+selects concrete inline artifacts already present in ``tool_context_for_30b``
+and exposes deterministic pointers for the 3571 bridge/OpenWebUI surface.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+from typing import Any
+
+from .payload_index_resolver import resolve_payload_index
+
+
+MATERIALIZATION_SCHEMA = "public_evidence_materialization.v1"
+PRIORITY_SCHEMA = "openwebui.priority_evidence_for_30b.v1"
+INDEX_KIND = "openwebui_payload_index.v1"
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _clean(value: Any) -> Any:
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            cleaned = _clean(item)
+            if cleaned not in (None, "", [], {}):
+                out[str(key)] = cleaned
+        return out
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            cleaned = _clean(item)
+            if cleaned not in (None, "", [], {}):
+                out.append(cleaned)
+        return out
+    return value
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _priority_item_from_artifact(row: dict[str, Any]) -> dict[str, Any]:
+    artifact = _as_dict(row.get("artifact"))
+    kind = str(artifact.get("kind") or "")
+    tool = row.get("tool")
+    step = row.get("producer_step")
+
+    if kind == "repo_read":
+        content = artifact.get("content")
+        if not isinstance(content, str) or not content:
+            return {}
+        if artifact.get("truncated") is True or artifact.get("preview_only") is True:
+            return {}
+        return _clean({
+            "kind": "repo_file_full_content",
+            "tool": tool,
+            "step": step,
+            "ok": row.get("ok", True),
+            "path": artifact.get("repo_path"),
+            "payload_is_complete": True,
+            "content_sha256": _sha256_text(content),
+            "chars": len(content),
+            "line_count": artifact.get("line_count"),
+            "content": content,
+        })
+
+    if kind == "code_edit_proposal":
+        edit_kind = artifact.get("edit_kind")
+        item: dict[str, Any] = {
+            "kind": "code_edit_proposal",
+            "tool": tool,
+            "step": step,
+            "ok": row.get("ok", True),
+            "target_file": artifact.get("target_file"),
+            "edit_kind": edit_kind,
+            "payload_is_complete": False,
+            "source_writes_performed": artifact.get("source_writes_performed"),
+            "patch_application_performed": artifact.get("patch_application_performed"),
+            "manual_review_required": artifact.get("manual_review_required"),
+            "rationale": artifact.get("rationale"),
+            "validation_commands": artifact.get("validation_commands"),
+            "warnings": artifact.get("warnings"),
+            "errors": artifact.get("errors"),
+            "target_metadata": artifact.get("target_metadata"),
+            "ast_evidence": artifact.get("ast_evidence"),
+        }
+        if edit_kind == "unified_diff":
+            diff = artifact.get("unified_diff")
+            item["payload_is_complete"] = isinstance(diff, str) and bool(diff.strip())
+            item["unified_diff"] = diff
+        elif edit_kind == "structured_edit":
+            operations = artifact.get("structured_operations")
+            item["payload_is_complete"] = bool(operations)
+            item["structured_operations"] = operations
+        elif edit_kind == "no_op":
+            rationale = artifact.get("rationale")
+            item["payload_is_complete"] = isinstance(rationale, str) and bool(rationale.strip())
+        return _clean(item)
+
+    return {}
+
+
+def _analysis_priority_item(tool_context: dict[str, Any], planner_text: str) -> dict[str, Any]:
+    evidence_files: list[dict[str, Any]] = []
+    for row in _as_list(tool_context.get("artifacts")):
+        row = _as_dict(row)
+        artifact = _as_dict(row.get("artifact"))
+        kind = str(artifact.get("kind") or "")
+        path = artifact.get("repo_path")
+        if not path and isinstance(row.get("arguments"), dict):
+            path = row["arguments"].get("path")
+        if kind not in {"repo_read", "repo_tree", "repo_list_files"} and not path:
+            continue
+        evidence_files.append(_clean({
+            "step": row.get("producer_step"),
+            "tool": row.get("tool"),
+            "kind": kind or "tool_evidence",
+            "path": path,
+            "truncated": artifact.get("truncated"),
+            "preview_only": artifact.get("preview_only"),
+            "reason": "successful_tool_evidence_available_in_tool_context_for_30b",
+        }))
+    if not planner_text and not evidence_files:
+        return {}
+    return _clean({
+        "kind": "repo_analysis_summary",
+        "payload_is_complete": bool(planner_text),
+        "summary": planner_text,
+        "evidence_files": evidence_files[:80],
+    })
+
+
+def _partial_priority_items(tool_context: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in _as_list(tool_context.get("partial_products_for_30b")):
+        item = _as_dict(row)
+        if not item:
+            continue
+        item = dict(item)
+        item.setdefault("payload_is_complete", False)
+        item.setdefault("validator_accepted", False)
+        out.append(_clean(item))
+    best = _as_dict(tool_context.get("best_partial_product_for_30b"))
+    if best:
+        best = dict(best)
+        best.setdefault("payload_is_complete", False)
+        best.setdefault("validator_accepted", False)
+        key = json.dumps(best, ensure_ascii=False, sort_keys=True, default=str)
+        existing = {
+            json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+            for item in out
+        }
+        if key not in existing:
+            out.insert(0, _clean(best))
+    return out
+
+
+def _context_location(tool_context: dict[str, Any], item: dict[str, Any]) -> str:
+    kind = str(item.get("kind") or "")
+    target_file = str(item.get("target_file") or "")
+    path = str(item.get("path") or "")
+    for index, row in enumerate(_as_list(tool_context.get("artifacts"))):
+        artifact = _as_dict(_as_dict(row).get("artifact"))
+        artifact_kind = str(artifact.get("kind") or "")
+        if kind == "code_edit_proposal" and artifact_kind == "code_edit_proposal":
+            if target_file and str(artifact.get("target_file") or "") != target_file:
+                continue
+            edit_kind = str(artifact.get("edit_kind") or "")
+            if edit_kind == "unified_diff":
+                return f"tool_context_for_30b.artifacts[{index}].artifact.unified_diff"
+            if edit_kind == "structured_edit":
+                return f"tool_context_for_30b.artifacts[{index}].artifact.structured_operations"
+            return f"tool_context_for_30b.artifacts[{index}].artifact"
+        if kind == "repo_file_full_content" and artifact_kind == "repo_read":
+            if path and str(artifact.get("repo_path") or "") != path:
+                continue
+            return f"tool_context_for_30b.artifacts[{index}].artifact.content"
+    return "tool_context_for_30b.artifacts[*].artifact"
+
+
+def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str, Any]) -> dict[str, Any]:
+    kind = str(item.get("kind") or "")
+    base = f"priority_evidence_for_30b.items[{index}]"
+    if kind == "repo_file_full_content":
+        return _clean({
+            "kind": "repo_file_full_content",
+            "payload_type": "file_content",
+            "path": item.get("path"),
+            "payload_is_complete": item.get("payload_is_complete"),
+            "primary_location": f"{base}.content",
+            "full_context_location": _context_location(tool_context, item),
+            "role": "risultato concreto: contenuto file letto",
+        })
+    if kind == "code_edit_proposal":
+        edit_kind = str(item.get("edit_kind") or "")
+        if edit_kind == "unified_diff":
+            field = "unified_diff"
+            payload_type = "unified_diff"
+        elif edit_kind == "structured_edit":
+            field = "structured_operations"
+            payload_type = "structured_operations"
+        else:
+            field = "rationale"
+            payload_type = "code_edit_proposal"
+        return _clean({
+            "kind": "code_edit_proposal",
+            "payload_type": payload_type,
+            "target_file": item.get("target_file"),
+            "edit_kind": edit_kind,
+            "payload_is_complete": item.get("payload_is_complete"),
+            "primary_location": f"{base}.{field}",
+            "full_context_location": _context_location(tool_context, item),
+            "role": "risultato concreto: proposta patch/diff richiesta",
+        })
+    if kind in {
+        "partial_code_product_candidate",
+        "partial_code_product_build_state",
+        "action_plan_candidate",
+        "repair_candidate_text",
+    }:
+        if item.get("unified_diff"):
+            field = "unified_diff"
+            payload_type = "partial_unified_diff"
+        elif item.get("structured_operations"):
+            field = "structured_operations"
+            payload_type = "partial_structured_operations"
+        elif item.get("old_text") is not None or item.get("new_text") is not None:
+            field = "old_text_new_text"
+            payload_type = "partial_old_text_new_text"
+        elif item.get("state_text"):
+            field = "state_text"
+            payload_type = "partial_code_product_state"
+        else:
+            field = "text"
+            payload_type = "partial_text"
+        primary_location: str | dict[str, str] = f"{base}.{field}"
+        if field == "old_text_new_text":
+            primary_location = {
+                "old_text": f"{base}.old_text",
+                "new_text": f"{base}.new_text",
+            }
+        return _clean({
+            "kind": kind,
+            "payload_type": payload_type,
+            "target_file": item.get("target_file"),
+            "edit_kind": item.get("edit_kind"),
+            "payload_is_complete": item.get("payload_is_complete", False),
+            "validator_accepted": item.get("validator_accepted", False),
+            "primary_location": primary_location,
+            "full_context_location": "priority_evidence_for_30b.items[*]",
+            "role": (
+                "prodotto parziale/non validato: mostrare all'utente se il job "
+                "interno non ha completato; non trattarlo come diff completato"
+            ),
+        })
+    return {}
+
+
+@dataclass(frozen=True)
+class PublicEvidenceMaterializer:
+    """Build the complete 30B evidence surface from broker-side inline context."""
+
+    owner: str = "3572_broker"
+
+    def materialize(
+        self,
+        *,
+        tool_context: dict[str, Any] | str | None,
+        evidence_guide: str = "",
+        completed: bool = False,
+        internal_job_status: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        context = _as_dict(tool_context)
+        priority = self._priority_evidence(context, evidence_guide, completed=completed)
+        payload_index = self._payload_index(priority, context, completed=completed)
+        if isinstance(internal_job_status, dict) and internal_job_status:
+            payload_index["internal_job_status"] = _clean(internal_job_status)
+        report = self._materialization_report(
+            tool_context=context,
+            priority_evidence=priority,
+            payload_index=payload_index,
+            evidence_guide=evidence_guide,
+        )
+        return {
+            "payload_index_for_30b": payload_index,
+            "priority_evidence_for_30b": priority,
+            "materialization_report": report,
+        }
+
+    def _priority_evidence(
+        self,
+        tool_context: dict[str, Any],
+        evidence_guide: str,
+        *,
+        completed: bool,
+    ) -> dict[str, Any]:
+        artifact_items = [
+            item
+            for item in (_priority_item_from_artifact(_as_dict(row)) for row in _as_list(tool_context.get("artifacts")))
+            if item
+        ]
+        partial_items = _partial_priority_items(tool_context)
+        analysis_item = _analysis_priority_item(tool_context, evidence_guide)
+        items: list[dict[str, Any]] = []
+        if completed:
+            items.extend(artifact_items)
+            items.extend(partial_items)
+        else:
+            items.extend(partial_items)
+            items.extend(artifact_items)
+        if analysis_item:
+            items.append(analysis_item)
+        return _clean({
+            "schema": PRIORITY_SCHEMA,
+            "purpose": (
+                "High-priority evidence materialized by the 3572 broker. "
+                "Complete payloads here are real inline payloads selected from "
+                "successful tool artifacts; partial products are marked "
+                "validator_accepted=false."
+            ),
+            "navigation_hint": (
+                "Read priority_evidence_for_30b.items before opening the mirror "
+                "in tool_context_for_30b.artifacts[*].artifact."
+            ),
+            "items": items,
+            "limits": tool_context.get("limits"),
+        })
+
+    def _payload_index(
+        self,
+        priority_evidence: dict[str, Any],
+        tool_context: dict[str, Any],
+        *,
+        completed: bool,
+    ) -> dict[str, Any]:
+        concrete_results: list[dict[str, Any]] = []
+        partial_results: list[dict[str, Any]] = []
+        descriptive_only: list[dict[str, Any]] = []
+        suggestions_only: list[dict[str, Any]] = []
+        for index, item in enumerate(_as_list(priority_evidence.get("items"))):
+            item = _as_dict(item)
+            location = _payload_index_row(item, index, tool_context)
+            if location:
+                if str(location.get("kind") or "").startswith("partial_") or location.get("validator_accepted") is False:
+                    partial_results.append(location)
+                else:
+                    concrete_results.append(location)
+                if item.get("kind") == "code_edit_proposal":
+                    base = f"priority_evidence_for_30b.items[{index}]"
+                    suggestions_only.extend([
+                        {
+                            "field": f"{base}.manual_review_required",
+                            "role": "metadata di review, non payload richiesto",
+                        },
+                        {
+                            "field": f"{base}.validation_commands",
+                            "role": "comandi suggeriti per validazione manuale, non payload richiesto",
+                        },
+                    ])
+                continue
+            if item.get("kind") == "repo_analysis_summary":
+                descriptive_only.append({
+                    "field": f"priority_evidence_for_30b.items[{index}].summary",
+                    "role": "descrizione del planner, non diff/contenuto concreto",
+                })
+        has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
+        return _clean({
+            "index_kind": INDEX_KIND,
+            "job_completed": bool(completed),
+            "same_request_rule": (
+                "Rispondi usando i campi indicizzati qui quando esistono "
+                "concrete_results, partial_results o descriptive_only. Non "
+                "richiamare vulkan_helper per la stessa richiesta solo perche' "
+                "job_completed=false; quello e' uno stato del job interno, non "
+                "assenza di payload."
+                if has_indexed_payload else
+                "Nessun payload indicizzato disponibile; solo in questo caso "
+                "una nuova chiamata puo' essere necessaria per la stessa richiesta."
+            ),
+            "concrete_results": concrete_results,
+            "partial_results": partial_results,
+            "descriptive_only": descriptive_only + [
+                {
+                    "field": "priority_evidence_for_30b.items[*].summary",
+                    "role": "descrizione del planner, non diff/contenuto concreto",
+                },
+            ],
+            "suggestions_or_review_metadata_only": suggestions_only + [
+                {
+                    "field": "priority_evidence_for_30b.limits",
+                    "role": "limiti/troncamenti dichiarati, non richiesta automatica di nuovo tool",
+                },
+                {
+                    "field": "openwebui_usage",
+                    "role": "istruzioni di navigazione",
+                },
+            ],
+            "search_order": [
+                "evidence_guide_for_30b",
+                "payload_index_for_30b.concrete_results",
+                "priority_evidence_for_30b.items[0].content",
+                "priority_evidence_for_30b.items[*].unified_diff",
+                "priority_evidence_for_30b.items[*].structured_operations",
+                "payload_index_for_30b.partial_results",
+                "priority_evidence_for_30b.items[*].unified_diff when validator_accepted=false",
+                "priority_evidence_for_30b.items[*].text when validator_accepted=false",
+                "priority_evidence_for_30b.items[*].content",
+                "tool_context_for_30b.artifacts[*].artifact",
+            ],
+        })
+
+    def _materialization_report(
+        self,
+        *,
+        tool_context: dict[str, Any],
+        priority_evidence: dict[str, Any],
+        payload_index: dict[str, Any],
+        evidence_guide: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "evidence_guide_for_30b": evidence_guide,
+            "payload_index_for_30b": payload_index,
+            "priority_evidence_for_30b": priority_evidence,
+            "tool_context_for_30b": tool_context,
+        }
+        resolution = resolve_payload_index(payload)
+        artifacts = _as_list(tool_context.get("artifacts"))
+        priority_items = _as_list(priority_evidence.get("items"))
+        concrete_items = [
+            item for item in priority_items
+            if _as_dict(item).get("kind") in {"repo_file_full_content", "code_edit_proposal"}
+            and _as_dict(item).get("payload_is_complete") is not False
+        ]
+        ok = bool(resolution.get("ok")) and bool(tool_context)
+        if artifacts:
+            ok = ok and bool(concrete_items or payload_index.get("partial_results"))
+        return {
+            "schema": MATERIALIZATION_SCHEMA,
+            "owner": self.owner,
+            "target_owner": "3572_broker",
+            "ok": ok,
+            "diagnostic_only": True,
+            "inline_json_required": True,
+            "objects_are_not_transport": True,
+            "bridge_role": "transport_wrapper_and_final_lint_only",
+            "tool_context": {
+                "json_object": bool(tool_context),
+                "artifact_rows": len(artifacts),
+                "public_scope": "tool_context_for_30b.artifacts[*].artifact",
+                "not_full_job_dump": bool(tool_context.get("not_a_summary")),
+            },
+            "priority_evidence": {
+                "items": len(priority_items),
+                "concrete_items": len(concrete_items),
+                "has_evidence_guide": bool(str(evidence_guide or "").strip()),
+            },
+            "artifacts": {
+                "refs_seen": len(artifacts),
+                "refs_resolved": len(artifacts),
+                "materialized": len(concrete_items),
+                "unresolved_refs": [],
+            },
+            "payload_index": {
+                "ok": bool(resolution.get("ok")),
+                "resolved_count": len(resolution.get("resolved") or []),
+                "unresolved": resolution.get("unresolved") or [],
+                "empty_targets": resolution.get("empty_targets") or [],
+            },
+            "local_paths": {
+                "omitted_from_public_payload": True,
+                "operator_diagnostics_only": True,
+            },
+        }
+
+
+def materialize_public_evidence(
+    *,
+    tool_context: dict[str, Any] | str | None,
+    evidence_guide: str = "",
+    completed: bool = False,
+    internal_job_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compatibility function for the broker-owned evidence materializer."""
+
+    return PublicEvidenceMaterializer().materialize(
+        tool_context=tool_context,
+        evidence_guide=evidence_guide,
+        completed=completed,
+        internal_job_status=internal_job_status,
+    )

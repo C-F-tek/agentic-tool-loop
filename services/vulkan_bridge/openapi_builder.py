@@ -109,6 +109,15 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                     "surface and is not a full job dump."
                 ),
             },
+            "materialization_report": {
+                "type": "object",
+                "description": (
+                    "Diagnostic-only contract report proving the public payload was "
+                    "materialized as inline JSON and that payload_index_for_30b targets "
+                    "resolve to real, non-empty public fields."
+                ),
+                "additionalProperties": True,
+            },
             "openwebui_usage": {
                 "type": "object",
                 "description": "Runtime instructions naming the primary payload fields and concrete evidence locations.",

@@ -221,6 +221,33 @@ waits for terminal job state.
 - Risk: schema/state fields are consumed by 3571, dashboards and tests.
 - Verify: state JSON, events NDJSON and DB row agree for the same job ID.
 
+### `aicarmine_broker/application/public_payload/evidence_materializer.py`
+
+Broker-side public evidence materializer for OpenWebUI terminal payloads. It
+selects concrete inline artifacts already present in `tool_context_for_30b`,
+promotes complete repo reads and code-edit proposals into
+`priority_evidence_for_30b`, builds non-duplicating `payload_index_for_30b`
+pointers and emits `materialization_report owner=3572_broker`.
+
+- Reads: inline `tool_context_for_30b` dictionaries produced by broker public
+  payload builders.
+- Writes: no files; returns JSON-serializable public payload sections.
+- Risk: must not read local paths, duplicate large payload into the index, alter
+  validator/finalization gates or hide missing inline evidence.
+- Verify: `tests/test_public_evidence_materializer_contract.py`.
+
+### `aicarmine_broker/application/public_payload/payload_index_resolver.py`
+
+Pure resolver for broker public payload-index field paths. It verifies whether
+`payload_index_for_30b` references resolve to present and non-empty inline JSON
+fields, including paths inside `tool_context_for_30b.artifacts[*].artifact`.
+
+- Reads: in-memory public payload dictionaries only.
+- Writes: none.
+- Risk: resolver drift from the bridge resolver can create contradictory lint
+  reports. Keep path grammar aligned.
+- Verify: materializer report tests and bridge payload-index tests.
+
 ### `aicarmine_broker/memory_tools.py`
 
  Planner scratchpad and SQLite memory tools. It supports scratchpad read/write,
