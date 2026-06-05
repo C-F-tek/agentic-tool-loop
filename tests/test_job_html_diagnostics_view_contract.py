@@ -174,3 +174,10 @@ def test_ia_view_html_groups_diagnostics_without_validator_duplication(monkeypat
     assert "command_policy" in html
     assert "History/Tool Result Fed Back To Planner" in html
     assert "runtime_debug_packet" not in html
+
+
+def test_dashboard_links_expose_planner_payload_lab() -> None:
+    links = job_html._dashboard_links("job-ui")
+
+    assert "/jobs/job-ui/planner-lab" in links
+    assert "planner payload lab" in links

@@ -699,7 +699,8 @@ def _dashboard_links(job_id: str) -> str:
         f"<a href=\"/jobs/{safe_job}/events\">events</a> &middot; "
         f"<a href=\"/jobs/{safe_job}/planner-stream\">planner stream</a> &middot; "
         f"<a href=\"/jobs/{safe_job}/ia-view\">IA live control view</a> &middot; "
-        f"<a href=\"/jobs/{safe_job}/ia-view.json\">IA view json</a>"
+        f"<a href=\"/jobs/{safe_job}/ia-view.json\">IA view json</a> &middot; "
+        f"<a href=\"/jobs/{safe_job}/planner-lab\">planner payload lab</a>"
     )
 
 
@@ -1301,7 +1302,8 @@ def agent_jobs_index_html(*, limit: int, title: str, refresh_seconds: int) -> st
             f"<td><pre>{workspace}</pre></td>"
             f"<td><a href=\"/jobs/{job_id}/events\">events</a> &middot; "
             f"<a href=\"/jobs/{job_id}/ia-view\">IA view</a> &middot; "
-            f"<a href=\"/jobs/{job_id}/planner-stream\">planner stream</a></td>"
+            f"<a href=\"/jobs/{job_id}/planner-stream\">planner stream</a> &middot; "
+            f"<a href=\"/jobs/{job_id}/planner-lab\">planner lab</a></td>"
             "</tr>"
         )
     body = (

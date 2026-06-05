@@ -416,6 +416,16 @@ payload that would be sent toward OpenWebUI. It shows model-visible text,
 payload readiness, think/step summaries, `payload_index_for_30b`,
 `priority_evidence_for_30b` and extracted code-product candidates.
 
+The lab is the operator surface for the "chat + thinking-step-summary" flow:
+it renders the original user request as a chat turn, extracts the single
+top-level `evidence_guide_for_30b` from the OpenWebUI-bound payload, shows the
+per-step planner/validator/tool summary, and audits narrative redundancy. The
+allowed global narrative surface is one complete guide plus structured,
+indexed payload. Duplicated top-level `answer_for_30b`, `message_for_30b`,
+`summary_for_30b` or duplicate root `content` aliases are reported as payload
+calibration problems, while nested `artifact.content` remains valid real tool
+output.
+
 The JSON endpoint accepts operator-selected limits:
 
 - `summary_chars`
@@ -430,6 +440,8 @@ and only dispatches `repo_apply_patch` when the selected code product contains
 exact `target_file`, `old_text` and `new_text`. A complete `unified_diff` is
 shown and copyable, but it is not applied by this endpoint because the current
 write tool applies exact old/new text replacements rather than unified diffs.
+When exact old/new text exists, the UI shows and can copy the structured
+`repo_apply_patch` tool call before the operator presses the apply button.
 
 ## Safe Edit Checklist
 

@@ -21,6 +21,7 @@ def _load_planner_lab_module() -> ModuleType:
 
 
 planner_lab = _load_planner_lab_module()
+build_payload_redundancy_audit = planner_lab.build_payload_redundancy_audit
 build_planner_lab_apply_tool_call = planner_lab.build_planner_lab_apply_tool_call
 build_planner_payload_lab = planner_lab.build_planner_payload_lab
 
@@ -100,6 +101,48 @@ def test_planner_payload_lab_uses_operator_selected_limits() -> None:
     assert len(result["code_products"]) == 1
     assert result["payload_readiness"]["apply_supported_candidates"] == 1
     assert result["code_products"][0]["apply_tool_call"]["tool"] == "repo_apply_patch"
+    assert result["redundancy_audit"]["ok"] is True
+    assert result["redundancy_audit"]["single_global_guide_field"] == "evidence_guide_for_30b"
+
+
+def test_planner_payload_lab_redundancy_audit_flags_duplicate_aliases() -> None:
+    audit = build_payload_redundancy_audit(
+        openwebui_payload={
+            "evidence_guide_for_30b": "guide",
+            "answer_for_30b": "guide",
+            "message_for_30b": "guide",
+            "summary_for_30b": "guide",
+            "content": "guide",
+        },
+        tool_context={
+            "answer_for_30b": "guide",
+            "artifact": {"content": "real artifact content"},
+        },
+        evidence_guide="guide",
+    )
+
+    assert audit["ok"] is False
+    assert audit["duplicated_top_level_aliases"] == [
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+    ]
+    assert audit["tool_context_root_aliases"] == ["answer_for_30b"]
+    assert "top_level_duplicate_narrative_aliases" in audit["violations"]
+    assert "tool_context_root_narrative_aliases" in audit["violations"]
+
+
+def test_planner_payload_lab_redundancy_audit_allows_nested_artifact_content() -> None:
+    audit = build_payload_redundancy_audit(
+        openwebui_payload={"evidence_guide_for_30b": "guide"},
+        tool_context={"artifact": {"content": "real artifact content"}},
+        evidence_guide="guide",
+    )
+
+    assert audit["ok"] is True
+    assert audit["tool_context_root_aliases"] == []
+    assert audit["duplicated_top_level_aliases"] == []
 
 
 def test_planner_payload_lab_does_not_claim_unified_diff_is_directly_apply_supported() -> None:
@@ -179,6 +222,13 @@ def test_planner_lab_html_renders_chat_and_thinking_surface() -> None:
     )
 
     assert "Chat + Thinking Step Summary" in html_source
+    assert "Operator-only 3572 chat + thinking-step-summary console" in html_source
+    assert "30B top-level surface" in html_source
+    assert "Redundancy audit JSON" in html_source
     assert "renderChatTurn" in html_source
+    assert "renderTopLevelSurface" in html_source
     assert "thinking_step_summary" in html_source
     assert "OpenWebUI-bound assistant payload" in html_source
+    assert "repo_apply_patch tool call" in html_source
+    assert "copyApplyToolCall" in html_source
+    assert "Apply exact old/new patch" in html_source

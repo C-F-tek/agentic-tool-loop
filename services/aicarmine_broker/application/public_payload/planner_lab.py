@@ -11,6 +11,19 @@ SCHEMA = "planner_payload_lab.v1"
 DEFAULT_SUMMARY_TEXT_CHARS = 4000
 DEFAULT_STEP_SUMMARY_LIMIT = 80
 DEFAULT_CODE_PRODUCT_LIMIT = 40
+GLOBAL_NARRATIVE_FIELDS = (
+    "evidence_guide_for_30b",
+    "answer_for_30b",
+    "message_for_30b",
+    "summary_for_30b",
+    "content",
+)
+LEGACY_NARRATIVE_ALIAS_FIELDS = (
+    "answer_for_30b",
+    "message_for_30b",
+    "summary_for_30b",
+    "content",
+)
 
 
 def bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
@@ -195,6 +208,65 @@ def _first_non_empty_text(*values: Any) -> str:
     return ""
 
 
+def build_payload_redundancy_audit(
+    *,
+    openwebui_payload: dict[str, Any],
+    tool_context: Any,
+    evidence_guide: str,
+) -> dict[str, Any]:
+    guide = str(evidence_guide or "").strip()
+    top_level_present = [
+        key
+        for key in GLOBAL_NARRATIVE_FIELDS
+        if isinstance(openwebui_payload.get(key), str) and str(openwebui_payload.get(key) or "").strip()
+    ]
+    duplicated_top_level_aliases = [
+        key
+        for key in LEGACY_NARRATIVE_ALIAS_FIELDS
+        if guide and str(openwebui_payload.get(key) or "").strip() == guide
+    ]
+    non_duplicate_top_level_aliases = [
+        key
+        for key in LEGACY_NARRATIVE_ALIAS_FIELDS
+        if (
+            isinstance(openwebui_payload.get(key), str)
+            and str(openwebui_payload.get(key) or "").strip()
+            and str(openwebui_payload.get(key) or "").strip() != guide
+        )
+    ]
+    tool_context_root_aliases: list[str] = []
+    tool_context_duplicate_aliases: list[str] = []
+    if isinstance(tool_context, dict):
+        for key in GLOBAL_NARRATIVE_FIELDS:
+            value = tool_context.get(key)
+            if isinstance(value, str) and value.strip():
+                tool_context_root_aliases.append(key)
+                if guide and value.strip() == guide:
+                    tool_context_duplicate_aliases.append(key)
+    violations = []
+    if duplicated_top_level_aliases:
+        violations.append("top_level_duplicate_narrative_aliases")
+    if tool_context_root_aliases:
+        violations.append("tool_context_root_narrative_aliases")
+    return {
+        "schema": "planner_payload_redundancy_audit.v1",
+        "single_global_guide_field": "evidence_guide_for_30b",
+        "top_level_narrative_fields_present": top_level_present,
+        "duplicated_top_level_aliases": duplicated_top_level_aliases,
+        "non_duplicate_top_level_aliases": non_duplicate_top_level_aliases,
+        "tool_context_root_aliases": tool_context_root_aliases,
+        "tool_context_duplicate_aliases": tool_context_duplicate_aliases,
+        "ok": not violations,
+        "violations": violations,
+        "rule": (
+            "Keep one global evidence_guide_for_30b. tool_context_for_30b must "
+            "contain structured evidence/context, not duplicate answer/message/"
+            "summary/content aliases. Nested artifact.content remains valid "
+            "payload when it is real tool output."
+        ),
+    }
+
+
 def build_chat_turn_summary(
     *,
     job_id: str,
@@ -287,6 +359,11 @@ def build_planner_payload_lab(
     model_visible_text = {
         "evidence_guide_for_30b": _clip(evidence_guide, safe_summary_chars),
     }
+    redundancy_audit = build_payload_redundancy_audit(
+        openwebui_payload=openwebui_payload,
+        tool_context=tool_context,
+        evidence_guide=evidence_guide,
+    )
     priority_items = priority_evidence.get("items") if isinstance(priority_evidence.get("items"), list) else []
     concrete_results = payload_index.get("concrete_results") if isinstance(payload_index.get("concrete_results"), list) else []
     partial_results = payload_index.get("partial_results") if isinstance(payload_index.get("partial_results"), list) else []
@@ -299,6 +376,8 @@ def build_planner_payload_lab(
         readiness_warnings.append("no_priority_or_concrete_payload_index")
     if not code_products and "diff" in json.dumps(openwebui_payload, ensure_ascii=False, default=str).lower():
         readiness_warnings.append("diff_goal_without_extractable_code_product")
+    if not redundancy_audit.get("ok"):
+        readiness_warnings.extend(redundancy_audit.get("violations") or [])
     payload_readiness = {
         "tool_context_parse_ok": bool(tool_context_meta.get("parse_ok")),
         "tool_context_raw_type": tool_context_meta.get("raw_type"),
@@ -337,6 +416,7 @@ def build_planner_payload_lab(
         "payload_readiness": payload_readiness,
         "chat_turn": chat_turn,
         "model_visible_text": {key: value for key, value in model_visible_text.items() if value},
+        "redundancy_audit": redundancy_audit,
         "step_summaries": step_summaries,
         "thinking_step_summary": step_summaries,
         "code_products": code_products,

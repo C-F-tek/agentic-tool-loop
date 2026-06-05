@@ -82,6 +82,10 @@ Core code entry points:
   - Operator-only chat plus step-summary lab for inspecting the actual
     OpenWebUI-bound payload, extracting code-product candidates and handing
     exact old/new text patches to `repo_apply_patch` with explicit confirmation.
+    It is also the payload-calibration view for redundant narrative fields:
+    `evidence_guide_for_30b` is the single global guide, while
+    `tool_context_for_30b` must stay structured evidence/context rather than a
+    duplicate answer/message/summary/content surface.
 - [memory_tools.py](memory_tools.py)
   - Scratchpad, SQLite memory and prompt-window support.
 

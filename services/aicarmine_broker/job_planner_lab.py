@@ -38,6 +38,7 @@ td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; }}
 .metric {{ border: 1px solid #333; border-radius: 6px; padding: 8px; background: #141519; }}
 .metric span {{ color: #aaa; display: block; font-size: 11px; }}
 .metric b {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
+.pill {{ display: inline-block; border: 1px solid #3c4d5f; border-radius: 999px; padding: 3px 8px; margin: 2px 4px 2px 0; background: #131820; color: #dbeeff; font-size: 12px; }}
 .chat-grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
 .bubble {{ border-radius: 8px; padding: 11px; border: 1px solid #333; }}
 .bubble.user {{ background: #182331; border-left: 4px solid #6fb3e8; }}
@@ -125,6 +126,22 @@ function renderMetrics(readiness) {{
   const rows = Object.entries(readiness || {{}}).filter(([k, v]) => k !== "warnings");
   return `<div class="metric-row">${{rows.map(([k, v]) => `<div class="metric"><span>${{htmlEscape(k)}}</span><b>${{htmlEscape(v)}}</b></div>`).join("")}}</div>`;
 }}
+function renderTopLevelSurface(data) {{
+  const visible = data.model_visible_text || {{}};
+  const audit = data.redundancy_audit || {{}};
+  const present = audit.top_level_narrative_fields_present || [];
+  const duplicated = audit.duplicated_top_level_aliases || [];
+  const contextAliases = audit.tool_context_root_aliases || [];
+  return `<div class="card ${{audit.ok === false ? "bad" : "ok"}}">
+    <h2>30B top-level surface</h2>
+    <p class="muted">One global guide above structured payload. This panel checks that answer/message/summary/content aliases are not duplicated.</p>
+    <div>${{present.map(name => `<span class="pill">${{htmlEscape(name)}}</span>`).join("") || "<span class='muted'>No narrative fields detected.</span>"}}</div>
+    ${{duplicated.length ? `<p><b>Duplicated top-level aliases</b></p><pre>${{htmlEscape(duplicated.join("\\n"))}}</pre>` : ""}}
+    ${{contextAliases.length ? `<p><b>tool_context root aliases</b></p><pre>${{htmlEscape(contextAliases.join("\\n"))}}</pre>` : ""}}
+    <details open><summary>evidence_guide_for_30b</summary><pre>${{htmlEscape(visible.evidence_guide_for_30b || "")}}</pre></details>
+    <details><summary>Redundancy audit JSON</summary><pre>${{htmlEscape(pretty(audit))}}</pre></details>
+  </div>`;
+}}
 function renderPendingChat(task) {{
   return `<div class="card">
     <h2>Chat + Thinking Step Summary</h2>
@@ -169,13 +186,15 @@ function renderCodeProducts(products) {{
     const title = item.target_file || item.edit_kind || item.candidate_id;
     const diff = item.unified_diff ? `<details open><summary>Unified diff</summary><pre>${{htmlEscape(item.unified_diff)}}</pre></details>` : "";
     const oldNew = item.has_old_new_text ? `<details><summary>old_text / new_text</summary><pre>${{htmlEscape(item.old_text)}}\\n\\n--- new_text ---\\n${{htmlEscape(item.new_text)}}</pre></details>` : "";
+    const applyCall = item.apply_tool_call ? `<details open><summary>repo_apply_patch tool call</summary><pre>${{htmlEscape(pretty(item.apply_tool_call))}}</pre></details>` : "";
     return `<div class="card ${{item.apply_supported ? "ok" : "warn"}}">
       <h3>${{htmlEscape(title)}}</h3>
       <p class="muted">candidate_id=${{htmlEscape(item.candidate_id)}} source=${{htmlEscape(item.source_path)}}</p>
       <button class="secondary" onclick='copyCandidate(${{JSON.stringify(item.candidate_id)}})'>Copy candidate JSON</button>
+      <button class="secondary" ${{applyDisabled}} onclick='copyApplyToolCall(${{JSON.stringify(item.candidate_id)}})'>Copy repo_apply_patch call</button>
       <button class="danger" ${{applyDisabled}} onclick='applyCandidate(${{JSON.stringify(item.candidate_id)}})'>Apply exact old/new patch</button>
       <p>${{htmlEscape(item.apply_block_reason || "")}}</p>
-      ${{diff}}${{oldNew}}
+      ${{applyCall}}${{diff}}${{oldNew}}
     </div>`;
   }}).join("");
 }}
@@ -186,6 +205,14 @@ async function copyCandidate(candidateId) {{
   const item = (data.code_products || []).find(row => row.candidate_id === candidateId);
   await navigator.clipboard.writeText(pretty(item || {{}}));
   setStatus("candidate_copied");
+}}
+async function copyApplyToolCall(candidateId) {{
+  const params = labLimitParams();
+  const response = await fetch(`/jobs/${{encodeURIComponent(currentJobId)}}/planner-lab.json?${{params.toString()}}`);
+  const data = await response.json();
+  const item = (data.code_products || []).find(row => row.candidate_id === candidateId);
+  await navigator.clipboard.writeText(pretty((item || {{}}).apply_tool_call || {{}}));
+  setStatus("apply_tool_call_copied");
 }}
 async function applyCandidate(candidateId) {{
   if (!currentJobId) return;
@@ -210,6 +237,7 @@ function renderLab(data) {{
   const statusClass = data.ok && readiness.tool_context_parse_ok ? "ok" : "bad";
   document.getElementById("lab-output").innerHTML = `
     ${{renderChatTurn(data)}}
+    ${{renderTopLevelSurface(data)}}
     <div class="card ${{statusClass}}">
       <h2>Payload readiness</h2>
       ${{renderMetrics(readiness)}}
@@ -245,7 +273,8 @@ def planner_lab_index_html(*, limit: int = 20) -> str:
     body = f"""
 <div class="card">
   <h1>Planner Payload Lab</h1>
-  <p class="muted">Operator-only 3572 view. It starts normal planner jobs and reads the same terminal payload that goes toward OpenWebUI.</p>
+  <p class="muted">Operator-only 3572 chat + thinking-step-summary console. It starts normal planner jobs, reads the same terminal payload that goes toward OpenWebUI, and exposes what the 30B should answer from.</p>
+  <p class="muted">Mission: calibrate payload quality. The lab must show the user request, the extracted evidence guide, per-step planner/validator/tool state, payload gaps, code-product candidates, and an explicit repo_apply_patch lane only when exact old_text/new_text is present.</p>
   <p><a href="/jobs">jobs home</a></p>
 </div>
 <div class="grid">
@@ -291,9 +320,17 @@ def agent_job_planner_lab_html(job_id: str) -> str:
 <div class="card">
   <h1>Planner Payload Lab - {safe_job}</h1>
   <p><a href="/planner-lab">planner lab home</a> &middot; <a href="/jobs/{safe_job}/ia-view">IA view</a> &middot; <a href="/jobs/{safe_job}/final.json">final json</a></p>
+  <p class="muted">Chat + thinking-step-summary view for the OpenWebUI-bound payload. Use it to verify whether a detailed repo answer or diff request contains enough inline evidence before the external 30B answers.</p>
 </div>
 <div class="grid">
   <div>
+    <div class="card">
+      <h2>Direct planner request</h2>
+      <textarea id="planner-request" placeholder="analizza la repo e proponi diff concreti..."></textarea>
+      <button onclick="startPlannerJob()">Start planner job</button>
+      <p class="muted">Starts a new normal 3572 planner job and then renders the OpenWebUI-bound payload in this lab.</p>
+      <pre id="start-result"></pre>
+    </div>
     <div class="card">
       <h2>Job</h2>
       <input id="job-id" value="{safe_job}" />
