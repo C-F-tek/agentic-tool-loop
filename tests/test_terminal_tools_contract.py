@@ -53,6 +53,8 @@ def test_terminal_list_files_and_search_use_real_directory(tmp_path: Path) -> No
     assert searched["ok"] is True
     assert searched["matches"][0]["match_type"] == "content"
     assert searched["search_complete"] is True
+    assert searched["search_quality"]["schema"] == "search_quality.v1"
+    assert searched["search_quality"]["quality"] == "complete"
     assert searched["scanned_files"] == 2
     assert searched["content_read_attempts"] == 2
     assert searched["content_read_ok"] == 2
@@ -135,6 +137,7 @@ def test_terminal_does_not_auto_repair_write_like_unix_command(tmp_path: Path) -
     assert result["command_class"] == "destructive"
     assert result["required_consent"] == "confirm command execution"
     assert result["policy"] == "destructive command requires explicit consent"
+    assert result["command_execution_policy"]["schema"] == "command_execution_policy.v1"
 
 
 def test_terminal_does_not_auto_repair_embedded_readonly_tail(tmp_path: Path) -> None:
@@ -275,6 +278,7 @@ def test_terminal_run_command_wait_uses_bounded_runner(tmp_path: Path, monkeypat
     assert result["command_class"] == "unknown"
     assert result["consent_required"] is True
     assert result["policy"] == "unknown command requires explicit consent"
+    assert result["command_execution_policy"]["schema"] == "command_execution_policy.v1"
     assert Path(result["artifact"]).exists()
 
 

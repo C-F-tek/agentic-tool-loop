@@ -8,8 +8,10 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 compatibility
     tomllib = None  # type: ignore[assignment]
 
 from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS
+from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.application.command import evaluate_command_execution_policy
 from aicarmine_broker.tools.command_safety import classify_command
 from aicarmine_broker.tools.powershell_runner import run_ps
 
@@ -263,6 +265,14 @@ def repo_command(
         command = _compile_command_for_targets(targets)
 
     classification = classify_command(command)
+    execution_policy = evaluate_command_execution_policy(
+        command,
+        command_class=classification.command_class,
+        cwd=LAB_REPO,
+        repo_root=LAB_REPO,
+        approval_mode=str(args.get("approval_mode") or ""),
+        user_consent=user_consent,
+    )
     if classification.consent_required and not _has_explicit_consent(user_consent):
         return {
             "ok": False,
@@ -273,6 +283,7 @@ def repo_command(
             "command_class": classification.command_class,
             "required_consent": "confirm command execution",
             "policy": classification.reason,
+            "command_execution_policy": execution_policy,
         }
 
     result = run_ps(command, timeout=timeout)
@@ -284,6 +295,7 @@ def repo_command(
         "command_class": classification.command_class,
         "consent_required": classification.consent_required,
         "policy": classification.reason,
+        "command_execution_policy": execution_policy,
         "returncode": result["returncode"],
         "stdout_tail": result["stdout_tail"],
         "stderr_tail": result["stderr_tail"],

@@ -6,7 +6,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, parse_bool
+from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO, parse_bool
+from aicarmine_broker.application.command import evaluate_command_execution_policy
+from aicarmine_broker.application.search import assess_search_quality
 from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.command_safety import classify_command, dangerous_command
@@ -347,6 +349,7 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "matches_preview": matches[:80],
         "terminal_environment_contract": terminal_environment_contract(),
     }
+    payload["search_quality"] = assess_search_quality(payload)
     write_json(root / "tool-results" / f"{now()}-terminal_search_files.json", payload)
     return payload
 
@@ -382,6 +385,14 @@ def terminal_run_command_wait(
         }
 
     classification = classify_command(command)
+    execution_policy = evaluate_command_execution_policy(
+        command,
+        command_class=classification.command_class,
+        cwd=cwd,
+        repo_root=LAB_REPO,
+        approval_mode=str(args.get("approval_mode") or ""),
+        user_consent=user_consent,
+    )
     body = _terminal_powershell_body(command)
     if "out-string" not in body.lower():
         body = f"{body} | Out-String"
@@ -400,6 +411,7 @@ def terminal_run_command_wait(
             "consent_required": classification.consent_required,
             "required_consent": "confirm command execution",
             "policy": classification.reason,
+            "command_execution_policy": execution_policy,
             "terminal_environment_contract": terminal_environment_contract(),
         }
 
@@ -415,6 +427,7 @@ def terminal_run_command_wait(
         "command_class": classification.command_class,
         "consent_required": classification.consent_required,
         "policy": classification.reason,
+        "command_execution_policy": execution_policy,
         "status": "done",
         "returncode": result["returncode"],
         "stdout_text": result["stdout"],

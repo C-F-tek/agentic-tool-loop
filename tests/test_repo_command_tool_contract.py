@@ -46,6 +46,8 @@ def test_repo_command_blocks_dangerous_without_consent(tmp_path: Path) -> None:
     assert result["command_class"] == "destructive"
     assert result["required_consent"] == "confirm command execution"
     assert result["policy"] == "destructive command requires explicit consent"
+    assert result["command_execution_policy"]["schema"] == "command_execution_policy.v1"
+    assert result["command_execution_policy"]["diagnostic_only"] is True
 
 
 def test_repo_command_success_payload_contains_command_class_and_policy(tmp_path: Path, monkeypatch) -> None:
@@ -67,6 +69,8 @@ def test_repo_command_success_payload_contains_command_class_and_policy(tmp_path
     assert result["command_class"] == "readonly"
     assert result["consent_required"] is False
     assert result["policy"] == "readonly command allowed by policy"
+    assert result["command_execution_policy"]["schema"] == "command_execution_policy.v1"
+    assert result["command_execution_policy"]["does_not_execute"] is True
 
 
 def test_command_classification_requires_consent_for_unknown_write_and_destructive() -> None:
