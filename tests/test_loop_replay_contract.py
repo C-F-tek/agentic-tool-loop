@@ -110,6 +110,34 @@ def test_loop_replay_detects_repeated_invalid_decision(tmp_path: Path) -> None:
     assert report["repeated_invalid_decisions"][0]["count"] == 2
 
 
+def test_loop_replay_counts_rejections_from_events_ndjson(tmp_path: Path) -> None:
+    _write_job(tmp_path, history=[])
+    rejected = {
+        "event_type": "planner_decision_rejected",
+        "step": 4,
+        "payload": {
+            "tool": "controller_guard",
+            "guard_type": "planner_decision_validation",
+            "summary": "planner_decision_validation_failed: planner_final_required_empty_output",
+            "violations": ["planner_final_required_empty_output"],
+            "rejected_decision": {"action": "block"},
+        },
+    }
+    (tmp_path / "events.ndjson").write_text(json.dumps(rejected) + "\n", encoding="utf-8")
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert report["validator_rejections"] == 1
+    assert report["validator_rejections_preview"][0]["source"] == "events_ndjson"
+    assert report["validator_rejections_preview"][0]["violations"] == [
+        "planner_final_required_empty_output"
+    ]
+
+
 def test_loop_replay_detects_candidate_validator_mismatch(tmp_path: Path) -> None:
     _write_job(tmp_path, history=[])
 

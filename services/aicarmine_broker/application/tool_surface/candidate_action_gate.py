@@ -15,7 +15,19 @@ def _has_path_contract(action: dict[str, Any]) -> bool:
     if any(proof.get(key) is not None for key in ("path_exists", "path_readable", "under_scope")):
         return True
     args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
-    return any(key in args for key in ("path", "paths", "target", "target_file", "file_path"))
+    tool = str(action.get("tool") or "").strip().replace(".", "_")
+    if tool in {
+        "repo_read",
+        "repo_list_files",
+        "repo_tree",
+        "repo_search",
+        "repo_write_file",
+        "repo_apply_patch",
+        "repo_propose_code_edit",
+        "repo_validate",
+    }:
+        return any(key in args for key in ("path", "paths", "target", "target_file", "file_path"))
+    return any(key in args for key in ("path", "paths", "file_path"))
 
 
 def candidate_rejection_reason(action: dict[str, Any]) -> str:

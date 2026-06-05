@@ -74,6 +74,41 @@ def test_candidate_gate_keeps_non_path_candidate_with_source_proof() -> None:
     assert gate["rejected_candidate_actions"] == []
 
 
+def test_candidate_gate_keeps_scratchpad_build_state_target_file_metadata() -> None:
+    action = attach_action_proof(
+        {
+            "tool": "planner_scratchpad_write",
+            "arguments": {
+                "kind": "code_product_build_state",
+                "target_file": "ia_carmine/x.py",
+                "text": "{}",
+            },
+        },
+        source="test",
+    )
+
+    gate = gate_candidate_actions([action])
+
+    assert gate["candidate_next_actions"] == [action]
+    assert gate["rejected_candidate_actions"] == []
+
+
+def test_candidate_gate_still_rejects_repo_propose_without_target_path_proof() -> None:
+    action = attach_action_proof(
+        {
+            "tool": "repo_propose_code_edit",
+            "arguments": {
+                "target_file": "ia_carmine/x.py",
+                "edit_kind": "unified_diff",
+                "unified_diff": "--- a/ia_carmine/x.py\n+++ b/ia_carmine/x.py\n",
+            },
+        },
+        source="test",
+    )
+
+    assert candidate_rejection_reason(action) == "candidate_path_not_existing"
+
+
 def test_candidate_gate_rejects_missing_validator_admissibility_for_repo_read() -> None:
     action = attach_action_proof(
         {"tool": "repo_read", "arguments": {"paths": ["README.md"]}},

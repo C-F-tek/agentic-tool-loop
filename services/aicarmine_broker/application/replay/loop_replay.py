@@ -104,14 +104,42 @@ def _rejection_signature(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _detect_repeated_invalid_decisions(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    counts: dict[str, dict[str, Any]] = {}
+def _guard_result_rows_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for row in history:
         if not isinstance(row, dict):
             continue
         result = _history_tool_result(row)
         if result.get("tool") != "controller_guard":
             continue
+        rows.append({"step": row.get("step"), "result": result, "source": "job_history"})
+    return rows
+
+
+def _guard_result_rows_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in events:
+        if not isinstance(row, dict):
+            continue
+        event_type = str(row.get("event_type") or "")
+        if event_type != "planner_decision_rejected":
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        if not payload:
+            continue
+        result = dict(payload)
+        result.setdefault("tool", "controller_guard")
+        rows.append({"step": row.get("step"), "result": result, "source": "events_ndjson"})
+    return rows
+
+
+def _detect_repeated_invalid_decisions(
+    history: list[dict[str, Any]],
+    events: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    counts: dict[str, dict[str, Any]] = {}
+    for row in _guard_result_rows_from_history(history) + _guard_result_rows_from_events(events or []):
+        result = row["result"]
         signature = _rejection_signature(result)
         key = _stable_key(signature)
         item = counts.setdefault(
@@ -121,10 +149,14 @@ def _detect_repeated_invalid_decisions(history: list[dict[str, Any]]) -> list[di
                 "count": 0,
                 "first_step": row.get("step"),
                 "last_step": row.get("step"),
+                "sources": [],
             },
         )
         item["count"] += 1
         item["last_step"] = row.get("step")
+        source = str(row.get("source") or "")
+        if source and source not in item["sources"]:
+            item["sources"].append(source)
     return [item for item in counts.values() if int(item.get("count") or 0) > 1]
 
 
@@ -167,14 +199,25 @@ def _candidate_validator_mismatches(contract: dict[str, Any]) -> list[dict[str, 
 
 def _validator_rejections_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for row in history:
-        if not isinstance(row, dict):
-            continue
-        result = _history_tool_result(row)
-        if result.get("tool") != "controller_guard":
-            continue
+    for row in _guard_result_rows_from_history(history):
+        result = row["result"]
         rows.append({
             "step": row.get("step"),
+            "source": row.get("source"),
+            "guard_type": result.get("guard_type"),
+            "summary": result.get("summary"),
+            "violations": result.get("violations") if isinstance(result.get("violations"), list) else [],
+        })
+    return rows
+
+
+def _validator_rejections_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in _guard_result_rows_from_events(events):
+        result = row["result"]
+        rows.append({
+            "step": row.get("step"),
+            "source": row.get("source"),
             "guard_type": result.get("guard_type"),
             "summary": result.get("summary"),
             "violations": result.get("violations") if isinstance(result.get("violations"), list) else [],
@@ -251,7 +294,8 @@ def replay_loop_job(
     validator_fn = validator or _default_validator
     evidence_contract = evidence_fn(goal, history)
     evidence_contract = evidence_contract if isinstance(evidence_contract, dict) else {}
-    repeated_invalid_decisions = _detect_repeated_invalid_decisions(history)
+    repeated_invalid_decisions = _detect_repeated_invalid_decisions(history, events)
+    validator_rejections = _validator_rejections_from_history(history) + _validator_rejections_from_events(events)
     candidate_mismatches = _candidate_validator_mismatches(evidence_contract)
     recomputed_validations = _recompute_validator_results(
         goal=goal,
@@ -279,8 +323,8 @@ def replay_loop_job(
         "event_count": len(events),
         "tool_result_file_count": len(tool_result_files),
         "planner_stream_file_count": len(planner_stream_files),
-        "validator_rejections": len(_validator_rejections_from_history(history)),
-        "validator_rejections_preview": _bounded(_validator_rejections_from_history(history)),
+        "validator_rejections": len(validator_rejections),
+        "validator_rejections_preview": _bounded(validator_rejections),
         "validator_results_recomputed": _bounded(recomputed_validations),
         "candidate_actions_recomputed": _bounded(
             evidence_contract.get("candidate_next_actions")
