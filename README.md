@@ -20,19 +20,27 @@ Start from these documents before changing runtime behavior:
      payload.
 4. [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
    - Service-level technical map and module references.
-5. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
+5. [docs/runtime_env_contract.md](docs/runtime_env_contract.md)
+   - Runtime process/env contract, including active repo roots such as
+     `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `AICARMINE_VULKAN_WORKSPACE`,
+     `AICARMINE_AGENT_JOB_ROOT`, `OPEN_TERMINAL_CWD` and
+     `AICARMINE_OPEN_TERMINAL_WORKDIR`.
+6. [docs/launcher_contract.md](docs/launcher_contract.md)
+   - Launcher responsibilities for venvs, ports, process order and shared
+     repository working-directory variables.
+7. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
    - File-by-file technical descriptions for the `services/` tree.
-6. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
+8. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
    - Operational limit for Codex when inspecting large OpenWebUI payloads.
-7. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
+9. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
    - Broker module reference.
-8. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
+10. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
    - Public bridge module reference.
-9. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
+11. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
    - Codex bridge module reference.
-10. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
+12. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
     - Launch-script module reference.
-11. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
+13. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
     - Model export module reference.
 
 Core code entry points:

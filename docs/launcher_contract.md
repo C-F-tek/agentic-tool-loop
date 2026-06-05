@@ -28,6 +28,28 @@ The launcher family may start or check:
 - Process cleanup must verify port ownership and command line before stopping
   anything.
 
+## Shared Repository Workdir Contract
+
+`AICARMINE_LAB_REPO` is the active worktree for the agentic tool loop. The
+launcher also uses it to derive Open Terminal working-directory variables:
+
+- `AICARMINE_LAB_REPO`
+- `OPEN_TERMINAL_CWD`
+- `AICARMINE_OPEN_TERMINAL_WORKDIR`
+
+These values must stay aligned unless a deliberate runtime test proves a
+different Open Terminal cwd is required. If they drift, the planner/repo tools
+can validate and read one repository while Open Terminal shows another.
+
+Do not confuse these with:
+
+- `AICARMINE_REAL_REPO`: canonical/index repository for memory/RAG.
+- `AICARMINE_VULKAN_WORKSPACE`: job/dashboard storage.
+- `AICARMINE_AGENT_JOB_ROOT`: concrete agent job artifact directory.
+
+Launcher diagnostics must print or inspect the effective `AICARMINE_LAB_REPO`
+before investigating repo-read validation failures.
+
 ## Refactor Rule
 
 Do not change launcher env, model, context, port, max-step, unload or process

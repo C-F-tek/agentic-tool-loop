@@ -62,6 +62,24 @@ minimal change:
 | OpenVINO diagnostics/provider | OpenVINO-specific Python configured by env |
 | Ollama 11434/11435 | external `ollama.exe` process, not a Python venv |
 
+## Repository Workdir Env Coupling
+
+The launcher owns the initial coupling between the agentic repo tools and Open
+Terminal:
+
+| Env var | Meaning |
+| --- | --- |
+| `AICARMINE_LAB_REPO` | Active repository/worktree for 3572 repo tools, planner evidence, validator and code-product targets. |
+| `OPEN_TERMINAL_CWD` | Open Terminal process cwd. Expected to resolve to the active lab repo. |
+| `AICARMINE_OPEN_TERMINAL_WORKDIR` | Public/diagnostic alias for the Open Terminal workdir. Expected to match `OPEN_TERMINAL_CWD`. |
+| `AICARMINE_REAL_REPO` | Canonical/index repository for RAG/memory, not the repo-tool validation root unless explicitly equal to `AICARMINE_LAB_REPO`. |
+| `AICARMINE_VULKAN_WORKSPACE` / `AICARMINE_AGENT_JOB_ROOT` | Job/dashboard storage, not the active repository root. |
+
+Before debugging a `repo_read_path_not_from_prior_file_evidence` rejection,
+check the effective `AICARMINE_LAB_REPO` for the running 3572 process and the
+job capture field `user_payload.lab_repo`. Do not validate candidate paths
+against the launcher cwd, Codex cwd or OpenWebUI data directory.
+
 ## Safe Edit Checklist
 
 1. Prove which launcher path is running: root `openwebui.ps1` wrapper or

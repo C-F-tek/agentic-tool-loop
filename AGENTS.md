@@ -78,6 +78,11 @@ Punti non negoziabili del contratto corrente:
   `blocked_needs_attention` e `failed` devono usare la stessa regola di
   trasporto: `content` compatto e `tool_context_for_30b` JSON pretty-printed
   con soli tool riusciti.
+- I path dei tool repo sono relativi al root runtime `AICARMINE_LAB_REPO`, non
+  alla cwd della shell Codex. Prima di diagnosticare un rigetto come
+  `repo_read_path_not_from_prior_file_evidence`, verificare
+  `planner-prompts/step-*-planner-payload.json -> user_payload.lab_repo` e la
+  coerenza con `OPEN_TERMINAL_CWD` / `AICARMINE_OPEN_TERMINAL_WORKDIR`.
 
 ## Cosa non fare
 

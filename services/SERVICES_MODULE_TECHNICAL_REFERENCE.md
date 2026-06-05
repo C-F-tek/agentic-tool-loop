@@ -160,6 +160,29 @@ The evidence JSON should preserve real successful tool output:
 - command/terminal tools: `returncode`, `stdout`, `stderr` and tails when the
   tool produced them.
 
+## Runtime Roots And Env Coupling
+
+Several roots are active at the same time. They are not interchangeable.
+
+| Root/env | Runtime role | Consumers |
+| --- | --- | --- |
+| `AICARMINE_LAB_REPO` | Active tool-loop repository/worktree. All `repo_*` paths and code-product targets are relative to this root. | 3572 planner/evidence, validator, repo tools, patch/report-only tools, command tools. |
+| `AICARMINE_REAL_REPO` | Canonical/index repository used by memory/RAG and long-lived project indexes. | intrinsic context, planner memory/RAG surfaces. |
+| `AICARMINE_VULKAN_WORKSPACE` | Broker workspace for job artifacts and dashboard storage. | job store, dashboard, SQLite/job files. |
+| `AICARMINE_AGENT_JOB_ROOT` | Concrete agent jobs directory. | job state/event/final persistence. |
+| `OPEN_TERMINAL_CWD`, `AICARMINE_OPEN_TERMINAL_WORKDIR` | Open Terminal working directory. Expected to mirror `AICARMINE_LAB_REPO`. | launcher/Open Terminal integration. |
+
+Invariant for planner turns:
+
+- If `candidate_next_actions` exposes `repo_read` for a readable path under
+  `AICARMINE_LAB_REPO`, `validator_admissible_repo_read_paths` must contain
+  that same repo-relative path.
+- If a candidate path comes from RAG/core-discovery but is not readable under
+  `AICARMINE_LAB_REPO`, it must not be exposed as a planner action.
+- Debug the active root from
+  `planner-prompts/step-*-planner-payload.json.user_payload.lab_repo`, not from
+  a shell cwd or local Codex workspace assumption.
+
 ## Top-Level Python Entrypoints
 
 | Module | Responsibility | State and dependencies | Change risk |

@@ -111,6 +111,32 @@ public payload contract.
   consent. Planner memory surfaces report `memory_feature_available`,
   `memory_query_ok` and `memory_records_available` separately.
 
+## Active Repository Root
+
+The active repository for planner repo tools is `AICARMINE_LAB_REPO`. A job can
+therefore analyze a lab worktree such as
+`C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab` even when the Codex
+thread cwd is `C:\Users\carmi\AI`.
+
+Do not infer repo-tool validity from the Codex cwd. For every job, use
+`user_payload.lab_repo` in the captured planner payload to identify the active
+root.
+
+Contract invariant:
+
+- `repo_read`, `repo_tree`, `repo_list_files`, `repo_search`,
+  `repo_propose_code_edit`, validation and patch/report-only code-product
+  logic all resolve repo-relative paths against `AICARMINE_LAB_REPO`.
+- `candidate_next_actions` and `validator_admissible_repo_read_paths` must be
+  derived from the same `AICARMINE_LAB_REPO`.
+- A `repo_read` candidate exposed to the planner must either be admissible to
+  the validator or be removed before prompt construction. The controller must
+  not recommend a path that the validator will reject as not from prior/current
+  evidence.
+- Open Terminal cwd is expected to mirror `AICARMINE_LAB_REPO` through
+  `OPEN_TERMINAL_CWD` / `AICARMINE_OPEN_TERMINAL_WORKDIR`; if it does not,
+  treat that as a runtime-root mismatch before debugging model behavior.
+
 For non-completed terminal jobs, the wrapper may also surface useful rejected
 planner output, repair text or code-product attempts as explicit partial
 products. These live under `tool_context_for_30b.partial_products_for_30b` and

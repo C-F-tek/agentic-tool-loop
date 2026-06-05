@@ -115,6 +115,30 @@ dependencies are private attributes, and callers use public methods such as
 remain only as stable entrypoints that delegate to the owner class in the same
 module; they are not compatibility shims for old flat modules.
 
+## Active Repo Root Invariants
+
+`AICARMINE_LAB_REPO` is the active repository root for this package. It may be a
+lab worktree under `C:\Users\carmi\AI\lab-worktrees\...`; it is not necessarily
+the Codex cwd or `C:\Users\carmi\AI`.
+
+Planner/evidence/validator/tool code must preserve these invariants:
+
+- `repo_*` tool arguments are repo-relative to `AICARMINE_LAB_REPO`.
+- `candidate_next_actions` and `validator_admissible_repo_read_paths` are
+  computed against the same `AICARMINE_LAB_REPO`.
+- `EvidenceBuilder` must add readable candidate `repo_read` paths to
+  `validator_admissible_repo_read_paths` or remove those candidates before they
+  reach the prompt. A planner-visible candidate that the validator rejects as
+  `repo_read_path_not_from_prior_file_evidence` is an internal contract bug.
+- `AICARMINE_REAL_REPO`, `AICARMINE_VULKAN_WORKSPACE` and
+  `AICARMINE_AGENT_JOB_ROOT` are different roots. They must not be used to
+  decide whether a repo-relative planner path is valid.
+- Open Terminal should start from the same effective worktree through
+  `OPEN_TERMINAL_CWD` / `AICARMINE_OPEN_TERMINAL_WORKDIR`.
+
+When debugging a path mismatch, inspect the job capture field
+`user_payload.lab_repo` first.
+
 | Module | Technical description |
 | --- | --- |
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
