@@ -152,6 +152,7 @@ from .application.controller.guards import (
     controller_guard_rejection_signature_count as _controller_guard_rejection_signature_count_impl,
     recoverable_planner_block as _recoverable_planner_block_impl,
 )
+from .application.runtime_debug import build_runtime_debug_packet as _build_runtime_debug_packet
 from .application.controller.memory import (
     controller_memory_lesson_text as _controller_memory_lesson_text_impl,
     loop_turn_memory_text as _loop_turn_memory_text_impl,
@@ -3600,7 +3601,14 @@ def vulkan_repair_invalid_planner_decision(
     }
 
 
-def controller_guard_result_for_validation(validation: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+def controller_guard_result_for_validation(
+    validation: dict[str, Any],
+    decision: dict[str, Any],
+    *,
+    job_id: str = "",
+    step: int = 0,
+    goal: str = "",
+) -> dict[str, Any]:
     violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
     contract = validation.get("evidence_contract") if isinstance(validation.get("evidence_contract"), dict) else {}
     guard = {
@@ -3653,6 +3661,15 @@ def controller_guard_result_for_validation(validation: dict[str, Any], decision:
                 "Do not final with it. Use it to choose repo_read evidence and then "
                 "repo_propose_code_edit with a complete inline diff/ops payload."
             )
+    guard["runtime_debug_packet"] = _build_runtime_debug_packet(
+        job_id=job_id,
+        step=step,
+        phase="VALIDATE_DECISION",
+        goal=goal,
+        decision=decision,
+        validator_result=validation,
+        evidence_contract=contract,
+    )
     return guard
 
 
@@ -4104,6 +4121,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "agent_job_root": agent_job_root,
             "append_agent_event": append_agent_event,
             "compact_tool_result_for_planner": compact_tool_result_for_planner,
+            "build_runtime_debug_packet": _build_runtime_debug_packet,
             "controller_guard_count": controller_guard_count,
             "controller_guard_result_for_validation": controller_guard_result_for_validation,
             "finalize_agentic_job": finalize_agentic_job,

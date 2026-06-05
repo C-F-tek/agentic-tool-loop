@@ -51,6 +51,7 @@ def run_agentic_planner_job(
     _write_loop_turn_memory = deps["write_loop_turn_memory"]
     agent_job_root = deps["agent_job_root"]
     append_agent_event = deps["append_agent_event"]
+    build_runtime_debug_packet = deps["build_runtime_debug_packet"]
     compact_tool_result_for_planner = deps["compact_tool_result_for_planner"]
     controller_guard_count = deps["controller_guard_count"]
     controller_guard_result_for_validation = deps["controller_guard_result_for_validation"]
@@ -87,6 +88,30 @@ def run_agentic_planner_job(
         _history_ledger=planner_history_ledger,
         _evidence_builder=lambda rows: planner_evidence_contract(str(state.get("goal") or ""), rows),
     )
+
+    def runtime_debug_packet(
+        *,
+        step_number: int,
+        phase: str,
+        planner_decision: dict[str, Any],
+        validation: dict[str, Any] | None = None,
+        evidence_contract: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        contract = evidence_contract
+        if contract is None and isinstance(validation, dict):
+            maybe_contract = validation.get("evidence_contract")
+            contract = maybe_contract if isinstance(maybe_contract, dict) else {}
+        return build_runtime_debug_packet(
+            job_id=job_id,
+            step=step_number,
+            phase=phase,
+            goal=str(state.get("goal") or ""),
+            decision=planner_decision,
+            validator_result=validation,
+            evidence_contract=contract or {},
+            extra=extra,
+        )
 
     def persist_loop_turn_memory(row: dict[str, Any]) -> None:
         state["controller_loop_turn_memory_last_write"] = _write_loop_turn_memory(
@@ -131,7 +156,13 @@ def run_agentic_planner_job(
             "violations": ["repeated_same_tool_arguments_without_progress"],
             "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
         }
-        guard_result = controller_guard_result_for_validation(validation_repeat, planner_decision)
+        guard_result = controller_guard_result_for_validation(
+            validation_repeat,
+            planner_decision,
+            job_id=job_id,
+            step=step_number,
+            goal=str(state.get("goal") or ""),
+        )
         guard_result["guard_type"] = "repeat_guard"
         guard_result["summary"] = "repeated_same_tool_arguments_without_progress"
         guard_result["rejected_decision"] = {
@@ -449,6 +480,13 @@ def run_agentic_planner_job(
                         for k in ("action", "tool", "arguments", "reason", "final_answer")
                         if decision.get(k) not in (None, "", [], {})
                     },
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        evidence_contract=contract_snapshot,
+                        extra={"guard_type": "planner_memory_false_unavailable_claim"},
+                    ),
                 }
                 append_agent_event(
                     job_id,
@@ -506,6 +544,16 @@ def run_agentic_planner_job(
                     "guard_type": "native_tool_batch_invalid",
                     "summary": "native_tool_batch_empty",
                     "violations": ["native_tool_batch_empty"],
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        validation={
+                            "ok": False,
+                            "violations": ["native_tool_batch_empty"],
+                            "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                        },
+                    ),
                 }
             elif len(calls) > int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1):
                 batch_guard = {
@@ -516,6 +564,16 @@ def run_agentic_planner_job(
                     "violations": ["native_tool_batch_too_large"],
                     "native_tool_call_count": len(calls),
                     "native_tool_call_limit": int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1),
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        validation={
+                            "ok": False,
+                            "violations": ["native_tool_batch_too_large"],
+                            "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                        },
+                    ),
                 }
             else:
                 for call in calls:
@@ -549,6 +607,16 @@ def run_agentic_planner_job(
                             "summary": "native_tool_batch_requires_readonly_tools_only",
                             "violations": ["native_tool_batch_non_readonly"],
                             "rejected_decision": call_decision,
+                            "runtime_debug_packet": runtime_debug_packet(
+                                step_number=step,
+                                phase="CONTROLLER_GUARD",
+                                planner_decision=call_decision,
+                                validation={
+                                    "ok": False,
+                                    "violations": ["native_tool_batch_non_readonly"],
+                                    "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                                },
+                            ),
                         }
                         break
                     validation_i = validate_planner_decision_against_evidence(
@@ -581,6 +649,17 @@ def run_agentic_planner_job(
                                     "summary": "vulkan_repair_tool_decision_disallowed_in_native_mode",
                                     "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
                                     "rejected_decision": call_decision,
+                                    "runtime_debug_packet": runtime_debug_packet(
+                                        step_number=step,
+                                        phase="CONTROLLER_GUARD",
+                                        planner_decision=call_decision,
+                                        validation={
+                                            "ok": False,
+                                            "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
+                                            "evidence_contract": validation_i.get("evidence_contract"),
+                                        },
+                                        extra={"repaired_decision_disallowed": True},
+                                    ),
                                     "vulkan_repair": repair_result,
                                 }
                                 break
@@ -593,7 +672,13 @@ def run_agentic_planner_job(
                             )
                             decision = repaired_decision
                             break
-                        batch_guard = controller_guard_result_for_validation(validation_i, call_decision)
+                        batch_guard = controller_guard_result_for_validation(
+                            validation_i,
+                            call_decision,
+                            job_id=job_id,
+                            step=step,
+                            goal=str(state.get("goal") or ""),
+                        )
                         batch_guard["guard_type"] = "native_tool_batch_validation"
                         batch_guard["summary"] = "native_tool_batch_validation_failed"
                         if should_repair_call:
@@ -682,7 +767,13 @@ def run_agentic_planner_job(
                             ),
                         },
                     )
-                guard_result = controller_guard_result_for_validation(validation, decision)
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
                 guard_result["guard_type"] = "planner_native_tool_call_required"
                 guard_result["summary"] = "planner_native_tool_call_required"
                 guard_result["retry_count"] = prior_native_empty_guards
@@ -739,6 +830,13 @@ def run_agentic_planner_job(
                         if decision.get(k) not in (None, "", [], {})
                     },
                     "evidence_contract": validation.get("evidence_contract"),
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        validation=validation,
+                        extra={"guard_type": "planner_memory_false_unavailable_claim"},
+                    ),
                 }
                 append_agent_event(
                     job_id,
@@ -792,6 +890,13 @@ def run_agentic_planner_job(
                         if decision.get(k) not in (None, "", [], {})
                     },
                     "evidence_contract": validation.get("evidence_contract"),
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        validation=validation,
+                        extra={"guard_type": "planner_retry_required"},
+                    ),
                 }
                 append_agent_event(
                     job_id,
@@ -824,7 +929,13 @@ def run_agentic_planner_job(
             if "planner_repeated_invalid_code_product_decision" in {
                 str(v) for v in (validation.get("violations") if isinstance(validation.get("violations"), list) else [])
             }:
-                guard_result = controller_guard_result_for_validation(validation, decision)
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
                 guard_result["guard_type"] = "planner_repeated_invalid_code_product_decision"
                 guard_result["summary"] = "planner_repeated_invalid_code_product_decision"
                 append_agent_event(
@@ -881,7 +992,13 @@ def run_agentic_planner_job(
             )
             repeated_rejection_limit = max(1, int(retry_limit or 0))
             if repeated_rejection_count >= repeated_rejection_limit:
-                guard_result = controller_guard_result_for_validation(validation, decision)
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
                 guard_result["guard_type"] = "repeated_identical_planner_rejection"
                 guard_result["summary"] = "repeated_identical_planner_rejection"
                 guard_result["invalid_decision_signature"] = rejection_signature
@@ -1062,6 +1179,13 @@ def run_agentic_planner_job(
                         "summary": "vulkan_gpu0_11435_repaired_invalid_planner_emission",
                         "violations": validation.get("violations"),
                         "evidence_contract": validation.get("evidence_contract"),
+                        "runtime_debug_packet": runtime_debug_packet(
+                            step_number=step,
+                            phase="CONTROLLER_GUARD",
+                            planner_decision=decision,
+                            validation=validation,
+                            extra={"guard_type": "vulkan_decision_repair"},
+                        ),
                         "vulkan_repair": {
                             "ok": True,
                             "raw_text_preview": repair_result.get("raw_text_preview"),
@@ -1087,7 +1211,13 @@ def run_agentic_planner_job(
                 else:
                     continue
             else:
-                guard_result = controller_guard_result_for_validation(validation, decision)
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
                 if should_attempt_vulkan:
                     guard_result["vulkan_repair"] = {
                         k: repair_result.get(k)
@@ -1172,6 +1302,16 @@ def run_agentic_planner_job(
                             "The user requested a patch. You may not final yet. "
                             "Use repo_apply_patch if old_text/new_text are ready, "
                             "or repo_read to get old_text first."
+                        ),
+                        "runtime_debug_packet": runtime_debug_packet(
+                            step_number=step,
+                            phase="CONTROLLER_GUARD",
+                            planner_decision=decision,
+                            validation={
+                                "ok": False,
+                                "violations": ["final_write_intent_without_apply"],
+                                "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                            },
                         ),
                     },
                 }
