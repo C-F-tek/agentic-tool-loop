@@ -1,3 +1,7 @@
+param(
+    [switch]$Doctor
+)
+
 $ErrorActionPreference = "Stop"
 
 $AI_ROOT = [Environment]::GetEnvironmentVariable("AI_ROOT", "Process")
@@ -76,10 +80,19 @@ elseif ($env:PYTHONPATH -notlike "*$ServicePath*") {
     $env:PYTHONPATH = "$ServicePath;$env:PYTHONPATH"
 }
 
+$PortInt = [int]$Port
+if ($Doctor) {
+    Write-Host "Running NPU Phi sidecar doctor"
+    Write-Host "  Python = $Python"
+    Write-Host "  Model  = $ModelDir"
+    Write-Host "  URL    = http://$HostName`:$Port"
+    & $Python -m npu_phi_service --host $HostName --port $PortInt --doctor --pretty
+    exit $LASTEXITCODE
+}
+
 Write-Host "Starting NPU Phi sidecar"
 Write-Host "  Python = $Python"
 Write-Host "  Model  = $ModelDir"
 Write-Host "  URL    = http://$HostName`:$Port"
 
-$PortInt = [int]$Port
 & $Python -m npu_phi_service --host $HostName --port $PortInt

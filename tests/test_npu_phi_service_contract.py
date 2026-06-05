@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "services"))
 
 from npu_phi_service.app import create_app  # noqa: E402
 from npu_phi_service.blob_lock import BlobBuildLock  # noqa: E402
+from npu_phi_service.diagnostics import build_npu_phi_doctor  # noqa: E402
 from npu_phi_service.job_queue import NpuPhiJobQueue  # noqa: E402
 from npu_phi_service.pipeline import PipelineManager  # noqa: E402
 from npu_phi_service.settings import NpuPhiSettings  # noqa: E402
@@ -208,9 +209,97 @@ def test_npu_phi_app_opens_breaker_after_job_failures(tmp_path: Path) -> None:
 def test_npu_phi_service_wrapper_uses_openvino_runtime() -> None:
     text = (ROOT / "services" / "npu-phi-service.ps1").read_text(encoding="utf-8")
 
+    assert "[switch]$Doctor" in text
     assert "venvs\\openvino\\Scripts\\python.exe" in text
     assert "services\\openvino-env.ps1" in text
     assert "openvino_model.xml" in text
     assert "openvino_model.bin" in text
     assert "-m npu_phi_service" in text
+    assert "--doctor --pretty" in text
     assert "venvs\\labtools" not in text
+
+
+def test_npu_phi_doctor_reports_ready_without_creating_runtime_dirs(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    cache_dir = settings.cache_dir
+    spool_dir = settings.spool_dir
+    dependencies = {
+        "openvino_available": True,
+        "openvino_genai_available": True,
+        "fastapi_available": True,
+        "uvicorn_available": True,
+        "pydantic_available": True,
+        "packages": {},
+    }
+
+    result = build_npu_phi_doctor(settings, dependencies=dependencies)
+
+    assert result["schema"] == "npu_phi_doctor.v1"
+    assert result["ok"] is True
+    assert result["diagnostic_only"] is True
+    assert result["side_effects"] == "none"
+    assert result["model"]["model_ready"] is True
+    assert result["contract"]["port"] == 3551
+    assert result["contract"]["distinct_from_openvino_reranker_port"] is True
+    assert result["runtime_paths"]["cache_dir"]["exists"] is False
+    assert result["runtime_paths"]["spool_dir"]["exists"] is False
+    assert not cache_dir.exists()
+    assert not spool_dir.exists()
+
+
+def test_npu_phi_doctor_warns_when_port_collides_with_reranker(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    settings = NpuPhiSettings(
+        ai_root=settings.ai_root,
+        host=settings.host,
+        port=3550,
+        model_dir=settings.model_dir,
+        cache_dir=settings.cache_dir,
+        spool_dir=settings.spool_dir,
+        queue_maxsize=settings.queue_maxsize,
+        exec_timeout_sec=settings.exec_timeout_sec,
+        generate_hint=settings.generate_hint,
+        enable_aot_blob=settings.enable_aot_blob,
+    )
+
+    result = build_npu_phi_doctor(
+        settings,
+        dependencies={
+            "openvino_available": True,
+            "openvino_genai_available": True,
+            "fastapi_available": True,
+            "uvicorn_available": True,
+            "pydantic_available": True,
+            "packages": {},
+        },
+    )
+
+    assert result["ok"] is False
+    assert result["contract"]["distinct_from_openvino_reranker_port"] is False
+    assert result["warnings"][0]["rule"] == "port_collides_with_openvino_reranker"
+
+
+def test_npu_phi_doctor_requires_openvino_runtime_dependency(tmp_path: Path) -> None:
+    result = build_npu_phi_doctor(
+        _settings(tmp_path),
+        dependencies={
+            "openvino_available": False,
+            "openvino_genai_available": True,
+            "fastapi_available": True,
+            "uvicorn_available": True,
+            "pydantic_available": True,
+            "packages": {},
+        },
+    )
+
+    assert result["ok"] is False
+    missing = next(w for w in result["warnings"] if w["rule"] == "missing_runtime_dependencies")
+    assert "openvino" in missing["packages"]
+
+
+def test_npu_phi_main_exposes_doctor_cli() -> None:
+    text = (ROOT / "services" / "npu_phi_service" / "__main__.py").read_text(encoding="utf-8")
+
+    assert "--doctor" in text
+    assert "doctor_json" in text
+    assert "replace(settings, host=args.host, port=args.port)" in text
