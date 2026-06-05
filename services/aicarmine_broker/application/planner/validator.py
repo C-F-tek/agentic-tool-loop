@@ -61,6 +61,7 @@ def validate_planner_decision_against_evidence(
     _successful_window_signatures = deps["successful_window_signatures"]
     _target_scope_conflict_resolved = deps["target_scope_conflict_resolved"]
     latest_file_list_result = deps["latest_file_list_result"]
+    goal_requires_code_product_report = deps["goal_requires_code_product_report"]
     planner_evidence_contract = deps["planner_evidence_contract"]
     successful_code_edit_proposals = deps["successful_code_edit_proposals"]
     validate_unified_diff_text = deps["validate_unified_diff_text"]

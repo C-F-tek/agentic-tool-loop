@@ -60,8 +60,10 @@ Read before edits:
 
 For terminal jobs returned to OpenWebUI:
 
-- primary metadata: `ok`, `service`, `mode`, `tool_name`,
-  `tool_result_for`, `called_by_30b`, `required_top_level_keys`.
+- primary metadata: `ok`, `service`, `mode`, `required_top_level_keys`.
+  Tool identity fields such as `tool_name`, `tool_result_for` and
+  `called_by_30b` are internal/routing metadata and must not be promoted as
+  primary OpenWebUI top-level result fields.
 - `payload_index_for_30b`: first navigation surface for concrete payload fields.
 - `priority_evidence_for_30b`: high-priority inline concrete payloads and
   compact analysis evidence.

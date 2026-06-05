@@ -293,8 +293,7 @@ def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
 
     compacted: dict[str, Any] = {}
     keep_keys = (
-        "ok", "service", "mode", "tool_name", "tool_result_for",
-        "called_by_30b", "required_top_level_keys", "payload_index_for_30b",
+        "ok", "service", "mode", "required_top_level_keys", "payload_index_for_30b",
         "priority_evidence_for_30b", "openwebui_usage", "tool_context_for_30b",
         "result",
     )
@@ -306,9 +305,6 @@ def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
         "ok",
         "service",
         "mode",
-        "tool_name",
-        "tool_result_for",
-        "called_by_30b",
         "required_top_level_keys",
         "payload_index_for_30b",
         "priority_evidence_for_30b",
@@ -3302,10 +3298,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             tool_context,
             completed=terminal_completed,
         )
-        safe_keys = (
-            "ok", "service", "mode",
-            "tool_name", "tool_result_for", "called_by_30b",
-        )
+        safe_keys = ("ok", "service", "mode")
         sealed = {}
         for key in safe_keys:
             value = out.get(key)
@@ -3315,9 +3308,6 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
                 value = terminal_source.get(key)
             if value not in (None, "", [], {}):
                 sealed[key] = value
-        sealed.setdefault("tool_name", decoded.get("tool_name") or "vulkan_helper")
-        sealed.setdefault("tool_result_for", decoded.get("tool_result_for") or sealed["tool_name"])
-        sealed.setdefault("called_by_30b", decoded.get("called_by_30b") or sealed["tool_name"])
         # The public OpenWebUI tool call succeeded when this terminal payload is
         # shaped and returned. The internal job result is exposed as diagnostic
         # payload, not as a primary top-level field that can stop OpenWebUI.
@@ -3328,9 +3318,6 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "ok",
             "service",
             "mode",
-            "tool_name",
-            "tool_result_for",
-            "called_by_30b",
             "required_top_level_keys",
             "payload_index_for_30b",
             "priority_evidence_for_30b",

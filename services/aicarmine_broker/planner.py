@@ -3003,6 +3003,7 @@ def validate_planner_decision_against_evidence(
             "decision_paths": _decision_paths,
             "final_answer_is_action_plan_without_code_product": _final_answer_is_action_plan_without_code_product,
             "final_composition_tool_names_from_candidates": _final_composition_tool_names_from_candidates,
+            "goal_requires_code_product_report": goal_requires_code_product_report,
             "invalid_code_product_decision_signature_count": _invalid_code_product_decision_signature_count,
             "invalid_decision_signature_key": _invalid_decision_signature_key,
             "native_required_tool_decision_has_transport_provenance": _native_required_tool_decision_has_transport_provenance,

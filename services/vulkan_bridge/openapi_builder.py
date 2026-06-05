@@ -15,9 +15,6 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
             "ok": {"type": "boolean"},
             "service": {"type": "string"},
             "mode": {"type": "string"},
-            "tool_name": {"type": "string"},
-            "tool_result_for": {"type": "string"},
-            "called_by_30b": {"type": "string"},
             "required_top_level_keys": {
                 "type": "array",
                 "description": "Primary top-level fields expected by the public wrapper response.",

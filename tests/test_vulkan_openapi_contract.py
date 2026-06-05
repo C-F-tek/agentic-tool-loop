@@ -126,8 +126,13 @@ def test_legacy_compactor_name_uses_explicit_openwebui_builder() -> None:
         }
     )
 
-    assert result["tool_name"] == "vulkan_helper"
+    assert "tool_name" not in result
+    assert "tool_result_for" not in result
+    assert "called_by_30b" not in result
     assert "required_top_level_keys" in result
+    assert "tool_name" not in result["required_top_level_keys"]
+    assert "tool_result_for" not in result["required_top_level_keys"]
+    assert "called_by_30b" not in result["required_top_level_keys"]
     assert json.loads(result["tool_context_for_30b"]) == {"answer_for_30b": "inline"}
 
 

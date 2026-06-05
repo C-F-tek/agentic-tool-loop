@@ -61,3 +61,36 @@ def test_planner_validator_facade_accepts_native_repo_read_without_name_error() 
 
     assert result["ok"] is True
     assert result["violations"] == []
+
+
+def test_planner_validator_facade_code_product_low_signal_target_does_not_name_error() -> None:
+    result = planner.validate_planner_decision_against_evidence(
+        "analizza la repo e proponi diff concreti per rafctoring di codice",
+        {
+            "action": "tool",
+            "tool": "repo_propose_code_edit",
+            "arguments": {
+                "target_file": "services/aicarmine_broker/planner.py",
+                "edit_kind": "no_op",
+                "rationale": "No concrete diff yet.",
+                "no_op_rationale": "No concrete diff yet.",
+            },
+            "native_tool_call": True,
+            "raw_native_tool_call": {
+                "id": "call_test",
+                "function": {
+                    "name": "repo_propose_code_edit",
+                    "arguments": {
+                        "target_file": "services/aicarmine_broker/planner.py",
+                        "edit_kind": "no_op",
+                        "rationale": "No concrete diff yet.",
+                        "no_op_rationale": "No concrete diff yet.",
+                    },
+                },
+            },
+        },
+        [],
+    )
+
+    assert isinstance(result["violations"], list)
+    assert "code_product_target_not_read:services/aicarmine_broker/planner.py" in result["violations"]
