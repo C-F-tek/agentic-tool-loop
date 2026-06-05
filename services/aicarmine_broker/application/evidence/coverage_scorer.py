@@ -120,8 +120,12 @@ def score_evidence_coverage(contract: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema": "evidence_coverage_score.v1",
         "coverage_score": score,
-        "final_ready": bool(contract.get("planner_may_choose_final")) or score >= 0.9,
+        "coverage_score_ready": score >= 0.9,
+        "final_ready": bool(contract.get("planner_may_choose_final")),
+        "final_ready_source": "finalization_contract",
         "missing": sorted(set(missing)),
         "weaknesses": weaknesses,
         "reason": reason,
+        "diagnostic_only": True,
+        "must_not_override_finalization_contract": True,
     }

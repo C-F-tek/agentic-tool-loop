@@ -34,7 +34,45 @@ def test_coverage_file_goal_verified_read_final_ready() -> None:
     })
 
     assert score["coverage_score"] >= 0.9
+    assert score["coverage_score_ready"] is True
     assert score["final_ready"] is True
+    assert score["final_ready_source"] == "finalization_contract"
+    assert score["diagnostic_only"] is True
+    assert score["must_not_override_finalization_contract"] is True
+
+
+def test_coverage_score_ready_does_not_override_finalization_contract() -> None:
+    coverage = score_evidence_coverage({
+        "planner_may_choose_final": False,
+        "target_kind": "file",
+        "resolved_goal_file": "README.md",
+        "verified_content_reads": [
+            {"path": "README.md", "source": "tool_result_inline"}
+        ],
+        "missing_full_content_reads": [],
+    })
+
+    assert coverage["coverage_score_ready"] is True
+    assert coverage["final_ready"] is False
+    assert coverage["final_ready_source"] == "finalization_contract"
+    assert coverage["diagnostic_only"] is True
+    assert coverage["must_not_override_finalization_contract"] is True
+
+
+def test_coverage_final_ready_follows_planner_may_choose_final() -> None:
+    coverage = score_evidence_coverage({
+        "planner_may_choose_final": True,
+        "target_kind": "file",
+        "resolved_goal_file": "README.md",
+        "verified_content_reads": [
+            {"path": "README.md", "source": "tool_result_inline"}
+        ],
+        "missing_full_content_reads": [],
+    })
+
+    assert coverage["coverage_score_ready"] is True
+    assert coverage["final_ready"] is True
+    assert coverage["final_ready_source"] == "finalization_contract"
 
 
 def test_coverage_repo_goal_docs_only_not_final_ready() -> None:
@@ -75,3 +113,4 @@ def test_evidence_contract_includes_evidence_coverage() -> None:
 
     assert contract["evidence_coverage"]["schema"] == "evidence_coverage_score.v1"
     assert contract["evidence_coverage"]["final_ready"] is False
+    assert contract["evidence_coverage"]["diagnostic_only"] is True

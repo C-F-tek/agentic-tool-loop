@@ -95,6 +95,46 @@ def test_planner_evidence_contract_makes_candidate_repo_reads_validator_admissib
     assert repo_read_candidates[0]["action_proof"]["validator_admissible"] is True
 
 
+def test_planner_evidence_contract_candidate_actions_have_proof(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "ia_carmine" / "runtime" / "heap_gate" / "provider_context.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def provider_context():\n    return {}\n", encoding="utf-8")
+    monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
+
+    intrinsic_context = {
+        "retrieved_rag_chunks": {
+            "status": "ready",
+            "ranking_source": "test",
+            "items": [
+                {
+                    "path": "ia_carmine/runtime/heap_gate/provider_context.py",
+                    "score": 1.0,
+                }
+            ],
+        }
+    }
+
+    contract = planner.planner_evidence_contract(
+        "analizza la repository e proponi diff concreti per il refactoring del codice",
+        [],
+        intrinsic_context,
+    )
+
+    candidates = contract["candidate_next_actions"]
+    assert candidates
+    for action in candidates:
+        assert "action_id" in action
+        assert "action_proof" in action
+        assert action["action_proof"]["source"]
+
+    repo_read_actions = [action for action in candidates if action.get("tool") == "repo_read"]
+    assert repo_read_actions
+    proof = repo_read_actions[0]["action_proof"]
+    assert proof["path_exists"] is True
+    assert proof["path_readable"] is True
+    assert proof["validator_admissible"] is True
+
+
 def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
 
@@ -134,3 +174,16 @@ def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp
         for action in contract["candidate_next_actions"]
         if isinstance(action, dict)
     )
+
+
+def test_planner_evidence_contract_includes_required_next_progress_model() -> None:
+    contract = planner.planner_evidence_contract("Read target file README.md", [])
+
+    model = contract.get("required_next_progress_model")
+
+    assert isinstance(model, dict)
+    assert model["human_text"] == contract["required_next_progress"]
+    assert "kind" in model
+    assert "metadata" in model
+    assert "candidate_next_actions_count" in model["metadata"]
+    assert "final_allowed" in model["metadata"]
