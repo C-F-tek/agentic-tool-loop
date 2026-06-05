@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "services"))
+
+
+from aicarmine_broker.application.replay import replay_loop_job  # noqa: E402
+
+
+def _write_job(root: Path, *, history: list[dict], goal: str = "read README.md") -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "tool-results").mkdir()
+    (root / "planner-stream").mkdir()
+    (root / "job.json").write_text(
+        json.dumps({"job_id": "job-test", "goal": goal, "history": history}),
+        encoding="utf-8",
+    )
+    (root / "events.ndjson").write_text(
+        json.dumps({"event_type": "planner_decision"}) + "\n",
+        encoding="utf-8",
+    )
+    (root / "tool-results" / "step-001-repo_read.json").write_text(
+        json.dumps({"ok": True, "tool": "repo_read"}),
+        encoding="utf-8",
+    )
+    (root / "planner-stream" / "step-001.txt").write_text("{}", encoding="utf-8")
+
+
+def _evidence_contract() -> dict:
+    return {
+        "candidate_next_actions": [
+            {
+                "tool": "repo_read",
+                "arguments": {"paths": ["README.md"]},
+                "action_id": "readme",
+            }
+        ],
+        "validator_admissible_repo_read_paths": ["README.md"],
+        "evidence_coverage": {
+            "schema": "evidence_coverage_score.v1",
+            "coverage_score": 0.5,
+            "diagnostic_only": True,
+        },
+    }
+
+
+def test_loop_replay_loads_job_history(tmp_path: Path) -> None:
+    _write_job(tmp_path, history=[{"step": 1, "decision": {"action": "tool", "tool": "repo_read"}}])
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert report["schema"] == "loop_replay_report.v1"
+    assert report["diagnostic_only"] is True
+    assert report["job_id"] == "job-test"
+    assert report["history_events"] == 1
+    assert report["event_count"] == 1
+    assert report["tool_result_file_count"] == 1
+    assert report["planner_stream_file_count"] == 1
+
+
+def test_loop_replay_recomputes_evidence_contract(tmp_path: Path) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def evidence_builder(goal: str, history: list[dict]) -> dict:
+        calls.append((goal, len(history)))
+        return _evidence_contract()
+
+    _write_job(tmp_path, history=[{"step": 1, "decision": {"action": "tool", "tool": "repo_read"}}])
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        evidence_builder=evidence_builder,
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert calls == [("read README.md", 1)]
+    assert report["candidate_actions_recomputed"][0]["action_id"] == "readme"
+    assert report["evidence_coverage"]["schema"] == "evidence_coverage_score.v1"
+
+
+def test_loop_replay_detects_repeated_invalid_decision(tmp_path: Path) -> None:
+    rejected = {
+        "tool": "controller_guard",
+        "violations": ["repo_read_already_successful:README.md"],
+        "rejected_decision": {"action": "tool", "tool": "repo_read", "arguments": {"path": "README.md"}},
+    }
+    history = [
+        {"step": 1, "tool_result": rejected},
+        {"step": 2, "tool_result": rejected},
+    ]
+    _write_job(tmp_path, history=history)
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert report["suspected_loop"] is True
+    assert report["first_divergence"]["kind"] == "repeated_invalid_decision"
+    assert report["repeated_invalid_decisions"][0]["count"] == 2
+
+
+def test_loop_replay_detects_candidate_validator_mismatch(tmp_path: Path) -> None:
+    _write_job(tmp_path, history=[])
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        evidence_builder=lambda goal, history: {
+            "candidate_next_actions": [
+                {
+                    "tool": "repo_read",
+                    "arguments": {"paths": ["missing.py"]},
+                    "action_id": "missing",
+                }
+            ],
+            "validator_admissible_repo_read_paths": [],
+        },
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert report["first_divergence"]["kind"] == "candidate_validator_mismatch"
+    assert report["candidate_validator_mismatches"][0]["path"] == "missing.py"
+
+
+def test_loop_replay_report_is_json_serializable(tmp_path: Path) -> None:
+    _write_job(tmp_path, history=[{"step": 1, "decision": {"action": "final", "final_answer": "x"}}])
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": False, "violations": ["final_not_allowed"]},
+    )
+
+    assert report["validator_results_recomputed"][0]["ok"] is False
+    json.dumps(report)
