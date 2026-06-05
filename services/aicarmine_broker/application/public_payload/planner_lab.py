@@ -11,6 +11,7 @@ SCHEMA = "planner_payload_lab.v1"
 DEFAULT_SUMMARY_TEXT_CHARS = 4000
 DEFAULT_STEP_SUMMARY_LIMIT = 80
 DEFAULT_CODE_PRODUCT_LIMIT = 40
+DEFAULT_COMPOSE_PAYLOAD_CHARS = 30000
 GLOBAL_NARRATIVE_FIELDS = (
     "evidence_guide_for_30b",
     "answer_for_30b",
@@ -24,6 +25,52 @@ LEGACY_NARRATIVE_ALIAS_FIELDS = (
     "summary_for_30b",
     "content",
 )
+COMPOSE_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": [
+        "answer_markdown",
+        "payload_assessment",
+        "missing_payload",
+        "code_products",
+        "apply_readiness",
+        "follow_up_questions",
+    ],
+    "properties": {
+        "answer_markdown": {"type": "string"},
+        "payload_assessment": {
+            "type": "object",
+            "required": ["sufficient", "reason", "used_fields"],
+            "properties": {
+                "sufficient": {"type": "boolean"},
+                "reason": {"type": "string"},
+                "used_fields": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "missing_payload": {"type": "array", "items": {"type": "string"}},
+        "code_products": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["candidate_id", "target_file", "summary", "apply_supported"],
+                "properties": {
+                    "candidate_id": {"type": "string"},
+                    "target_file": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "apply_supported": {"type": "boolean"},
+                },
+            },
+        },
+        "apply_readiness": {
+            "type": "object",
+            "required": ["can_apply_any", "reason"],
+            "properties": {
+                "can_apply_any": {"type": "boolean"},
+                "reason": {"type": "string"},
+            },
+        },
+        "follow_up_questions": {"type": "array", "items": {"type": "string"}},
+    },
+}
 
 
 def bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
@@ -44,6 +91,10 @@ def _clip(value: Any, limit: int = DEFAULT_SUMMARY_TEXT_CHARS) -> str:
 def _json_hash(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def _bounded_json(value: Any, limit: int = DEFAULT_COMPOSE_PAYLOAD_CHARS) -> str:
+    return _clip(json.dumps(value, ensure_ascii=False, indent=2, default=str), limit)
 
 
 def _parse_jsonish(value: Any) -> tuple[Any, dict[str, Any]]:
@@ -478,4 +529,111 @@ def build_planner_lab_apply_tool_call(
             "source_path": candidate.get("source_path"),
             "candidate_id": cleaned_candidate_id,
         },
+    }
+
+
+def build_planner_lab_compose_request(
+    lab_payload: dict[str, Any],
+    *,
+    model: str,
+    user_instruction: str = "",
+    conversation: list[dict[str, Any]] | None = None,
+    think: bool = False,
+    max_payload_chars: int = DEFAULT_COMPOSE_PAYLOAD_CHARS,
+) -> dict[str, Any]:
+    safe_payload_chars = bounded_int(
+        max_payload_chars,
+        default=DEFAULT_COMPOSE_PAYLOAD_CHARS,
+        minimum=5000,
+        maximum=80000,
+    )
+    compact_payload = {
+        "job": lab_payload.get("job"),
+        "chat_turn": lab_payload.get("chat_turn"),
+        "model_visible_text": lab_payload.get("model_visible_text"),
+        "payload_readiness": lab_payload.get("payload_readiness"),
+        "redundancy_audit": lab_payload.get("redundancy_audit"),
+        "thinking_step_summary": lab_payload.get("thinking_step_summary"),
+        "code_products": lab_payload.get("code_products"),
+        "payload_index_for_30b": lab_payload.get("payload_index_for_30b"),
+        "priority_evidence_for_30b": lab_payload.get("priority_evidence_for_30b"),
+    }
+    system = (
+        "You are the operator-only Planner Payload Lab composer. "
+        "Do not call tools. Do not invent repository evidence. "
+        "Answer only from the provided OpenWebUI-bound payload. "
+        "Treat guided_conversation_tail as the local operator chat history; "
+        "answer the latest operator_instruction as the next assistant turn. "
+        "If the payload is insufficient, mark missing_payload explicitly. "
+        "Use answer_markdown as the readable operator answer and use "
+        "payload_assessment to explain which payload fields support it. "
+        "Return only JSON matching the provided schema."
+    )
+    user = {
+        "operator_instruction": str(user_instruction or "").strip(),
+        "guided_conversation_tail": [
+            {
+                "role": str(item.get("role") or ""),
+                "content": _clip(item.get("content"), 4000),
+            }
+            for item in (conversation or [])[-8:]
+            if isinstance(item, dict)
+        ],
+        "task": (
+            "Continue the guided payload conversation. Generate a readable structured "
+            "answer from the payload, explain whether the payload is sufficient, "
+            "summarize code-product candidates, and state whether any candidate can "
+            "be applied through repo_apply_patch. If the operator asks for details "
+            "that are not present in the payload, do not guess; list missing_payload."
+        ),
+        "openwebui_bound_payload_window": _bounded_json(compact_payload, safe_payload_chars),
+    }
+    return {
+        "model": str(model or ""),
+        "stream": False,
+        "think": bool(think),
+        "format": COMPOSE_RESPONSE_SCHEMA,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(user, ensure_ascii=False, default=str)},
+        ],
+    }
+
+
+def parse_planner_lab_compose_response(response: dict[str, Any]) -> dict[str, Any]:
+    message = response.get("message") if isinstance(response.get("message"), dict) else {}
+    content = str(message.get("content") or response.get("response") or "").strip()
+    thinking = str(message.get("thinking") or response.get("thinking") or "").strip()
+    if not content:
+        return {
+            "ok": False,
+            "error": "compose_response_missing_content",
+            "thinking": _clip(thinking, 8000),
+            "raw_response": response,
+        }
+    try:
+        parsed = json.loads(content)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "compose_response_not_json",
+            "error_type": type(exc).__name__,
+            "content": _clip(content, 12000),
+            "thinking": _clip(thinking, 8000),
+            "raw_response": response,
+        }
+    if not isinstance(parsed, dict):
+        return {
+            "ok": False,
+            "error": "compose_response_json_not_object",
+            "content": _clip(content, 12000),
+            "thinking": _clip(thinking, 8000),
+            "raw_response": response,
+        }
+    return {
+        "ok": True,
+        "schema": "planner_lab_compose_result.v1",
+        "structured_answer": parsed,
+        "thinking": _clip(thinking, 8000),
+        "raw_content": content,
     }

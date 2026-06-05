@@ -408,6 +408,7 @@ The broker also exposes an operator-only payload calibration lab:
 - `/jobs/{job_id}/planner-lab`
 - `/jobs/{job_id}/planner-lab.json`
 - `/jobs/{job_id}/planner-lab/apply`
+- `/jobs/{job_id}/planner-lab/compose`
 
 These routes are hidden from OpenAPI and are not part of the 3571 public
 OpenWebUI surface. The lab starts a normal `vulkan_helper` planner job or
@@ -434,6 +435,15 @@ The JSON endpoint accepts operator-selected limits:
 
 These limits affect only the operator lab rendering. They do not change planner
 gates, validator gates, finalization rules or the OpenWebUI public schema.
+
+The compose endpoint is the guided conversation lane for payload calibration.
+It sends the current OpenWebUI-bound payload window plus the bounded local
+operator chat tail to Ollama `/api/chat` with a JSON schema `format` and
+optional `think=true`. It does not expose tools, does not dispatch tools and
+does not mutate the job. Its purpose is to simulate follow-up chat turns over
+the exact payload surface, so the operator can verify whether a detailed answer
+or diff/patch discussion is supported by inline evidence before testing it in
+OpenWebUI.
 
 The apply endpoint is intentionally narrow. It requires `confirm_apply=true`
 and only dispatches `repo_apply_patch` when the selected code product contains

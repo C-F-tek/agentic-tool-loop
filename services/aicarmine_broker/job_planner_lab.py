@@ -26,6 +26,8 @@ a {{ color: #8fd3ff; }}
 .grid {{ display: grid; grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.4fr); gap: 14px; align-items: start; }}
 .card {{ border: 1px solid #3a3a3a; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1c1f; }}
 textarea, input {{ width: 100%; box-sizing: border-box; background: #0f1012; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; }}
+input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
+label {{ display: block; margin-top: 8px; color: #c8c8c8; }}
 textarea {{ min-height: 145px; resize: vertical; }}
 button {{ background: #2b6ca3; color: white; border: 0; border-radius: 6px; padding: 8px 11px; margin: 4px 4px 4px 0; cursor: pointer; }}
 button.secondary {{ background: #3d4651; }}
@@ -60,6 +62,9 @@ const initialJobId = {initial};
 let currentJobId = initialJobId || "";
 let pollTimer = null;
 let activeRequestText = "";
+let guidedConversation = [];
+let guidedTurnCounter = 0;
+let guidedDraftText = "";
 
 function htmlEscape(value) {{
   return String(value ?? "").replace(/[&<>"']/g, ch => ({{"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}}[ch]));
@@ -70,7 +75,7 @@ function pretty(value) {{
 function setStatus(text) {{
   document.getElementById("lab-status").textContent = text;
 }}
-async function startPlannerJob() {{
+async function startPlannerJob(returnMode = "background") {{
   const task = document.getElementById("planner-request").value.trim();
   if (!task) {{
     setStatus("request_missing");
@@ -79,13 +84,15 @@ async function startPlannerJob() {{
   activeRequestText = task;
   document.getElementById("lab-output").innerHTML = renderPendingChat(task);
   setStatus("starting");
+  guidedConversation = [];
+  guidedDraftText = "";
   const response = await fetch("/planner-lab/start", {{
     method: "POST",
     headers: {{"Content-Type": "application/json"}},
     body: JSON.stringify({{
       task,
-      return_mode: "background",
-      wait_seconds: 1
+      return_mode: returnMode,
+      wait_seconds: returnMode === "wait" ? Number(document.getElementById("wait-seconds")?.value || 30) : 1
     }})
   }});
   const data = await response.json();
@@ -99,10 +106,16 @@ async function startPlannerJob() {{
   }}
 }}
 async function loadJob() {{
+  captureGuidedDraft();
   const jobId = (document.getElementById("job-id").value || currentJobId || "").trim();
   if (!jobId) {{
     setStatus("job_id_missing");
     return;
+  }}
+  const previousJobId = currentJobId;
+  if (previousJobId && previousJobId !== jobId) {{
+    guidedConversation = [];
+    guidedDraftText = "";
   }}
   currentJobId = jobId;
   const params = labLimitParams();
@@ -232,6 +245,103 @@ async function applyCandidate(candidateId) {{
   setStatus(data.ok ? "apply_done" : "apply_blocked");
   loadJob();
 }}
+function captureGuidedDraft() {{
+  const input = document.getElementById("guided-operator-prompt");
+  if (input) guidedDraftText = input.value || "";
+}}
+async function composeFromPayload() {{
+  if (!currentJobId) {{
+    setStatus("job_id_missing");
+    return;
+  }}
+  captureGuidedDraft();
+  const instruction = guidedDraftText.trim();
+  if (!instruction) {{
+    setStatus("operator_prompt_missing");
+    return;
+  }}
+  const turnId = `turn-${{Date.now()}}-${{guidedTurnCounter++}}`;
+  const priorConversation = guidedConversation.filter(turn => turn.status !== "waiting").slice(-8);
+  guidedConversation.push({{
+    role: "operator",
+    turn_id: turnId,
+    content: instruction,
+    ts: new Date().toISOString()
+  }});
+  guidedConversation.push({{
+    role: "assistant",
+    turn_id: `${{turnId}}-waiting`,
+    waiting_for: turnId,
+    status: "waiting",
+    content: "Waiting for Ollama structured response from the current OpenWebUI-bound payload...",
+    ts: new Date().toISOString()
+  }});
+  guidedDraftText = "";
+  renderGuidedConversation();
+  setStatus("compose_waiting_for_ollama");
+  const params = labLimitParams();
+  const body = {{
+    instruction,
+    conversation: priorConversation,
+    think: Boolean(document.getElementById("compose-think")?.checked),
+    summary_chars: Number(params.get("summary_chars") || 4000),
+    step_limit: Number(params.get("step_limit") || 80),
+    code_product_limit: Number(params.get("code_product_limit") || 40),
+    max_payload_chars: Number(document.getElementById("compose-payload-chars")?.value || 30000),
+    timeout_seconds: Number(document.getElementById("compose-timeout")?.value || 60)
+  }};
+  const response = await fetch(`/jobs/${{encodeURIComponent(currentJobId)}}/planner-lab/compose`, {{
+    method: "POST",
+    headers: {{"Content-Type": "application/json"}},
+    body: JSON.stringify(body)
+  }});
+  const data = await response.json();
+  guidedConversation = guidedConversation.filter(turn => turn.waiting_for !== turnId);
+  const result = (data || {{}}).result || {{}};
+  const structured = result.structured_answer || {{}};
+  guidedConversation.push({{
+    role: "assistant",
+    turn_id: `${{turnId}}-assistant`,
+    status: data.ok ? "ok" : "failed",
+    content: structured.answer_markdown || result.content || data.error || "No structured answer returned.",
+    structured_answer: structured,
+    thinking: result.thinking || "",
+    raw: data,
+    ts: new Date().toISOString()
+  }});
+  renderGuidedConversation();
+  setStatus(data.ok ? "compose_done" : "compose_failed");
+}}
+function renderGuidedConversation() {{
+  const target = document.getElementById("guided-conversation");
+  if (!target) return;
+  const prompt = document.getElementById("guided-operator-prompt");
+  if (prompt && guidedDraftText) prompt.value = guidedDraftText;
+  if (!guidedConversation.length) {{
+    target.innerHTML = "<p class='muted'>No guided turns yet. Ask a follow-up prompt to test what the payload can support.</p>";
+    return;
+  }}
+  target.innerHTML = `<div class="chat-grid">${{
+    guidedConversation.map((turn, index) => renderGuidedTurn(turn, index + 1)).join("")
+  }}</div>`;
+}}
+function renderGuidedTurn(turn, index) {{
+  const isOperator = turn.role === "operator";
+  const css = isOperator ? "user" : (turn.status === "failed" ? "warn" : "assistant");
+  const title = isOperator ? `Operator prompt #${{index}}` : `Payload assistant #${{index}}`;
+  const structured = turn.structured_answer || {{}};
+  const details = isOperator ? "" : `
+    <details ${{turn.status === "waiting" ? "open" : ""}}><summary>answer_markdown</summary><pre>${{htmlEscape(turn.content || "")}}</pre></details>
+    <details><summary>payload assessment</summary><pre>${{htmlEscape(pretty(structured.payload_assessment || {{}}))}}</pre></details>
+    <details><summary>missing payload</summary><pre>${{htmlEscape(pretty(structured.missing_payload || []))}}</pre></details>
+    <details><summary>code products / apply readiness</summary><pre>${{htmlEscape(pretty({{code_products: structured.code_products || [], apply_readiness: structured.apply_readiness || {{}}}}))}}</pre></details>
+    <details><summary>thinking trace / raw result</summary><pre>${{htmlEscape(pretty({{thinking: turn.thinking || "", raw: turn.raw || {{}}}}))}}</pre></details>
+  `;
+  return `<div class="bubble ${{css}}">
+    <b>${{htmlEscape(title)}}</b> <span class="muted">${{htmlEscape(turn.status || "")}} ${{htmlEscape(turn.ts || "")}}</span>
+    ${{isOperator ? `<pre>${{htmlEscape(turn.content || "")}}</pre>` : details}}
+  </div>`;
+}}
 function renderLab(data) {{
   const readiness = data.payload_readiness || {{}};
   const statusClass = data.ok && readiness.tool_context_parse_ok ? "ok" : "bad";
@@ -245,9 +355,23 @@ function renderLab(data) {{
     </div>
     <div class="card"><h2>Thinking step summary</h2>${{renderSteps(data.thinking_step_summary || data.step_summaries || [])}}</div>
     <div class="card"><h2>Code products from payload</h2>${{renderCodeProducts(data.code_products || [])}}</div>
+    <div class="card">
+      <h2>Guided payload conversation</h2>
+      <p class="muted">Wait-mode operator chat over the current OpenWebUI-bound payload. It uses Ollama /api/chat with JSON schema and optional thinking, does not call tools, and keeps each follow-up bounded.</p>
+      <textarea id="guided-operator-prompt" oninput="captureGuidedDraft()" placeholder="Chiedi un follow-up sul payload: descrivi dettagliatamente, verifica cosa manca, prepara una risposta diff, o controlla se una patch e applicabile..."></textarea>
+      <label><input id="compose-think" type="checkbox" /> request Ollama thinking trace</label>
+      <label>max_payload_chars</label>
+      <input id="compose-payload-chars" type="number" min="5000" max="80000" value="30000" />
+      <label>timeout_seconds</label>
+      <input id="compose-timeout" type="number" min="15" max="180" value="60" />
+      <button onclick="composeFromPayload()">Ask payload composer (wait)</button>
+      <button class="secondary" onclick="guidedConversation = []; guidedDraftText = ''; renderGuidedConversation(); setStatus('guided_chat_cleared')">Clear guided chat</button>
+    </div>
+    <div id="guided-conversation"></div>
     <div class="card"><h2>Payload index</h2><pre>${{htmlEscape(pretty(data.payload_index_for_30b || {{}}))}}</pre></div>
     <div class="card"><h2>Priority evidence</h2><pre>${{htmlEscape(pretty(data.priority_evidence_for_30b || {{}}))}}</pre></div>
   `;
+  renderGuidedConversation();
   setStatus(`loaded ${{currentJobId || ""}}`);
 }}
 if (initialJobId) {{
@@ -282,7 +406,10 @@ def planner_lab_index_html(*, limit: int = 20) -> str:
     <div class="card">
       <h2>Direct planner request</h2>
       <textarea id="planner-request" placeholder="analizza la repo e proponi diff concreti..."></textarea>
-      <button onclick="startPlannerJob()">Start planner job</button>
+      <label>wait_seconds for Start + wait</label>
+      <input id="wait-seconds" type="number" min="1" max="30" value="30" />
+      <button onclick="startPlannerJob('background')">Start planner job</button>
+      <button class="secondary" onclick="startPlannerJob('wait')">Start + wait for payload</button>
       <div class="muted">Status: <span id="lab-status">idle</span></div>
       <pre id="start-result"></pre>
     </div>
@@ -327,7 +454,10 @@ def agent_job_planner_lab_html(job_id: str) -> str:
     <div class="card">
       <h2>Direct planner request</h2>
       <textarea id="planner-request" placeholder="analizza la repo e proponi diff concreti..."></textarea>
-      <button onclick="startPlannerJob()">Start planner job</button>
+      <label>wait_seconds for Start + wait</label>
+      <input id="wait-seconds" type="number" min="1" max="30" value="30" />
+      <button onclick="startPlannerJob('background')">Start planner job</button>
+      <button class="secondary" onclick="startPlannerJob('wait')">Start + wait for payload</button>
       <p class="muted">Starts a new normal 3572 planner job and then renders the OpenWebUI-bound payload in this lab.</p>
       <pre id="start-result"></pre>
     </div>

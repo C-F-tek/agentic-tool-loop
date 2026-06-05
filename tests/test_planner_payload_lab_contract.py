@@ -23,7 +23,9 @@ def _load_planner_lab_module() -> ModuleType:
 planner_lab = _load_planner_lab_module()
 build_payload_redundancy_audit = planner_lab.build_payload_redundancy_audit
 build_planner_lab_apply_tool_call = planner_lab.build_planner_lab_apply_tool_call
+build_planner_lab_compose_request = planner_lab.build_planner_lab_compose_request
 build_planner_payload_lab = planner_lab.build_planner_payload_lab
+parse_planner_lab_compose_response = planner_lab.parse_planner_lab_compose_response
 
 
 def _terminal_response() -> dict:
@@ -203,6 +205,66 @@ def test_planner_lab_apply_requires_confirm_and_exact_old_new_payload() -> None:
     assert applied["arguments"]["path"] == "pkg/a.py"
 
 
+def test_planner_lab_compose_request_uses_ollama_structured_output_schema() -> None:
+    lab_payload = build_planner_payload_lab(
+        job_id="job-lab",
+        ia_view_payload={"ok": True, "job": {"job_id": "job-lab", "goal": "describe repo"}, "steps": []},
+        terminal_response=_terminal_response(),
+    )
+
+    request = build_planner_lab_compose_request(
+        lab_payload,
+        model="qwen3-coder:30b",
+        user_instruction="descrivi dettagliatamente",
+        conversation=[
+            {"role": "operator", "content": "prima domanda"},
+            {"role": "assistant", "content": "prima risposta"},
+        ],
+        think=True,
+        max_payload_chars=12000,
+    )
+
+    assert request["model"] == "qwen3-coder:30b"
+    assert request["stream"] is False
+    assert request["think"] is True
+    assert "tools" not in request
+    assert request["format"]["type"] == "object"
+    assert "answer_markdown" in request["format"]["required"]
+    assert len(request["messages"]) == 2
+    assert "Do not call tools" in request["messages"][0]["content"]
+    assert "guided_conversation_tail" in request["messages"][1]["content"]
+    assert "prima domanda" in request["messages"][1]["content"]
+    assert "openwebui_bound_payload_window" in request["messages"][1]["content"]
+
+
+def test_planner_lab_compose_response_parses_structured_answer() -> None:
+    response = {
+        "message": {
+            "thinking": "checking payload",
+            "content": json.dumps(
+                {
+                    "answer_markdown": "answer",
+                    "payload_assessment": {
+                        "sufficient": True,
+                        "reason": "payload has evidence",
+                        "used_fields": ["evidence_guide_for_30b"],
+                    },
+                    "missing_payload": [],
+                    "code_products": [],
+                    "apply_readiness": {"can_apply_any": False, "reason": "no candidates"},
+                    "follow_up_questions": [],
+                }
+            ),
+        }
+    }
+
+    parsed = parse_planner_lab_compose_response(response)
+
+    assert parsed["ok"] is True
+    assert parsed["structured_answer"]["answer_markdown"] == "answer"
+    assert parsed["thinking"] == "checking payload"
+
+
 def test_planner_lab_routes_are_hidden_from_openapi_by_source_contract() -> None:
     app_source = (ROOT / "services" / "aicarmine_broker" / "app.py").read_text(
         encoding="utf-8",
@@ -213,6 +275,7 @@ def test_planner_lab_routes_are_hidden_from_openapi_by_source_contract() -> None
     assert '@app.post("/planner-lab/start", include_in_schema=False)' in app_source
     assert 'planner-lab.json", include_in_schema=False)' in app_source
     assert 'planner-lab/apply", include_in_schema=False)' in app_source
+    assert 'planner-lab/compose", include_in_schema=False)' in app_source
 
 
 def test_planner_lab_html_renders_chat_and_thinking_surface() -> None:
@@ -232,3 +295,10 @@ def test_planner_lab_html_renders_chat_and_thinking_surface() -> None:
     assert "repo_apply_patch tool call" in html_source
     assert "copyApplyToolCall" in html_source
     assert "Apply exact old/new patch" in html_source
+    assert "Start + wait for payload" in html_source
+    assert "composeFromPayload" in html_source
+    assert "Guided payload conversation" in html_source
+    assert "Ask payload composer (wait)" in html_source
+    assert "guidedConversation" in html_source
+    assert "renderGuidedConversation" in html_source
+    assert "thinking trace / raw result" in html_source

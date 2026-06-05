@@ -36,12 +36,14 @@ from .config import (
     OLLAMA_TASK_MODEL,
     OLLAMA_TASK_URL,
     OPENAPI_CONTRACT,
+    OLLAMA_KEEP_ALIVE,
     PLANNER_MODEL,
     PLANNER_URL,
     SERVICE_NAME,
     V6_MARKER,
     VULKAN_AGENT_PATH,
     WORKSPACE,
+    ollama_options,
 )
 from .agent_entry import agent
 from .job_html import (
@@ -58,7 +60,13 @@ from .job_html import (
 )
 from .job_planner_lab import agent_job_planner_lab_html, planner_lab_index_html
 from .job_store import agent_job_root, append_agent_event, compact_agent_terminal_response, list_agent_jobs
-from .application.public_payload.planner_lab import build_planner_lab_apply_tool_call, build_planner_payload_lab
+from .application.public_payload.planner_lab import (
+    build_planner_lab_apply_tool_call,
+    build_planner_lab_compose_request,
+    build_planner_payload_lab,
+    parse_planner_lab_compose_response,
+)
+from .planner_core.json_io import post_json
 from .tool_dispatch import dispatch_tool
 from .tool_registry import capability_map
 
@@ -81,6 +89,7 @@ def jobs_endpoint_paths() -> list[str]:
         f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab",
         f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab.json",
         f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab/apply",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab/compose",
     ]
 
 
@@ -235,6 +244,52 @@ def create_app() -> FastAPI:
             "candidate_id": apply_request.get("candidate_id"),
             "apply_tool": "repo_apply_patch",
             "result": result,
+        }
+
+    @app.post(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab/compose", include_in_schema=False)
+    def job_planner_lab_compose(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+        ia_payload = agent_job_ia_view_payload(job_id, include_heavy=True)
+        if not ia_payload.get("ok"):
+            return ia_payload
+        terminal = compact_agent_terminal_response(job_id, audience="openwebui")
+        lab_payload = build_planner_payload_lab(
+            job_id=job_id,
+            ia_view_payload=ia_payload,
+            terminal_response=terminal,
+            summary_text_chars=int(payload.get("summary_chars") or 4000),
+            step_summary_limit=int(payload.get("step_limit") or 80),
+            code_product_limit=int(payload.get("code_product_limit") or 40),
+        )
+        conversation = payload.get("conversation")
+        compose_payload = build_planner_lab_compose_request(
+            lab_payload,
+            model=str(payload.get("model") or PLANNER_MODEL),
+            user_instruction=str(payload.get("instruction") or ""),
+            conversation=conversation if isinstance(conversation, list) else [],
+            think=payload.get("think") is True,
+            max_payload_chars=int(payload.get("max_payload_chars") or 30000),
+        )
+        compose_payload["keep_alive"] = OLLAMA_KEEP_ALIVE
+        compose_payload["options"] = ollama_options(num_predict=2000)
+        response = post_json(
+            PLANNER_URL,
+            compose_payload,
+            timeout=max(15, min(int(payload.get("timeout_seconds") or 60), 180)),
+        )
+        parsed = parse_planner_lab_compose_response(response if isinstance(response, dict) else {})
+        return {
+            "ok": bool(parsed.get("ok")),
+            "tool": "planner_lab_compose",
+            "diagnostic_only": True,
+            "planner_url": PLANNER_URL,
+            "model": compose_payload.get("model"),
+            "think": compose_payload.get("think"),
+            "compose_request_shape": {
+                "format": "json_schema",
+                "messages": len(compose_payload.get("messages") or []),
+                "tools": 0,
+            },
+            "result": parsed,
         }
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events", include_in_schema=False)
