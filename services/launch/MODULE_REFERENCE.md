@@ -30,15 +30,16 @@ minimal change:
 4. Set AI-Carmine env for 3571/3572/tool URLs, planner settings and task model.
 5. Start 3572 broker/runtime with labtools Python.
 6. Start 3571 public bridge with labtools Python.
-7. Start OpenVINO provider process if enabled.
-8. Start executor with labtools Python.
-9. Start Open Terminal through OpenWebUI venv.
-10. Clean legacy LabTools/Qwen tool env values and ports.
-11. Start lab mirror watchdog if enabled.
-12. Print runtime summary and main GPU diagnostics.
-13. Enforce localhost-only OpenWebUI policy.
-14. Start OpenWebUI in foreground with OpenWebUI Python.
-15. On exit, stop launcher-managed services except main Ollama Desktop/11434.
+7. Start OpenVINO provider process on 3550 if enabled.
+8. Start Phi-3.5 NPU diagnostic sidecar on 3551 only if explicitly enabled.
+9. Start executor with labtools Python.
+10. Start Open Terminal through OpenWebUI venv.
+11. Clean legacy LabTools/Qwen tool env values and ports.
+12. Start lab mirror watchdog if enabled.
+13. Print runtime summary and main GPU diagnostics.
+14. Enforce localhost-only OpenWebUI policy.
+15. Start OpenWebUI in foreground with OpenWebUI Python.
+16. On exit, stop launcher-managed services except main Ollama Desktop/11434.
 
 ## Module Map
 
@@ -59,7 +60,8 @@ minimal change:
 | safe command executor | `C:\Users\carmi\AI\venvs\labtools` unless `AICARMINE_EXECUTOR_PYTHON` overrides it |
 | OpenWebUI | `C:\Users\carmi\AI\venvs\openwebui` |
 | Open Terminal | `C:\Users\carmi\AI\venvs\openwebui` |
-| OpenVINO diagnostics/provider | OpenVINO-specific Python configured by env |
+| OpenVINO reranker provider 3550 | `C:\Users\carmi\AI\venvs\openvino` through `OPENVINO_PYTHON_EXE` |
+| Phi-3.5 NPU diagnostic sidecar 3551 | `C:\Users\carmi\AI\venvs\openvino` through `NPU_PHI_PYTHON_EXE`; disabled by default until the sidecar script exists |
 | Ollama 11434/11435 | external `ollama.exe` process, not a Python venv |
 
 ## Repository Workdir Env Coupling

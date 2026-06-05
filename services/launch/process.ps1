@@ -107,3 +107,74 @@ function Start-OpenVINOProviderIfEnabled {
 
     throw "OpenVINO/NPU provider non risponde su $HealthUrl dopo 60 secondi"
 }
+
+function Start-NpuPhiServiceIfEnabled {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Enabled,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Script,
+
+        [Parameter(Mandatory = $true)]
+        [string]$HealthUrl,
+
+        [Parameter(Mandatory = $true)]
+        [int]$Port,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PythonExe,
+
+        [Parameter(Mandatory = $true)]
+        [string]$EnvScript
+    )
+
+    if ($Enabled -ne "1") {
+        Write-Host "NPU Phi sidecar disabilitato. ENABLE_NPU_PHI_SERVICE=$Enabled"
+        return
+    }
+
+    if (Test-HttpHealth $HealthUrl) {
+        Write-Host "NPU Phi sidecar gia' attivo: $HealthUrl"
+        return
+    }
+
+    if (-not (Test-Path $PythonExe)) {
+        throw "ENABLE_NPU_PHI_SERVICE=1 ma NPU_PHI_PYTHON_EXE non trovato: $PythonExe"
+    }
+    if (-not (Test-Path $EnvScript)) {
+        throw "ENABLE_NPU_PHI_SERVICE=1 ma NPU_PHI_ENV_SCRIPT non trovato: $EnvScript"
+    }
+    if (-not (Test-Path $Script)) {
+        throw "ENABLE_NPU_PHI_SERVICE=1 ma script sidecar non trovato: $Script"
+    }
+
+    $Owner = Get-PortOwner -Port $Port
+    if ($null -ne $Owner) {
+        Write-Warning "NPU Phi sidecar: porta $Port occupata ma health non sano."
+        Write-Warning "PID=$($Owner.ProcessId) Name=$($Owner.Name)"
+        Write-Warning "CommandLine=$($Owner.CommandLine)"
+        throw "NPU Phi sidecar bloccato: porta $Port occupata da processo non sano."
+    }
+
+    Write-Host "Avvio NPU Phi sidecar su porta $Port con Python OpenVINO: $PythonExe"
+
+    $Proc = Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File `"$Script`"" `
+        -WindowStyle Minimized `
+        -PassThru
+
+    Write-Host "NPU Phi sidecar processo avviato: PID=$($Proc.Id)"
+
+    for ($i = 0; $i -lt 60; $i++) {
+        if (Test-HttpHealth $HealthUrl) {
+            Write-Host "NPU Phi sidecar attivo: $HealthUrl"
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    throw "NPU Phi sidecar non risponde su $HealthUrl dopo 60 secondi"
+}

@@ -102,6 +102,9 @@ knowledge-*/**
 models-*/**
 !models-*/
 !models-*/README.md
+npu-models/**
+!npu-models/
+!npu-models/README.md
 ovms-*/**
 !ovms-*/
 !ovms-*/README.md

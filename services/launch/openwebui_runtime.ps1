@@ -14,7 +14,8 @@ if (
 if (
     (-not (Get-Command Get-PortOwner -ErrorAction SilentlyContinue)) -or
     (-not (Get-Command Stop-PortOwner -ErrorAction SilentlyContinue)) -or
-    (-not (Get-Command Start-OpenVINOProviderIfEnabled -ErrorAction SilentlyContinue))
+    (-not (Get-Command Start-OpenVINOProviderIfEnabled -ErrorAction SilentlyContinue)) -or
+    (-not (Get-Command Start-NpuPhiServiceIfEnabled -ErrorAction SilentlyContinue))
 ) { . (Join-Path $LaunchRoot "process.ps1") }
 if (
     (-not (Get-Command Test-OllamaEndpoint -ErrorAction SilentlyContinue)) -or
@@ -40,6 +41,7 @@ $config = @{
     VULKAN_AGENT_PORT = 3572
     EXECUTOR_PORT = 3560
     OPENVINO_PORT = 3550
+    NPU_PHI_PORT = 3551
     JUPYTER_PORT = 8888
     CUDA_DEVICE = "GPU-751537aa-1f63-6ad0-db71-9727edd22244"
 }
@@ -92,6 +94,28 @@ else {
     Remove-Item Env:RAG_RERANKING_ENGINE -ErrorAction SilentlyContinue
 }
 
+# NPU Phi diagnostic sidecar contract.
+# This sidecar is separate from the 3550 OpenVINO/reranker provider and must
+# always use the OpenVINO venv/env script. Default disabled until the sidecar
+# script exists; enabling it must not change the 3550 RAG reranker wiring.
+$NPU_PHI_PYTHON_EXE = Set-UserEnvValue "NPU_PHI_PYTHON_EXE" $OPENVINO_PYTHON_EXE
+$NPU_PHI_ENV_SCRIPT = Set-UserEnvValue "NPU_PHI_ENV_SCRIPT" $OPENVINO_ENV_SCRIPT
+$NPU_PHI_SERVICE_SCRIPT = Set-UserEnvValue "NPU_PHI_SERVICE_SCRIPT" "$AI_ROOT\services\npu-phi-service.ps1"
+$NPU_PHI_HOST = Set-UserEnvValue "NPU_PHI_HOST" $config.HOSTNAME
+$NPU_PHI_PORT = Set-UserEnvValue "NPU_PHI_PORT" "$($config.NPU_PHI_PORT)"
+$NPU_PHI_BASE_URL = Set-UserEnvValue "NPU_PHI_BASE_URL" "http://$($config.HOSTNAME):$($config.NPU_PHI_PORT)"
+$NPU_PHI_HEALTH_URL = Set-UserEnvValue "NPU_PHI_HEALTH_URL" "http://$($config.HOSTNAME):$($config.NPU_PHI_PORT)/healthz"
+$NPU_PHI_MODEL_DIR = Set-UserEnvValue "NPU_PHI_MODEL_DIR" "$AI_ROOT\npu-models\Phi-3.5-mini-instruct-int4-cw-ov"
+$NPU_PHI_CACHE_DIR = Set-UserEnvValue "NPU_PHI_CACHE_DIR" "$AI_ROOT\cache\openvino\npu_phi"
+$NPU_PHI_SPOOL_DIR = Set-UserEnvValue "NPU_PHI_SPOOL_DIR" "$AI_ROOT\state\npu_phi\spool"
+$NPU_PHI_QUEUE_MAXSIZE = Set-UserEnvDefault "NPU_PHI_QUEUE_MAXSIZE" "1"
+$NPU_PHI_EXEC_TIMEOUT_SEC = Set-UserEnvDefault "NPU_PHI_EXEC_TIMEOUT_SEC" "12"
+$NPU_PHI_GENERATE_HINT = Set-UserEnvDefault "NPU_PHI_GENERATE_HINT" "FAST_COMPILE"
+$NPU_PHI_ENABLE_AOT_BLOB = Set-UserEnvDefault "NPU_PHI_ENABLE_AOT_BLOB" "1"
+$ENABLE_NPU_PHI_SERVICE = Set-UserEnvDefault "ENABLE_NPU_PHI_SERVICE" "0"
+$ENABLE_NPU_PHI_BROKER_DIAGNOSTICS = Set-UserEnvDefault "ENABLE_NPU_PHI_BROKER_DIAGNOSTICS" "0"
+$NPU_PHI_BROKER_MODE = Set-UserEnvDefault "NPU_PHI_BROKER_MODE" "best_effort"
+
 # ------------------------------------------------------------------
 # Validazioni filesystem
 # ------------------------------------------------------------------
@@ -110,7 +134,10 @@ New-Item -ItemType Directory -Force -Path `
     "$AI_ROOT\models-task", `
     "$AI_ROOT\logs", `
     "$AI_ROOT\cache\openvino", `
-    "$AI_ROOT\cache\huggingface" | Out-Null
+    "$AI_ROOT\cache\openvino\npu_phi", `
+    "$AI_ROOT\cache\huggingface", `
+    "$AI_ROOT\npu-models", `
+    "$AI_ROOT\state\npu_phi\spool" | Out-Null
 
 # ------------------------------------------------------------------
 # Env runtime Open WebUI
@@ -147,6 +174,23 @@ $env:ENABLE_OPENVINO_PROVIDER = $ENABLE_OPENVINO_PROVIDER
 $env:ENABLE_EXTERNAL_RERANKER = $ENABLE_EXTERNAL_RERANKER
 $env:RAG_EXTERNAL_RERANKER_URL = $RAG_EXTERNAL_RERANKER_URL
 $env:RAG_RERANKING_MODEL = $RAG_RERANKING_MODEL
+$env:NPU_PHI_PYTHON_EXE = $NPU_PHI_PYTHON_EXE
+$env:NPU_PHI_ENV_SCRIPT = $NPU_PHI_ENV_SCRIPT
+$env:NPU_PHI_SERVICE_SCRIPT = $NPU_PHI_SERVICE_SCRIPT
+$env:NPU_PHI_HOST = $NPU_PHI_HOST
+$env:NPU_PHI_PORT = $NPU_PHI_PORT
+$env:NPU_PHI_BASE_URL = $NPU_PHI_BASE_URL
+$env:NPU_PHI_HEALTH_URL = $NPU_PHI_HEALTH_URL
+$env:NPU_PHI_MODEL_DIR = $NPU_PHI_MODEL_DIR
+$env:NPU_PHI_CACHE_DIR = $NPU_PHI_CACHE_DIR
+$env:NPU_PHI_SPOOL_DIR = $NPU_PHI_SPOOL_DIR
+$env:NPU_PHI_QUEUE_MAXSIZE = $NPU_PHI_QUEUE_MAXSIZE
+$env:NPU_PHI_EXEC_TIMEOUT_SEC = $NPU_PHI_EXEC_TIMEOUT_SEC
+$env:NPU_PHI_GENERATE_HINT = $NPU_PHI_GENERATE_HINT
+$env:NPU_PHI_ENABLE_AOT_BLOB = $NPU_PHI_ENABLE_AOT_BLOB
+$env:ENABLE_NPU_PHI_SERVICE = $ENABLE_NPU_PHI_SERVICE
+$env:ENABLE_NPU_PHI_BROKER_DIAGNOSTICS = $ENABLE_NPU_PHI_BROKER_DIAGNOSTICS
+$env:NPU_PHI_BROKER_MODE = $NPU_PHI_BROKER_MODE
 
 if ($ENABLE_EXTERNAL_RERANKER -eq "1") {
     $env:RAG_RERANKING_ENGINE = "external"
@@ -171,6 +215,9 @@ Write-Host "OpenVINO:"
 Write-Host "  Python        = $OPENVINO_PYTHON_EXE"
 Write-Host "  Env script    = $OPENVINO_ENV_SCRIPT"
 Write-Host "  Device target = $OPENVINO_PROVIDER_DEVICE"
+Write-Host "  Phi sidecar   = $NPU_PHI_BASE_URL (enabled=$ENABLE_NPU_PHI_SERVICE)"
+Write-Host "  Phi Python    = $NPU_PHI_PYTHON_EXE"
+Write-Host "  Phi model     = $NPU_PHI_MODEL_DIR"
 
 if (Test-Path $OPENVINO_PYTHON_EXE) {
     try {
@@ -496,6 +543,16 @@ Start-OpenVINOProviderIfEnabled `
     -Script $OPENVINO_PROVIDER_SCRIPT `
     -HealthUrl $OPENVINO_PROVIDER_HEALTH_URL `
     -Port $config.OPENVINO_PORT
+
+# Phi-3.5 diagnostic sidecar: staged and disabled by default. When enabled,
+# it must use the OpenVINO venv/env script and its dedicated 3551 port.
+Start-NpuPhiServiceIfEnabled `
+    -Enabled $ENABLE_NPU_PHI_SERVICE `
+    -Script $NPU_PHI_SERVICE_SCRIPT `
+    -HealthUrl $NPU_PHI_HEALTH_URL `
+    -Port $config.NPU_PHI_PORT `
+    -PythonExe $NPU_PHI_PYTHON_EXE `
+    -EnvScript $NPU_PHI_ENV_SCRIPT
 
 Set-Location $AI_ROOT
 
@@ -1170,6 +1227,7 @@ Write-Host "  Ollama main       = http://$($config.HOSTNAME):$($config.OLLAMA_MA
 Write-Host "  Ollama GPU0 task  = http://$($config.HOSTNAME):$($config.OLLAMA_TASK_PORT)"
 Write-Host "  CPU fallback      = disabled"
 Write-Host "  OpenVINO/NPU      = $OPENVINO_PROVIDER_HEALTH_URL"
+Write-Host "  NPU Phi sidecar   = $NPU_PHI_HEALTH_URL (enabled=$ENABLE_NPU_PHI_SERVICE)"
 Write-Host ""
 Write-Host "Environment:"
 Write-Host "  DATA_DIR                 = $env:DATA_DIR"
@@ -1189,6 +1247,9 @@ Write-Host "  ENABLE_OPENVINO_PROVIDER  = $env:ENABLE_OPENVINO_PROVIDER"
 Write-Host "  ENABLE_EXTERNAL_RERANKER  = $env:ENABLE_EXTERNAL_RERANKER"
 Write-Host "  RAG_RERANKING_ENGINE      = $env:RAG_RERANKING_ENGINE"
 Write-Host "  RAG_EXTERNAL_RERANKER_URL = $env:RAG_EXTERNAL_RERANKER_URL"
+Write-Host "  ENABLE_NPU_PHI_SERVICE    = $env:ENABLE_NPU_PHI_SERVICE"
+Write-Host "  NPU_PHI_PYTHON_EXE        = $env:NPU_PHI_PYTHON_EXE"
+Write-Host "  NPU_PHI_MODEL_DIR         = $env:NPU_PHI_MODEL_DIR"
 Write-Host ""
 
 # Diagnostica main GPU.

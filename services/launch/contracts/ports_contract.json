@@ -5,6 +5,18 @@
       "role": "safe_command_executor",
       "public_to_openwebui": false
     },
+    "3550": {
+      "role": "openvino_external_reranker",
+      "public_to_openwebui": false,
+      "health_endpoint": "http://127.0.0.1:3550/v2/models/BAAI%2Fbge-reranker-v2-m3/ready"
+    },
+    "3551": {
+      "role": "npu_phi_diagnostic_sidecar",
+      "public_to_openwebui": false,
+      "enabled_default": false,
+      "health_endpoint": "http://127.0.0.1:3551/healthz",
+      "distinct_from": 3550
+    },
     "3571": {
       "role": "public_openwebui_bridge",
       "public_to_openwebui": true,

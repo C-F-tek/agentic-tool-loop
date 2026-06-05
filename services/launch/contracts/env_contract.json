@@ -3,6 +3,7 @@
   "venvs": {
     "bridge_and_broker": "venvs/labtools",
     "openwebui": "venvs/openwebui",
+    "openvino": "venvs/openvino",
     "task_ollama": "external_ollama_task_instance"
   },
   "required_boundaries": [
@@ -25,6 +26,13 @@
       "name": "ollama_task_repair",
       "python_env": "task_ollama",
       "public_openwebui_tool": null
+    },
+    {
+      "name": "npu_phi_diagnostic_sidecar",
+      "python_env": "openvino",
+      "public_openwebui_tool": null,
+      "port": 3551,
+      "mode": "best_effort_diagnostic_only"
     }
   ],
   "persistent_env_notes": [
@@ -39,5 +47,19 @@
     "provider_port": 3550,
     "health_path": "/v2/models/BAAI%2Fbge-reranker-v2-m3/ready",
     "note": "Default ON for the current local AI-Carmine runtime profile; disable explicitly when the provider HTTP service is unavailable."
+  },
+  "npu_phi_service": {
+    "enabled_default": "0",
+    "broker_diagnostics_enabled_default": "0",
+    "broker_mode_default": "best_effort",
+    "provider_port": 3551,
+    "python_env": "openvino",
+    "python_env_var": "NPU_PHI_PYTHON_EXE",
+    "env_script_var": "NPU_PHI_ENV_SCRIPT",
+    "model_dir": "npu-models/Phi-3.5-mini-instruct-int4-cw-ov",
+    "cache_dir": "cache/openvino/npu_phi",
+    "spool_dir": "state/npu_phi/spool",
+    "must_not_change_openvino_provider_port": 3550,
+    "note": "Staged diagnostic sidecar contract. It is disabled until the service script exists, and it must use the OpenVINO venv rather than labtools or openwebui."
   }
 }
