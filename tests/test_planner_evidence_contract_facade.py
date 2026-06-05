@@ -84,6 +84,15 @@ def test_planner_evidence_contract_makes_candidate_repo_reads_validator_admissib
         "ia_carmine/runtime/heap_gate/provider_context.py"
         in contract["validator_admissible_repo_read_paths"]
     )
+    repo_read_candidates = [
+        action
+        for action in contract["candidate_next_actions"]
+        if action.get("tool") == "repo_read"
+    ]
+    assert repo_read_candidates[0]["action_id"]
+    assert repo_read_candidates[0]["action_proof"]["path_exists"] is True
+    assert repo_read_candidates[0]["action_proof"]["path_readable"] is True
+    assert repo_read_candidates[0]["action_proof"]["validator_admissible"] is True
 
 
 def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp_path, monkeypatch) -> None:
@@ -120,3 +129,8 @@ def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp
     assert missing not in candidate_paths
     assert missing not in contract["validator_admissible_repo_read_paths"]
     assert missing not in str(contract.get("required_next_progress", ""))
+    assert not any(
+        (action.get("action_proof") or {}).get("path_exists") is False
+        for action in contract["candidate_next_actions"]
+        if isinstance(action, dict)
+    )

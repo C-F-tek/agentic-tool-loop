@@ -16,6 +16,7 @@ _PUBLIC_EXPORTS = {
     'planner_evidence_contract': 'builder',
     'repo_path_kind': 'repo_path_policy',
     'required_working_set_for_prompt': 'required_working_set',
+    'score_evidence_coverage': 'coverage_scorer',
     'semantic_goal_classification': 'goal_classifier',
 
 }

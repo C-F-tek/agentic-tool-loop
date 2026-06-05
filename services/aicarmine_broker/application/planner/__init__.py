@@ -12,7 +12,9 @@ _PUBLIC_EXPORTS = {
     'normalize_planner_decision': 'decision_normalizer',
     'planner_decision': 'turn',
     'PlannerLoopState': 'state',
+    'RequiredNextProgress': 'required_progress',
     'planner_system_for_current_mode': 'system_prompt',
+    'required_next_progress_from_text': 'required_progress',
     'run_agentic_planner_job': 'loop',
     'validate_planner_decision_against_evidence': 'validator',
 

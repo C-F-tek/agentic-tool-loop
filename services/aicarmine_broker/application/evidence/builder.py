@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from aicarmine_broker.application.evidence.coverage_scorer import score_evidence_coverage
+from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
+from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
+
 
 @dataclass(frozen=True)
 class EvidenceBuilder:
@@ -870,6 +874,56 @@ class EvidenceBuilder:
             contract["required_next_progress"] = (
                 "Use prior evidence. If enough, final with concrete cited paths; otherwise choose a new evidence-bound tool."
             )
+        proofed_candidates: list[dict[str, Any]] = []
+        for action in contract.get("candidate_next_actions") or []:
+            if not isinstance(action, dict):
+                continue
+            args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+            action_paths = [
+                _repo_rel_token(path)
+                for path in _agentic_v2_decision_paths(str(action.get("tool") or ""), args)
+                if _repo_rel_token(path)
+            ]
+            path_exists = None
+            path_readable = None
+            under_scope = None
+            validator_admissible = None
+            if action_paths:
+                path_exists = all(_path_exists_repo_relative(path) for path in action_paths)
+                path_readable = all(_repo_readable_evidence_file(path) for path in action_paths)
+                under_scope = (
+                    all(_path_under_scope(path, target_scope) for path in action_paths)
+                    if target_scope
+                    else True
+                )
+                validator_admissible = (
+                    all(path in validator_admissible_read_paths for path in action_paths)
+                    if action.get("tool") == "repo_read"
+                    else None
+                )
+            proofed_candidates.append(
+                attach_action_proof(
+                    action,
+                    source="evidence_contract_candidate_next_actions",
+                    path_exists=path_exists,
+                    path_readable=path_readable,
+                    under_scope=under_scope,
+                    validator_admissible=validator_admissible,
+                )
+            )
+        contract["candidate_next_actions"] = proofed_candidates
+        contract["evidence_coverage"] = score_evidence_coverage(contract)
+        progress_text = str(contract.get("required_next_progress") or "").strip()
+        if progress_text:
+            contract["required_next_progress_model"] = required_next_progress_from_text(
+                progress_text,
+                metadata={
+                    "final_allowed": bool(contract.get("planner_may_choose_final")),
+                    "candidate_next_actions_count": len(contract.get("candidate_next_actions") or []),
+                    "forbidden_next_actions_count": len(contract.get("forbidden_next_actions") or []),
+                    "goal_requests_code_product": bool(contract.get("goal_requests_code_product")),
+                },
+            ).to_contract()
         contract = _apply_turn_surface_policy(contract)
         return contract
 

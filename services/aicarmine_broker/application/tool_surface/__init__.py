@@ -17,6 +17,8 @@ _PUBLIC_EXPORTS = {
     'native_tools_schema_for_planner': 'manifest_builder',
     'ToolSurfacePolicy': 'turn_surface_policy',
     'apply_turn_surface_policy': 'turn_surface_policy',
+    'attach_action_proof': 'action_proof_ledger',
+    'stable_action_id': 'action_proof_ledger',
     'tool_surface_names_for_turn': 'turn_surface_policy',
 
 }
