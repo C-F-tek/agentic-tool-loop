@@ -2528,6 +2528,7 @@ def planner_evidence_contract(
             "latest_code_product_build_state": _latest_code_product_build_state,
             "low_signal_top_dir": _low_signal_top_dir,
             "meaningful_read_candidates_from_evidence": _meaningful_read_candidates_from_evidence,
+            "path_exists_repo_relative": _path_exists_repo_relative,
             "path_under_scope": _path_under_scope,
             "paths_from_list_rows": _paths_from_list_rows,
             "paths_from_result": _paths_from_result,

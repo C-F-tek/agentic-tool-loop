@@ -45,3 +45,42 @@ def test_planner_evidence_contract_file_goal_accepts_verified_inline_read() -> N
     assert contract["verified_content_read_count"] == 1
     assert contract["finalization_contract"]["final_allowed"] is True
     assert contract["finalization_contract"]["verified_content_reads"][0]["source"] == "tool_result_inline"
+
+
+def test_planner_evidence_contract_makes_candidate_repo_reads_validator_admissible(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "ia_carmine" / "runtime" / "heap_gate" / "provider_context.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def provider_context():\n    return {}\n", encoding="utf-8")
+    monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
+
+    intrinsic_context = {
+        "retrieved_rag_chunks": {
+            "status": "ready",
+            "ranking_source": "test",
+            "items": [
+                {
+                    "path": "ia_carmine/runtime/heap_gate/provider_context.py",
+                    "score": 1.0,
+                }
+            ],
+        }
+    }
+
+    contract = planner.planner_evidence_contract(
+        "analizza la repository e proponi diff concreti per il refactoring del codice",
+        [],
+        intrinsic_context,
+    )
+
+    candidate_paths = [
+        path
+        for action in contract["candidate_next_actions"]
+        if action.get("tool") == "repo_read"
+        for path in (action.get("arguments") or {}).get("paths", [])
+        if isinstance(path, str)
+    ]
+    assert "ia_carmine/runtime/heap_gate/provider_context.py" in candidate_paths
+    assert (
+        "ia_carmine/runtime/heap_gate/provider_context.py"
+        in contract["validator_admissible_repo_read_paths"]
+    )

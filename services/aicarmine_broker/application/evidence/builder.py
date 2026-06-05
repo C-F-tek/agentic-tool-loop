@@ -53,6 +53,7 @@ class EvidenceBuilder:
         _latest_code_product_build_state = deps["latest_code_product_build_state"]
         _low_signal_top_dir = deps["low_signal_top_dir"]
         _meaningful_read_candidates_from_evidence = deps["meaningful_read_candidates_from_evidence"]
+        _path_exists_repo_relative = deps["path_exists_repo_relative"]
         _path_under_scope = deps["path_under_scope"]
         _paths_from_list_rows = deps["paths_from_list_rows"]
         _paths_from_result = deps["paths_from_result"]
@@ -257,6 +258,32 @@ class EvidenceBuilder:
             list_failed,
             core_discovery_candidates,
         )
+        candidate_repo_read_paths: list[str] = []
+        for action in candidates:
+            if not isinstance(action, dict) or action.get("tool") != "repo_read":
+                continue
+            args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+            raw_paths: list[Any] = []
+            if args.get("path") not in (None, "", [], {}):
+                raw_paths.append(args.get("path"))
+            if isinstance(args.get("paths"), list):
+                raw_paths.extend(args.get("paths") or [])
+            for raw_path in raw_paths:
+                if isinstance(raw_path, dict):
+                    continue
+                p = _repo_rel_token(raw_path)
+                if (
+                    p
+                    and p != "."
+                    and p not in candidate_repo_read_paths
+                    and p not in read_ok
+                    and _path_exists_repo_relative(p)
+                    and _repo_readable_evidence_file(p)
+                ):
+                    candidate_repo_read_paths.append(p)
+        for p in candidate_repo_read_paths:
+            if p not in validator_admissible_read_paths:
+                validator_admissible_read_paths.append(p)
         code_product_required = bool(semantic_classification.get("must_produce_code_product")) and not goal_requests_apply(goal)
         code_product_proposals = successful_code_edit_proposals(history)
         latest_code_product = code_product_proposals[-1] if code_product_proposals else {}
