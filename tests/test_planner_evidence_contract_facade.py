@@ -84,3 +84,39 @@ def test_planner_evidence_contract_makes_candidate_repo_reads_validator_admissib
         "ia_carmine/runtime/heap_gate/provider_context.py"
         in contract["validator_admissible_repo_read_paths"]
     )
+
+
+def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
+
+    missing = "ia_carmine/runtime/heap_gate/provider_context.py"
+    intrinsic_context = {
+        "retrieved_rag_chunks": {
+            "status": "ready",
+            "ranking_source": "test",
+            "items": [
+                {
+                    "path": missing,
+                    "score": 1.0,
+                }
+            ],
+        }
+    }
+
+    contract = planner.planner_evidence_contract(
+        "analizza la repository e proponi diff concreti per il refactoring del codice",
+        [],
+        intrinsic_context,
+    )
+
+    candidate_paths = [
+        path
+        for action in contract["candidate_next_actions"]
+        if action.get("tool") == "repo_read"
+        for path in (action.get("arguments") or {}).get("paths", [])
+        if isinstance(path, str)
+    ]
+
+    assert missing not in candidate_paths
+    assert missing not in contract["validator_admissible_repo_read_paths"]
+    assert missing not in str(contract.get("required_next_progress", ""))
