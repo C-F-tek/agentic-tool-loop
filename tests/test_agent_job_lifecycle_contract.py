@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "services"))
 
 from aicarmine_broker.application.job.lifecycle import AgentJobLifecycle
 
@@ -153,6 +157,11 @@ def test_job_lifecycle_start_creates_queued_state(tmp_path: Path) -> None:
     assert events[0]["event_type"] == "job_queued"
     assert result["mode"] == "agent_job_started"
     assert result["job_id"] == "job-abcdef12"
+    assert "evidence_guide_for_30b" in result
+    assert "message_for_30b" not in result
+    assert "summary_for_30b" not in result
+    assert "content" not in result
+    assert result["tool_context_for_30b"]["top_level_evidence_guide_field"] == "evidence_guide_for_30b"
     assert waits == []
     assert threads["job-abcdef12"].started is True
     assert threads["job-abcdef12"].name == "aicarmine-agent-job-job-abcdef12"

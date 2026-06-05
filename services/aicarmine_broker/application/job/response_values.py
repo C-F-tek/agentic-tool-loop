@@ -45,3 +45,33 @@ def event_digest(event: dict[str, Any]) -> dict[str, Any]:
             if key in payload:
                 digest[key] = payload.get(key)
     return {k: v for k, v in digest.items() if v not in (None, "", [], {})}
+
+
+NARRATIVE_DUPLICATE_KEYS = (
+    "answer_for_30b",
+    "message_for_30b",
+    "summary_for_30b",
+    "content",
+    "evidence_guide_for_30b",
+    "final_answer",
+    "composed_answer",
+)
+
+
+def strip_narrative_duplicates_from_context(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    cleaned = dict(value)
+    for key in NARRATIVE_DUPLICATE_KEYS:
+        cleaned.pop(key, None)
+    usage = cleaned.get("openwebui_usage") if isinstance(cleaned.get("openwebui_usage"), dict) else {}
+    if usage:
+        usage = dict(usage)
+        usage.pop("primary_answer_field", None)
+        usage["top_level_evidence_guide_field"] = "evidence_guide_for_30b"
+        usage["rule"] = (
+            "tool_context_for_30b contains context/evidence only. The global "
+            "evidence_guide_for_30b field is outside this JSON."
+        )
+        cleaned["openwebui_usage"] = usage
+    return cleaned

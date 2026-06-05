@@ -43,8 +43,11 @@ def test_wait_timeout_response_preserves_status_and_adds_continuation() -> None:
     assert response["wait_completed"] is False
     assert response["wait_timeout_seconds"] == 9
     assert response["events_tail_digest"][0]["status"] == "running"
-    assert "candidate_next_actions=1 recent_rejections=2" in response["message_for_30b"]
-    assert response["answer_for_30b"] == response["message_for_30b"]
+    assert "candidate_next_actions=1 recent_rejections=2" in response["evidence_guide_for_30b"]
+    assert "answer_for_30b" not in response
+    assert "message_for_30b" not in response
+    assert "summary_for_30b" not in response
+    assert "content" not in response
     assert response["next_action_for_30b"] == {
         "action": "continue_same_openwebui_context",
         "status": "running",

@@ -4050,7 +4050,7 @@ def finalize_agentic_job(
     if tool_context.get("best_partial_product_for_30b") not in (None, "", [], {}):
         result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
     public_result = _public_terminal_result_for_30b(result)
-    answer = tool_context.get("answer_for_30b") or final_summary_with_turns
+    answer = answer_for_openwebui(status, final_summary_with_turns, result)
     evidence_guide = "\n".join(
         part
         for part in (

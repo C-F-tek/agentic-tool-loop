@@ -3,7 +3,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from .response_values import event_digest
+from .response_values import event_digest, strip_narrative_duplicates_from_context
+
+
+def _running_evidence_guide(job_id: str, state: dict[str, Any], memory: dict[str, Any]) -> str:
+    candidates = memory.get("candidate_next_actions") if isinstance(memory.get("candidate_next_actions"), list) else []
+    rejections = memory.get("rejections_tail") if isinstance(memory.get("rejections_tail"), list) else []
+    legacy_text = str(
+        state.get("evidence_guide_for_30b")
+        or state.get("answer_for_30b")
+        or state.get("message_for_30b")
+        or state.get("summary_for_30b")
+        or ""
+    ).strip()
+    parts = [
+        "GUIDA STATO LOOP INTERNO PER IL 30B.",
+        f"Agent job {job_id} status={state.get('status')} step={state.get('current_step')} message={state.get('status_message') or ''}.",
+        f"candidate_next_actions={len(candidates)} recent_rejections={len(rejections)}.",
+        "Usa working_memory_for_30b, evidence_contract e tool_context_for_30b nello stesso payload; non usare path locali come contenuto.",
+    ]
+    if legacy_text:
+        parts.extend(["", "Nota legacy convertita in guida unica:", legacy_text])
+    return "\n".join(parts)
 
 
 def build_compact_status_response(
@@ -36,12 +57,11 @@ def build_compact_status_response(
         "evidence_contract": evidence,
         "events_tail_digest": [event_digest(ev) for ev in events[-10:]],
     }
-    message_for_30b = state.get("answer_for_30b") or (
-        f"Agent job {job_id} status={state.get('status')} "
-        f"step={state.get('current_step')} message={state.get('status_message') or ''}. "
-        "Use working_memory_for_30b/evidence_contract from this same tool result "
-        "before deciding the next call."
-    )
+    evidence_guide = _running_evidence_guide(job_id, state, memory)
+    tool_context = strip_narrative_duplicates_from_context(state.get("tool_context_for_30b") or running_context)
+    agent_context = strip_narrative_duplicates_from_context(state.get("agent_context_for_30b") or running_context)
+    structured_context = strip_narrative_duplicates_from_context(state.get("structured_context_for_30b") or running_context)
+    structured_result = strip_narrative_duplicates_from_context(state.get("structured_result_for_30b") or running_context)
 
     return {
         "ok": True,
@@ -60,7 +80,7 @@ def build_compact_status_response(
         "events_tail": events,
         "final_path": state.get("final_path"),
         "final_summary": state.get("final_summary", ""),
-        "answer_for_30b": state.get("answer_for_30b", ""),
+        "evidence_guide_for_30b": evidence_guide,
         "next_action_for_30b": state.get("next_action_for_30b", {}),
         "working_memory_for_30b": state.get("working_memory_for_30b", {}),
         "evidence_contract": state.get("evidence_contract", {}),
@@ -68,12 +88,8 @@ def build_compact_status_response(
         "current_step": state.get("current_step"),
         "status_message": state.get("status_message", ""),
         "result": state.get("result", {}),
-        "tool_context_for_30b": state.get("tool_context_for_30b") or running_context,
-        "agent_context_for_30b": state.get("agent_context_for_30b") or running_context,
-        "structured_context_for_30b": state.get("structured_context_for_30b")
-        or running_context,
-        "structured_result_for_30b": state.get("structured_result_for_30b")
-        or running_context,
-        "message_for_30b": message_for_30b,
-        "answer_for_30b": state.get("answer_for_30b") or message_for_30b,
+        "tool_context_for_30b": tool_context,
+        "agent_context_for_30b": agent_context,
+        "structured_context_for_30b": structured_context,
+        "structured_result_for_30b": structured_result,
     }

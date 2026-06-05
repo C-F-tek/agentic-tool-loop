@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from .response_values import compact_text, event_digest
+from .response_values import compact_text, event_digest, strip_narrative_duplicates_from_context
 from ..public_payload.history_ledger import build_public_result_digest
 from ..public_payload.terminal_sanitizer import public_terminal_sanitize_text
 from ..public_payload.terminal_result import public_terminal_result_for_30b
@@ -125,31 +125,6 @@ def _build_evidence_guide_for_30b(
     return public_terminal_sanitize_text(compact_text("\n".join(lines), limit))
 
 
-def _strip_tool_context_narrative_duplicates(tool_context: dict[str, Any]) -> dict[str, Any]:
-    cleaned = dict(tool_context)
-    for key in (
-        "answer_for_30b",
-        "message_for_30b",
-        "summary_for_30b",
-        "content",
-        "evidence_guide_for_30b",
-        "final_answer",
-        "composed_answer",
-    ):
-        cleaned.pop(key, None)
-    usage = cleaned.get("openwebui_usage") if isinstance(cleaned.get("openwebui_usage"), dict) else {}
-    if usage:
-        usage = dict(usage)
-        usage.pop("primary_answer_field", None)
-        usage["top_level_evidence_guide_field"] = "evidence_guide_for_30b"
-        usage["rule"] = (
-            "tool_context_for_30b contains context/evidence only. The global "
-            "evidence_guide_for_30b field is outside this JSON."
-        )
-        cleaned["openwebui_usage"] = usage
-    return cleaned
-
-
 def build_compact_terminal_response(
     *,
     job_id: str,
@@ -257,7 +232,7 @@ def build_compact_terminal_response(
             "local_references_omitted_for_openwebui": True,
         }
     else:
-        tool_context = _strip_tool_context_narrative_duplicates(tool_context)
+        tool_context = strip_narrative_duplicates_from_context(tool_context)
 
     context_alias = {
         "schema": "agentic_terminal_context_alias.v1",

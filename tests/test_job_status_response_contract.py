@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "services"))
+
 from aicarmine_broker.application.job.status_response import build_compact_status_response
 
 
@@ -34,8 +40,12 @@ def test_compact_status_response_builds_running_context() -> None:
     assert response["mode"] == "agent_job_status"
     assert response["job_id"] == "job-x"
     assert response["status"] == "running"
-    assert response["message_for_30b"].startswith("Agent job job-x status=running")
-    assert response["answer_for_30b"] == response["message_for_30b"]
+    assert response["evidence_guide_for_30b"].startswith("GUIDA STATO LOOP INTERNO")
+    assert "Agent job job-x status=running" in response["evidence_guide_for_30b"]
+    assert "answer_for_30b" not in response
+    assert "message_for_30b" not in response
+    assert "summary_for_30b" not in response
+    assert "content" not in response
     assert response["tool_context_for_30b"]["type"] == (
         "agentic_loop_running_structured_context"
     )
@@ -60,8 +70,9 @@ def test_compact_status_response_preserves_existing_context_and_answer() -> None
         job_url_value="http://127.0.0.1:3572/jobs/job-x",
     )
 
-    assert response["message_for_30b"] == "existing answer"
-    assert response["answer_for_30b"] == "existing answer"
+    assert "existing answer" in response["evidence_guide_for_30b"]
+    assert "answer_for_30b" not in response
+    assert "message_for_30b" not in response
     assert response["tool_context_for_30b"] == {"type": "existing"}
     assert response["agent_context_for_30b"] == {"type": "agent"}
     assert response["structured_context_for_30b"] == {"type": "structured"}

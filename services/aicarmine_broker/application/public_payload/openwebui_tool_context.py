@@ -78,11 +78,7 @@ class OpenWebUIPayloadBuilder:
             diagnostics["controller_memory_records_written"] = 1 if controller_memory.get("ok") else 0
             diagnostics["controller_memory_target_key"] = controller_memory.get("target_key")
         result["agent_flow_diagnostics"] = diagnostics
-        answer = self._answer_for_openwebui(status, final_summary, result)
         job_root = self._job_root_for_id(job_id)
-        composed_answer = self._planner_composed_answer(job_root)
-        if status == "completed" and composed_answer.get("ok") and str(composed_answer.get("text") or "").strip():
-            answer = str(composed_answer.get("text") or "").strip()
         evidence_digest = self._execution_evidence_digest_text(result)
         evidence_view = self._repo_read_content_views(history)
         next_action = self._next_action_for_openwebui(status, result)

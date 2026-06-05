@@ -82,7 +82,7 @@ def answer_for_openwebui(
 def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dict[str, Any]:
     result = result if isinstance(result, dict) else {}
     status_text = str(status or "unknown")
-    action = "answer_user_from_answer_for_30b"
+    action = "answer_user_from_evidence_guide_for_30b"
     if status_text == "blocked_needs_attention":
         action = "report_blocker_and_use_structured_context_for_diagnosis"
     elif status_text == "completed":
@@ -94,12 +94,12 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
         "status": status_text,
         "blocked_by": result.get("blocked_by"),
         "do_not": [
-            "do_not_ignore_answer_for_30b",
+            "do_not_ignore_evidence_guide_for_30b",
             "do_not_treat_job_url_as_the_only_result",
             "do_not_invent_repo_evidence_not_present_in_tool_context_for_30b",
         ],
         "use_fields_in_order": [
-            "answer_for_30b",
+            "evidence_guide_for_30b",
             "tool_context_for_30b.best_partial_product_for_30b",
             "tool_context_for_30b.partial_products_for_30b",
             "tool_context_for_30b.artifacts",

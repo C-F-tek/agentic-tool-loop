@@ -145,6 +145,10 @@ class AgentJobLifecycle:
         root: Path,
     ) -> dict[str, Any]:
         dashboard_url = self.job_url(job_id)
+        evidence_guide = (
+            f"Agent job started internally: {job_id}. The tool call will wait "
+            "for a terminal state before returning to OpenWebUI."
+        )
         return {
             "ok": True,
             "service": "vulkan_agent",
@@ -158,12 +162,15 @@ class AgentJobLifecycle:
             "status": "queued",
             "workspace": str(root),
             "job_url": dashboard_url,
-            "message_for_30b": (
-                f"Agent job started internally: {job_id}. The tool call will wait "
-                "for a terminal state before returning to OpenWebUI."
-            ),
-            "summary_for_30b": (
-                f"Agent job started internally: {job_id}. Waiting for terminal state."
-            ),
-            "content": f"Agent job started internally: {job_id}\nDashboard: {dashboard_url}",
+            "evidence_guide_for_30b": evidence_guide,
+            "tool_context_for_30b": {
+                "type": "agentic_loop_started_structured_context",
+                "job": {"job_id": job_id, "status": "queued"},
+                "top_level_evidence_guide_field": "evidence_guide_for_30b",
+                "dashboard_url_operator_only": dashboard_url,
+            },
+            "openwebui_usage": {
+                "evidence_guide_field": "evidence_guide_for_30b",
+                "structured_context_field": "tool_context_for_30b",
+            },
         }

@@ -98,5 +98,7 @@ def test_next_action_for_openwebui_shape_is_stable() -> None:
 
     assert action["action"] == "report_blocker_and_use_structured_context_for_diagnosis"
     assert action["blocked_by"] == "x"
-    assert "answer_for_30b" in action["use_fields_in_order"]
+    assert "evidence_guide_for_30b" in action["use_fields_in_order"]
+    assert "answer_for_30b" not in action["use_fields_in_order"]
+    assert "do_not_ignore_evidence_guide_for_30b" in action["do_not"]
     assert "do_not_invent_repo_evidence_not_present_in_tool_context_for_30b" in action["do_not"]
