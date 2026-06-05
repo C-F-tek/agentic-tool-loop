@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # vulkan_bridge Module Reference
 
-Updated: 2026-06-01
+Updated: 2026-06-05
 
 `vulkan_bridge` is the 3571 OpenWebUI-facing bridge. It must expose a stable
 public helper surface and hide internal 3572 implementation details. Its core
@@ -33,6 +33,10 @@ Read before edits:
 - When 3572 returns a successful `repo_propose_code_edit`, 3571 must preserve
   the complete code proposal payload in `tool_context_for_30b`; it must not
   substitute an artifact path, preview or summary for the diff/operations.
+- `final_path`, `reads/*.json`, `tool-results/*.json`, job workspaces and
+  SQLite document ids are internal/operator pointers. 3571 may read them only
+  to rehydrate the terminal payload before returning to OpenWebUI. They are
+  never model-usable public locations.
 
 ## Module Map
 
@@ -56,12 +60,16 @@ Read before edits:
 
 For terminal jobs returned to OpenWebUI:
 
-- primary metadata: `ok`, `job_ok`, `service`, `mode`, `tool_name`,
+- primary metadata: `ok`, `service`, `mode`, `tool_name`,
   `tool_result_for`, `called_by_30b`, `required_top_level_keys`.
 - `payload_index_for_30b`: first navigation surface for concrete payload fields.
 - `priority_evidence_for_30b`: high-priority inline concrete payloads and
   compact analysis evidence.
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
+  Internal 3572 completion/block status lives under
+  `openwebui_usage.internal_job_status`; it is not a primary top-level field.
+- `payload_index_for_30b.internal_job_status`: mirrored internal job status for
+  navigation and diagnostics.
 - `tool_context_for_30b`: a pretty-printed JSON string with successful internal
   tool artifacts and limits.
 - `result`: carried from the terminal/final payload as the public result source.
@@ -77,14 +85,19 @@ For terminal jobs returned to OpenWebUI:
 - `completed`, `max_steps_reached`, `blocked_needs_attention`,
   `blocked_needs_consent`, `failed`, `failed_tool_error`,
   `failed_planner_error` and `cancelled` must use the same top-level public
-  shape. Only `job_ok` and terminal status/warning metadata differ.
-- When `job_ok=false`, rejected code-product attempts, action plans and repair
-  text may be exposed as `partial_products_for_30b` inside
+  shape. Internal status/warning metadata differs inside the payload index and
+  usage blocks, not via a top-level `job_ok` field.
+- When the internal job did not complete, rejected code-product attempts,
+  action plans and repair text may be exposed as `partial_products_for_30b` inside
   `tool_context_for_30b` and indexed under `payload_index_for_30b.partial_results`.
   These entries are explicitly `validator_accepted=false`; they are transported
   for OpenWebUI visibility, not counted as completed diffs or successful tool
   evidence.
 - The JSON string must contain real tool outputs, not local artifact paths.
+- If a compact 3572 terminal response references a readable `final_path` or
+  final JSON artifact, 3571 may load it internally. The returned public payload
+  must still contain inline evidence and must not expose that local path outside
+  operator diagnostics.
 - Do not include continuation instructions, call protocol, tool examples,
   transport diagnostics, raw events, hashes, failed/rejected/blocked evidence as
   useful evidence, or blocked/prose narrative as the primary answer.
@@ -170,6 +183,10 @@ limits, summaries or artifact references.
   `artifacts[*].artifact`.
 - If a successful tool result references a local JSON artifact, load it only to
   expand that same successful tool result.
+- If a terminal response references `final_path`, load it only as a local
+  rehydration source for the terminal/final JSON. Verify public output by
+  checking that no `final_path`, `artifact_path`, `workspace`, SQLite path or
+  job-local path remains in model-visible fields.
 - Never expose `C:\Users\...`, `reads/*.json`, `tool-results/*.json` or other
   local storage paths as model-usable content.
 - `content_preview` is allowed only when it is the only data actually produced

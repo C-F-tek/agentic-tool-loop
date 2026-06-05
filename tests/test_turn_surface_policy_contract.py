@@ -73,6 +73,45 @@ def test_apply_turn_surface_policy_filters_incomplete_code_product_proposals() -
     assert result["candidate_next_actions"][0]["arguments"]["unified_diff"].startswith("---")
 
 
+def test_apply_turn_surface_policy_allows_model_generated_code_proposal_after_build_state() -> None:
+    contract = {
+        "required_next_progress": (
+            "Internal code_product_build_state is collecting_source but not ready. "
+            "Advance with one real step only: call repo_propose_code_edit with a "
+            "complete unified_diff or complete old_text/new_text, write "
+            "code_product_build_state with new real progress, or return typed block."
+        ),
+        "code_product_contract": {"required": True},
+        "candidate_next_actions": [
+            {
+                "tool": "planner_scratchpad_write",
+                "arguments": {
+                    "kind": "code_product_build_state",
+                    "target_file": "ia_carmine/x.py",
+                    "text": "{}",
+                },
+            },
+        ],
+    }
+
+    result = apply_turn_surface_policy(contract, order_tool_names=_order)
+
+    assert result["candidate_next_actions"] == [
+        {
+            "tool": "planner_scratchpad_write",
+            "arguments": {
+                "kind": "code_product_build_state",
+                "target_file": "ia_carmine/x.py",
+                "text": "{}",
+            },
+        },
+    ]
+    assert result["turn_tool_surface_policy"]["allowed_tool_names"] == [
+        "planner_scratchpad_write",
+        "repo_propose_code_edit",
+    ]
+
+
 def test_apply_turn_surface_policy_locks_empty_tool_surface_for_block() -> None:
     contract = {
         "required_next_progress": "return action=block because code_product_build_state blocked_incomplete",

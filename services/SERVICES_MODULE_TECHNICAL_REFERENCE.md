@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # Services Module Technical Reference
 
-Updated: 2026-06-02
+Updated: 2026-06-05
 
 This document is a source map for `C:\Users\carmi\AI\services`. It documents
 the modules that are part of the runtime or developer tooling. It intentionally
@@ -110,12 +110,16 @@ Critical protocol notes:
 
 For terminal jobs returned to OpenWebUI:
 
-- primary metadata: `ok`, `job_ok`, `service`, `mode`, `tool_name`,
+- primary metadata: `ok`, `service`, `mode`, `tool_name`,
   `tool_result_for`, `called_by_30b`, `required_top_level_keys`.
 - `payload_index_for_30b`: first navigation surface for concrete payload fields.
 - `priority_evidence_for_30b`: high-priority inline concrete payloads and
   compact analysis evidence.
 - `openwebui_usage`: runtime instructions for reading the indexed fields.
+  Internal 3572 completion/block status lives under
+  `openwebui_usage.internal_job_status`; it is not a primary top-level field.
+- `payload_index_for_30b.internal_job_status`: mirrored internal job status for
+  navigation and diagnostics.
 - `tool_context_for_30b`: pretty-printed JSON string containing only useful
   successful-tool evidence and declared limits.
 - `result`: carried from the terminal/final payload as the public result source.
@@ -131,8 +135,8 @@ For terminal jobs returned to OpenWebUI:
 - Completed and non-completed terminal jobs use the same public shape. Do not
   create a smaller `blocked`/`failed` top-level shape and do not let compact
   `{ "preview": ... }` shadow a terminal `result` with public history ledger.
-- For `job_ok=false`, useful rejected code-product candidates, action plans and
-  repair text are transported as explicit partial products in
+- When the internal job did not complete, useful rejected code-product
+  candidates, action plans and repair text are transported as explicit partial products in
   `tool_context_for_30b.partial_products_for_30b` and indexed through
   `payload_index_for_30b.partial_results`. They remain
   `validator_accepted=false` and do not satisfy the code-product gate.
@@ -183,12 +187,12 @@ planner history, validation, finalization and job dashboards.
 | `aicarmine_broker/config.py` | Central env parsing and runtime options. | Reads `AICARMINE_*`, Ollama URLs/models, timeouts, max steps, result limits. | Env changes affect both 3571/3572 behavior; prove active process env before changing defaults. |
 | `aicarmine_broker/helper.py` | Composite `vulkan_helper` implementation and evidence assembly helpers. | Calls repo tools, derives useful next calls, builds helper summaries. | Must not replace internal planner evidence with local artifact paths. |
 | `aicarmine_broker/job_html.py` | HTML renderer for job dashboard pages and the 3572-only IA Live Control View. | Reads job state/events, planner prompt captures, stream files and same-job tool artifacts for display. | Display-only; avoid changing job semantics here. |
-| `aicarmine_broker/job_store.py` | Job persistence: SQLite metadata, JSON state, NDJSON events, final result files, compact terminal responses. | Writes under agent job workspace and broker DB. | State schema and compact responses are consumed by 3571, dashboards and tests. |
-| `aicarmine_broker/memory_tools.py` | Scratchpad and SQLite-backed planner memory tools. | Reads/writes broker memory tables and scratchpad files. | Keep memory distinct from proof/evidence used by finalization gates. |
+| `aicarmine_broker/job_store.py` | Job persistence: filesystem JSON state and NDJSON events are primary; SQLite metadata/events are secondary dashboard indexes. It also writes final result files and compact terminal responses. | Writes under agent job workspace and broker DB. If SQLite fails, it records typed filesystem warnings and list fallback markers instead of hiding jobs. | State schema and compact responses are consumed by 3571, dashboards and tests. Do not make SQLite the only source of truth. |
+| `aicarmine_broker/memory_tools.py` | Scratchpad and SQLite-backed planner memory tools. Planner memory surfaces report feature availability separately from query success. Cleanup is dry-run unless `apply=true` has explicit consent. | Reads/writes broker memory tables and scratchpad files. | Keep memory distinct from proof/evidence used by finalization gates. |
 | `aicarmine_broker/planner.py` | Controlled planner loop, prompt/history construction, intrinsic-context injection, preseed evidence, validation, repair routing, code-product/apply intent split, turn-specific native tool surface, tool execution and finalization. | Talks to Ollama 11434/11435, dispatches internal tools, writes job state/events. | Highest-risk module. Do not change max step, model, ctx, launcher or validator flow without direct evidence. The exposed native tools must match `required_next_progress`; do not leave repo navigation tools visible when the contract requires a build-state write, code-product proposal, typed block or final. |
 | `aicarmine_broker/planner_intrinsic_context.py` | Internal optional-context builder. It bounds controller memory, reads optional `rag.sqlite`/FTS5 chunks in read-only mode, summarizes repo evidence, failure patterns, tool purposes and `num_ctx` requested/cap/effective. | Reads planner memory surface and optional SQLite RAG DB. Writes nothing and is not a tool surface. | Keep it controller-injected only; do not register RAG/chunks as planner tools or import lab runtime modules. |
 | `aicarmine_broker/public_wrapper.py` | Deterministic public wrapper helpers for public answers and selector failures. | Pure formatting/normalization helpers. | Keep deterministic; no hidden tool calls. |
-| `aicarmine_broker/repo_tools.py` | Deterministic filesystem, search, read, report-only code edit proposal, patch, validation, terminal and command tools for lab/main repos. Includes bounded adapters for `fd`, `rg`, `jq`, `ast-grep`, Tree-sitter, `unidiff`, `git apply --check`, `ruff`, `pyright`, `pytest`, ShellCheck, Universal Ctags, Semgrep and explicit-consent Hyperfine. | Reads/writes repo files only through explicit write/apply tool paths and approval rules; shells via guarded commands. Deterministic adapters resolve from the active service venv or installed CLI paths and return structured payloads. | Security-sensitive and evidence-sensitive. Tool results must contain real output, not only artifact paths. External adapters are internal evidence/validation tools; do not expose them as 3571 OpenWebUI tools. |
+| `aicarmine_broker/repo_tools.py` | Compatibility facade for deterministic filesystem, search, read, report-only code edit proposal, patch, validation, terminal and command tools. Concrete behavior lives in `tools/*`: command classification in `tools/command_safety.py`, compile/build target resolution in `tools/repo_command.py`, terminal metrics/repair in `tools/terminal.py`. | Reads/writes repo files only through explicit write/apply tool paths and approval rules; shells via classified/guarded commands. Deterministic adapters resolve from the active service venv or installed CLI paths and return structured payloads. | Security-sensitive and evidence-sensitive. Tool results must contain real output, not only artifact paths. External adapters are internal evidence/validation tools; do not expose them as 3571 OpenWebUI tools. |
 | `aicarmine_broker/code_edit_proposal_contract.py` | Local stable contract builder for report-only code products. It validates `unified_diff`, `structured_edit` and `no_op`, generates diffs from `old_text/new_text`, and attaches AST evidence through deterministic tooling. | Reads target files and optional AST/diff dependencies from the active venv/CLI. Writes no source files. | Diff/code-product payload must stay complete; dependency failures are typed errors, not heuristic fallbacks. |
 | `aicarmine_broker/tool_contract.py` | Tool schema normalization: names, aliases, args, bad-path detection, text extraction. | Pure contract helpers. | Public/internal name changes can break planner and OpenWebUI routing. |
 | `aicarmine_broker/tool_dispatch.py` | Dispatch table from normalized tool calls to repo/memory/helper functions, including `repo_propose_code_edit` and deterministic adapter tools. | Calls deterministic tools. | Keep dispatch explicit; do not insert hidden planner decisions or shell-freeform substitutes. |
@@ -212,7 +216,7 @@ to the model.
 | Module | Responsibility | State and dependencies | Change risk |
 | --- | --- | --- | --- |
 | `vulkan_bridge/__init__.py` | Package marker. | No runtime behavior expected. | Keep import-light. |
-| `vulkan_bridge/app.py` | FastAPI 3571 service: `/health`, OpenWebUI-visible `/vulkan_helper`, legacy compatibility alias routes hidden from the generated OpenWebUI OpenAPI, 3572 forwarding, wait/result handling and OpenWebUI payload shaping. It preserves complete `repo_propose_code_edit` payloads in `tool_context_for_30b`. | Talks to 3572 and may unload planner model after handoff depending on env. | Highest-risk 3571 file. Do not expose continuation/call protocol in terminal results or degrade code-product payloads to previews/paths. |
+| `vulkan_bridge/app.py` | FastAPI 3571 service: `/health`, OpenWebUI-visible `/vulkan_helper`, legacy compatibility alias routes hidden from the generated OpenWebUI OpenAPI, 3572 forwarding, wait/result handling and OpenWebUI payload shaping. It may rehydrate local terminal/final JSON internally, then returns complete inline payloads in `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage`, `tool_context_for_30b` and `result`. | Talks to 3572 and may unload planner model after handoff depending on env. | Highest-risk 3571 file. Do not expose continuation/call protocol, local paths, SQLite ids or artifact paths in terminal results, and do not degrade code-product payloads to previews/paths. |
 | `vulkan_bridge/agentic_v9.py` | Compatibility re-export for v9 OpenWebUI shaping helpers. | Imports selected helpers from `.app`. | Keep as facade unless app logic is intentionally split. |
 | `vulkan_bridge/client.py` | Compatibility HTTP client/helper exports from `.app`. | Imports selected app helpers. | Keep thin; real client behavior currently lives in `app.py`. |
 | `vulkan_bridge/compact.py` | Compatibility compaction exports from `.app`. | Imports selected app helpers. | Keep thin; compaction changes belong in app or extracted module. |

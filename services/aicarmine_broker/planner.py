@@ -2404,6 +2404,7 @@ def _candidate_actions_from_evidence(
         meaningful_read_candidates_from_evidence=_meaningful_read_candidates_from_evidence,
         single_file_prompt_read_chars=_single_file_prompt_read_chars,
         repo_code_file=_repo_code_file,
+        repo_readable_evidence_file=_repo_readable_evidence_file,
     )
 
 

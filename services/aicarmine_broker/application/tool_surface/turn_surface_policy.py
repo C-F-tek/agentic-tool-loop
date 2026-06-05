@@ -138,7 +138,15 @@ class ToolSurfacePolicy:
                 if candidate_action_tool(item) == "repo_propose_code_edit"
                 and code_product_action_has_complete_payload(item)
             ]
-            self._set_actions(contract, policy, propose_actions, "code_product_ready_for_propose")
+            if propose_actions:
+                self._set_actions(contract, policy, propose_actions, "code_product_ready_for_propose")
+            else:
+                self._set_surface_only(
+                    contract,
+                    policy,
+                    {"repo_propose_code_edit"},
+                    "code_product_ready_for_propose_model_generated_payload",
+                )
         elif "read the internal code_product_build_state" in progress:
             self._set_actions(
                 contract,
@@ -150,15 +158,26 @@ class ToolSurfacePolicy:
             ("advance with one real step" in progress or "write code_product_build_state with new real progress" in progress)
             and ("call repo_propose_code_edit" in progress or "typed block" in progress)
         ):
-            mixed_actions = [
+            propose_actions = [
                 item for item in actions
-                if (
-                    candidate_action_tool(item) == "repo_propose_code_edit"
-                    and code_product_action_has_complete_payload(item)
-                )
-                or candidate_action_is_build_state_write(item)
+                if candidate_action_tool(item) == "repo_propose_code_edit"
+                and code_product_action_has_complete_payload(item)
             ]
-            self._set_actions(contract, policy, mixed_actions, "code_product_mixed_real_progress_or_typed_block")
+            build_state_actions = [
+                item for item in actions if candidate_action_is_build_state_write(item)
+            ]
+            mixed_actions = propose_actions + build_state_actions
+            if mixed_actions:
+                self._set_actions(contract, policy, mixed_actions, "code_product_mixed_real_progress_or_typed_block")
+                if not propose_actions and "call repo_propose_code_edit" in progress:
+                    self._add_allowed_tools(contract, policy, {"repo_propose_code_edit"})
+            else:
+                self._set_surface_only(
+                    contract,
+                    policy,
+                    {"repo_propose_code_edit", "planner_scratchpad_write"},
+                    "code_product_mixed_real_progress_or_typed_block_model_generated_payload",
+                )
         elif (
             "persist an internal code_product_build_state" in progress
             or "write code_product_build_state" in progress
@@ -373,6 +392,25 @@ class ToolSurfacePolicy:
         policy["candidate_actions_filtered"] = False
         policy["reason"] = reason
         policy["allowed_tool_names"] = self._ordered(allowed_names)
+        contract["turn_tool_surface_policy"] = policy
+
+    def _add_allowed_tools(
+        self,
+        contract: dict[str, Any],
+        policy: dict[str, Any],
+        allowed_names: set[str],
+    ) -> None:
+        current = {
+            normalize_tool_name(str(name))
+            for name in policy.get("allowed_tool_names", [])
+            if normalize_tool_name(str(name))
+        }
+        current.update({
+            normalize_tool_name(str(name))
+            for name in allowed_names
+            if normalize_tool_name(str(name))
+        })
+        policy["allowed_tool_names"] = self._ordered(current)
         contract["turn_tool_surface_policy"] = policy
 
 

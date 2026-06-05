@@ -13,7 +13,6 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
         "additionalProperties": True,
         "properties": {
             "ok": {"type": "boolean"},
-            "job_ok": {"type": "boolean"},
             "service": {"type": "string"},
             "mode": {"type": "string"},
             "tool_name": {"type": "string"},
@@ -38,6 +37,11 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                 "properties": {
                     "index_kind": {"type": "string", "example": "openwebui_payload_index.v1"},
                     "job_completed": {"type": "boolean"},
+                    "internal_job_status": {
+                        "type": "object",
+                        "description": "Internal 3572 job status. This is diagnostic state, not the public tool-call status.",
+                        "additionalProperties": True,
+                    },
                     "same_request_rule": {
                         "type": "string",
                         "description": "For completed jobs, answer now from the indexed fields; do not call vulkan_helper again for the same request.",

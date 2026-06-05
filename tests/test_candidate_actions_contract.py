@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def _candidate_action_deps(**overrides):
         "low_signal_top_dir": lambda path: False,
         "rank_core_candidates": lambda _file_memory, _list_rows: [],
         "path_exists_repo_relative": lambda _path: True,
+        "repo_readable_evidence_file": lambda _path: True,
         "goal_target_scope": lambda _goal: "",
         "input_error_goal": lambda _goal: False,
         "path_under_scope": lambda path, scope: str(path).startswith(scope),
@@ -132,6 +134,29 @@ def test_candidate_actions_from_evidence_prefers_meaningful_repo_reads() -> None
     assert actions[0]["tool"] == "repo_read"
     assert actions[0]["arguments"] == {"paths": ["services/a.py"], "max_chars": 1200}
     assert actions[1]["arguments"] == {"path": "services/a.py", "max_chars": 800}
+
+
+def test_candidate_actions_from_evidence_filters_unreadable_discovery_paths_before_prompting() -> None:
+    actions = candidate_actions_from_evidence(
+        "analizza repo e proponi diff",
+        [],
+        [{"path": ".", "paths_preview": ["README.md"]}],
+        [],
+        False,
+        **_candidate_action_deps(
+            core_discovery_read_paths=lambda _candidates, **_kwargs: [
+                "ia_carmine/runtime/heap_gate/provider_context.py",
+                "README.md",
+            ],
+            path_exists_repo_relative=lambda path: path == "README.md",
+            repo_readable_evidence_file=lambda path: path == "README.md",
+        ),
+    )
+
+    serialized = json.dumps(actions, ensure_ascii=False, sort_keys=True)
+    assert "ia_carmine/runtime/heap_gate/provider_context.py" not in serialized
+    assert actions[0]["tool"] == "repo_read"
+    assert actions[0]["arguments"] == {"paths": ["README.md"], "max_chars": 1200}
 
 
 def test_candidate_actions_from_evidence_uses_docs_and_code_from_listed_paths() -> None:

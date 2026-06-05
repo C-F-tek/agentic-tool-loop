@@ -78,12 +78,35 @@ def candidate_actions_from_evidence(
     meaningful_read_candidates_from_evidence: Callable[..., list[str]],
     single_file_prompt_read_chars: Callable[[], int],
     repo_code_file: Callable[[str], bool],
+    repo_readable_evidence_file: Callable[[str], bool] | None = None,
 ) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     already = set(read_ok)
     failed_lists = set(repo_rel_token(p) for p in (failed_list_paths or []))
     repo_goal = repo_analysis_goal(goal)
     doc_reads = [p for p in read_ok if repo_doc_or_config(p)]
+
+    def readable_repo_path(path: Any, *, scope: str = "") -> str:
+        p = repo_rel_token(str(path or ""))
+        if not p or p in already:
+            return ""
+        if scope and not path_under_scope(p, scope):
+            return ""
+        if not path_exists_repo_relative(p):
+            return ""
+        if repo_readable_evidence_file is not None and not repo_readable_evidence_file(p):
+            return ""
+        return p
+
+    def readable_repo_paths(paths: list[Any], *, scope: str = "", limit: int | None = None) -> list[str]:
+        out: list[str] = []
+        for path in paths:
+            p = readable_repo_path(path, scope=scope)
+            if p and p not in out:
+                out.append(p)
+                if limit is not None and len(out) >= limit:
+                    break
+        return out
 
     def add(action: dict[str, Any]) -> None:
         key = json.dumps(action, sort_keys=True, default=str)
@@ -138,6 +161,11 @@ def candidate_actions_from_evidence(
         target_scope=target_scope,
         limit=scoped_concrete_read_target if target_scope else repo_concrete_read_target,
     )
+    discovery_selected = readable_repo_paths(
+        discovery_selected,
+        scope=target_scope,
+        limit=scoped_concrete_read_target if target_scope else repo_concrete_read_target,
+    )
     if discovery_selected:
         add({
             "action": "tool",
@@ -167,7 +195,8 @@ def candidate_actions_from_evidence(
                 list_rows,
                 target_scope,
                 read_ok=already,
-            )[:scoped_concrete_read_target]
+            )
+            selected = readable_repo_paths(selected, scope=target_scope, limit=scoped_concrete_read_target)
             if selected:
                 add({
                     "action": "tool",
@@ -189,7 +218,8 @@ def candidate_actions_from_evidence(
         selected = meaningful_read_candidates_from_evidence(
             list_rows,
             read_ok=already,
-        )[:repo_concrete_read_target]
+        )
+        selected = readable_repo_paths(selected, limit=repo_concrete_read_target)
         if selected:
             add({
                 "action": "tool",
@@ -214,7 +244,7 @@ def candidate_actions_from_evidence(
     if repo_goal and len(doc_reads) >= 3 and not meaningful_rows:
         add_core_list_candidates(limit=5)
 
-    docs = [p for p in listed if repo_doc_or_config(p) and p not in already]
+    docs = readable_repo_paths([p for p in listed if repo_doc_or_config(p)])
     # Generic repo analysis needs representative docs, not every support/template
     # document. After a small baseline, spend budget on core directories/files.
     if not (repo_goal and len(doc_reads) >= 6):
@@ -235,11 +265,12 @@ def candidate_actions_from_evidence(
             })
 
     for p in listed:
-        if repo_code_file(p) and p not in already:
+        readable = readable_repo_path(p)
+        if readable and repo_code_file(readable):
             add({
                 "action": "tool",
                 "tool": "repo_read",
-                "arguments": {"path": p, "max_chars": single_file_prompt_read_chars()},
+                "arguments": {"path": readable, "max_chars": single_file_prompt_read_chars()},
                 "reason": "Unread readable file discovered from evidence.",
             })
             if len(candidates) >= 12:

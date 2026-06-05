@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # aicarmine_broker Module Reference
 
-Updated: 2026-06-01
+Updated: 2026-06-05
 
 `aicarmine_broker` is the 3572 runtime package. It owns the controlled
 agentic loop, job persistence, internal tool dispatch, validator/finalization
@@ -47,6 +47,15 @@ Read before edits:
   `repo_propose_code_edit` tool after `repo_read` of the target. Apply/edit/fix
   goals remain separate and require `repo_apply_patch` only when source writes
   are actually requested.
+- Job filesystem state is the operational source of truth. SQLite is a
+  secondary dashboard/index cache; SQLite failures are persisted as typed
+  warnings and must not erase the filesystem-visible job.
+- Command/terminal execution is classified before running. `readonly` and
+  allowed `validation` commands can run under policy; `write`, `destructive`
+  and `unknown` commands require explicit consent or return a typed block.
+- Runtime memory cleanup is write-guarded when `apply=true`; dry-run cleanup is
+  allowed without consent. Planner memory surfaces separate feature availability
+  from query success.
 
 ## Module Map
 
@@ -58,12 +67,12 @@ Read before edits:
 | `config.py` | Central environment parser for planner URLs/models, timeouts, max steps, result limits, optional tool lists and Ollama options. This is the first file to inspect when runtime behavior differs between shells or launchers. |
 | `helper.py` | Composite helper logic for public-style requests and repository evidence summaries. It can gather repo context and useful next calls, but it must not replace real tool results with local artifact paths. |
 | `job_html.py` | HTML renderer for human job dashboards and the IA Live Control View. It formats existing job state, events, prompt captures, planner streams and same-job tool artifacts only. It must not change planner state, evidence, or validation. |
-| `job_store.py` | Persistence layer for jobs: SQLite metadata, state JSON, NDJSON events, final JSON/MD, compact terminal responses and polling helpers. It is the source of truth for browser/job views after the worker writes state. |
-| `memory_tools.py` | Scratchpad and SQLite-backed memory tools exposed to planner/runtime. `planner_scratchpad_write kind=answer_chunk` also stores complete answer sections in a job-local SQLite composer that the terminal wrapper can reassemble. Use for recall/composition, not for proving repo evidence. |
+| `job_store.py` | Persistence layer for jobs: filesystem state JSON and NDJSON events are primary; SQLite metadata/events are a secondary index. SQLite write failures produce filesystem warnings and job-list fallback rows instead of hiding jobs. It also owns final JSON/MD, compact terminal responses and polling helpers. |
+| `memory_tools.py` | Scratchpad and SQLite-backed memory tools exposed to planner/runtime. `planner_scratchpad_write kind=answer_chunk` also stores complete answer sections in a job-local SQLite composer that the terminal wrapper can reassemble. Planner memory surfaces expose `memory_feature_available`, `memory_query_ok` and `memory_records_available` separately. `runtime_sqlite_memory_cleanup apply=true` requires explicit consent. |
 | `planner.py` | Main controlled agentic loop. It builds planner prompts, records turns, calls Ollama, validates decisions, separates code-product from apply intent, executes internal tools, handles repair routing, writes events/state and finalizes jobs. Highest-risk file in this package. |
 | `planner_intrinsic_context.py` | Internal pre-turn context builder for the planner. It reads controller memory and optional `rag.sqlite`/FTS5 chunks in read-only mode, bounds/deduplicates them, adds repo-map/failure-pattern/tool-purpose context and exposes `budget_report.num_ctx_effective`. It is not registered as a tool. |
 | `public_wrapper.py` | Deterministic public response helpers and selector failure formatting. Keep pure and deterministic. |
-| `repo_tools.py` | Compatibility facade for deterministic repo/tool helpers. It re-exports tool implementations from `tools/` and keeps historical imports such as `compact`, `safe_rel_path` and `terminal_environment_contract` stable. Do not add new tool behavior here; update the owning `tools/*` module. |
+| `repo_tools.py` | Compatibility facade for deterministic repo/tool helpers. It re-exports tool implementations from `tools/` and keeps historical imports such as `compact`, `safe_rel_path` and `terminal_environment_contract` stable. Command policy lives in `tools/command_safety.py`; compile/build target resolution lives in `tools/repo_command.py`. Do not add new tool behavior here; update the owning `tools/*` module. |
 | `code_edit_proposal_contract.py` | Local stable contract builder for `repo_propose_code_edit`. It creates complete report-only `code_edit_proposal` payloads for `unified_diff`, `structured_edit` and `no_op`, validates diffs/operations/rationale, and attaches optional AST evidence. |
 | `tool_contract.py` | Shared tool contract: parse tool calls, normalize public/internal names, sanitize args, detect bad paths and extract user text. Keep pure so planner, selector and dispatcher agree. |
 | `tool_dispatch.py` | Compatibility facade for internal tool dispatch. It builds a `DispatchRequest` and delegates to `application/tool_surface/dispatcher.py`; do not add if/elif dispatch logic here. |

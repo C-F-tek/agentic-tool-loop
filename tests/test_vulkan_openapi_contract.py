@@ -76,6 +76,7 @@ def test_vulkan_helper_response_schema_names_primary_payload_fields() -> None:
     assert "priority_evidence_for_30b" in properties
     assert "tool_context_for_30b" in properties
     assert "openwebui_usage" in properties
+    assert "job_ok" not in properties
 
 
 def test_bridge_app_does_not_patch_compactors_with_globals() -> None:
@@ -196,6 +197,63 @@ def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payl
     assert "artifact_path" not in payload
     assert "final_path" not in payload
     assert "workspace" not in tool_context["job"]
+
+
+def test_terminal_openwebui_response_with_blocked_job_keeps_public_tool_ok_and_indexes_partial_old_new_text() -> None:
+    from vulkan_bridge import app
+
+    local_path = r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\job-x\final.json"
+
+    result = app._compact_for_openwebui(
+        {
+            "ok": False,
+            "job_ok": False,
+            "service": "vulkan_agent",
+            "status": "blocked_needs_attention",
+            "tool_name": "vulkan_helper",
+            "job_id": "job-x",
+            "tool_context_for_30b": {
+                "type": "agentic_loop_complete_structured_context",
+                "job": {
+                    "job_id": "job-x",
+                    "workspace": local_path,
+                },
+                "partial_products_for_30b": [
+                    {
+                        "kind": "partial_code_product_candidate",
+                        "source": "validator_rejected_repo_propose_code_edit",
+                        "target_file": "ia_carmine/demo.py",
+                        "edit_kind": "unified_diff",
+                        "payload_is_complete": False,
+                        "validator_accepted": False,
+                        "old_text": "old",
+                        "new_text": "new",
+                    }
+                ],
+                "artifacts": [],
+            },
+            "result": {
+                "status": "blocked_needs_attention",
+                "final_path": local_path,
+            },
+        }
+    )
+
+    payload = json.dumps(result, ensure_ascii=False, default=str)
+    partial = result["payload_index_for_30b"]["partial_results"][0]
+
+    assert result["ok"] is True
+    assert "job_ok" not in result
+    assert result["openwebui_usage"]["internal_job_status"]["completed"] is False
+    assert result["payload_index_for_30b"]["internal_job_status"]["completed"] is False
+    assert partial["payload_type"] == "partial_old_text_new_text"
+    assert partial["primary_location"] == {
+        "old_text": "priority_evidence_for_30b.items[0].old_text",
+        "new_text": "priority_evidence_for_30b.items[0].new_text",
+    }
+    assert "job_ok=false" not in payload
+    assert "C:\\Users\\carmi\\AI" not in payload
+    assert "final_path" not in payload
 
 
 def test_terminal_openwebui_response_rehydrates_final_path_without_exposing_local_path(tmp_path: Path) -> None:

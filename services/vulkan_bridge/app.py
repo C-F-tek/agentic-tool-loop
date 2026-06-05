@@ -293,7 +293,7 @@ def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
 
     compacted: dict[str, Any] = {}
     keep_keys = (
-        "ok", "job_ok", "service", "mode", "tool_name", "tool_result_for",
+        "ok", "service", "mode", "tool_name", "tool_result_for",
         "called_by_30b", "required_top_level_keys", "payload_index_for_30b",
         "priority_evidence_for_30b", "openwebui_usage", "tool_context_for_30b",
         "result",
@@ -304,7 +304,6 @@ def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
 
     compacted.setdefault("required_top_level_keys", [
         "ok",
-        "job_ok",
         "service",
         "mode",
         "tool_name",
@@ -2815,7 +2814,7 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
         ),
         "navigation_hint": (
             "Read priority_evidence_for_30b.items before searching the larger "
-            "tool_context_for_30b JSON. For job_ok=false, useful status or "
+            "tool_context_for_30b JSON. When the internal job did not complete, useful status or "
             "partial products are intentionally first; do not stop at the "
             "terminal warning."
         ),
@@ -2891,12 +2890,21 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
         elif item.get("structured_operations"):
             field = "structured_operations"
             payload_type = "partial_structured_operations"
+        elif item.get("old_text") is not None or item.get("new_text") is not None:
+            field = "old_text_new_text"
+            payload_type = "partial_old_text_new_text"
         elif item.get("state_text"):
             field = "state_text"
             payload_type = "partial_code_product_state"
         else:
             field = "text"
             payload_type = "partial_text"
+        primary_location = f"{base}.{field}"
+        if field == "old_text_new_text":
+            primary_location = {
+                "old_text": f"{base}.old_text",
+                "new_text": f"{base}.new_text",
+            }
         return _agentic_v9_clean({
             "kind": kind,
             "payload_type": payload_type,
@@ -2904,9 +2912,9 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "edit_kind": item.get("edit_kind"),
             "payload_is_complete": item.get("payload_is_complete", False),
             "validator_accepted": item.get("validator_accepted", False),
-            "primary_location": f"{base}.{field}",
+            "primary_location": primary_location,
             "full_context_location": "tool_context_for_30b.partial_products_for_30b[*]",
-            "role": "prodotto parziale/non validato: da mostrare all'utente se job_ok=false, non da spacciare come diff completato",
+            "role": "prodotto parziale/non validato: da mostrare all'utente se il job interno non ha completato, non da spacciare come diff completato",
         })
     return {}
 
@@ -2953,7 +2961,7 @@ def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, 
             "Rispondi usando i campi indicizzati qui quando esistono "
             "concrete_results, partial_results o descriptive_only. Non "
             "richiamare vulkan_helper per la stessa richiesta solo perche' "
-            "job_completed=false/job_ok=false; quello e' uno stato del job "
+            "job_completed=false; quello e' uno stato del job "
             "interno, non assenza di payload."
             if has_indexed_payload else
             "Nessun payload indicizzato disponibile; solo in questo caso una "
@@ -3295,7 +3303,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             completed=terminal_completed,
         )
         safe_keys = (
-            "ok", "job_ok", "service", "mode",
+            "ok", "service", "mode",
             "tool_name", "tool_result_for", "called_by_30b",
         )
         sealed = {}
@@ -3310,13 +3318,14 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         sealed.setdefault("tool_name", decoded.get("tool_name") or "vulkan_helper")
         sealed.setdefault("tool_result_for", decoded.get("tool_result_for") or sealed["tool_name"])
         sealed.setdefault("called_by_30b", decoded.get("called_by_30b") or sealed["tool_name"])
-        sealed.setdefault("ok", decoded.get("ok", True))
-        sealed.setdefault("job_ok", bool(terminal_completed))
+        # The public OpenWebUI tool call succeeded when this terminal payload is
+        # shaped and returned. The internal job result is exposed as diagnostic
+        # payload, not as a primary top-level field that can stop OpenWebUI.
+        sealed["ok"] = True
         sealed.setdefault("service", decoded.get("service") or terminal_source.get("service") or "vulkan_agent")
         sealed.setdefault("mode", decoded.get("mode") or terminal_source.get("mode") or "agent_job_final_waited_compact")
         stable_required_top_level_keys = [
             "ok",
-            "job_ok",
             "service",
             "mode",
             "tool_name",
@@ -3337,6 +3346,21 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             result_value = out.get("result")
         if result_value not in (None, "", [], {}):
             sealed["result"] = _agentic_v9_public_result_for_30b(result_value)
+        internal_job_status = _agentic_v9_clean({
+            "completed": bool(terminal_completed),
+            "status": (
+                terminal_observation.get("status")
+                or terminal_source.get("status")
+                or decoded.get("status")
+                or ("completed" if terminal_completed else "not_completed")
+            ),
+            "payload_available": bool(priority_evidence.get("items") or tool_context or result_value not in (None, "", [], {})),
+            "source": "internal_3572_job_status",
+            "primary_response_status_field": "ok",
+            "primary_response_status_meaning": "3571 public tool call returned a readable payload",
+        })
+        if isinstance(payload_index, dict):
+            payload_index["internal_job_status"] = internal_job_status
         sealed["openwebui_usage"] = {
             "primary_payload_fields": [
                 "payload_index_for_30b",
@@ -3354,10 +3378,11 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
                 "nei campi indicati in concrete_results; i risultati utili non "
                 "validati sono in partial_results. Descrizioni, suggerimenti, "
                 "manual_review_required, validation_commands e limits non sono motivo "
-                "per richiamare vulkan_helper per la stessa richiesta. job_ok=false "
-                "dichiara lo stato del job interno senza sostituire i payload: usa "
+                "per richiamare vulkan_helper per la stessa richiesta. Lo stato del "
+                "job interno non sostituisce i payload: usa "
                 "prima priority_evidence_for_30b e tool_context_for_30b."
             ),
+            "internal_job_status": internal_job_status,
         }
         sealed["priority_evidence_for_30b"] = priority_evidence
         sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(tool_context, indent=2)
