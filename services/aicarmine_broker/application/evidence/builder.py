@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from aicarmine_broker.application.evidence.coverage_scorer import score_evidence_coverage
 from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
+from aicarmine_broker.application.tool_surface.candidate_action_gate import gate_candidate_actions
 from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
 
 
@@ -911,7 +912,9 @@ class EvidenceBuilder:
                     validator_admissible=validator_admissible,
                 )
             )
-        contract["candidate_next_actions"] = proofed_candidates
+        candidate_gate = gate_candidate_actions(proofed_candidates)
+        contract["candidate_next_actions"] = candidate_gate["candidate_next_actions"]
+        contract["rejected_candidate_actions"] = candidate_gate["rejected_candidate_actions"]
         contract["evidence_coverage"] = score_evidence_coverage(contract)
         progress_text = str(contract.get("required_next_progress") or "").strip()
         if progress_text:

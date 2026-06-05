@@ -93,6 +93,7 @@ def test_planner_evidence_contract_makes_candidate_repo_reads_validator_admissib
     assert repo_read_candidates[0]["action_proof"]["path_exists"] is True
     assert repo_read_candidates[0]["action_proof"]["path_readable"] is True
     assert repo_read_candidates[0]["action_proof"]["validator_admissible"] is True
+    assert contract["rejected_candidate_actions"] == []
 
 
 def test_planner_evidence_contract_candidate_actions_have_proof(tmp_path, monkeypatch) -> None:
@@ -169,6 +170,7 @@ def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp
     assert missing not in candidate_paths
     assert missing not in contract["validator_admissible_repo_read_paths"]
     assert missing not in str(contract.get("required_next_progress", ""))
+    assert isinstance(contract["rejected_candidate_actions"], list)
     assert not any(
         (action.get("action_proof") or {}).get("path_exists") is False
         for action in contract["candidate_next_actions"]

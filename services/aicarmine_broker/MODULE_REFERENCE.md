@@ -144,6 +144,7 @@ When debugging a path mismatch, inspect the job capture field
 | `application/__init__.py` | Package marker for deterministic application-level helpers used by the planner/controller. |
 | `application/controller/diagnostics.py` | Deterministic terminal diagnostics builder for planner/tool/guard/memory counters. It receives evidence-contract and retry callbacks so it does not own validation policy. |
 | `application/prompt/available_tools.py` | Prompt window helper for available-tool manifests. It summarizes tool names and stores the complete manifest through an injected prompt-window writer. |
+| `application/tool_surface/candidate_action_gate.py` | Proof-based candidate action gate. It keeps `candidate_next_actions` limited to proof-positive actions and moves proof-negative actions to diagnostic-only `rejected_candidate_actions` without dispatching tools or changing validator gates. |
 | `application/tool_surface/candidate_actions.py` | Candidate next-action accessors/dedupe helpers used by turn-surface policy. It normalizes tool names, recognizes code-product build-state read/write actions and preserves exact required continuation tool calls across prompt compaction. |
 | `application/shared/clean_values.py` | Small shared value-cleaning helpers used by application payload shapers. |
 | `application/controller/guards.py` | Controller guard counting, rejection signature and recoverable planner-block helpers. It contains loop-integrity checks without dispatching tools or finalizing jobs. |
