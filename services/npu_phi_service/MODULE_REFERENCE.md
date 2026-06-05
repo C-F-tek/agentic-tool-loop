@@ -16,6 +16,7 @@ Main components:
 | File | Owner |
 | --- | --- |
 | `settings.py` | Environment/config model for model/cache/spool/port. |
+| `blob_lock.py` | Cross-process file lock for local AOT blob export/warmup. Recovers stale locks and prevents parallel export to the same blob path. |
 | `pipeline.py` | Lazy singleton `openvino_genai.LLMPipeline` on device `NPU`. |
 | `job_queue.py` | Mono-worker queue, dedupe, drop-on-full policy and local spool. |
 | `circuit_breaker.py` | Explicit open/closed diagnostics for repeated failures. |

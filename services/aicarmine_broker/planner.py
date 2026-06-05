@@ -153,6 +153,7 @@ from .application.controller.guards import (
     recoverable_planner_block as _recoverable_planner_block_impl,
 )
 from .application.runtime_debug import build_runtime_debug_packet as _build_runtime_debug_packet
+from .application.npu_phi import maybe_enqueue_npu_phi_diagnostic as _maybe_enqueue_npu_phi_diagnostic
 from .application.controller.memory import (
     controller_memory_lesson_text as _controller_memory_lesson_text_impl,
     loop_turn_memory_text as _loop_turn_memory_text_impl,
@@ -3661,6 +3662,17 @@ def controller_guard_result_for_validation(
                 "Do not final with it. Use it to choose repo_read evidence and then "
                 "repo_propose_code_edit with a complete inline diff/ops payload."
             )
+    runtime_debug_extra: dict[str, Any] = {}
+    npu_phi_attempt = _maybe_enqueue_npu_phi_diagnostic(
+        goal=goal,
+        evidence_contract=contract,
+        validation=validation,
+    )
+    if (
+        npu_phi_attempt.get("attempted")
+        or npu_phi_attempt.get("status") not in {"disabled", "not_applicable", ""}
+    ):
+        runtime_debug_extra["npu_phi"] = npu_phi_attempt
     guard["runtime_debug_packet"] = _build_runtime_debug_packet(
         job_id=job_id,
         step=step,
@@ -3669,6 +3681,7 @@ def controller_guard_result_for_validation(
         decision=decision,
         validator_result=validation,
         evidence_contract=contract,
+        extra=runtime_debug_extra or None,
     )
     return guard
 

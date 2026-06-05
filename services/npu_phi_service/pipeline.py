@@ -5,8 +5,10 @@ import importlib.util
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from .blob_lock import BlobBuildLock
 from .settings import NpuPhiSettings
 
 
@@ -27,6 +29,7 @@ class PipelineManager:
         self._build_count = 0
         self._last_build_seconds: float | None = None
         self._last_error: str = ""
+        self._last_blob_lock_path: str = ""
 
     @property
     def build_count(self) -> int:
@@ -50,6 +53,12 @@ class PipelineManager:
             config["BLOB_PATH"] = str(self.settings.blob_path)
         return config
 
+    @property
+    def blob_lock_path(self) -> str:
+        if not self.settings.enable_aot_blob:
+            return ""
+        return str(self.settings.cache_dir / "phi35_npu.blob.lock")
+
     async def get_pipeline(self) -> Any:
         if self._pipeline is not None:
             return self._pipeline
@@ -63,7 +72,7 @@ class PipelineManager:
             self.settings.ensure_runtime_dirs()
             start = time.perf_counter()
             try:
-                self._pipeline = await asyncio.to_thread(self._build_pipeline)
+                self._pipeline = await asyncio.to_thread(self._build_pipeline_with_optional_lock)
             except Exception as exc:
                 self._last_error = f"{type(exc).__name__}: {str(exc)[:1000]}"
                 raise
@@ -71,6 +80,15 @@ class PipelineManager:
             self._last_build_seconds = time.perf_counter() - start
             self._last_error = ""
             return self._pipeline
+
+    def _build_pipeline_with_optional_lock(self) -> Any:
+        if not self.settings.enable_aot_blob:
+            self._last_blob_lock_path = ""
+            return self._build_pipeline()
+        lock = BlobBuildLock(Path(self.blob_lock_path))
+        self._last_blob_lock_path = str(lock.path)
+        with lock:
+            return self._build_pipeline()
 
     def _build_pipeline(self) -> Any:
         if self._pipeline_factory is not None:
@@ -147,6 +165,7 @@ class PipelineManager:
             "build_count": self._build_count,
             "last_build_seconds": self._last_build_seconds,
             "last_error": self._last_error,
+            "blob_lock_path": self._last_blob_lock_path,
         }
         status.update(self.settings.model_status())
         status.update(self.dependency_status())

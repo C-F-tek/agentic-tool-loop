@@ -8,7 +8,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.npu_phi import NpuPhiClientConfig, enqueue_scene_spec_best_effort  # noqa: E402
+from aicarmine_broker.application.npu_phi import (  # noqa: E402
+    NpuPhiClientConfig,
+    enqueue_scene_spec_best_effort,
+    maybe_enqueue_npu_phi_diagnostic,
+    should_attempt_npu_phi_diagnostic,
+)
 
 
 def test_npu_phi_client_disabled_does_not_attempt_http() -> None:
@@ -97,4 +102,29 @@ def test_npu_phi_client_rejects_non_best_effort_mode_without_http() -> None:
 
     assert result["attempted"] is False
     assert result["status"] == "unsupported_mode"
+    assert called is False
+
+
+def test_npu_phi_policy_only_targets_visual_scene_goals() -> None:
+    assert should_attempt_npu_phi_diagnostic("build a Blender scene from album art") is True
+    assert should_attempt_npu_phi_diagnostic("analizza la repo e proponi diff") is False
+
+
+def test_npu_phi_policy_does_not_enqueue_out_of_scope_goal() -> None:
+    called = False
+
+    def enqueue(**_: object) -> dict:
+        nonlocal called
+        called = True
+        return {}
+
+    result = maybe_enqueue_npu_phi_diagnostic(
+        goal="analizza la repo e proponi diff",
+        evidence_contract={},
+        validation={},
+        enqueue=enqueue,
+    )
+
+    assert result["attempted"] is False
+    assert result["status"] == "not_applicable"
     assert called is False

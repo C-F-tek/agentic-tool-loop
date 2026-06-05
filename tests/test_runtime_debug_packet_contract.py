@@ -130,3 +130,36 @@ def test_controller_guard_result_includes_runtime_debug_packet() -> None:
     assert packet["job_id"] == "job-test"
     assert packet["step"] == 3
     assert packet["validator_result"]["violations"] == validation["violations"]
+
+
+def test_controller_guard_runtime_debug_can_include_npu_phi_attempt(monkeypatch) -> None:
+    validation = {
+        "ok": False,
+        "violations": ["final_not_allowed_by_evidence_contract:missing scene evidence"],
+        "evidence_contract": _contract(),
+    }
+    decision = {"action": "final", "final_answer": "done", "reason": "complete"}
+
+    monkeypatch.setattr(
+        planner,
+        "_maybe_enqueue_npu_phi_diagnostic",
+        lambda **_: {
+            "schema": "npu_phi_broker_enqueue_attempt.v1",
+            "attempted": True,
+            "status": "enqueue_returned",
+            "accepted": True,
+            "job_id": "npu-test",
+        },
+    )
+
+    guard = planner.controller_guard_result_for_validation(
+        validation,
+        decision,
+        job_id="job-test",
+        step=3,
+        goal="build a Blender scene from album art",
+    )
+
+    npu = guard["runtime_debug_packet"]["extra"]["npu_phi"]
+    assert npu["attempted"] is True
+    assert npu["job_id"] == "npu-test"

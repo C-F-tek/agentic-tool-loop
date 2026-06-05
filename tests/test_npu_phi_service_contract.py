@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "services"))
 
 
 from npu_phi_service.app import create_app  # noqa: E402
+from npu_phi_service.blob_lock import BlobBuildLock  # noqa: E402
 from npu_phi_service.job_queue import NpuPhiJobQueue  # noqa: E402
 from npu_phi_service.pipeline import PipelineManager  # noqa: E402
 from npu_phi_service.settings import NpuPhiSettings  # noqa: E402
@@ -77,6 +78,58 @@ def test_npu_phi_pipeline_singleton_builds_once(tmp_path: Path) -> None:
     assert len(calls) == 1
     assert calls[0][1] == "NPU"
     assert calls[0][2]["CACHE_DIR"] == str(settings.cache_dir)
+
+
+def test_npu_phi_blob_lock_prevents_parallel_export(tmp_path: Path) -> None:
+    lock_path = tmp_path / "cache" / "phi35_npu.blob.lock"
+    first = BlobBuildLock(lock_path)
+    second = BlobBuildLock(lock_path)
+
+    assert first.acquire() is True
+    try:
+        assert second.acquire() is False
+    finally:
+        first.release()
+
+    assert not lock_path.exists()
+
+
+def test_npu_phi_blob_lock_recovers_stale_lock(tmp_path: Path) -> None:
+    lock_path = tmp_path / "cache" / "phi35_npu.blob.lock"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text('{"pid": 0}', encoding="utf-8")
+    old = 1
+    import os
+
+    os.utime(lock_path, (old, old))
+    lock = BlobBuildLock(lock_path, stale_after_s=1)
+
+    assert lock.acquire() is True
+    lock.release()
+    assert not lock_path.exists()
+
+
+def test_npu_phi_pipeline_uses_blob_lock_when_aot_enabled(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    settings = NpuPhiSettings(
+        ai_root=settings.ai_root,
+        host=settings.host,
+        port=settings.port,
+        model_dir=settings.model_dir,
+        cache_dir=settings.cache_dir,
+        spool_dir=settings.spool_dir,
+        queue_maxsize=settings.queue_maxsize,
+        exec_timeout_sec=settings.exec_timeout_sec,
+        generate_hint=settings.generate_hint,
+        enable_aot_blob=True,
+    )
+    manager = PipelineManager(settings, pipeline_factory=lambda *_: FakePipeline())
+
+    asyncio.run(manager.get_pipeline())
+    readiness = manager.readiness()
+
+    assert readiness["blob_lock_path"].endswith("phi35_npu.blob.lock")
+    assert not Path(str(readiness["blob_lock_path"])).exists()
 
 
 def test_npu_phi_queue_drops_when_full(tmp_path: Path) -> None:
