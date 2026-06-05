@@ -572,7 +572,7 @@ Preserved descriptors:
 - [knowledge-tiny-md](knowledge-tiny-md/README.md)
 - [knowledge-upload-batches](knowledge-upload-batches/README.md)
 
-### `models-*/` and [ovms-runtime/](ovms-runtime/)
+### `models-*/`, [npu-models/](npu-models/) and [ovms-runtime/](ovms-runtime/)
 
 Local model stores and OpenVINO Model Server runtime files. Model binaries and
 runtime state are not committed.
@@ -582,6 +582,7 @@ Preserved descriptors:
 - [models-cpu](models-cpu/README.md)
 - [models-ovms-rerank](models-ovms-rerank/README.md)
 - [models-task](models-task/README.md)
+- [npu-models](npu-models/README.md)
 - [ovms-runtime](ovms-runtime/README.md)
 
 ### [lab-patches/](lab-patches/)

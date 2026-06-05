@@ -61,7 +61,7 @@ minimal change:
 | OpenWebUI | `C:\Users\carmi\AI\venvs\openwebui` |
 | Open Terminal | `C:\Users\carmi\AI\venvs\openwebui` |
 | OpenVINO reranker provider 3550 | `C:\Users\carmi\AI\venvs\openvino` through `OPENVINO_PYTHON_EXE` |
-| Phi-3.5 NPU diagnostic sidecar 3551 | `C:\Users\carmi\AI\venvs\openvino` through `NPU_PHI_PYTHON_EXE`; disabled by default until the sidecar script exists |
+| Phi-3.5 NPU diagnostic sidecar 3551 | `C:\Users\carmi\AI\venvs\openvino` through `NPU_PHI_PYTHON_EXE`; disabled by default until explicitly enabled |
 | Ollama 11434/11435 | external `ollama.exe` process, not a Python venv |
 
 ## Repository Workdir Env Coupling

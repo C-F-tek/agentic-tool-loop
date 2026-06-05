@@ -37,6 +37,7 @@ wrappers, diagnostics or operational helpers.
 | `ollama-task-vulkan.ps1` | Starts/checks the task Ollama process used for Vulkan selector/repair flows on the task port. This is the GPU0 Intel task lane: `ollama.exe serve` on `127.0.0.1:11435` with `models-task` and Vulkan env. `GGML_VK_VISIBLE_DEVICES` must target the resolved Intel Vulkan device index; do not infer it from NVIDIA/Windows numbering. Keep separate from main planner Ollama and from labtools/openwebui Python checks. |
 | `openvino-env.ps1` | Sets OpenVINO/cache/HuggingFace environment variables for diagnostics/provider processes. |
 | `ovms-reranker-npu.ps1` | Starts OpenVINO Model Server reranker/NPU serving based on configured OVMS env. |
+| `npu-phi-service.ps1` | Starts the Phi-3.5 OpenVINO/NPU diagnostic sidecar on 3551 through `venvs\openvino`; validates model IR files and runs `python -m npu_phi_service`. |
 | `test-openvino.ps1` | Minimal OpenVINO diagnostic that sources `openvino-env.ps1` and runs the configured OpenVINO Python. |
 | `check-dev-toolchain.ps1` | Developer diagnostic for main/lab repo paths and local toolchain assumptions. |
 | `sync-lab-from-main.ps1` | Synchronizes lab worktree from the main project tree. High data-risk script: verify source and destination before running. |
@@ -52,6 +53,7 @@ wrappers, diagnostics or operational helpers.
 | `AGENTIC_LOOP_PATCH_NOTES.md` | Patch notes for current agentic loop behavior and recent changes. |
 | `AGENTIC_LOOP_V5_OPERATIONAL_MEMORY_NOTES.md` | Notes for planner turn memory, `done_reason` capture and real tool-result transport. |
 | `SERVICES_MODULE_TECHNICAL_REFERENCE.md` | Central service module map linking package-level references. |
+| `npu_phi_service\MODULE_REFERENCE.md` | Package-local reference for the Phi-3.5 OpenVINO/NPU diagnostic sidecar. |
 
 ## Operational Rule
 

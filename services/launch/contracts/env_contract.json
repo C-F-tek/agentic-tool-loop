@@ -60,6 +60,6 @@
     "cache_dir": "cache/openvino/npu_phi",
     "spool_dir": "state/npu_phi/spool",
     "must_not_change_openvino_provider_port": 3550,
-    "note": "Staged diagnostic sidecar contract. It is disabled until the service script exists, and it must use the OpenVINO venv rather than labtools or openwebui."
+    "note": "Diagnostic sidecar contract. It is disabled until explicitly enabled, and it must use the OpenVINO venv rather than labtools or openwebui."
   }
 }

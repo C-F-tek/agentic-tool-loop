@@ -25,6 +25,7 @@ Detailed local references:
 - `C:\Users\carmi\AI\services\vulkan_bridge\MODULE_REFERENCE.md`
 - `C:\Users\carmi\AI\services\codex_bridge\MODULE_REFERENCE.md`
 - `C:\Users\carmi\AI\services\model_export\MODULE_REFERENCE.md`
+- `C:\Users\carmi\AI\services\npu_phi_service\MODULE_REFERENCE.md`
 - `C:\Users\carmi\AI\services\launch\MODULE_REFERENCE.md`
 - `C:\Users\carmi\AI\services\RUNTIME_SCRIPT_REFERENCE.md`
 - `C:\Users\carmi\AI\services\MODULE_TECHNICAL_DESCRIPTIONS.md`
@@ -40,6 +41,7 @@ Detailed local references:
 | Planner model API | external Ollama via env in `config.py` and launcher | `127.0.0.1:11434` | external Ollama | Main controlled planner endpoint. The controller validates decisions; Ollama `done_reason` is turn metadata, not the job finalizer. |
 | Task/repair model API | `ollama-task-vulkan.ps1` plus env | `127.0.0.1:11435` | external Ollama task instance | Secondary Ollama/Vulkan endpoint for the GPU0 Intel task lane, used for selector/repair/normalization flows, not the public 3571 tool. |
 | Safe command executor | `aicarmine-executor-server.py`, `aicarmine-executor-server.ps1`, `aicarmine-run-safe-command.ps1` | `127.0.0.1:3560` when launched | `venvs/labtools` unless overridden | Executes approved shell commands through the guarded PowerShell runner. |
+| NPU Phi diagnostic sidecar | `npu_phi_service/*`, `npu-phi-service.ps1` | `127.0.0.1:3551` when explicitly enabled | `venvs/openvino` | Best-effort diagnostic scene/spec generation with singleton OpenVINO GenAI pipeline. It must not replace the 3550 reranker or block the planner loop. |
 | Codex MCP/Responses bridges | `codex_bridge/*`, top-level compatibility wrappers | MCP stdio or HTTP proxy | service-dependent | Optional integration layer for Codex and Ollama/OpenAI-compatible response flows. |
 | Model export tooling | `model_export/*`, `export_model.py` | CLI | export/OpenVINO env | Converts or exports supported model families and updates serving config. |
 
@@ -291,6 +293,7 @@ determine whether 3571, 3572, Ollama and OpenWebUI are connected correctly.
 | `ollama-task-vulkan.ps1` | Starts or checks a task Ollama instance for GPU0 Intel Vulkan/task model use. | Requires `ollama.exe`; uses task model/env, `models-task`, `OLLAMA_VULKAN` and `GGML_VK_VISIBLE_DEVICES`. | Keep separate from main planner 11434 and verify Intel Vulkan device selection. |
 | `openvino-env.ps1` | Sets OpenVINO/cache/HuggingFace environment variables. | Mutates process env. | Source before OpenVINO diagnostics/providers only. |
 | `ovms-reranker-npu.ps1` | Starts OVMS reranker serving with NPU/OpenVINO env. | Uses OVMS env vars and executable paths. | Provider-specific; do not mix with OpenWebUI Python venv. |
+| `npu-phi-service.ps1` | Starts the Phi-3.5 OpenVINO/NPU diagnostic sidecar on 3551. | Sources `openvino-env.ps1`, uses `NPU_PHI_PYTHON_EXE`, validates model IR files and runs `python -m npu_phi_service`. | Must stay in `venvs/openvino`; do not run through labtools/openwebui and do not reuse 3550. |
 | `test-openvino.ps1` | Minimal OpenVINO environment diagnostic. | Sources `openvino-env.ps1`; runs configured OpenVINO Python. | Diagnostic only. |
 | `check-dev-toolchain.ps1` | Checks main/lab repo toolchain assumptions. | Reads project paths and tool availability. | Diagnostic only unless explicitly extended. |
 | `sync-lab-from-main.ps1` | Synchronizes lab worktree from main project path. | Reads/writes lab/main repo trees. | High data risk; verify paths before running or editing. |
@@ -311,6 +314,7 @@ determine whether 3571, 3572, Ollama and OpenWebUI are connected correctly.
 | `vulkan_bridge/MODULE_REFERENCE.md` | Detailed module reference for the 3571 OpenWebUI-facing bridge package. |
 | `codex_bridge/MODULE_REFERENCE.md` | Detailed module reference for Codex MCP/Responses bridge modules. |
 | `model_export/MODULE_REFERENCE.md` | Detailed module reference for model export modules. |
+| `npu_phi_service/MODULE_REFERENCE.md` | Detailed module reference for the Phi-3.5 OpenVINO/NPU diagnostic sidecar. |
 | `launch/MODULE_REFERENCE.md` | Detailed module reference for launcher helpers and runtime order. |
 
 ## Editor Tooling

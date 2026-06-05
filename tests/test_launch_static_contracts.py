@@ -42,8 +42,10 @@ def test_npu_phi_launcher_contract_uses_openvino_venv_and_3551() -> None:
     assert "NPU_PHI_PORT = 3551" in text
     assert '$NPU_PHI_PYTHON_EXE = Set-UserEnvValue "NPU_PHI_PYTHON_EXE" $OPENVINO_PYTHON_EXE' in text
     assert '$NPU_PHI_ENV_SCRIPT = Set-UserEnvValue "NPU_PHI_ENV_SCRIPT" $OPENVINO_ENV_SCRIPT' in text
+    assert '$NPU_PHI_SERVICE_SCRIPT = Set-UserEnvValue "NPU_PHI_SERVICE_SCRIPT" "$AI_ROOT\\services\\npu-phi-service.ps1"' in text
     assert 'Set-UserEnvDefault "ENABLE_NPU_PHI_SERVICE" "0"' in text
     assert "Start-NpuPhiServiceIfEnabled" in text
+    assert (ROOT / "services/npu-phi-service.ps1").exists()
     assert "venvs\\labtools" not in text[text.find("$NPU_PHI_PYTHON_EXE") : text.find("$NPU_PHI_ENV_SCRIPT")]
     assert env_contract["npu_phi_service"]["python_env"] == "openvino"
     assert env_contract["npu_phi_service"]["enabled_default"] == "0"

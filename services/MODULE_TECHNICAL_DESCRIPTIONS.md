@@ -722,6 +722,20 @@ OpenVINO Model Server reranker/NPU startup helper.
 - Risk: uses provider-specific runtime and embedded Python assumptions.
 - Verify: OVMS env and provider endpoint.
 
+### `npu-phi-service.ps1`
+
+PowerShell entrypoint for the Phi-3.5 OpenVINO/NPU diagnostic sidecar.
+
+- Reads: `NPU_PHI_*`, `AI_ROOT`, `services/openvino-env.ps1`, local model IR
+  files under `npu-models/Phi-3.5-mini-instruct-int4-cw-ov`.
+- Writes: process env for the sidecar, local cache/spool directories.
+- Exposes: `python -m npu_phi_service` on `127.0.0.1:3551` when enabled by
+  the launcher.
+- Risk: must use `venvs/openvino`, not `labtools` or `openwebui`; must not
+  reuse the 3550 reranker port.
+- Verify: PowerShell parse, `NPU_PHI_PYTHON_EXE`, model XML/BIN existence and
+  `/healthz`/`/readyz` before any warmup/generation.
+
 ### `test-openvino.ps1`
 
 Minimal OpenVINO diagnostic wrapper.
@@ -847,6 +861,7 @@ Package-local technical references exist for:
 - `vulkan_bridge/MODULE_REFERENCE.md`
 - `codex_bridge/MODULE_REFERENCE.md`
 - `model_export/MODULE_REFERENCE.md`
+- `npu_phi_service/MODULE_REFERENCE.md`
 - `launch/MODULE_REFERENCE.md`
 
 They document runtime contracts, module responsibilities, data flow and safe
