@@ -575,6 +575,119 @@ def _json_tree_css() -> str:
 """
 
 
+def _compact_runtime_debug_for_view(packet: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(packet, dict) or not packet:
+        return {}
+    validator = packet.get("validator_result") if isinstance(packet.get("validator_result"), dict) else {}
+    evidence = packet.get("evidence_coverage") if isinstance(packet.get("evidence_coverage"), dict) else {}
+    required = (
+        packet.get("required_next_progress_model")
+        if isinstance(packet.get("required_next_progress_model"), dict)
+        else {}
+    )
+    return {
+        "phase": packet.get("phase"),
+        "step": packet.get("step"),
+        "validator_ok": validator.get("ok"),
+        "validator_violations": validator.get("violations") or validator.get("violation_codes"),
+        "coverage_score": evidence.get("coverage_score"),
+        "coverage_score_ready": evidence.get("coverage_score_ready"),
+        "final_ready": evidence.get("final_ready"),
+        "required_progress_kind": required.get("kind"),
+        "candidate_next_actions_count": packet.get("candidate_next_actions_count"),
+        "rejected_candidate_actions_count": packet.get("rejected_candidate_actions_count"),
+    }
+
+
+def _compact_validator_guard_for_view(guard: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(guard, dict) or not guard:
+        return {}
+    keys = (
+        "ok", "tool", "guard_type", "reason", "summary", "error", "error_type",
+        "rejected_tool", "rejected_action", "blocked_tool", "blocked_by",
+        "validation_result", "violations", "violation_codes", "candidate_next_action",
+        "required_next_progress_model",
+    )
+    out = {key: guard.get(key) for key in keys if guard.get(key) not in (None, "", [], {})}
+    if "runtime_debug_packet" in guard:
+        out["runtime_debug_available"] = True
+    return out
+
+
+def _compact_planner_decision_for_view(decision: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(decision, dict) or not decision:
+        return {}
+    args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+    return {
+        "action": decision.get("action"),
+        "tool": decision.get("tool"),
+        "reason": decision.get("reason"),
+        "native_tool_call": decision.get("native_tool_call"),
+        "arguments_keys": sorted(str(key) for key in args.keys())[:20],
+    }
+
+
+def _compact_command_policy_for_view(policy: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(policy, dict) or not policy:
+        return {}
+    return {
+        "allowed": policy.get("allowed"),
+        "command_class": policy.get("command_class"),
+        "reason": policy.get("reason"),
+        "cwd_under_repo": policy.get("cwd_under_repo"),
+        "side_effect_scope": policy.get("side_effect_scope"),
+        "consent_required": policy.get("consent_required"),
+        "diagnostic_only": policy.get("diagnostic_only"),
+    }
+
+
+def _compact_search_quality_for_view(quality: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(quality, dict) or not quality:
+        return {}
+    return {
+        "quality": quality.get("quality"),
+        "must_retry": quality.get("must_retry"),
+        "reason": quality.get("reason"),
+        "count": quality.get("count"),
+        "truncated": quality.get("truncated"),
+        "search_complete": quality.get("search_complete"),
+        "unreadable_files": quality.get("unreadable_files"),
+        "diagnostic_only": quality.get("diagnostic_only"),
+    }
+
+
+def _step_diagnostics_summary_for_view(step: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(step, dict) or not step:
+        return {}
+    guard = step.get("validator_guard") if isinstance(step.get("validator_guard"), dict) else {}
+    tool_result = (
+        step.get("history_tool_result_fed_back_to_planner")
+        if isinstance(step.get("history_tool_result_fed_back_to_planner"), dict)
+        else {}
+    )
+    audit = step.get("payload_audit") if isinstance(step.get("payload_audit"), dict) else {}
+    runtime_packet = (
+        guard.get("runtime_debug_packet")
+        if isinstance(guard.get("runtime_debug_packet"), dict)
+        else {}
+    )
+    diagnostics = {
+        "runtime_debug": _compact_runtime_debug_for_view(runtime_packet),
+        "command_policy": _compact_command_policy_for_view(tool_result.get("command_execution_policy")),
+        "search_quality": _compact_search_quality_for_view(tool_result.get("search_quality")),
+        "payload_audit": {
+            "raw_payload_available": audit.get("raw_payload_available"),
+            "compact_payload_complete": audit.get("compact_payload_complete"),
+            "violations": audit.get("violations"),
+        } if audit else {},
+    }
+    return {
+        key: value
+        for key, value in diagnostics.items()
+        if value not in ({}, [], "", None)
+    }
+
+
 def _dashboard_links(job_id: str) -> str:
     safe_job = html.escape(job_id)
     return (
@@ -1288,7 +1401,12 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
             row["history_tool_result_fed_back_to_planner"] = payload if include_heavy else {
                 key: value
                 for key, value in payload.items()
-                if key in {"tool", "ok", "mode", "kind", "target_file", "edit_kind", "window_start", "window_end", "document_id"}
+                if key in {
+                    "tool", "ok", "mode", "kind", "target_file", "edit_kind",
+                    "window_start", "window_end", "document_id", "command_class",
+                    "policy", "command_execution_policy", "search_quality",
+                    "public_payload_lint",
+                }
             }
             if include_heavy:
                 raw_payload, raw_meta = _read_job_artifact_json(root, payload.get("artifact"))
@@ -1371,6 +1489,16 @@ def agent_job_ia_view_section_html(job_id: str, section: str, *, step: int = 0) 
             current_step.get("payload_audit") or {},
             path="ia.lazy.payload_audit",
         )
+    if section_name == "runtime_debug":
+        guard = (
+            current_step.get("validator_guard")
+            if isinstance(current_step.get("validator_guard"), dict)
+            else {}
+        )
+        return _html_json_tree(
+            guard.get("runtime_debug_packet") or {},
+            path="ia.lazy.runtime_debug",
+        )
     if section_name == "openwebui_payload":
         return _html_json_tree(
             full_payload.get("openwebui_30b_payload") or {},
@@ -1414,6 +1542,27 @@ def agent_job_ia_view_html(job_id: str) -> str:
     )
     validator_guard = current_step.get("validator_guard") if isinstance(current_step, dict) and isinstance(current_step.get("validator_guard"), dict) else {}
     audit = current_step.get("payload_audit") if isinstance(current_step, dict) and isinstance(current_step.get("payload_audit"), dict) else {}
+    tool_result = (
+        current_step.get("history_tool_result_fed_back_to_planner")
+        if isinstance(current_step, dict) and isinstance(current_step.get("history_tool_result_fed_back_to_planner"), dict)
+        else {}
+    )
+    diagnostics_summary = _step_diagnostics_summary_for_view(current_step or {})
+    runtime_debug_packet = (
+        validator_guard.get("runtime_debug_packet")
+        if isinstance(validator_guard.get("runtime_debug_packet"), dict)
+        else {}
+    )
+    command_policy = (
+        tool_result.get("command_execution_policy")
+        if isinstance(tool_result.get("command_execution_policy"), dict)
+        else {}
+    )
+    search_quality = (
+        tool_result.get("search_quality")
+        if isinstance(tool_result.get("search_quality"), dict)
+        else {}
+    )
     metrics = {
         "step": current_step.get("step") if isinstance(current_step, dict) else None,
         "status": job.get("status"),
@@ -1427,6 +1576,9 @@ def agent_job_ia_view_html(job_id: str) -> str:
         "tool": planner_decision.get("tool"),
         "native_tool_calls": native_stream.get("native_tool_call_count"),
         "validator_guard": validator_guard.get("guard_type") or validator_guard.get("reason"),
+        "diagnostics": ", ".join(diagnostics_summary.keys()) if diagnostics_summary else None,
+        "search_quality": search_quality.get("quality"),
+        "command_policy": command_policy.get("command_class"),
         "payload_complete": audit.get("compact_payload_complete"),
     }
     metric_html = "".join(
@@ -1439,7 +1591,7 @@ def agent_job_ia_view_html(job_id: str) -> str:
     )
     if isinstance(current_step, dict):
         planner_summary = {
-            "planner_decision": planner_decision,
+            "planner_decision": _compact_planner_decision_for_view(planner_decision),
             "native_tool_call_stream": native_tool_call_stream,
             "native_stream_summary": {
                 key: value
@@ -1457,6 +1609,23 @@ def agent_job_ia_view_html(job_id: str) -> str:
                     detail_key="ia.current.native_tool_calls",
                 )
             )
+        if diagnostics_summary:
+            body_parts.append(
+                _html_detail_block(
+                    "Diagnostics Summary",
+                    _html_json_tree(diagnostics_summary, path="ia.current.diagnostics"),
+                    open_by_default=True,
+                    detail_key="ia.current.diagnostics",
+                )
+            )
+        if runtime_debug_packet:
+            body_parts.append(
+                _html_lazy_details(
+                    "Runtime Debug Packet",
+                    f"/jobs/{job_id}/ia-view/section/runtime_debug?step={current_step.get('step') or 0}",
+                    detail_key="ia.current.runtime_debug",
+                )
+            )
         body_parts.append(
             _html_lazy_details(
                 "Payload Audit",
@@ -1467,8 +1636,8 @@ def agent_job_ia_view_html(job_id: str) -> str:
         if validator_guard:
             body_parts.append(
                 _html_detail_block(
-                    "Validator Guard / Rejection",
-                    _html_json_tree(validator_guard, path="ia.current.validator_guard"),
+                    "Validator Guard / Rejection (compact)",
+                    _html_json_tree(_compact_validator_guard_for_view(validator_guard), path="ia.current.validator_guard"),
                     open_by_default=True,
                     detail_key="ia.current.validator_guard",
                 )
