@@ -22,8 +22,13 @@ Il payload contiene campi strutturati rilevanti per il modello OpenWebUI, tra cu
 - `payload_index_for_30b`
 - `priority_evidence_for_30b`
 - `tool_context_for_30b`
-- `answer_for_30b`
-- `content`
+
+Nelle versioni storiche o nei payload interni del broker possono comparire anche
+campi come `answer_for_30b`, `next_action_for_30b` o `content`. Nel contratto
+pubblico 3571 corrente questi non sono la superficie top-level primaria:
+`answer_for_30b` e `next_action_for_30b`, quando presenti, sono campi del JSON
+strutturato dentro `tool_context_for_30b`; `content` non deve sostituire
+`payload_index_for_30b`, `priority_evidence_for_30b` e il contesto inline.
 
 La dimensione e la struttura annidata del JSON hanno superato la capacita pratica di Codex di stamparlo, leggerlo e mantenerlo coerente nella conversazione.
 

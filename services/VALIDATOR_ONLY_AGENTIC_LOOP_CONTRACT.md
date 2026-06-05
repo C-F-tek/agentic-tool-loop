@@ -341,9 +341,10 @@ Regole:
   `runtime_sqlite_memory_search/write` o `planner_scratchpad_*`, e solo per un
   gap selettivo esplicito.
 - `planner_scratchpad_write` con `kind=answer_chunk` puo' salvare sezioni
-  complete di risposta nel composer SQLite job-local. Il wrapper puo'
-  ricomporle in `answer_for_30b`; non e' un sostituto di `repo_read` o
-  `repo_propose_code_edit`.
+  complete di risposta nel composer SQLite job-local. Il broker/wrapper puo'
+  ricomporle nello structured context come `answer_for_30b`; questo non rende
+  `answer_for_30b` un top-level pubblico 3571 e non e' un sostituto di
+  `repo_read` o `repo_propose_code_edit`.
 - Questa compattazione vale solo per il prompt del planner verso 11434.
   `tool_context_for_30b` verso OpenWebUI continua a trasportare i payload reali
   dei tool riusciti secondo il flusso pubblico esistente.
@@ -370,12 +371,26 @@ campo di contesto:
 ```json
 {
   "ok": true,
-  "job_ok": true,
   "service": "vulkan_agent",
-  "job_id": "job-...",
-  "status": "completed",
-  "goal": "...",
-  "content": "solo risposta finale del planner o messaggio terminale compatto",
+  "mode": "agent_job_final_waited_compact",
+  "required_top_level_keys": [
+    "ok",
+    "service",
+    "mode",
+    "required_top_level_keys",
+    "payload_index_for_30b",
+    "priority_evidence_for_30b",
+    "openwebui_usage",
+    "tool_context_for_30b"
+  ],
+  "payload_index_for_30b": {
+    "internal_job_status": {
+      "completed": true,
+      "status": "completed",
+      "source": "internal_3572_job_status"
+    },
+    "concrete_results": []
+  },
   "priority_evidence_for_30b": {
     "schema": "openwebui.priority_evidence_for_30b.v1",
     "items": [
@@ -387,6 +402,11 @@ campo di contesto:
         "unified_diff": "diff completo inline..."
       }
     ]
+  },
+  "openwebui_usage": {
+    "payload_index_field": "payload_index_for_30b",
+    "priority_evidence_field": "priority_evidence_for_30b.items",
+    "full_tool_evidence_field": "tool_context_for_30b.artifacts[*].artifact"
   },
   "tool_context_for_30b": "{\n  \"artifacts\": [...],\n  \"limits\": [...]\n}"
 }
@@ -400,7 +420,8 @@ non riferimenti locali:
   ricostruito dal broker/wrapper/composer quando il raw result vive in JSON o
   SQLite locali;
 - `evidence_view_for_30b`: finestre/contenuti reali dei file letti;
-- `answer_for_30b` o `composed_answer.text`: risposta finale o ricomposta;
+- `answer_for_30b`, `next_action_for_30b` o `composed_answer.text`: campi
+  interni allo structured context, non top-level 3571 pubblici;
 - limiti dichiarati dai tool riusciti, per esempio `truncated=true`.
 
 `priority_evidence_for_30b` e' una vista prioritaria navigabile per OpenWebUI.
