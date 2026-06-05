@@ -56,6 +56,10 @@ from .job_html import (
     agent_job_planner_stream_view_html,
     agent_job_status_json_view_html,
 )
+from .job_planner_lab import agent_job_planner_lab_html, planner_lab_index_html
+from .job_store import agent_job_root, append_agent_event, compact_agent_terminal_response, list_agent_jobs
+from .application.public_payload.planner_lab import build_planner_lab_apply_tool_call, build_planner_payload_lab
+from .tool_dispatch import dispatch_tool
 from .tool_registry import capability_map
 
 
@@ -72,6 +76,11 @@ def jobs_endpoint_paths() -> list[str]:
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view.json",
         f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view/section/{{section}}",
+        "/planner-lab",
+        "/planner-lab/start",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab.json",
+        f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab/apply",
     ]
 
 
@@ -99,6 +108,45 @@ def create_app() -> FastAPI:
             "jobs": list_agent_jobs(limit=max(1, min(int(limit or 50), 200))),
         }
 
+    @app.get("/planner-lab", include_in_schema=False)
+    def planner_lab_index(limit: int = 20) -> HTMLResponse:
+        return HTMLResponse(planner_lab_index_html(limit=limit))
+
+    @app.post("/planner-lab/start", include_in_schema=False)
+    def planner_lab_start(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+        task = str(
+            payload.get("task")
+            or payload.get("request")
+            or payload.get("prompt")
+            or ""
+        ).strip()
+        if not task:
+            return {"ok": False, "error": "missing_task"}
+        try:
+            wait_seconds = max(1, min(int(payload.get("wait_seconds") or 1), 30))
+        except Exception:
+            return {
+                "ok": False,
+                "error": "invalid_wait_seconds",
+                "expected": "integer between 1 and 30",
+            }
+        arguments = {
+            "task": task,
+            "request": task,
+            "return_mode": str(payload.get("return_mode") or "background"),
+            "wait_seconds": wait_seconds,
+        }
+        for key in ("max_steps", "approval_mode", "user_consent"):
+            if payload.get(key) not in (None, "", [], {}):
+                arguments[key] = payload.get(key)
+        return agent(
+            {
+                "tool_name": "vulkan_helper",
+                "task": task,
+                "arguments": arguments,
+            }
+        )
+
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}", include_in_schema=False)
     def job_dashboard(job_id: str) -> HTMLResponse:
         return HTMLResponse(agent_job_html(job_id))
@@ -118,6 +166,76 @@ def create_app() -> FastAPI:
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/ia-view/section/{{section}}", include_in_schema=False)
     def job_dashboard_ia_view_section(job_id: str, section: str, step: int = 0) -> HTMLResponse:
         return HTMLResponse(agent_job_ia_view_section_html(job_id, section, step=step))
+
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab", include_in_schema=False)
+    def job_planner_lab(job_id: str) -> HTMLResponse:
+        return HTMLResponse(agent_job_planner_lab_html(job_id))
+
+    @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab.json", include_in_schema=False)
+    def job_planner_lab_json(
+        job_id: str,
+        summary_chars: int = 4000,
+        step_limit: int = 80,
+        code_product_limit: int = 40,
+    ) -> JSONResponse:
+        ia_payload = agent_job_ia_view_payload(job_id, include_heavy=True)
+        if not ia_payload.get("ok"):
+            return JSONResponse(ia_payload)
+        terminal = compact_agent_terminal_response(job_id, audience="openwebui")
+        return JSONResponse(
+            build_planner_payload_lab(
+                job_id=job_id,
+                ia_view_payload=ia_payload,
+                terminal_response=terminal,
+                summary_text_chars=summary_chars,
+                step_summary_limit=step_limit,
+                code_product_limit=code_product_limit,
+            )
+        )
+
+    @app.post(f"{JOBS_INDEX_PATH}/{{job_id}}/planner-lab/apply", include_in_schema=False)
+    def job_planner_lab_apply(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+        ia_payload = agent_job_ia_view_payload(job_id, include_heavy=True)
+        if not ia_payload.get("ok"):
+            return ia_payload
+        terminal = compact_agent_terminal_response(job_id, audience="openwebui")
+        lab_payload = build_planner_payload_lab(
+            job_id=job_id,
+            ia_view_payload=ia_payload,
+            terminal_response=terminal,
+        )
+        apply_request = build_planner_lab_apply_tool_call(
+            lab_payload,
+            candidate_id=str(payload.get("candidate_id") or ""),
+            confirm_apply=payload.get("confirm_apply") is True,
+        )
+        if not apply_request.get("ok"):
+            return apply_request
+        result = dispatch_tool(
+            "repo_apply_patch",
+            apply_request["arguments"],
+            agent_job_root(job_id),
+            allow_command=True,
+            user_consent=str(payload.get("user_consent") or ""),
+        )
+        append_agent_event(
+            job_id,
+            "planner_lab_apply_patch",
+            "Planner lab applied an exact old_text/new_text patch candidate.",
+            {
+                "candidate_id": apply_request.get("candidate_id"),
+                "target_file": (apply_request.get("candidate") or {}).get("target_file"),
+                "result_ok": result.get("ok") if isinstance(result, dict) else None,
+            },
+            step=None,
+        )
+        return {
+            "ok": bool(isinstance(result, dict) and result.get("ok")),
+            "tool": "planner_lab_apply",
+            "candidate_id": apply_request.get("candidate_id"),
+            "apply_tool": "repo_apply_patch",
+            "result": result,
+        }
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}/events", include_in_schema=False)
     def job_dashboard_events(job_id: str) -> HTMLResponse:

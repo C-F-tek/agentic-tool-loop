@@ -399,6 +399,38 @@ The view includes explicit audit flags for preview-only, metadata-only and
 artifact-only payload violations. It is a diagnostic/control surface, not a
 source of planner evidence and not a fallback.
 
+## Planner Payload Lab
+
+The broker also exposes an operator-only payload calibration lab:
+
+- `/planner-lab`
+- `/planner-lab/start`
+- `/jobs/{job_id}/planner-lab`
+- `/jobs/{job_id}/planner-lab.json`
+- `/jobs/{job_id}/planner-lab/apply`
+
+These routes are hidden from OpenAPI and are not part of the 3571 public
+OpenWebUI surface. The lab starts a normal `vulkan_helper` planner job or
+loads an existing job, then rebuilds a readable view from the same terminal
+payload that would be sent toward OpenWebUI. It shows model-visible text,
+payload readiness, think/step summaries, `payload_index_for_30b`,
+`priority_evidence_for_30b` and extracted code-product candidates.
+
+The JSON endpoint accepts operator-selected limits:
+
+- `summary_chars`
+- `step_limit`
+- `code_product_limit`
+
+These limits affect only the operator lab rendering. They do not change planner
+gates, validator gates, finalization rules or the OpenWebUI public schema.
+
+The apply endpoint is intentionally narrow. It requires `confirm_apply=true`
+and only dispatches `repo_apply_patch` when the selected code product contains
+exact `target_file`, `old_text` and `new_text`. A complete `unified_diff` is
+shown and copyable, but it is not applied by this endpoint because the current
+write tool applies exact old/new text replacements rather than unified diffs.
+
 ## Safe Edit Checklist
 
 Before changing this package:

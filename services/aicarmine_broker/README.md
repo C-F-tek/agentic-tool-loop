@@ -78,6 +78,10 @@ Core code entry points:
   - Tool schema, dispatch, normalization and selection support.
 - [job_store.py](job_store.py), [job_html.py](job_html.py)
   - Job persistence, dashboards and IA Live Control View rendering.
+- [job_planner_lab.py](job_planner_lab.py)
+  - Operator-only chat plus step-summary lab for inspecting the actual
+    OpenWebUI-bound payload, extracting code-product candidates and handing
+    exact old/new text patches to `repo_apply_patch` with explicit confirmation.
 - [memory_tools.py](memory_tools.py)
   - Scratchpad, SQLite memory and prompt-window support.
 
