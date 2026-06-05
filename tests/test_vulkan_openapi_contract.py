@@ -202,6 +202,8 @@ def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payl
     assert "artifact_path" not in payload
     assert "final_path" not in payload
     assert "workspace" not in tool_context["job"]
+    assert result["public_payload_lint"]["schema"] == "public_payload_lint.v1"
+    assert result["public_payload_lint"]["ok"] is True
 
 
 def test_terminal_openwebui_response_with_blocked_job_keeps_public_tool_ok_and_indexes_partial_old_new_text() -> None:

@@ -24,6 +24,7 @@ from .application.response_values import (
     compact_text,
     json_size,
 )
+from .application.public_payload_linter import lint_public_payload
 from .openapi_builder import build_native_helper_openapi
 
 OPENWEBUI_PUBLIC_TOOLS = (
@@ -209,6 +210,20 @@ def _json_size(value: Any) -> int:
 
 def _bridge_result_digest(result: Any) -> dict[str, Any]:
     return bridge_result_digest(result)
+
+
+def _public_payload_lint_mode() -> str:
+    return str(os.environ.get("AICARMINE_PUBLIC_PAYLOAD_LINT_MODE", "warn") or "warn")
+
+
+def _attach_public_payload_lint(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    payload["public_payload_lint"] = lint_public_payload(
+        payload,
+        mode=_public_payload_lint_mode(),
+    )
+    return payload
 
 
 
@@ -3373,6 +3388,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         }
         sealed["priority_evidence_for_30b"] = priority_evidence
         sealed["tool_context_for_30b"] = _agentic_v9_json_dumps(tool_context, indent=2)
+        _attach_public_payload_lint(sealed)
         sealed["openwebui_usage"]["top_level_present_fields"] = list(sealed.keys())
         return sealed
 
@@ -3388,7 +3404,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
     out["text"] = protocol_text
     out["openwebui_protocol_observation"] = protocol_text
 
-    return out
+    return _attach_public_payload_lint(out)
 
 
 def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
