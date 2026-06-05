@@ -737,13 +737,38 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
         loop_turn_items.append(row)
         if len(loop_turn_items) >= min(limit * 2, 50):
             break
+    persistent_ok = bool(target_memory.get("ok")) and bool(persistent.get("ok"))
+    loop_turn_ok = bool(target_loop_memory.get("ok")) and bool(loop_persistent.get("ok"))
+    memory_query_ok = persistent_ok and loop_turn_ok
+    memory_query_error = (
+        target_memory.get("error")
+        or persistent.get("error")
+        or target_loop_memory.get("error")
+        or loop_persistent.get("error")
+        or ""
+    )
+    memory_query_details = (
+        target_memory.get("details")
+        or persistent.get("details")
+        or target_loop_memory.get("details")
+        or loop_persistent.get("details")
+        or ""
+    )
     return {
         "available": True,
+        "available_meaning": "feature_available_not_query_success",
+        "memory_feature_available": True,
+        "memory_query_ok": memory_query_ok,
+        "memory_records_available": bool(persistent_items or loop_turn_items or scratch_items),
+        "memory_query_error": memory_query_error,
+        "memory_query_details": memory_query_details,
         "source": "controller_injected_planner_memory",
         "instruction": (
             "Long-term memory is available through this planner_memory surface "
             "and through runtime_sqlite_memory_* tools. If no records are shown, "
-            "memory is available but currently empty for this query."
+            "memory is available but currently empty for this query. If "
+            "memory_query_ok=false, investigate the SQLite query error instead "
+            "of treating memory as absent."
         ),
         "target_key": target_key,
         "goal_query": query,
@@ -755,7 +780,7 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
         },
         "persistent": {
             "available": True,
-            "ok": bool(target_memory.get("ok")) and bool(persistent.get("ok")),
+            "ok": persistent_ok,
             "target_count": int(target_memory.get("count") or 0),
             "query_count": int(persistent.get("count") or 0),
             "count": len(persistent_items),
@@ -772,7 +797,7 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "loop. Use it to recover prior loop decisions/results when only a "
                 "window of Ollama message history fits."
             ),
-            "ok": bool(target_loop_memory.get("ok")) and bool(loop_persistent.get("ok")),
+            "ok": loop_turn_ok,
             "target_count": int(target_loop_memory.get("count") or 0),
             "query_count": int(loop_persistent.get("count") or 0),
             "count": len(loop_turn_items),
@@ -787,7 +812,12 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
-def runtime_sqlite_memory_cleanup(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def runtime_sqlite_memory_cleanup(
+    args: dict[str, Any],
+    root: Path,
+    allow_command: bool = False,
+    user_consent: str = "",
+) -> dict[str, Any]:
     db_path = _memory_db(args)
     dry_run = not bool(args.get("apply"))
     now = time.time()
@@ -824,6 +854,32 @@ def runtime_sqlite_memory_cleanup(args: dict[str, Any], root: Path) -> dict[str,
             params,
         )]
         if not dry_run and rows:
+            if not allow_command:
+                return {
+                    "ok": False,
+                    "tool": "runtime_sqlite_memory_cleanup",
+                    "db": str(db_path),
+                    "dry_run": True,
+                    "needs_consent": True,
+                    "error": "memory_cleanup_requires_command_permission",
+                    "required_consent": "enable command/write permission and confirm runtime SQLite memory cleanup",
+                    "would_delete_count": len(rows),
+                    "items": rows[:100],
+                }
+            consent = str(user_consent or "").lower()
+            if "confirm" not in consent and "confermo" not in consent:
+                return {
+                    "ok": False,
+                    "tool": "runtime_sqlite_memory_cleanup",
+                    "db": str(db_path),
+                    "dry_run": True,
+                    "needs_consent": True,
+                    "error": "memory_cleanup_requires_user_consent",
+                    "required_consent": "confirm runtime SQLite memory cleanup",
+                    "would_delete_count": len(rows),
+                    "items": rows[:100],
+                }
+        if not dry_run and rows:
             ids = [int(row["id"]) for row in rows]
             placeholders = ",".join("?" for _ in ids)
             conn.execute(f"DELETE FROM broker_memory_records WHERE id IN ({placeholders})", ids)
@@ -835,6 +891,7 @@ def runtime_sqlite_memory_cleanup(args: dict[str, Any], root: Path) -> dict[str,
         "tool": "runtime_sqlite_memory_cleanup",
         "db": str(db_path),
         "dry_run": dry_run,
+        "allow_command": bool(allow_command),
         "count": len(rows),
         "items": rows[:100],
     }

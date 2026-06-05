@@ -11,7 +11,7 @@ def compact_text(value: Any, limit: int) -> str:
         return text
     if len(text) <= limit:
         return text
-    return text[: max(0, limit - 64)] + "\n... <full result is available in job_url/final_path>"
+    return text[: max(0, limit - 64)] + "\n... <full result is available in inline payload fields when present>"
 
 
 def json_size(value: Any) -> int:

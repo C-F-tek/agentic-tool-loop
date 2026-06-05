@@ -31,5 +31,13 @@
     "Launcher changes must prove active process env before and after.",
     "Ollama Desktop/main 11434 may inherit Windows user env, not OpenWebUI launcher process env.",
     "Do not change planner model, num_ctx, max steps or venv from a refactor-only patch."
-  ]
+  ],
+  "openvino_provider": {
+    "enabled_default": "1",
+    "external_reranker_default": "1",
+    "reranking_engine_when_enabled": "external",
+    "provider_port": 3550,
+    "health_path": "/v2/models/BAAI%2Fbge-reranker-v2-m3/ready",
+    "note": "Default ON for the current local AI-Carmine runtime profile; disable explicitly when the provider HTTP service is unavailable."
+  }
 }

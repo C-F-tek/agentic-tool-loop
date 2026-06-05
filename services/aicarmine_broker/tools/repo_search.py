@@ -7,6 +7,7 @@ from typing import Any
 import json
 
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.tools.command_safety import classify_command
 from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
 
 
@@ -46,6 +47,7 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             f"--glob '!output/**' {q} {target}"
         )
 
+    classification = classify_command(command)
     result = _run_ps(command, timeout=120)
     payload = {
         "ok": result["returncode"] in (0, 1),
@@ -53,6 +55,9 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "mode": mode,
         "query": query,
         "command": command,
+        "command_class": classification.command_class,
+        "consent_required": classification.consent_required,
+        "policy": classification.reason,
         "returncode": result["returncode"],
         "matches": result["stdout"].splitlines()[:max_results],
         "stderr_tail": result["stderr_tail"],

@@ -24,6 +24,29 @@ def test_detect_stack_counts_repo_files(tmp_path: Path, monkeypatch) -> None:
     assert "dotnet build" in stack["canonical_commands"]
 
 
+def test_detect_stack_compile_command_uses_resolved_targets(tmp_path: Path, monkeypatch) -> None:
+    module = import_module("aicarmine_broker.tools.repo_status")
+    repo_root = tmp_path / "repo"
+    package = repo_root / "src" / "demo_pkg"
+    package.mkdir(parents=True)
+    (repo_root / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "module.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(module, "LAB_REPO", repo_root)
+
+    stack = module.detect_stack()
+    compile_commands = [
+        command for command in stack["canonical_commands"]
+        if "compileall" in command
+    ]
+
+    assert compile_commands
+    assert "src/demo_pkg" in compile_commands[0]
+    assert "ia_carmine" not in compile_commands[0]
+    assert "Tools" not in compile_commands[0]
+    assert stack["compile_target_resolution"]["targets"] == ("src/demo_pkg",)
+
+
 def test_repo_status_uses_runner_and_writes_command_artifacts(tmp_path: Path, monkeypatch) -> None:
     module = import_module("aicarmine_broker.tools.repo_status")
     calls: list[str] = []
@@ -40,6 +63,9 @@ def test_repo_status_uses_runner_and_writes_command_artifacts(tmp_path: Path, mo
     assert result["ok"] is True
     assert result["tool"] == "repo_status"
     assert calls[0] == "git status --short --branch"
+    assert result["results"]["status"]["command_class"] == "readonly"
+    assert result["results"]["branch"]["command_class"] == "readonly"
+    assert result["results"]["status"]["consent_required"] is False
     assert Path(result["results"]["status"]["artifact"]).exists()
 
 

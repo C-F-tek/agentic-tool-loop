@@ -74,6 +74,19 @@ def _job_sqlite_store() -> AgentJobSQLiteStore:
     return AgentJobSQLiteStore(AGENT_JOB_DB, AGENT_JOB_ROOT)
 
 
+def _sqlite_warning(exc: Exception, *, filesystem_state_written: bool = True) -> dict[str, Any]:
+    return {
+        "sqlite_write_failed": True,
+        "sqlite_error_type": type(exc).__name__,
+        "sqlite_error": str(exc)[:1000],
+        "filesystem_state_written": filesystem_state_written,
+        "sqlite_is_secondary_index": True,
+        "sqlite_required": True,
+        "sqlite_failure_requires_investigation": True,
+        "ts": time.time(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
@@ -143,8 +156,17 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
     write_json(agent_job_state_path(job_id), state)
     try:
         _job_sqlite_store().upsert_job_state(state, root)
-    except Exception:
-        pass  # SQLite failure must not prevent filesystem state write
+    except Exception as exc:
+        warning = _sqlite_warning(exc)
+        state["_persistence_warning"] = warning
+        write_json(agent_job_state_path(job_id), state)
+        append_agent_event_filesystem_only(
+            job_id,
+            "sqlite_write_failed",
+            "Filesystem job state was written but SQLite index update failed.",
+            warning,
+            step=None,
+        )
 
 
 def load_agent_job_state(job_id: str) -> dict[str, Any]:
@@ -152,8 +174,95 @@ def load_agent_job_state(job_id: str) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
+def _job_list_row_from_state(
+    state: dict[str, Any],
+    *,
+    index_source: str,
+    sqlite_index_present: bool = False,
+    sqlite_index_missing: bool = False,
+    sqlite_index_error: str = "",
+) -> dict[str, Any]:
+    row = {
+        "job_id": str(state.get("job_id") or ""),
+        "status": str(state.get("status") or "unknown"),
+        "goal": str(state.get("goal") or ""),
+        "created_at": float(state.get("created_at") or state.get("updated_at") or 0),
+        "updated_at": float(state.get("updated_at") or state.get("created_at") or 0),
+        "workspace": str(state.get("workspace") or ""),
+        "final_path": str(state.get("final_path") or ""),
+        "error": str(state.get("error") or ""),
+        "index_source": index_source,
+    }
+    if sqlite_index_present:
+        row["sqlite_index_present"] = True
+    if sqlite_index_missing:
+        row["sqlite_index_missing"] = True
+    if sqlite_index_error:
+        row["sqlite_index_error"] = sqlite_index_error[:1000]
+        row["sqlite_failure_requires_investigation"] = True
+    if isinstance(state.get("_persistence_warning"), dict):
+        row["_persistence_warning"] = state["_persistence_warning"]
+    return row
+
+
+def _list_agent_jobs_from_filesystem(limit: int = 50) -> list[dict[str, Any]]:
+    if not AGENT_JOB_ROOT.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for child in AGENT_JOB_ROOT.iterdir():
+        if not child.is_dir():
+            continue
+        state = read_json(child / "job.json", {})
+        if not isinstance(state, dict) or not state.get("job_id"):
+            continue
+        rows.append(_job_list_row_from_state(state, index_source="filesystem"))
+    rows.sort(key=lambda row: float(row.get("updated_at") or 0), reverse=True)
+    return rows[: max(1, limit)]
+
+
+def _merge_sqlite_and_filesystem_job_rows(
+    sqlite_rows: list[dict[str, Any]],
+    filesystem_rows: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    sqlite_by_id = {str(row.get("job_id") or ""): row for row in sqlite_rows if row.get("job_id")}
+    filesystem_by_id = {str(row.get("job_id") or ""): row for row in filesystem_rows if row.get("job_id")}
+    merged: list[dict[str, Any]] = []
+    for job_id, fs_row in filesystem_by_id.items():
+        fs_row = dict(fs_row)
+        if job_id in sqlite_by_id:
+            fs_row["index_source"] = "mixed"
+            fs_row["sqlite_index_present"] = True
+        else:
+            fs_row["index_source"] = "filesystem_fallback"
+            fs_row["sqlite_index_missing"] = True
+        merged.append(fs_row)
+    for job_id, sqlite_row in sqlite_by_id.items():
+        if job_id in filesystem_by_id:
+            continue
+        row = dict(sqlite_row)
+        row["index_source"] = "sqlite_only"
+        row["filesystem_state_missing"] = True
+        merged.append(row)
+    merged.sort(key=lambda row: float(row.get("updated_at") or 0), reverse=True)
+    return merged[: max(1, limit)]
+
+
 def list_agent_jobs(limit: int = 50) -> list[dict[str, Any]]:
-    return _job_sqlite_store().list_jobs(limit)
+    try:
+        sqlite_rows = _job_sqlite_store().list_jobs(limit)
+    except Exception as exc:
+        error = str(exc)[:1000]
+        rows = _list_agent_jobs_from_filesystem(limit)
+        for row in rows:
+            row["index_source"] = "filesystem_fallback"
+            row["sqlite_index_error"] = error
+            row["sqlite_failure_requires_investigation"] = True
+        return rows
+    filesystem_rows = _list_agent_jobs_from_filesystem(limit)
+    return _merge_sqlite_and_filesystem_job_rows(sqlite_rows, filesystem_rows, limit)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +292,44 @@ def append_agent_event(
         f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
     try:
         _job_sqlite_store().append_event(event)
-    except Exception:
-        pass
+    except Exception as exc:
+        append_agent_event_filesystem_only(
+            job_id,
+            "sqlite_event_write_failed",
+            "Filesystem event was written but SQLite event index update failed.",
+            {
+                "sqlite_error_type": type(exc).__name__,
+                "sqlite_error": str(exc)[:1000],
+                "filesystem_event_written": True,
+                "sqlite_is_secondary_index": True,
+                "sqlite_required": True,
+                "sqlite_failure_requires_investigation": True,
+            },
+            step=step,
+        )
+
+
+def append_agent_event_filesystem_only(
+    job_id: str,
+    event_type: str,
+    message: str,
+    payload: dict[str, Any] | None = None,
+    step: int | None = None,
+) -> None:
+    event: dict[str, Any] = {
+        "ts": time.time(),
+        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "job_id": job_id,
+        "step": step,
+        "event_type": event_type,
+        "message": message,
+        "payload": payload or {},
+        "event_storage": "filesystem_only",
+    }
+    root = agent_job_root(job_id)
+    root.mkdir(parents=True, exist_ok=True)
+    with agent_job_events_path(job_id).open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
 
 
 def read_agent_events(
@@ -214,7 +359,7 @@ def public_result_digest(result: Any) -> dict[str, Any]:
     return build_public_result_digest(result, AGENT_PUBLIC_RESULT_INLINE_CHARS)
 
 
-def compact_agent_terminal_response(job_id: str) -> dict[str, Any]:
+def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") -> dict[str, Any]:
     state = load_agent_job_state(job_id)
     if not state:
         return build_missing_job_response(job_id)
@@ -235,6 +380,7 @@ def compact_agent_terminal_response(job_id: str) -> dict[str, Any]:
         public_result_inline_chars=AGENT_PUBLIC_RESULT_INLINE_CHARS,
         public_summary_chars=AGENT_PUBLIC_SUMMARY_CHARS,
         public_answer_chars=AGENT_PUBLIC_ANSWER_CHARS,
+        audience=audience,
     )
 
 
@@ -265,13 +411,13 @@ def wait_for_agent_terminal(
     while time.time() < deadline:
         last_status = compact_agent_status(job_id, include_events=False)
         if str(last_status.get("status") or "") in AGENT_TERMINAL_STATUSES:
-            terminal = compact_agent_terminal_response(job_id)
+            terminal = compact_agent_terminal_response(job_id, audience="openwebui")
             terminal["mode"] = "agent_job_final_waited_compact"
             terminal["wait_completed"] = True
             if not terminal.get("message_for_30b"):
                 terminal["message_for_30b"] = (
                     f"Agent job {job_id} reached terminal status={terminal.get('status')}. "
-                    "Use summary_for_30b; full output is in final_path/final_markdown_path."
+                    "Use inline tool_context_for_30b and priority payload fields."
                 )
             return terminal
         time.sleep(AGENT_WAIT_POLL_SECONDS)

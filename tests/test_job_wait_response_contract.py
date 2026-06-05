@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+import json
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "services"))
+
 from aicarmine_broker.application.job.wait_response import build_wait_timeout_response
 
 
@@ -59,3 +67,35 @@ def test_wait_timeout_response_preserves_status_and_adds_continuation() -> None:
         "action": "result",
         "job_id": "job-x",
     }
+
+
+def test_wait_terminal_response_uses_openwebui_audience(tmp_path: Path, monkeypatch) -> None:
+    from aicarmine_broker import job_store
+
+    final_path = tmp_path / "final.json"
+    final_path.write_text(json.dumps({"ok": True}), encoding="utf-8")
+    monkeypatch.setattr(job_store, "AGENT_JOB_ROOT", tmp_path / "jobs")
+    root = job_store.agent_job_root("job-terminal")
+    root.mkdir(parents=True)
+    job_store.write_json(
+        job_store.agent_job_state_path("job-terminal"),
+        {
+            "job_id": "job-terminal",
+            "status": "completed",
+            "goal": "done",
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "workspace": str(root),
+            "final_path": str(final_path),
+            "tool_context_for_30b": {"answer_for_30b": "inline"},
+            "result": {"ok": True},
+        },
+    )
+
+    response = job_store.wait_for_agent_terminal("job-terminal", timeout_seconds=1)
+
+    assert response["wait_completed"] is True
+    assert "final_path" not in response
+    assert response["operator_diagnostics"]["local_final_path"] == str(final_path)
+    assert response["openwebui_usage"]["structured_context_field"] == "tool_context_for_30b"
+    assert "payload_index_for_30b" in response["openwebui_usage"]["primary_payload_fields"]

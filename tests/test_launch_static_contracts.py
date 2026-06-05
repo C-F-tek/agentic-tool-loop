@@ -32,3 +32,15 @@ def test_launch_order_registers_only_3571_openapi() -> None:
 
     assert "http://127.0.0.1:3571/openapi.json" in text
     assert "3572/openapi" not in text
+
+
+def test_launcher_comment_matches_openvino_default_on() -> None:
+    text = (ROOT / "services/launch/openwebui_runtime.ps1").read_text(encoding="utf-8")
+    contract = _read_json("services/launch/contracts/env_contract.json")
+
+    assert 'Set-UserEnvValue "ENABLE_OPENVINO_PROVIDER" "1"' in text
+    assert 'Set-UserEnvValue "ENABLE_EXTERNAL_RERANKER" "1"' in text
+    assert "Default ON" in text
+    assert "Default OFF" not in text
+    assert contract["openvino_provider"]["enabled_default"] == "1"
+    assert contract["openvino_provider"]["external_reranker_default"] == "1"

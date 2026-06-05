@@ -7,13 +7,14 @@ from vulkan_bridge.application.response_values import (
 )
 
 
-def test_bridge_compact_text_preserves_existing_hint_behavior() -> None:
+def test_bridge_compact_text_points_to_inline_payload_not_local_paths() -> None:
     assert compact_text("a\r\nb\rc", 100) == "a\nb\nc"
 
     result = compact_text("x" * 100, 80)
 
     assert result.startswith("x" * 16)
-    assert result.endswith("... <full result is available in job_url/final_path>")
+    assert result.endswith("... <full result is available in inline payload fields when present>")
+    assert "job_url/final_path" not in result
 
 
 def test_bridge_json_size_uses_json_default_str() -> None:

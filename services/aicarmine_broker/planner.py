@@ -3019,6 +3019,7 @@ def validate_planner_decision_against_evidence(
             "repo_read_window_signature": _repo_read_window_signature,
             "repo_readable_evidence_file": _repo_readable_evidence_file,
             "repo_rel_token": _repo_rel_token,
+            "repeated_tool_call_count": repeated_tool_call_count,
             "scope_claim_conflict_for_path": _scope_claim_conflict_for_path,
             "successful_window_signatures": _successful_window_signatures,
             "target_scope_conflict_resolved": _target_scope_conflict_resolved,

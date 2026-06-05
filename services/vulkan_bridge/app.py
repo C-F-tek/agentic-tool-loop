@@ -26,42 +26,45 @@ from .application.response_values import (
 )
 from .openapi_builder import build_native_helper_openapi
 
-try:
-    from aicarmine_broker.tool_registry import capability_map as _broker_capability_map
-    from aicarmine_broker.tool_registry import OPENWEBUI_PUBLIC_TOOLS, PLANNER_INTERNAL_TOOLS
-except Exception:  # pragma: no cover - keeps 3571 importable during partial deploys
-    _broker_capability_map = None
-    OPENWEBUI_PUBLIC_TOOLS = (
-        "helper_for_all",
-        "help_for_all",
-        "repo_capabilities",
-        "repo_status",
-        "repo_search",
-        "repo_read",
-        "repo_command",
-        "vulkan_helper",
-    )
-    PLANNER_INTERNAL_TOOLS = (
-        "repo_capabilities",
-        "repo_status",
-        "repo_tree",
-        "repo_search",
-        "repo_read",
-        "repo_list_files",
-        "repo_apply_patch",
-        "repo_write_file",
-        "repo_validate",
-        "repo_command",
-        "terminal_run_command_wait",
-        "terminal_search_files",
-        "terminal_list_files",
-        "planner_scratchpad_read",
-        "planner_scratchpad_write",
-        "runtime_sqlite_memory_search",
-        "runtime_sqlite_memory_write",
-        "runtime_sqlite_memory_cleanup",
-        "vulkan_helper",
-    )
+OPENWEBUI_PUBLIC_TOOLS = (
+    "helper_for_all",
+    "help_for_all",
+    "repo_capabilities",
+    "repo_status",
+    "repo_search",
+    "repo_read",
+    "repo_command",
+    "vulkan_helper",
+)
+PLANNER_INTERNAL_TOOLS = (
+    "repo_capabilities",
+    "repo_status",
+    "repo_tree",
+    "repo_search",
+    "repo_read",
+    "repo_list_files",
+    "repo_apply_patch",
+    "repo_write_file",
+    "repo_validate",
+    "repo_command",
+    "terminal_run_command_wait",
+    "terminal_search_files",
+    "terminal_list_files",
+    "planner_scratchpad_read",
+    "planner_scratchpad_write",
+    "runtime_sqlite_memory_search",
+    "runtime_sqlite_memory_write",
+    "runtime_sqlite_memory_cleanup",
+    "vulkan_helper",
+)
+
+
+def _broker_capability_map() -> dict[str, Any]:
+    try:
+        from aicarmine_broker.tool_registry import capability_map  # noqa: PLC0415
+    except Exception:  # pragma: no cover - keeps 3571 importable during partial deploys
+        return {}
+    return capability_map()
 
 
 BRIDGE_CONFIG: BridgeConfig = load_bridge_config_from_env()
@@ -244,7 +247,7 @@ def _agentic_v2_strip_large_for_openwebui(value, depth=0):
     return _compact_text(str(value), 500)
 
 
-def _agentic_v2_compact_context_for_openwebui(ctx):
+def _legacy_agentic_v2_compact_context_for_openwebui(ctx):
     if not isinstance(ctx, dict):
         return ctx
     keep = {}
@@ -284,7 +287,7 @@ def _agentic_v2_compact_context_for_openwebui(ctx):
         )
     return keep
 
-def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
+def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
     if _json_size(decoded) <= BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS:
         return decoded
 
@@ -957,6 +960,7 @@ _AGENTIC_V9_PUBLIC_POINTER_KEYS = {
     "raw_planner_text_preview",
     "raw_planner_text",
     "raw_text",
+    "workspace",
 }
 
 
@@ -1158,6 +1162,13 @@ def _agentic_v9_extract_context(decoded):
             ):
                 return key, parsed
     return "", {}
+
+
+def _agentic_v9_explicit_tool_context(decoded):
+    if not isinstance(decoded, dict):
+        return {}
+    parsed = _agentic_v9_parse_jsonish(decoded.get("tool_context_for_30b"))
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _agentic_v9_extract_result(decoded, context):
@@ -3262,7 +3273,17 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             planner_text = _agentic_v9_terminal_planner_text(terminal_source, terminal_answer)
         if not planner_text:
             planner_text = "Agentic job ended without a planner final answer."
-        tool_context = _agentic_v9_build_structured_tool_context(terminal_source)
+        existing_tool_context = (
+            _agentic_v9_explicit_tool_context(terminal_source)
+            or _agentic_v9_explicit_tool_context(decoded)
+            or _agentic_v9_explicit_tool_context(out)
+        )
+        tool_context = dict(existing_tool_context)
+        built_tool_context = _agentic_v9_build_structured_tool_context(terminal_source)
+        for key, value in built_tool_context.items():
+            if key not in tool_context and value not in (None, "", [], {}):
+                tool_context[key] = value
+        tool_context = _agentic_v9_public_sanitize_value(tool_context) or {}
         priority_evidence = _agentic_v9_build_priority_evidence_for_30b(
             tool_context,
             planner_text,
@@ -3358,82 +3379,26 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
     return out
 
 
-def _agentic_v9_wrap_compactor(name):
-    fn = globals().get(name)
-    if not callable(fn) or getattr(fn, "_agentic_v9_wrapped", False):
-        return False
-
-    def wrapped(*args, **kwargs):
-        source = args[0] if args and isinstance(args[0], dict) else None
-        previous = fn(*args, **kwargs)
-        decoded = source if isinstance(source, dict) else (previous if isinstance(previous, dict) else None)
-        if isinstance(decoded, dict):
-            return _agentic_v9_build_openwebui_response(decoded, previous=previous)
-        return previous
-
-    wrapped._agentic_v9_wrapped = True
-    wrapped.__name__ = getattr(fn, "__name__", name)
-    wrapped.__doc__ = "agentic-loop-v9 wrapper: post-wait protocol-aware tool observation for OpenWebUI"
-    globals()[name] = wrapped
-    return True
+def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
+    previous = _legacy_compact_for_openwebui(decoded)
+    if isinstance(decoded, dict):
+        return _agentic_v9_build_openwebui_response(decoded, previous=previous)
+    return previous
 
 
-def _agentic_v9_wrap_context_compactor(name):
-    fn = globals().get(name)
-    if not callable(fn) or getattr(fn, "_agentic_v9_wrapped", False):
-        return False
-
-    def wrapped(*args, **kwargs):
-        context = fn(*args, **kwargs)
-        if not isinstance(context, dict):
-            return context
-        fake = {
-            "ok": True,
-            "job_ok": True,
-            "service": "vulkan_agent",
-            "status": _agentic_v9_as_dict(context.get("job")).get("status"),
-            "goal": _agentic_v9_as_dict(context.get("job")).get("goal"),
-            "tool_context_for_30b": context,
-        }
-        return _agentic_v9_build_openwebui_response(fake, previous=context)
-
-    wrapped._agentic_v9_wrapped = True
-    wrapped.__name__ = getattr(fn, "__name__", name)
-    wrapped.__doc__ = "agentic-loop-v9 wrapper: context as protocol-aware tool observation"
-    globals()[name] = wrapped
-    return True
-
-
-for _agentic_v9_name in (
-    "_compact_for_openwebui",
-    "_compact_agent_result_for_openwebui",
-    "_compact_agent_response_for_openwebui",
-    "_bridge_compact_for_openwebui",
-    "_shape_openwebui_result",
-    "_compact_agent_result",
-    "_compact_final_result_for_openwebui",
-):
-    _agentic_v9_wrap_compactor(_agentic_v9_name)
-
-for _agentic_v9_name in (
-    "_agentic_v2_compact_context_for_openwebui",
-    "_compact_context_for_openwebui",
-    "_compact_tool_context_for_openwebui",
-):
-    _agentic_v9_wrap_context_compactor(_agentic_v9_name)
-
-for _agentic_v9_name in (
-    "_looks_like_truncated_user_request",
-    "_is_truncated_user_request",
-    "_should_block_truncated_user_request",
-    "_requires_full_user_request",
-):
-    if callable(globals().get(_agentic_v9_name)) and not getattr(globals()[_agentic_v9_name], "_agentic_v9_wrapped", False):
-        def _agentic_v9_false_predicate(*args, **kwargs):
-            return _agentic_v9_preforward_block_allowed() and False
-        _agentic_v9_false_predicate._agentic_v9_wrapped = True
-        _agentic_v9_false_predicate.__name__ = _agentic_v9_name
-        globals()[_agentic_v9_name] = _agentic_v9_false_predicate
+def _agentic_v2_compact_context_for_openwebui(ctx):
+    context = _legacy_agentic_v2_compact_context_for_openwebui(ctx)
+    if not isinstance(context, dict):
+        return context
+    fake = {
+        "ok": True,
+        "job_ok": True,
+        "service": "vulkan_agent",
+        "status": _agentic_v9_as_dict(context.get("job")).get("status"),
+        "goal": _agentic_v9_as_dict(context.get("job")).get("goal"),
+        "tool_context_for_30b": context,
+    }
+    return _agentic_v9_build_openwebui_response(fake, previous=context)
 
 _AGENTIC_V9_OPENWEBUI_PROTOCOL_OBSERVATION_ACTIVE = True
 

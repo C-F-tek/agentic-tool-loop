@@ -11,7 +11,7 @@ def compact_text(value: Any, limit: int) -> str:
         return text
     if len(text) <= limit:
         return text
-    return text[: max(0, limit - 40)] + "\n... <see final.md/final.json for full output>"
+    return text[: max(0, limit - 40)] + "\n... <full output is available in inline terminal payload when present>"
 
 
 def compact_json(value: Any, limit: int) -> str:

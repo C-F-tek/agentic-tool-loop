@@ -11,12 +11,12 @@ def test_compact_text_preserves_short_text_and_normalizes_newlines() -> None:
     assert compact_text("a\r\nb\rc", 100) == "a\nb\nc"
 
 
-def test_compact_text_truncates_with_existing_hint() -> None:
+def test_compact_text_truncates_with_inline_payload_hint() -> None:
     result = compact_text("x" * 100, 60)
 
     assert result.startswith("x" * 20)
-    assert result.endswith("... <see final.md/final.json for full output>")
-    assert len(result) == 66
+    assert result.endswith("... <full output is available in inline terminal payload when present>")
+    assert "final.md/final.json" not in result
 
 
 def test_compact_text_limit_zero_returns_full_text() -> None:

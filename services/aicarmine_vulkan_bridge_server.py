@@ -6,8 +6,6 @@ the historical import path used by uvicorn and launcher scripts:
     uvicorn aicarmine_vulkan_bridge_server:app
 """
 
-from vulkan_bridge import app as _impl
+from vulkan_bridge.app import app
 
-globals().update(
-    {name: value for name, value in vars(_impl).items() if not name.startswith("__")}
-)
+__all__ = ["app"]

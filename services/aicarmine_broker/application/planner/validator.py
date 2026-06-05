@@ -56,6 +56,7 @@ def validate_planner_decision_against_evidence(
     _repo_read_window_signature = deps["repo_read_window_signature"]
     _repo_readable_evidence_file = deps["repo_readable_evidence_file"]
     _repo_rel_token = deps["repo_rel_token"]
+    repeated_tool_call_count = deps["repeated_tool_call_count"]
     _scope_claim_conflict_for_path = deps["scope_claim_conflict_for_path"]
     _successful_window_signatures = deps["successful_window_signatures"]
     _target_scope_conflict_resolved = deps["target_scope_conflict_resolved"]

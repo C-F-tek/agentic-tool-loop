@@ -7,7 +7,12 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO, REAL_REPO, VALID_INTERNAL_TOOLS
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tool_registry import capability_map
+from aicarmine_broker.tools.command_safety import classify_command
 from aicarmine_broker.tools.powershell_runner import run_ps
+from aicarmine_broker.tools.repo_command import (
+    _compile_command_for_targets,
+    resolve_compile_targets,
+)
 
 
 def detect_stack() -> dict[str, Any]:
@@ -32,9 +37,12 @@ def detect_stack() -> dict[str, Any]:
                 csproj_count += 1
             elif low.endswith(".sln"):
                 sln_count += 1
+    compile_target_resolution = resolve_compile_targets({}, LAB_REPO)
     canonical = ["git status --short --branch", "git diff --check"]
     if py_count:
-        canonical.append("python -m compileall -q ia_carmine; python -m compileall -q Tools")
+        targets = tuple(compile_target_resolution.get("targets") or ())
+        if targets:
+            canonical.append(_compile_command_for_targets(targets))
     if csproj_count or sln_count:
         canonical.append("dotnet build")
     if (LAB_REPO / "package.json").exists():
@@ -46,6 +54,7 @@ def detect_stack() -> dict[str, Any]:
         "csproj_count": csproj_count,
         "sln_count": sln_count,
         "canonical_commands": canonical,
+        "compile_target_resolution": compile_target_resolution,
     }
 
 
@@ -145,11 +154,23 @@ def repo_status(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
     results: dict[str, Any] = {}
     for name, cmd in commands.items():
+        classification = classify_command(cmd)
         result = run_ps(cmd, timeout=120)
         artifact = root / "commands" / f"{name}.json"
-        write_json(artifact, {"command": cmd, "result": result})
+        write_json(
+            artifact,
+            {
+                "command": cmd,
+                "command_class": classification.command_class,
+                "policy": classification.reason,
+                "result": result,
+            },
+        )
         results[name] = {
             "command": cmd,
+            "command_class": classification.command_class,
+            "consent_required": classification.consent_required,
+            "policy": classification.reason,
             "returncode": result["returncode"],
             "stdout_tail": result["stdout_tail"],
             "stderr_tail": result["stderr_tail"],

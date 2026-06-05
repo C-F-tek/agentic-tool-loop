@@ -66,6 +66,8 @@ def test_repo_search_rejects_glob_and_uses_runner_payload(tmp_path: Path, monkey
     assert result["ok"] is True
     assert result["matches"] == ["pkg/alpha.py:1:needle = 1"]
     assert "rg -n" in result["command"]
+    assert result["command_class"] == "readonly"
+    assert result["consent_required"] is False
     assert Path(result["artifact"]).exists()
 
 

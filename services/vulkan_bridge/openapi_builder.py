@@ -140,7 +140,12 @@ def build_native_helper_openapi(
     visible_tool_aliases: tuple[str, ...],
     registry_loader: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    registry = registry_loader() if registry_loader else {}
+    registry_error = ""
+    try:
+        registry = registry_loader() if registry_loader else {}
+    except Exception as exc:
+        registry = {}
+        registry_error = f"{type(exc).__name__}: {str(exc)[:500]}"
     allowed = {f"/{name}" for name in visible_tool_aliases}
     visible_routes = [
         route for route in app.routes
@@ -159,6 +164,8 @@ def build_native_helper_openapi(
     }
     schema["x-aicarmine-tool-surface"] = "single_openwebui_vulkan_helper"
     schema["x-aicarmine-registry-hash"] = registry.get("registry_hash")
+    if registry_error:
+        schema["x-aicarmine-registry-load-error"] = registry_error
     schema["x-aicarmine-public-surface"] = list(visible_tool_aliases)
     schema["x-aicarmine-contract"] = (
         "OpenAPI exposes only vulkan_helper to OpenWebUI. Completed responses include "

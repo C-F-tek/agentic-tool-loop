@@ -33,3 +33,31 @@ def test_planner_validator_facade_rejects_text_tool_in_native_mode() -> None:
     assert result["ok"] is False
     assert result["violations"] == ["planner_text_tool_call_disallowed_in_native_mode"]
 
+
+def test_planner_validator_facade_accepts_native_repo_read_without_name_error() -> None:
+    result = planner.validate_planner_decision_against_evidence(
+        "analizza la repository e proponi diff concreti per il refactoring del codice",
+        {
+            "action": "tool",
+            "tool": "repo_read",
+            "arguments": {
+                "path": "ia_carmine/runtime/heap_gate/provider_context.py",
+                "max_chars": 6000,
+            },
+            "native_tool_call": True,
+            "raw_native_tool_call": {
+                "id": "call_test",
+                "function": {
+                    "name": "repo_read",
+                    "arguments": {
+                        "path": "ia_carmine/runtime/heap_gate/provider_context.py",
+                        "max_chars": 6000,
+                    },
+                },
+            },
+        },
+        [],
+    )
+
+    assert result["ok"] is True
+    assert result["violations"] == []

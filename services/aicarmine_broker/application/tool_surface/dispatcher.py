@@ -141,7 +141,7 @@ def build_default_dispatcher() -> RegistryToolDispatcher:
             BaseTool("planner_scratchpad_read", _simple(planner_scratchpad_read)),
             BaseTool("runtime_sqlite_memory_search", _simple(runtime_sqlite_memory_search)),
             BaseTool("runtime_sqlite_memory_write", _simple(runtime_sqlite_memory_write)),
-            BaseTool("runtime_sqlite_memory_cleanup", _simple(runtime_sqlite_memory_cleanup)),
+            BaseTool("runtime_sqlite_memory_cleanup", _command(runtime_sqlite_memory_cleanup)),
             BaseTool("vulkan_helper", _simple(vulkan_helper)),
         ]
     )
