@@ -3155,6 +3155,34 @@ def _agentic_v9_build_structured_tool_context(decoded):
     })
 
 
+def _agentic_v9_strip_tool_context_narrative_duplicates(tool_context):
+    if not isinstance(tool_context, dict):
+        return tool_context
+    cleaned = dict(tool_context)
+    for key in (
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+        "evidence_guide_for_30b",
+        "final_answer",
+        "composed_answer",
+    ):
+        cleaned.pop(key, None)
+    usage = cleaned.get("openwebui_usage") if isinstance(cleaned.get("openwebui_usage"), dict) else {}
+    if usage:
+        usage = dict(usage)
+        usage.pop("primary_answer_field", None)
+        usage["top_level_evidence_guide_field"] = "evidence_guide_for_30b"
+        usage["rule"] = (
+            "This tool_context_for_30b object is evidence/context only. "
+            "The global evidence_guide_for_30b field sits above it; use this "
+            "JSON for concrete payload, artifacts, history and evidence."
+        )
+        cleaned["openwebui_usage"] = usage
+    return cleaned
+
+
 def _agentic_v9_completed_planner_text(decoded, answer):
     observation = _agentic_v9_build_observation_object(decoded)
     body = str(
@@ -3220,7 +3248,21 @@ def _agentic_v9_build_outer_tool_text(decoded, answer):
 
 
 def _agentic_v9_build_completed_content_text(planner_text, evidence_text):
-    return str(planner_text or "").strip() + "\n"
+    parts = [
+        "GUIDA ALL'EVIDENZA INLINE DEL PAYLOAD.",
+        "Il sommario seguente non sostituisce il payload: usalo per orientarti, poi rispondi leggendo payload_index_for_30b, priority_evidence_for_30b e tool_context_for_30b.",
+    ]
+    planner = str(planner_text or "").strip()
+    evidence = str(evidence_text or "").strip()
+    if planner:
+        parts.extend(["", "Sommario/risposta del planner:", planner])
+    if evidence:
+        parts.extend(["", "Evidenza concreta disponibile inline:", evidence])
+    parts.extend([
+        "",
+        "Regola: se l'utente chiede dettagli, descrizione completa, file o diff, non fermarti alla frase sintetica; usa i campi indicizzati del payload.",
+    ])
+    return "\n".join(parts).strip() + "\n"
 
 
 def _agentic_v9_has_agent_result(decoded):
@@ -3302,6 +3344,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         for key, value in built_tool_context.items():
             if key not in tool_context and value not in (None, "", [], {}):
                 tool_context[key] = value
+        tool_context = _agentic_v9_strip_tool_context_narrative_duplicates(tool_context)
         tool_context = _agentic_v9_public_sanitize_value(tool_context) or {}
         priority_evidence = _agentic_v9_build_priority_evidence_for_30b(
             tool_context,
@@ -3312,6 +3355,10 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             priority_evidence,
             tool_context,
             completed=terminal_completed,
+        )
+        evidence_guide = _agentic_v9_build_completed_content_text(
+            planner_text,
+            tool_context.get("evidence_digest_for_30b") if isinstance(tool_context, dict) else "",
         )
         safe_keys = ("ok", "service", "mode")
         sealed = {}
@@ -3334,12 +3381,14 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "service",
             "mode",
             "required_top_level_keys",
+            "evidence_guide_for_30b",
             "payload_index_for_30b",
             "priority_evidence_for_30b",
             "openwebui_usage",
             "tool_context_for_30b",
         ]
         sealed["required_top_level_keys"] = stable_required_top_level_keys
+        sealed["evidence_guide_for_30b"] = evidence_guide
         sealed["payload_index_for_30b"] = payload_index
         result_value = terminal_source.get("result")
         if result_value in (None, "", [], {}):
@@ -3365,24 +3414,28 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             payload_index["internal_job_status"] = internal_job_status
         sealed["openwebui_usage"] = {
             "primary_payload_fields": [
+                "evidence_guide_for_30b",
                 "payload_index_for_30b",
                 "priority_evidence_for_30b",
                 "tool_context_for_30b",
                 "result",
             ],
             "payload_index_field": "payload_index_for_30b",
+            "evidence_guide_field": "evidence_guide_for_30b",
             "concrete_results_field": "payload_index_for_30b.concrete_results",
             "priority_evidence_field": "priority_evidence_for_30b.items",
             "full_tool_evidence_field": "tool_context_for_30b.artifacts[*].artifact",
             "top_level_present_fields": list(sealed.keys()),
             "rule": (
-                "Prima leggi payload_index_for_30b. I risultati concreti sono "
-                "nei campi indicati in concrete_results; i risultati utili non "
-                "validati sono in partial_results. Descrizioni, suggerimenti, "
-                "manual_review_required, validation_commands e limits non sono motivo "
-                "per richiamare vulkan_helper per la stessa richiesta. Lo stato del "
-                "job interno non sostituisce i payload: usa "
-                "prima priority_evidence_for_30b e tool_context_for_30b."
+                "Prima leggi evidence_guide_for_30b: e' una guida corposa "
+                "all'evidenza, non una frase conclusiva statica. Poi leggi "
+                "payload_index_for_30b. I risultati concreti sono nei campi indicati "
+                "in concrete_results; i risultati utili non validati sono in "
+                "partial_results. Descrizioni, suggerimenti, manual_review_required, "
+                "validation_commands e limits non sono motivo per richiamare "
+                "vulkan_helper per la stessa richiesta. Lo stato del job interno "
+                "non sostituisce i payload: usa priority_evidence_for_30b e "
+                "tool_context_for_30b per rispondere in dettaglio."
             ),
             "internal_job_status": internal_job_status,
         }

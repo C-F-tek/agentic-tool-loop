@@ -72,6 +72,7 @@ def test_vulkan_helper_response_schema_names_primary_payload_fields() -> None:
 
     properties = vulkan_helper_completed_response_schema()["properties"]
 
+    assert "evidence_guide_for_30b" in properties
     assert "payload_index_for_30b" in properties
     assert "priority_evidence_for_30b" in properties
     assert "tool_context_for_30b" in properties
@@ -133,7 +134,9 @@ def test_legacy_compactor_name_uses_explicit_openwebui_builder() -> None:
     assert "tool_name" not in result["required_top_level_keys"]
     assert "tool_result_for" not in result["required_top_level_keys"]
     assert "called_by_30b" not in result["required_top_level_keys"]
-    assert json.loads(result["tool_context_for_30b"]) == {"answer_for_30b": "inline"}
+    tool_context = json.loads(result["tool_context_for_30b"])
+    assert "answer_for_30b" not in tool_context
+    assert result["evidence_guide_for_30b"]
 
 
 def test_legacy_context_compactor_name_uses_explicit_builder() -> None:
@@ -144,7 +147,9 @@ def test_legacy_context_compactor_name_uses_explicit_builder() -> None:
     )
 
     assert result["service"] == "vulkan_agent"
-    assert json.loads(result["tool_context_for_30b"])["answer_for_30b"] == "inline"
+    tool_context = json.loads(result["tool_context_for_30b"])
+    assert "answer_for_30b" not in tool_context
+    assert result["evidence_guide_for_30b"]
 
 
 def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payload() -> None:
@@ -197,6 +202,22 @@ def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payl
     payload = json.dumps(result, ensure_ascii=False, default=str)
     tool_context = json.loads(result["tool_context_for_30b"])
 
+    assert "evidence_guide_for_30b" in result
+    assert "answer_for_30b" not in result
+    assert "message_for_30b" not in result
+    assert "summary_for_30b" not in result
+    assert "content" not in result
+    assert result["openwebui_usage"]["evidence_guide_field"] == "evidence_guide_for_30b"
+    for duplicate_key in (
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+        "evidence_guide_for_30b",
+        "final_answer",
+        "composed_answer",
+    ):
+        assert duplicate_key not in tool_context
     assert tool_context["artifacts"][0]["artifact"]["unified_diff"] == diff
     assert "C:\\Users\\carmi\\AI" not in payload
     assert "artifact_path" not in payload

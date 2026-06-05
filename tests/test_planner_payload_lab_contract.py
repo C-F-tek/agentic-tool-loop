@@ -29,9 +29,7 @@ def _terminal_response() -> dict:
     return {
         "ok": True,
         "status": "completed",
-        "message_for_30b": "analysis complete",
-        "summary_for_30b": "summary",
-        "content": "content",
+        "evidence_guide_for_30b": "evidence guide",
         "payload_index_for_30b": {
             "concrete_results": [
                 {"payload_type": "old_text_new_text", "field": "tool_context_for_30b.artifacts[0].artifact"}
@@ -72,7 +70,7 @@ def _terminal_response() -> dict:
 def test_planner_payload_lab_uses_operator_selected_limits() -> None:
     ia_payload = {
         "ok": True,
-        "job": {"job_id": "job-lab", "status": "completed"},
+        "job": {"job_id": "job-lab", "status": "completed", "goal": "job-lab"},
         "steps": [
             {"step": 1, "planner_decision": {"action": "tool", "tool": "repo_read"}},
             {"step": 2, "planner_decision": {"action": "tool", "tool": "repo_propose_code_edit"}},
@@ -94,6 +92,10 @@ def test_planner_payload_lab_uses_operator_selected_limits() -> None:
         "step_summary_limit": 1,
         "code_product_limit": 1,
     }
+    assert result["chat_turn"]["schema"] == "planner_lab_chat_turn.v1"
+    assert result["chat_turn"]["user_message"] == "job-lab"
+    assert result["chat_turn"]["assistant_message"] == "evidence guide"
+    assert result["chat_turn"]["thinking_step_summary"] == result["thinking_step_summary"]
     assert len(result["step_summaries"]) == 1
     assert len(result["code_products"]) == 1
     assert result["payload_readiness"]["apply_supported_candidates"] == 1
@@ -168,3 +170,15 @@ def test_planner_lab_routes_are_hidden_from_openapi_by_source_contract() -> None
     assert '@app.post("/planner-lab/start", include_in_schema=False)' in app_source
     assert 'planner-lab.json", include_in_schema=False)' in app_source
     assert 'planner-lab/apply", include_in_schema=False)' in app_source
+
+
+def test_planner_lab_html_renders_chat_and_thinking_surface() -> None:
+    html_source = (ROOT / "services" / "aicarmine_broker" / "job_planner_lab.py").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert "Chat + Thinking Step Summary" in html_source
+    assert "renderChatTurn" in html_source
+    assert "thinking_step_summary" in html_source
+    assert "OpenWebUI-bound assistant payload" in html_source

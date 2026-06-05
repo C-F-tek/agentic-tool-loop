@@ -58,7 +58,17 @@ def test_build_tool_context_for_30b_preserves_public_shape_and_injected_sections
     assert context["job"]["job_id"] == "job-1"
     assert context["job"]["workspace"] == str(Path("jobs") / "job-1")
     assert context["job"]["planner_model"] == "state-model"
-    assert context["answer_for_30b"] == "answer"
+    assert context["top_level_evidence_guide_field"] == "evidence_guide_for_30b"
+    for duplicate_key in (
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+        "final_answer",
+        "composed_answer",
+        "evidence_guide_for_30b",
+    ):
+        assert duplicate_key not in context
     assert context["partial_products_for_30b"] == [{"kind": "partial"}]
     assert context["best_partial_product_for_30b"] == {"kind": "partial"}
     assert context["limits"] == [{"kind": "limit"}]
@@ -104,4 +114,7 @@ def test_build_tool_context_for_30b_completed_uses_composed_answer_when_availabl
         strip_public_local_references=lambda value: value,
     )
 
-    assert context["answer_for_30b"] == "composed"
+    assert context["top_level_evidence_guide_field"] == "evidence_guide_for_30b"
+    assert "answer_for_30b" not in context
+    assert "composed_answer" not in context
+    assert "final_answer" not in context

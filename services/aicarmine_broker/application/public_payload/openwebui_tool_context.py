@@ -117,11 +117,13 @@ class OpenWebUIPayloadBuilder:
             "contract_type": "agentic_loop_complete_structured_context",
             "not_a_summary": True,
             "openwebui_usage": {
-                "primary_answer_field": "answer_for_30b",
+                "top_level_evidence_guide_field": "evidence_guide_for_30b",
                 "next_action_field": "next_action_for_30b",
                 "rule": (
-                    "Use answer_for_30b to respond to the user. Use the structured "
-                    "history/evidence only to justify or continue; never invent missing evidence."
+                    "This tool_context_for_30b object is evidence/context only. "
+                    "The global evidence_guide_for_30b field is outside this JSON. "
+                    "Use the structured history/evidence here for detailed answers; "
+                    "never invent missing evidence."
                 ),
             },
             "job": {
@@ -146,9 +148,7 @@ class OpenWebUIPayloadBuilder:
                 "invalid_planner_decision_flow": "planner_decision -> planner_decision_rejected/controller_guard -> next planner_decision",
                 "final_requires_planner_final_action": True,
             },
-            "final_answer": final_summary,
-            "answer_for_30b": answer,
-            "composed_answer": composed_answer,
+            "top_level_evidence_guide_field": "evidence_guide_for_30b",
             "artifacts": artifacts,
             "partial_products_for_30b": partial_products,
             "best_partial_product_for_30b": best_partial_product,

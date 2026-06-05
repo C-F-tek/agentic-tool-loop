@@ -187,6 +187,53 @@ def build_step_summaries(
     ]
 
 
+def _first_non_empty_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def build_chat_turn_summary(
+    *,
+    job_id: str,
+    ia_view_payload: dict[str, Any],
+    openwebui_payload: dict[str, Any],
+    model_visible_text: dict[str, str],
+    payload_readiness: dict[str, Any],
+    step_summaries: list[dict[str, Any]],
+    code_products: list[dict[str, Any]],
+    summary_text_chars: int,
+) -> dict[str, Any]:
+    job = ia_view_payload.get("job") if isinstance(ia_view_payload.get("job"), dict) else {}
+    user_message = _first_non_empty_text(job.get("goal"), openwebui_payload.get("task"), openwebui_payload.get("request"))
+    assistant_message = _first_non_empty_text(
+        model_visible_text.get("evidence_guide_for_30b"),
+        model_visible_text.get("content"),
+    )
+    warnings = list(payload_readiness.get("warnings") or []) if isinstance(payload_readiness.get("warnings"), list) else []
+    if not assistant_message:
+        warnings.append("assistant_message_missing_from_openwebui_payload")
+    return {
+        "schema": "planner_lab_chat_turn.v1",
+        "job_id": job_id,
+        "status": job.get("status") or openwebui_payload.get("status"),
+        "user_message": _clip(user_message, summary_text_chars),
+        "assistant_message": _clip(assistant_message, summary_text_chars),
+        "assistant_visible_fields": model_visible_text,
+        "openwebui_payload_fields": sorted(str(key) for key in openwebui_payload.keys()),
+        "payload_gaps": sorted(set(str(item) for item in warnings)),
+        "thinking_step_summary": step_summaries,
+        "thinking_summary": {
+            "steps": len(step_summaries),
+            "last_step": step_summaries[-1] if step_summaries else {},
+            "code_product_candidates": len(code_products),
+            "apply_supported_candidates": len([item for item in code_products if item.get("apply_supported")]),
+        },
+    }
+
+
 def build_planner_payload_lab(
     *,
     job_id: str,
@@ -230,10 +277,15 @@ def build_planner_payload_lab(
         tool_context=tool_context,
         limit=safe_code_product_limit,
     )
+    evidence_guide = _first_non_empty_text(
+        openwebui_payload.get("evidence_guide_for_30b"),
+        openwebui_payload.get("content"),
+        openwebui_payload.get("message_for_30b"),
+        openwebui_payload.get("summary_for_30b"),
+        openwebui_payload.get("answer_for_30b"),
+    )
     model_visible_text = {
-        "message_for_30b": _clip(openwebui_payload.get("message_for_30b"), safe_summary_chars),
-        "summary_for_30b": _clip(openwebui_payload.get("summary_for_30b"), safe_summary_chars),
-        "content": _clip(openwebui_payload.get("content"), safe_summary_chars),
+        "evidence_guide_for_30b": _clip(evidence_guide, safe_summary_chars),
     }
     priority_items = priority_evidence.get("items") if isinstance(priority_evidence.get("items"), list) else []
     concrete_results = payload_index.get("concrete_results") if isinstance(payload_index.get("concrete_results"), list) else []
@@ -247,6 +299,30 @@ def build_planner_payload_lab(
         readiness_warnings.append("no_priority_or_concrete_payload_index")
     if not code_products and "diff" in json.dumps(openwebui_payload, ensure_ascii=False, default=str).lower():
         readiness_warnings.append("diff_goal_without_extractable_code_product")
+    payload_readiness = {
+        "tool_context_parse_ok": bool(tool_context_meta.get("parse_ok")),
+        "tool_context_raw_type": tool_context_meta.get("raw_type"),
+        "has_tool_context_for_30b": bool(raw_tool_context),
+        "has_payload_index_for_30b": bool(payload_index),
+        "has_priority_evidence_for_30b": bool(priority_evidence),
+        "priority_evidence_items": len(priority_items),
+        "concrete_results": len(concrete_results),
+        "partial_results": len(partial_results),
+        "code_product_candidates": len(code_products),
+        "apply_supported_candidates": len([item for item in code_products if item.get("apply_supported")]),
+        "warnings": readiness_warnings,
+    }
+    step_summaries = build_step_summaries(ia_view_payload, limit=safe_step_limit)
+    chat_turn = build_chat_turn_summary(
+        job_id=job_id,
+        ia_view_payload=ia_view_payload,
+        openwebui_payload=openwebui_payload,
+        model_visible_text={key: value for key, value in model_visible_text.items() if value},
+        payload_readiness=payload_readiness,
+        step_summaries=step_summaries,
+        code_products=code_products,
+        summary_text_chars=safe_summary_chars,
+    )
     return {
         "ok": True,
         "schema": SCHEMA,
@@ -258,21 +334,11 @@ def build_planner_payload_lab(
             "code_product_limit": safe_code_product_limit,
         },
         "job": ia_view_payload.get("job") if isinstance(ia_view_payload.get("job"), dict) else {"job_id": job_id},
-        "payload_readiness": {
-            "tool_context_parse_ok": bool(tool_context_meta.get("parse_ok")),
-            "tool_context_raw_type": tool_context_meta.get("raw_type"),
-            "has_tool_context_for_30b": bool(raw_tool_context),
-            "has_payload_index_for_30b": bool(payload_index),
-            "has_priority_evidence_for_30b": bool(priority_evidence),
-            "priority_evidence_items": len(priority_items),
-            "concrete_results": len(concrete_results),
-            "partial_results": len(partial_results),
-            "code_product_candidates": len(code_products),
-            "apply_supported_candidates": len([item for item in code_products if item.get("apply_supported")]),
-            "warnings": readiness_warnings,
-        },
+        "payload_readiness": payload_readiness,
+        "chat_turn": chat_turn,
         "model_visible_text": {key: value for key, value in model_visible_text.items() if value},
-        "step_summaries": build_step_summaries(ia_view_payload, limit=safe_step_limit),
+        "step_summaries": step_summaries,
+        "thinking_step_summary": step_summaries,
         "code_products": code_products,
         "payload_index_for_30b": payload_index,
         "priority_evidence_for_30b": priority_evidence,

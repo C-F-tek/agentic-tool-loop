@@ -38,6 +38,14 @@ td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; }}
 .metric {{ border: 1px solid #333; border-radius: 6px; padding: 8px; background: #141519; }}
 .metric span {{ color: #aaa; display: block; font-size: 11px; }}
 .metric b {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
+.chat-grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
+.bubble {{ border-radius: 8px; padding: 11px; border: 1px solid #333; }}
+.bubble.user {{ background: #182331; border-left: 4px solid #6fb3e8; }}
+.bubble.assistant {{ background: #18281f; border-left: 4px solid #64b773; }}
+.bubble.warn {{ background: #2a2417; border-left: 4px solid #d0a34d; }}
+.timeline {{ display: grid; gap: 8px; }}
+.step-card {{ border: 1px solid #333; border-radius: 7px; padding: 9px; background: #141519; }}
+.step-card b {{ color: #f0f0f0; }}
 .ok {{ border-left: 4px solid #45a75a; }}
 .warn {{ border-left: 4px solid #d0a34d; }}
 .bad {{ border-left: 4px solid #d15b5b; }}
@@ -50,6 +58,7 @@ td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; }}
 const initialJobId = {initial};
 let currentJobId = initialJobId || "";
 let pollTimer = null;
+let activeRequestText = "";
 
 function htmlEscape(value) {{
   return String(value ?? "").replace(/[&<>"']/g, ch => ({{"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}}[ch]));
@@ -66,6 +75,8 @@ async function startPlannerJob() {{
     setStatus("request_missing");
     return;
   }}
+  activeRequestText = task;
+  document.getElementById("lab-output").innerHTML = renderPendingChat(task);
   setStatus("starting");
   const response = await fetch("/planner-lab/start", {{
     method: "POST",
@@ -114,17 +125,42 @@ function renderMetrics(readiness) {{
   const rows = Object.entries(readiness || {{}}).filter(([k, v]) => k !== "warnings");
   return `<div class="metric-row">${{rows.map(([k, v]) => `<div class="metric"><span>${{htmlEscape(k)}}</span><b>${{htmlEscape(v)}}</b></div>`).join("")}}</div>`;
 }}
+function renderPendingChat(task) {{
+  return `<div class="card">
+    <h2>Chat + Thinking Step Summary</h2>
+    <div class="chat-grid">
+      <div class="bubble user"><b>User</b><pre>${{htmlEscape(task)}}</pre></div>
+      <div class="bubble warn"><b>Planner</b><pre>Job starting. Waiting for payload extracted from the OpenWebUI-bound response.</pre></div>
+    </div>
+  </div>`;
+}}
+function renderChatTurn(data) {{
+  const chat = data.chat_turn || {{}};
+  const userMessage = chat.user_message || activeRequestText || (data.job || {{}}).goal || "";
+  const assistantMessage = chat.assistant_message || "";
+  const gaps = Array.isArray(chat.payload_gaps) ? chat.payload_gaps : [];
+  const visibleFields = chat.assistant_visible_fields || data.model_visible_text || {{}};
+  const status = chat.status || (data.job || {{}}).status || "";
+  return `<div class="card">
+    <h2>Chat + Thinking Step Summary</h2>
+    <div class="chat-grid">
+      <div class="bubble user"><b>User request</b><pre>${{htmlEscape(userMessage)}}</pre></div>
+      <div class="bubble ${{assistantMessage ? "assistant" : "warn"}}"><b>OpenWebUI-bound assistant payload</b><span class="muted"> status=${{htmlEscape(status)}}</span><pre>${{htmlEscape(assistantMessage || "No assistant text extracted yet.")}}</pre></div>
+      ${{gaps.length ? `<div class="bubble warn"><b>Payload gaps</b><pre>${{htmlEscape(gaps.join("\\n"))}}</pre></div>` : ""}}
+    </div>
+    <details><summary>Visible fields sent toward 30B</summary><pre>${{htmlEscape(pretty(visibleFields))}}</pre></details>
+  </div>`;
+}}
 function renderSteps(steps) {{
   if (!Array.isArray(steps) || steps.length === 0) return "<p class='muted'>No steps yet.</p>";
-  return `<table><thead><tr><th>Step</th><th>Decision</th><th>Tool Result</th><th>Guard</th><th>Progress</th></tr></thead><tbody>${{
-    steps.map(step => `<tr>
-      <td>${{htmlEscape(step.step)}}</td>
-      <td>${{htmlEscape(step.planner_action || "")}} ${{htmlEscape(step.planner_tool || "")}}</td>
-      <td>${{htmlEscape(step.tool_result_tool || "")}} ok=${{htmlEscape(step.tool_result_ok)}}</td>
-      <td>${{htmlEscape(step.validator_guard || (step.violations || []).join(", "))}}</td>
-      <td>${{htmlEscape(step.required_next_progress || "")}}</td>
-    </tr>`).join("")
-  }}</tbody></table>`;
+  return `<div class="timeline">${{
+    steps.map(step => `<div class="step-card">
+      <b>Step ${{htmlEscape(step.step)}} · ${{htmlEscape(step.planner_action || "")}} ${{htmlEscape(step.planner_tool || "")}}</b>
+      <div class="muted">tool_result=${{htmlEscape(step.tool_result_tool || "")}} ok=${{htmlEscape(step.tool_result_ok)}} events=${{htmlEscape(step.events || 0)}} coverage=${{htmlEscape(step.coverage_score ?? "")}}</div>
+      <div>${{htmlEscape(step.validator_guard || (step.violations || []).join(", "))}}</div>
+      <pre>${{htmlEscape(step.required_next_progress || "")}}</pre>
+    </div>`).join("")
+  }}</div>`;
 }}
 function renderCodeProducts(products) {{
   if (!Array.isArray(products) || products.length === 0) return "<p class='muted'>No code product extracted from payload.</p>";
@@ -173,13 +209,13 @@ function renderLab(data) {{
   const readiness = data.payload_readiness || {{}};
   const statusClass = data.ok && readiness.tool_context_parse_ok ? "ok" : "bad";
   document.getElementById("lab-output").innerHTML = `
+    ${{renderChatTurn(data)}}
     <div class="card ${{statusClass}}">
       <h2>Payload readiness</h2>
       ${{renderMetrics(readiness)}}
       <pre>${{htmlEscape((readiness.warnings || []).join("\\n"))}}</pre>
     </div>
-    <div class="card"><h2>Model-visible text</h2><pre>${{htmlEscape(pretty(data.model_visible_text || {{}}))}}</pre></div>
-    <div class="card"><h2>Think / step summary</h2>${{renderSteps(data.step_summaries || [])}}</div>
+    <div class="card"><h2>Thinking step summary</h2>${{renderSteps(data.thinking_step_summary || data.step_summaries || [])}}</div>
     <div class="card"><h2>Code products from payload</h2>${{renderCodeProducts(data.code_products || [])}}</div>
     <div class="card"><h2>Payload index</h2><pre>${{htmlEscape(pretty(data.payload_index_for_30b || {{}}))}}</pre></div>
     <div class="card"><h2>Priority evidence</h2><pre>${{htmlEscape(pretty(data.priority_evidence_for_30b || {{}}))}}</pre></div>

@@ -4051,6 +4051,19 @@ def finalize_agentic_job(
         result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
     public_result = _public_terminal_result_for_30b(result)
     answer = tool_context.get("answer_for_30b") or final_summary_with_turns
+    evidence_guide = "\n".join(
+        part
+        for part in (
+            "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
+            "Questo e' l'unico testo guida globale; il payload utile e' in tool_context_for_30b.",
+            f"status={status}; richiesta_utente={state.get('goal') or ''}",
+            "Sommario/risposta del planner da usare come guida:",
+            str(answer or "").strip(),
+            "Evidenza concreta inline:",
+            str(tool_context.get("evidence_digest_for_30b") or "").strip(),
+        )
+        if str(part or "").strip()
+    )
     public_final_summary = (
         answer
         if status == "completed" and _latest_code_product_payload(result.get("history") if isinstance(result.get("history"), list) else [])
@@ -4064,8 +4077,7 @@ def finalize_agentic_job(
         "goal": state.get("goal"),
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
-        "answer_for_30b": answer,
-        "message_for_30b": answer,
+        "evidence_guide_for_30b": evidence_guide,
         "next_action_for_30b": next_action,
         "result": public_result,
         "agent_flow_diagnostics": tool_context.get("agent_flow_diagnostics"),
@@ -4084,8 +4096,7 @@ def finalize_agentic_job(
         "final_markdown_path": str(root / "final.md"),
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
-        "answer_for_30b": answer,
-        "message_for_30b": answer,
+        "evidence_guide_for_30b": evidence_guide,
         "next_action_for_30b": next_action,
         "result": _compact_final_state_result(public_result),
         "tool_context_for_30b": tool_context,

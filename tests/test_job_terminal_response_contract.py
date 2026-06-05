@@ -57,17 +57,19 @@ def test_compact_terminal_response_uses_state_tool_context_first() -> None:
         job_url_value="http://127.0.0.1:3572/jobs/job-x",
         public_result_inline_chars=1000,
         public_summary_chars=100,
-        public_answer_chars=100,
+        public_answer_chars=1000,
     )
 
     assert response["ok"] is True
     assert response["job_ok"] is True
     assert response["mode"] == "agent_job_final_compact"
-    assert response["answer_for_30b"] == "answer"
-    assert response["message_for_30b"] == "answer"
+    assert "answer_for_30b" not in response
+    assert "message_for_30b" not in response
+    assert "summary_for_30b" not in response
+    assert "answer" in response["evidence_guide_for_30b"]
     assert response["evidence_digest_for_30b"] == "evidence"
     assert response["next_action_for_30b"] == {"action": "done"}
-    assert response["tool_context_for_30b"]["answer_for_30b"] == "context-answer"
+    assert "answer_for_30b" not in response["tool_context_for_30b"]
     assert response["artifacts"] == ["final.json", "final.md", "events.ndjson"]
     assert len(response["events_tail_digest"]) == 5
     assert response["events_tail_digest"][0]["time"] == "t2"
@@ -100,7 +102,7 @@ def test_operator_terminal_response_contains_verified_local_paths(tmp_path: Path
         job_url_value="http://127.0.0.1:3572/jobs/job-operator",
         public_result_inline_chars=1000,
         public_summary_chars=100,
-        public_answer_chars=100,
+        public_answer_chars=1000,
         audience="operator",
     )
 
@@ -136,11 +138,12 @@ def test_compact_terminal_response_uses_final_data_context_when_state_missing() 
         job_url_value="http://127.0.0.1:3572/jobs/job-x",
         public_result_inline_chars=1000,
         public_summary_chars=100,
-        public_answer_chars=100,
+        public_answer_chars=1000,
     )
 
     assert response["job_ok"] is False
-    assert response["answer_for_30b"] == "from-context"
+    assert "answer_for_30b" not in response
+    assert "from-context" in response["evidence_guide_for_30b"]
     assert response["next_action_for_30b"] == {"action": "inspect"}
     assert response["working_memory_for_30b"] == {"k": "v"}
 
@@ -174,18 +177,18 @@ def test_compact_terminal_response_builds_structured_context_from_state_history(
         job_url_value="http://127.0.0.1:3572/jobs/job-x",
         public_result_inline_chars=1000,
         public_summary_chars=100,
-        public_answer_chars=100,
+        public_answer_chars=1000,
     )
 
-    assert "tool_context_for_30b.artifacts" in response["answer_for_30b"]
-    assert "failed summary" in response["answer_for_30b"]
+    assert "tool_context_for_30b.artifacts" in response["evidence_guide_for_30b"]
+    assert "failed summary" in response["evidence_guide_for_30b"]
     assert response["tool_context_for_30b"]["type"] == (
         "agentic_loop_complete_structured_context"
     )
     assert response["tool_context_for_30b"]["not_a_summary"] is True
     assert response["tool_context_for_30b"]["history_count"] == 1
     assert response["tool_context_for_30b"]["history"][0]["items"][0]["content_chars"] == len("preview only")
-    assert response["tool_context_for_30b"]["answer_for_30b"] == response["answer_for_30b"]
+    assert "answer_for_30b" not in response["tool_context_for_30b"]
 
 
 def test_failed_terminal_response_sanitizes_local_path_from_public_answer() -> None:
@@ -213,9 +216,8 @@ def test_failed_terminal_response_sanitizes_local_path_from_public_answer() -> N
         audience="openwebui",
     )
 
-    assert r"C:\Users\carmi" not in response["answer_for_30b"]
-    assert r"C:\Users\carmi" not in response["summary_for_30b"]
-    assert "[local_path_omitted]" in response["answer_for_30b"]
+    assert r"C:\Users\carmi" not in response["evidence_guide_for_30b"]
+    assert "[local_path_omitted]" in response["evidence_guide_for_30b"]
     assert response["operator_diagnostics"]["local_events_path"] == "events.ndjson"
 
 
@@ -288,7 +290,7 @@ def test_unverified_final_path_does_not_claim_full_result_available(tmp_path: Pa
         job_url_value="http://127.0.0.1:3572/jobs/job-missing-final",
         public_result_inline_chars=1000,
         public_summary_chars=100,
-        public_answer_chars=100,
+        public_answer_chars=1000,
     )
 
     assert response["full_result_available"] is False
@@ -321,7 +323,7 @@ def test_openwebui_terminal_response_keeps_local_paths_under_diagnostics(tmp_pat
         job_url_value="http://127.0.0.1:3572/jobs/job-openwebui",
         public_result_inline_chars=1000,
         public_summary_chars=100,
-        public_answer_chars=100,
+        public_answer_chars=1000,
         audience="openwebui",
     )
 
@@ -334,5 +336,6 @@ def test_openwebui_terminal_response_keeps_local_paths_under_diagnostics(tmp_pat
     public_response = dict(response)
     public_response.pop("operator_diagnostics")
     assert str(tmp_path) not in json.dumps(public_response, ensure_ascii=False, default=str)
-    assert response["tool_context_for_30b"]["answer_for_30b"] == "inline answer"
+    assert "answer_for_30b" not in response["tool_context_for_30b"]
+    assert "inline answer" in response["evidence_guide_for_30b"]
     assert "OpenWebUI cannot read local paths" in response["full_result_hint"]

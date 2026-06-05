@@ -97,6 +97,59 @@ def verify_local_final_path(path: str | Path, *, expected_type: str = "json") ->
         return result
 
 
+def _build_evidence_guide_for_30b(
+    *,
+    goal: Any,
+    status: str,
+    answer: str,
+    summary: str,
+    tool_context: dict[str, Any],
+    limit: int,
+) -> str:
+    artifacts = tool_context.get("artifacts") if isinstance(tool_context.get("artifacts"), list) else []
+    history = tool_context.get("history") if isinstance(tool_context.get("history"), list) else []
+    evidence_digest = str(tool_context.get("evidence_digest_for_30b") or "").strip()
+    lines = [
+        "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
+        "Il testo sintetico non e' una risposta sostitutiva: usalo come indice per leggere il payload.",
+        "Per rispondere in modo dettagliato usa prima payload_index_for_30b e priority_evidence_for_30b, poi tool_context_for_30b.",
+        f"status={status}; artifacts={len(artifacts)}; history_rows={len(history)}",
+        f"richiesta_utente={str(goal or '').strip()}",
+    ]
+    if answer:
+        lines.extend(["", "Sommario/risposta del planner da usare come guida:", str(answer).strip()])
+    elif summary:
+        lines.extend(["", "Sommario terminale da usare come guida:", str(summary).strip()])
+    if evidence_digest:
+        lines.extend(["", "Evidenza eseguita inline:", evidence_digest])
+    return public_terminal_sanitize_text(compact_text("\n".join(lines), limit))
+
+
+def _strip_tool_context_narrative_duplicates(tool_context: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(tool_context)
+    for key in (
+        "answer_for_30b",
+        "message_for_30b",
+        "summary_for_30b",
+        "content",
+        "evidence_guide_for_30b",
+        "final_answer",
+        "composed_answer",
+    ):
+        cleaned.pop(key, None)
+    usage = cleaned.get("openwebui_usage") if isinstance(cleaned.get("openwebui_usage"), dict) else {}
+    if usage:
+        usage = dict(usage)
+        usage.pop("primary_answer_field", None)
+        usage["top_level_evidence_guide_field"] = "evidence_guide_for_30b"
+        usage["rule"] = (
+            "tool_context_for_30b contains context/evidence only. The global "
+            "evidence_guide_for_30b field is outside this JSON."
+        )
+        cleaned["openwebui_usage"] = usage
+    return cleaned
+
+
 def build_compact_terminal_response(
     *,
     job_id: str,
@@ -192,7 +245,7 @@ def build_compact_terminal_response(
             "not_a_summary": True,
             "fallback_built_from_terminal_state": True,
             "job": {"job_id": job_id, "status": status, "goal": state.get("goal")},
-            "answer_for_30b": answer,
+            "top_level_evidence_guide_field": "evidence_guide_for_30b",
             "next_action_for_30b": next_action,
             "result": public_result or result_digest,
             "artifacts": public_artifacts,
@@ -203,6 +256,8 @@ def build_compact_terminal_response(
             "events_tail_digest": [event_digest(ev) for ev in events_tail[-20:]],
             "local_references_omitted_for_openwebui": True,
         }
+    else:
+        tool_context = _strip_tool_context_narrative_duplicates(tool_context)
 
     context_alias = {
         "schema": "agentic_terminal_context_alias.v1",
@@ -232,27 +287,38 @@ def build_compact_terminal_response(
             "in tool_context_for_30b."
         )
     openwebui_usage = {
-        "primary_answer_field": "answer_for_30b",
+        "evidence_guide_field": "evidence_guide_for_30b",
         "structured_context_field": "tool_context_for_30b",
         "rule": (
-            "Answer the user from answer_for_30b; use structured context only "
-            "for evidence-bound details."
+            "Use evidence_guide_for_30b as the reading guide for the inline "
+            "payload. Do not answer from a short static sentence when "
+            "tool_context_for_30b contains concrete evidence."
         ),
     }
+    evidence_guide = _build_evidence_guide_for_30b(
+        goal=state.get("goal"),
+        status=status,
+        answer=answer,
+        summary=summary,
+        tool_context=tool_context,
+        limit=max(public_answer_chars, public_summary_chars),
+    )
     if audience == "openwebui":
         openwebui_usage = {
             "primary_payload_fields": [
+                "evidence_guide_for_30b",
                 "payload_index_for_30b",
                 "priority_evidence_for_30b",
                 "tool_context_for_30b",
                 "openwebui_usage",
             ],
+            "evidence_guide_field": "evidence_guide_for_30b",
             "structured_context_field": "tool_context_for_30b",
             "rule": (
-                "OpenWebUI cannot read local filesystem paths. Use inline "
-                "payload_index_for_30b, priority_evidence_for_30b and "
-                "tool_context_for_30b when present; local paths are only "
-                "operator diagnostics."
+                "OpenWebUI cannot read local filesystem paths. Start from "
+                "evidence_guide_for_30b, then use inline payload_index_for_30b, "
+                "priority_evidence_for_30b and tool_context_for_30b. The guide "
+                "is an evidence index, not a replacement for the concrete payload."
             ),
         }
 
@@ -275,9 +341,7 @@ def build_compact_terminal_response(
         "full_result_available": bool(final_path_verification.get("final_path_verified")),
         "full_result_hint": full_result_hint,
         "final_path_verification": public_final_path_verification,
-        "answer_for_30b": answer,
-        "summary_for_30b": summary,
-        "message_for_30b": answer,
+        "evidence_guide_for_30b": evidence_guide,
         "evidence_digest_for_30b": (
             tool_context.get("evidence_digest_for_30b")
             if isinstance(tool_context, dict)
@@ -305,6 +369,8 @@ def build_compact_terminal_response(
     }
     if audience == "openwebui":
         response["operator_diagnostics"] = local_paths
+        for duplicate_key in ("answer_for_30b", "message_for_30b", "summary_for_30b", "content"):
+            response.pop(duplicate_key, None)
     else:
         response["final_path"] = final_path
         response["final_markdown_path"] = final_markdown_path

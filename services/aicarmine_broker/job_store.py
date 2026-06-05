@@ -473,8 +473,8 @@ def wait_for_agent_terminal(
             terminal = compact_agent_terminal_response(job_id, audience="openwebui")
             terminal["mode"] = "agent_job_final_waited_compact"
             terminal["wait_completed"] = True
-            if not terminal.get("message_for_30b"):
-                terminal["message_for_30b"] = (
+            if not terminal.get("evidence_guide_for_30b"):
+                terminal["evidence_guide_for_30b"] = (
                     f"Agent job {job_id} reached terminal status={terminal.get('status')}. "
                     "Use inline tool_context_for_30b and priority payload fields."
                 )

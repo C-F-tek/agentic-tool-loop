@@ -23,6 +23,15 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
             "result": {
                 "description": "Optional existing flow result. When present, it is preserved and not rewritten by the wrapper.",
             },
+            "evidence_guide_for_30b": {
+                "type": "string",
+                "description": (
+                    "The only top-level narrative guide for completed terminal jobs. "
+                    "It is not a replacement for concrete payloads; it tells the model "
+                    "how to read payload_index_for_30b, priority_evidence_for_30b and "
+                    "tool_context_for_30b for detailed answers."
+                ),
+            },
             "payload_index_for_30b": {
                 "type": "object",
                 "description": (
@@ -114,8 +123,9 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
         return
     operation["description"] = (
         str(operation.get("description") or "").rstrip()
-        + "\n\nCompleted response schema: read `payload_index_for_30b` first. "
-        "Its `concrete_results[*].primary_location` points to exact useful payload fields "
+        + "\n\nCompleted response schema: read `evidence_guide_for_30b` as the guide, then `payload_index_for_30b`. "
+        "`evidence_guide_for_30b` is the single top-level narrative guide; "
+        "`payload_index_for_30b.concrete_results[*].primary_location` points to exact useful payload fields "
         "such as `priority_evidence_for_30b.items[*].unified_diff`; "
         "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
         "`answer_for_30b`, `message_for_30b`, `summary_for_30b`, `next_action_for_30b` "
