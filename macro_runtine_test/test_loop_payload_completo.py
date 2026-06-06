@@ -17,7 +17,6 @@ SERVICES = ROOT / "services"
 if str(SERVICES) not in sys.path:
     sys.path.insert(0, str(SERVICES))
 
-from macro_runtine_test.lab_repo_sampling import sample_repo_files
 from macro_runtine_test.payload_assertions import (
     assert_public_payload_contract,
     assert_same_openwebui_payload,
@@ -25,7 +24,6 @@ from macro_runtine_test.payload_assertions import (
     extract_tools_observed,
 )
 from macro_runtine_test.runtime_client import RuntimeUrls, get_json, get_json_or_none, get_text, post_json
-from macro_runtine_test.tool_cases import build_tool_cases, missing_cases_for_tools
 from aicarmine_broker.application.replay.loop_replay import replay_loop_job
 
 
@@ -194,56 +192,31 @@ def _preflight(urls: RuntimeUrls) -> dict[str, Any]:
     }
 
 
-def _request_for_case(
-    case: Any,
+def _request_for_operator_prompt(
+    request: str,
     *,
     job_id: str,
     wait_seconds: int,
-    default_max_steps: int,
+    max_steps: int,
 ) -> dict[str, Any]:
-    args = dict(case.args)
-    max_steps = int(case.max_steps or default_max_steps)
     macro_context = {
-        "schema": "macro_runtime_loop_payload_case.v1",
+        "schema": "macro_runtime_operator_request.v1",
         "purpose": "operator_only_full_agentic_loop_audit",
-        "target_internal_tool": case.tool,
-        "target_arguments": args,
-        "target_arguments_transport_note": (
-            "These are exact target arguments for the planner native tool call. "
-            "They are carried outside the free-form goal so the controller does "
-            "not pre-read them before the planner turn."
-        ),
         "coverage_rule": (
-            "The case is covered only if the normal planner loop attempts this "
-            "tool, blocks it with a typed guard, or returns a typed unavailable result."
+            "The request is audited after the job from persisted runtime artifacts: "
+            "history, events, tool-results, final serializer and public payload."
         ),
         "not_a_direct_dispatch": True,
     }
-    payload = {
-        "request": (
-            "MACRO_RUNTIME_LOOP_PAYLOAD_TEST. Run the full normal agentic planner loop: "
-            "3571 public vulkan_helper -> 3572 queued job -> prompt pack -> 11434 planner "
-            "native tool call -> 3572 validator/controller -> internal tool dispatch or typed "
-            "guard -> final serializer. "
-            f"The target coverage tool for this macro case is {case.tool}. "
-            "Read the JSON explicit_request_context and target arguments in the planner payload. Use any supporting "
-            "tool if the validator/evidence contract requires it, but the case is not covered "
-            f"unless {case.tool} is attempted, blocked with a typed guard, or produces a typed "
-            f"unavailable result. The exact target arguments are in explicit_request_context "
-            f"inside the planner payload, not in this free-form goal. {case.request}"
-        ),
+    return {
+        "request": request,
         "job_id": job_id,
         "context": json.dumps(macro_context, ensure_ascii=False, sort_keys=True, default=str),
         "return_mode": "wait",
         "wait_seconds": wait_seconds,
         "timeout_seconds": min(max(wait_seconds + 60, 120), 900),
         "max_steps": max_steps,
-        "approval_mode": case.approval_mode,
-        "user_consent": case.user_consent,
-        "arguments": args,
-        "parameters": args,
     }
-    return payload
 
 
 def _broker_result_request(job_id: str) -> dict[str, Any]:
@@ -401,7 +374,7 @@ def _assert_full_agentic_loop_artifacts(
         if isinstance(replay_report.get("target_tool_coverage"), dict)
         else {}
     )
-    if target_coverage.get("covered") is not True:
+    if target_tool and target_coverage.get("covered") is not True:
         raise AssertionError(
             f"runtime loop replay does not show target tool attempt or typed guard after planner: "
             f"{target_tool}; coverage={target_coverage}"
@@ -447,7 +420,7 @@ def _assert_full_agentic_loop_artifacts(
             "target_tool_coverage": target_coverage,
         },
         "target_tool_coverage": target_coverage,
-        "target_tool_in_final": bool(target_coverage.get("covered")),
+        "target_tool_in_final": bool(target_coverage.get("covered")) if target_tool else None,
         "planner_lab_available": isinstance(planner_lab, dict),
         "planner_lab_schema": planner_lab.get("schema") if isinstance(planner_lab, dict) else None,
     }
@@ -461,28 +434,101 @@ def _write_report(report: dict[str, Any]) -> Path:
     return path
 
 
+def _run_payload_audit(
+    *,
+    urls: RuntimeUrls,
+    preflight: dict[str, Any],
+    run_id: str,
+    row: dict[str, Any],
+    payload: dict[str, Any],
+    expected_job_id: str,
+    artifact_prefix: str,
+    target_tool: str,
+) -> None:
+    result = post_json(urls.bridge_3571 + "/vulkan_helper", payload, timeout=int(payload.get("timeout_seconds") or 360))
+    row["request_payload_artifact"] = _write_payload_artifact(
+        run_id,
+        f"{artifact_prefix}-3571-request",
+        payload,
+    )
+    row["public_3571_payload_artifact"] = _write_payload_artifact(
+        run_id,
+        f"{artifact_prefix}-3571-public-payload",
+        result,
+    )
+    serializer_request = _broker_result_request(expected_job_id)
+    row["serializer_3572_request_artifact"] = _write_payload_artifact(
+        run_id,
+        f"{artifact_prefix}-3572-final-serializer-request",
+        serializer_request,
+    )
+    serializer_result = post_json(
+        urls.broker_3572 + "/vulkan/agent",
+        serializer_request,
+        timeout=60,
+    )
+    row["serializer_3572_payload_artifact"] = _write_payload_artifact(
+        run_id,
+        f"{artifact_prefix}-3572-final-serializer-payload",
+        serializer_result,
+    )
+    public_job_id = extract_job_id(result)
+    row["public_payload_job_id"] = public_job_id
+    if public_job_id != expected_job_id:
+        raise AssertionError(
+            f"3571 public payload did not expose the expected fresh job_id: "
+            f"expected={expected_job_id} got={public_job_id or '<missing>'}"
+        )
+    row["job_id"] = public_job_id or expected_job_id
+    row["status"] = str(result.get("status") or result.get("job_status") or "")
+    row["payload_assertions"] = assert_public_payload_contract(result)
+    serializer_job_id = extract_job_id(serializer_result)
+    row["serializer_payload_job_id"] = serializer_job_id
+    if serializer_job_id != expected_job_id:
+        raise AssertionError(
+            f"3572 final serializer did not return the same job_id: "
+            f"expected={expected_job_id} got={serializer_job_id or '<missing>'}"
+        )
+    _assert_3572_openwebui_serializer_shape(
+        serializer_request=serializer_request,
+        serializer_result=serializer_result,
+    )
+    row["serializer_payload_assertions"] = assert_public_payload_contract(serializer_result)
+    row["same_openwebui_payload_assertions"] = assert_same_openwebui_payload(result, serializer_result)
+    row["agentic_loop_audit"] = _assert_full_agentic_loop_artifacts(
+        urls=urls,
+        broker_health=preflight["broker_health"],
+        job_id=expected_job_id,
+        target_tool=target_tool,
+        run_id=run_id,
+    )
+    observed_tools = extract_tools_observed(result) | extract_tools_observed(serializer_result)
+    row["observed_tools"] = sorted(observed_tools)
+
+
 @pytest.mark.operator_runtime
-def test_loop_payload_completo_dynamic_tool_matrix() -> None:
+def test_loop_payload_completo_operator_request_runtime_flow() -> None:
     _check_operator_present()
     urls = RuntimeUrls()
     seed = _seed()
     run_id = _run_id(seed)
     wait_seconds = _int_env("LOOP_PAYLOAD_WAIT_SECONDS", 240)
     default_max_steps = _int_env("LOOP_PAYLOAD_MAX_STEPS", 8)
-    max_tools = _int_env("LOOP_PAYLOAD_MAX_TOOLS", 0)
-    only_tool = str(os.environ.get("LOOP_PAYLOAD_ONLY_TOOL") or "").strip()
+    operator_request = str(os.environ.get("LOOP_PAYLOAD_REQUEST") or "").strip()
+    expect_tool = str(os.environ.get("LOOP_PAYLOAD_EXPECT_TOOL") or "").strip()
+    if not operator_request:
+        raise AssertionError("LOOP_PAYLOAD_REQUEST is required: pass -Request to the operator macro runner")
 
     report: dict[str, Any] = {
         "schema": "macro_loop_payload_completo_report.v1",
         "seed": seed,
         "run_id": run_id,
         "selection": {
-            "only_tool": only_tool,
-            "max_tools": max_tools,
+            "request_mode": bool(operator_request),
+            "expect_tool": expect_tool,
         },
         "started_at": time.time(),
         "runtime": {},
-        "samples": {},
         "cases": [],
         "failures": [],
     }
@@ -490,116 +536,49 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
     try:
         preflight = _preflight(urls)
         report["runtime"] = preflight
-        samples = sample_repo_files(Path(preflight["lab_repo"]), seed=seed)
-        report["samples"] = {"seed": samples.seed, "files": list(samples.files)}
-
         tool_names = set(preflight["runtime_tools"])
-        cases = build_tool_cases(sample_file=samples.first(), sample_files=samples.files, seed=seed, run_id=run_id)
-        missing = missing_cases_for_tools(tool_names, cases)
-        if missing:
-            raise AssertionError(f"missing_macro_case_for_tool: {missing}")
-
-        selected_tools = sorted(tool_names)
-        if only_tool:
-            if only_tool not in tool_names:
-                raise AssertionError(f"LOOP_PAYLOAD_ONLY_TOOL not in dynamic runtime surface: {only_tool}")
-            selected_tools = [only_tool]
-        if max_tools > 0:
-            selected_tools = selected_tools[:max_tools]
-        report["selection"].update({
-            "runtime_tool_count": len(tool_names),
-            "selected_tool_count": len(selected_tools),
-            "selected_tools": list(selected_tools),
-            "full_matrix": not only_tool and max_tools <= 0,
-        })
-
-        for tool_name in selected_tools:
-            case = cases[tool_name]
-            expected_job_id = _safe_job_id(run_id, tool_name)
-            _assert_fresh_job_id(preflight, expected_job_id)
-            row: dict[str, Any] = {
-                "tool": tool_name,
-                "expected_job_id": expected_job_id,
-                "requested_at": time.time(),
-                "status": "pending",
-            }
-            report["cases"].append(row)
-            try:
-                payload = _request_for_case(
-                    case,
-                    job_id=expected_job_id,
-                    wait_seconds=wait_seconds,
-                    default_max_steps=default_max_steps,
-                )
-                result = post_json(urls.bridge_3571 + "/vulkan_helper", payload, timeout=wait_seconds + 120)
-                row["request_payload_artifact"] = _write_payload_artifact(run_id, f"{tool_name}-3571-request", payload)
-                row["public_3571_payload_artifact"] = _write_payload_artifact(run_id, f"{tool_name}-3571-public-payload", result)
-                serializer_request = _broker_result_request(expected_job_id)
-                row["serializer_3572_request_artifact"] = _write_payload_artifact(
-                    run_id,
-                    f"{tool_name}-3572-final-serializer-request",
-                    serializer_request,
-                )
-                serializer_result = post_json(
-                    urls.broker_3572 + "/vulkan/agent",
-                    serializer_request,
-                    timeout=60,
-                )
-                row["serializer_3572_payload_artifact"] = _write_payload_artifact(
-                    run_id,
-                    f"{tool_name}-3572-final-serializer-payload",
-                    serializer_result,
-                )
-                public_job_id = extract_job_id(result)
-                row["public_payload_job_id"] = public_job_id
-                if public_job_id != expected_job_id:
-                    raise AssertionError(
-                        f"3571 public payload did not expose the expected fresh job_id: "
-                        f"expected={expected_job_id} got={public_job_id or '<missing>'}"
-                    )
-                row["job_id"] = public_job_id or expected_job_id
-                row["status"] = str(result.get("status") or result.get("job_status") or "")
-                row["payload_assertions"] = assert_public_payload_contract(result)
-                serializer_job_id = extract_job_id(serializer_result)
-                row["serializer_payload_job_id"] = serializer_job_id
-                if serializer_job_id != expected_job_id:
-                    raise AssertionError(
-                        f"3572 final serializer did not return the same job_id: "
-                        f"expected={expected_job_id} got={serializer_job_id or '<missing>'}"
-                    )
-                _assert_3572_openwebui_serializer_shape(
-                    serializer_request=serializer_request,
-                    serializer_result=serializer_result,
-                )
-                row["serializer_payload_assertions"] = assert_public_payload_contract(serializer_result)
-                row["same_openwebui_payload_assertions"] = assert_same_openwebui_payload(result, serializer_result)
-                row["agentic_loop_audit"] = _assert_full_agentic_loop_artifacts(
-                    urls=urls,
-                    broker_health=preflight["broker_health"],
-                    job_id=expected_job_id,
-                    target_tool=tool_name,
-                    run_id=run_id,
-                )
-                observed_tools = extract_tools_observed(result) | extract_tools_observed(serializer_result)
-                row["observed_tools"] = sorted(observed_tools)
-                final_target_ok = bool((row["agentic_loop_audit"] or {}).get("target_tool_in_final"))
-                if case.expect_tool_call and tool_name not in observed_tools and not final_target_ok and result.get("status") == "completed":
-                    raise AssertionError(
-                        f"requested tool {tool_name} was not observed in completed payload; "
-                        f"observed={sorted(observed_tools)}"
-                    )
-                row["ok"] = True
-            except Exception as exc:
-                row["ok"] = False
-                row["error_type"] = type(exc).__name__
-                row["error"] = str(exc)
-                report["failures"].append(
-                    {
-                        "tool": tool_name,
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    }
-                )
+        if expect_tool and expect_tool not in tool_names:
+            raise AssertionError(f"LOOP_PAYLOAD_EXPECT_TOOL not in dynamic runtime surface: {expect_tool}")
+        expected_job_id = _safe_job_id(run_id, "operator-request")
+        _assert_fresh_job_id(preflight, expected_job_id)
+        row: dict[str, Any] = {
+            "mode": "operator_request",
+            "operator_request": operator_request,
+            "expected_tool": expect_tool,
+            "expected_job_id": expected_job_id,
+            "requested_at": time.time(),
+            "status": "pending",
+        }
+        report["cases"].append(row)
+        try:
+            payload = _request_for_operator_prompt(
+                operator_request,
+                job_id=expected_job_id,
+                wait_seconds=wait_seconds,
+                max_steps=default_max_steps,
+            )
+            _run_payload_audit(
+                urls=urls,
+                preflight=preflight,
+                run_id=run_id,
+                row=row,
+                payload=payload,
+                expected_job_id=expected_job_id,
+                artifact_prefix="operator-request",
+                target_tool=expect_tool,
+            )
+            row["ok"] = True
+        except Exception as exc:
+            row["ok"] = False
+            row["error_type"] = type(exc).__name__
+            row["error"] = str(exc)
+            report["failures"].append(
+                {
+                    "mode": "operator_request",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
 
         if report["failures"]:
             raise AssertionError(

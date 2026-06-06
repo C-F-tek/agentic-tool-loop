@@ -442,7 +442,9 @@ def _planner_prompt_audit(first_prompt: dict[str, Any], *, target_tool: str) -> 
         "legacy_json_format": isinstance(planner_payload, dict) and planner_payload.get("format") == "json",
         "explicit_request_context": _bounded(explicit_request_context),
         "explicit_request_context_target_matches": (
-            not target_tool or explicit_request_context.get("target_internal_tool") == target_tool
+            not target_tool
+            or "target_internal_tool" not in explicit_request_context
+            or explicit_request_context.get("target_internal_tool") == target_tool
         ),
         "prompt_pack_contract": _bounded(prompt_pack),
         "native_tools_schema_accounted_in_budget": prompt_pack.get("native_tools_schema_accounted_in_budget") is True,

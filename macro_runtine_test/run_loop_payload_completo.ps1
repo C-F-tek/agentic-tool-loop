@@ -2,8 +2,8 @@ param(
     [string]$Seed = "",
     [int]$WaitSeconds = 240,
     [int]$MaxSteps = 8,
-    [string]$OnlyTool = "",
-    [int]$MaxTools = 0,
+    [string]$Request = "",
+    [string]$ExpectTool = "",
     [string]$RunId = ""
 )
 
@@ -42,15 +42,15 @@ if ($Seed) {
 } else {
     Remove-Item Env:LOOP_PAYLOAD_SEED -ErrorAction SilentlyContinue
 }
-if ($OnlyTool) {
-    $env:LOOP_PAYLOAD_ONLY_TOOL = $OnlyTool
+if ($Request) {
+    $env:LOOP_PAYLOAD_REQUEST = $Request
 } else {
-    Remove-Item Env:LOOP_PAYLOAD_ONLY_TOOL -ErrorAction SilentlyContinue
+    throw "Pass -Request with the operator request to send through 3571 /vulkan_helper."
 }
-if ($MaxTools -gt 0) {
-    $env:LOOP_PAYLOAD_MAX_TOOLS = [string]$MaxTools
+if ($ExpectTool) {
+    $env:LOOP_PAYLOAD_EXPECT_TOOL = $ExpectTool
 } else {
-    Remove-Item Env:LOOP_PAYLOAD_MAX_TOOLS -ErrorAction SilentlyContinue
+    Remove-Item Env:LOOP_PAYLOAD_EXPECT_TOOL -ErrorAction SilentlyContinue
 }
 $LaunchNonce = "{0}-{1}" -f (Get-Date -Format "yyyyMMddHHmmssffff"), ([guid]::NewGuid().ToString("N").Substring(0, 12))
 if ($RunId) {
@@ -66,8 +66,8 @@ Write-Host "Repo root: $RepoRoot"
 Write-Host "Python: $Python"
 Write-Host "WaitSeconds: $WaitSeconds MaxSteps: $MaxSteps"
 if ($Seed) { Write-Host "Seed: $Seed" }
-if ($OnlyTool) { Write-Host "OnlyTool: $OnlyTool" }
-if ($MaxTools -gt 0) { Write-Host "MaxTools: $MaxTools" }
+Write-Host "Request: $Request"
+if ($ExpectTool) { Write-Host "ExpectTool: $ExpectTool" }
 Write-Host "RunId: $EffectiveRunId"
 
 & $Python -m pytest (Join-Path $ScriptRoot "test_loop_payload_completo.py") -q -s --tb=short
