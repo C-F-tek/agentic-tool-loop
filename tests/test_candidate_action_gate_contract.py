@@ -136,3 +136,26 @@ def test_candidate_gate_keeps_validation_tool_with_existing_non_evidence_path() 
     assert candidate_rejection_reason(action) == ""
     assert gate["candidate_next_actions"] == [action]
     assert gate["rejected_candidate_actions"] == []
+
+
+def test_candidate_gate_keeps_repo_write_file_create_target_under_scope() -> None:
+    action = attach_action_proof(
+        {
+            "tool": "repo_write_file",
+            "arguments": {
+                "path": "macro-runtime-test.txt",
+                "content": "macro runtime payload test\n",
+                "overwrite": True,
+            },
+        },
+        source="test",
+        path_exists=False,
+        path_readable=True,
+        under_scope=True,
+    )
+
+    gate = gate_candidate_actions([action])
+
+    assert candidate_rejection_reason(action) == ""
+    assert gate["candidate_next_actions"] == [action]
+    assert gate["rejected_candidate_actions"] == []

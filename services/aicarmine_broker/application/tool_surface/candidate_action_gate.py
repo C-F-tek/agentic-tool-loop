@@ -41,6 +41,13 @@ def _requires_readable_evidence_path(action: dict[str, Any]) -> bool:
     }
 
 
+def _allows_missing_target_path(action: dict[str, Any]) -> bool:
+    tool = str(action.get("tool") or "").strip().replace(".", "_")
+    return tool in {
+        "repo_write_file",
+    }
+
+
 def candidate_rejection_reason(action: dict[str, Any]) -> str:
     if not isinstance(action, dict) or not action.get("tool"):
         return "invalid_candidate_action"
@@ -48,7 +55,7 @@ def candidate_rejection_reason(action: dict[str, Any]) -> str:
     if not action.get("action_id") or not proof.get("source"):
         return "missing_action_proof"
     if _has_path_contract(action):
-        if proof.get("path_exists") is not True:
+        if proof.get("path_exists") is not True and not _allows_missing_target_path(action):
             return "candidate_path_not_existing"
         if _requires_readable_evidence_path(action) and proof.get("path_readable") is not True:
             return "candidate_path_not_readable"

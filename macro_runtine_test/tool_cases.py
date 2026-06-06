@@ -109,7 +109,12 @@ def build_tool_cases(*, sample_file: str, sample_files: tuple[str, ...], seed: i
         "repo_ast_grep_dry_run": _base(
             "repo_ast_grep_dry_run",
             "Use repo_ast_grep_dry_run on the exact target path from explicit_request_context.",
-            args={"path": sample_file, "pattern": "def $FUNC($$$ARGS): $$$BODY", "language": "python"},
+            args={
+                "path": sample_file,
+                "pattern": "def $FUNC($$$ARGS): $$$BODY",
+                "rewrite": "def $FUNC($$$ARGS): $$$BODY",
+                "language": "python",
+            },
         ),
         #test tree-sitter parsing with a file that is likely to be small and parseable within token limits; this verifies tree-sitter payload handling and parsing in the macro runtime
         "repo_tree_sitter_parse": _base(
