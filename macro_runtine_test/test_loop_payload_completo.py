@@ -532,6 +532,10 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
         "schema": "macro_loop_payload_completo_report.v1",
         "seed": seed,
         "run_id": run_id,
+        "selection": {
+            "only_tool": only_tool,
+            "max_tools": max_tools,
+        },
         "started_at": time.time(),
         "runtime": {},
         "samples": {},
@@ -557,6 +561,12 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
             selected_tools = [only_tool]
         if max_tools > 0:
             selected_tools = selected_tools[:max_tools]
+        report["selection"].update({
+            "runtime_tool_count": len(tool_names),
+            "selected_tool_count": len(selected_tools),
+            "selected_tools": list(selected_tools),
+            "full_matrix": not only_tool and max_tools <= 0,
+        })
 
         for tool_name in selected_tools:
             case = cases[tool_name]

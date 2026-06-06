@@ -37,9 +37,21 @@ if (-not $Python) {
 $env:AICARMINE_OPERATOR_PRESENT = "1"
 $env:LOOP_PAYLOAD_WAIT_SECONDS = [string]$WaitSeconds
 $env:LOOP_PAYLOAD_MAX_STEPS = [string]$MaxSteps
-if ($Seed) { $env:LOOP_PAYLOAD_SEED = $Seed }
-if ($OnlyTool) { $env:LOOP_PAYLOAD_ONLY_TOOL = $OnlyTool }
-if ($MaxTools -gt 0) { $env:LOOP_PAYLOAD_MAX_TOOLS = [string]$MaxTools }
+if ($Seed) {
+    $env:LOOP_PAYLOAD_SEED = $Seed
+} else {
+    Remove-Item Env:LOOP_PAYLOAD_SEED -ErrorAction SilentlyContinue
+}
+if ($OnlyTool) {
+    $env:LOOP_PAYLOAD_ONLY_TOOL = $OnlyTool
+} else {
+    Remove-Item Env:LOOP_PAYLOAD_ONLY_TOOL -ErrorAction SilentlyContinue
+}
+if ($MaxTools -gt 0) {
+    $env:LOOP_PAYLOAD_MAX_TOOLS = [string]$MaxTools
+} else {
+    Remove-Item Env:LOOP_PAYLOAD_MAX_TOOLS -ErrorAction SilentlyContinue
+}
 $LaunchNonce = "{0}-{1}" -f (Get-Date -Format "yyyyMMddHHmmssffff"), ([guid]::NewGuid().ToString("N").Substring(0, 12))
 if ($RunId) {
     $EffectiveRunId = "{0}-{1}" -f $RunId, $LaunchNonce

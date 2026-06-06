@@ -18,6 +18,17 @@ Avvio:
 .\macro_runtine_test\run_loop_payload_completo.ps1
 ```
 
+Il lancio senza argomenti deve sempre testare tutta la matrice tool scoperta
+dal runtime. Il runner rimuove esplicitamente eventuali variabili di filtro
+rimaste nella sessione PowerShell (`LOOP_PAYLOAD_ONLY_TOOL`,
+`LOOP_PAYLOAD_MAX_TOOLS`, `LOOP_PAYLOAD_SEED`) quando i parametri corrispondenti
+non sono passati. Per limitare volontariamente la matrice usare:
+
+```powershell
+.\macro_runtine_test\run_loop_payload_completo.ps1 -OnlyTool repo_read
+.\macro_runtine_test\run_loop_payload_completo.ps1 -MaxTools 3
+```
+
 Prerequisiti:
 
 - OpenWebUI gia' attivo su `http://127.0.0.1:8080`;
