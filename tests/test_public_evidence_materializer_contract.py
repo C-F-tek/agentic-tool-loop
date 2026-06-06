@@ -122,6 +122,66 @@ def test_materializer_indexes_generic_successful_tool_result_without_copying_pay
     assert materialized["materialization_report"]["payload_index"]["resolved_count"] > 0
 
 
+def test_materializer_indexes_failed_tool_result_as_partial_inline_artifact() -> None:
+    materialized = materialize_public_evidence(
+        tool_context={
+            "not_a_summary": True,
+            "artifacts": [
+                {
+                    "producer_step": 1,
+                    "tool": "repo_git_apply_check",
+                    "ok": False,
+                    "artifact": {
+                        "kind": "diff_validation",
+                        "ok": False,
+                        "error": "patch_does_not_apply",
+                        "returncode": 1,
+                        "stderr_tail": "error: patch failed",
+                    },
+                }
+            ],
+        },
+        evidence_guide="Use the failed validation payload.",
+        completed=False,
+    )
+
+    priority_item = materialized["priority_evidence_for_30b"]["items"][0]
+    index_row = materialized["payload_index_for_30b"]["partial_results"][0]
+
+    assert priority_item["kind"] == "tool_result_inline"
+    assert priority_item["tool"] == "repo_git_apply_check"
+    assert priority_item["payload_is_complete"] is False
+    assert priority_item["validator_accepted"] is False
+    assert index_row["primary_location"] == "tool_context_for_30b.artifacts[0].artifact"
+    assert index_row["validator_accepted"] is False
+    assert materialized["materialization_report"]["ok"] is True
+
+
+def test_materializer_partial_code_product_uses_existing_rationale_location() -> None:
+    materialized = materialize_public_evidence(
+        tool_context={
+            "not_a_summary": True,
+            "partial_products_for_30b": [
+                {
+                    "kind": "partial_code_product_candidate",
+                    "target_file": "pkg/a.py",
+                    "edit_kind": "unified_diff",
+                    "payload_is_complete": False,
+                    "validator_accepted": False,
+                    "rationale": "missing unified diff",
+                }
+            ],
+        },
+        evidence_guide="Use partial code-product diagnostics.",
+        completed=False,
+    )
+
+    index_row = materialized["payload_index_for_30b"]["partial_results"][0]
+
+    assert index_row["primary_location"] == "priority_evidence_for_30b.items[0].rationale"
+    assert materialized["materialization_report"]["payload_index"]["unresolved"] == []
+
+
 def test_materializer_reports_unresolved_payload_index_targets() -> None:
     materialized = materialize_public_evidence(
         tool_context={"not_a_summary": True, "artifacts": []},

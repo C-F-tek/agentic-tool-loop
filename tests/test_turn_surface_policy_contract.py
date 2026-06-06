@@ -174,3 +174,35 @@ def test_tool_surface_names_for_code_product_includes_diff_tools_and_memory_gap(
     assert "repo_unidiff_validate" in names
     assert "runtime_sqlite_memory_search" in names
     assert "runtime_sqlite_memory_write" in names
+
+
+def test_tool_surface_names_include_explicit_request_target_tool() -> None:
+    names = tool_surface_names_for_turn(
+        goal="Structured operator request. Target arguments are in explicit_request_context.",
+        evidence_contract={"semantic_goal_classification": {"class": "analysis_only"}},
+        intrinsic_context={
+            "explicit_request_context": {
+                "target_internal_tool": "repo_pytest_run",
+                "target_arguments": {"paths": ["tests/test_demo.py"]},
+            }
+        },
+        order_tool_names=_order,
+    )
+
+    assert "repo_pytest_run" in names
+
+
+def test_tool_surface_names_include_explicit_memory_target_tool() -> None:
+    names = tool_surface_names_for_turn(
+        goal="Structured operator request. Target arguments are in explicit_request_context.",
+        evidence_contract={"semantic_goal_classification": {"class": "analysis_only"}},
+        intrinsic_context={
+            "explicit_request_context": {
+                "target_internal_tool": "runtime_sqlite_memory_search",
+                "target_arguments": {"query": "macro runtime payload"},
+            }
+        },
+        order_tool_names=_order,
+    )
+
+    assert "runtime_sqlite_memory_search" in names

@@ -85,6 +85,7 @@ class ToolSurfacePolicy:
         )
         self._add_keyword_tools(names, goal)
         self._add_candidate_tools(names, contract)
+        self._add_explicit_request_tool(names, intrinsic_context)
         candidate_names = self._candidate_tool_names(contract)
         if self._intrinsic_context_declares_selective_memory_gap(intrinsic_context):
             names.add("runtime_sqlite_memory_search")
@@ -359,6 +360,16 @@ class ToolSurfacePolicy:
             if candidate == "planner_scratchpad_read":
                 continue
             names.add(candidate)
+
+    def _add_explicit_request_tool(self, names: set[str], intrinsic_context: dict[str, Any]) -> None:
+        if not isinstance(intrinsic_context, dict):
+            return
+        explicit = intrinsic_context.get("explicit_request_context")
+        if not isinstance(explicit, dict):
+            return
+        target = normalize_tool_name(str(explicit.get("target_internal_tool") or ""))
+        if target:
+            names.add(target)
 
     def _set_actions(
         self,

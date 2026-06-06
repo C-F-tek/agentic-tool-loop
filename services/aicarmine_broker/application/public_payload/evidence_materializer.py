@@ -124,24 +124,27 @@ def _generic_tool_result_priority_item(row: dict[str, Any], *, artifact_index: i
     artifact = _as_dict(row.get("artifact"))
     if not artifact:
         return {}
-    if row.get("ok") is False or artifact.get("ok") is False:
-        return {}
     kind = str(artifact.get("kind") or "")
     if kind in {"repo_read", "code_edit_proposal"}:
         return {}
     tool = str(row.get("tool") or artifact.get("tool") or "")
     if not tool:
         return {}
+    accepted = not (row.get("ok") is False or artifact.get("ok") is False)
     return _clean({
         "kind": "tool_result_inline",
         "tool": tool,
         "step": row.get("producer_step"),
         "ok": row.get("ok", True),
-        "payload_is_complete": True,
+        "payload_is_complete": accepted,
+        "validator_accepted": accepted,
         "payload_type": kind or "tool_result",
         "artifact_index": artifact_index,
         "result_keys": sorted(str(key) for key in artifact.keys())[:40],
         "summary": artifact.get("summary") or row.get("summary"),
+        "error": artifact.get("error"),
+        "error_type": artifact.get("error_type"),
+        "returncode": artifact.get("returncode"),
     })
 
 
@@ -275,15 +278,23 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
         elif item.get("state_text"):
             field = "state_text"
             payload_type = "partial_code_product_state"
+        elif item.get("rationale"):
+            field = "rationale"
+            payload_type = "partial_rationale"
+        elif item.get("violations"):
+            field = "violations"
+            payload_type = "partial_validation_violations"
         else:
-            field = "text"
-            payload_type = "partial_text"
+            field = ""
+            payload_type = "partial_metadata"
         primary_location: str | dict[str, str] = f"{base}.{field}"
         if field == "old_text_new_text":
             primary_location = {
                 "old_text": f"{base}.old_text",
                 "new_text": f"{base}.new_text",
             }
+        elif not field:
+            primary_location = base
         return _clean({
             "kind": kind,
             "payload_type": payload_type,
@@ -313,6 +324,7 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "payload_type": item.get("payload_type") or "tool_result",
             "tool": item.get("tool"),
             "payload_is_complete": item.get("payload_is_complete", True),
+            "validator_accepted": item.get("validator_accepted", True),
             "primary_location": primary_location,
             "full_context_location": primary_location,
             "role": (

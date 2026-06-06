@@ -168,7 +168,7 @@ def build_tool_cases(*, sample_file: str, sample_files: tuple[str, ...], seed: i
         "repo_semgrep_scan": _base(
             "repo_semgrep_scan",
             "Use repo_semgrep_scan on the exact target path from explicit_request_context in bounded mode or return typed unavailable result.",
-            args={"paths": [sample_file], "limit": 80},
+            args={"paths": [sample_file], "pattern": "$X == $X", "lang": "python", "limit": 80},
         ),
         "repo_hyperfine_benchmark": _base(
             "repo_hyperfine_benchmark",

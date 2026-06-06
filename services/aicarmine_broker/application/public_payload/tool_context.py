@@ -81,7 +81,7 @@ def public_tool_response(
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
 ) -> dict[str, Any]:
-    if not isinstance(tool_result, dict) or not tool_result.get("ok"):
+    if not isinstance(tool_result, dict):
         return {}
     source = same_tool_artifact_payload(tool_result)
     tool = str(source.get("tool") or tool_result.get("tool") or "")
@@ -189,7 +189,8 @@ def public_tool_response(
         "stderr_text", "stdout_tail", "stderr_tail", "diagnostics",
         "diagnostics_total", "anchors", "anchors_total", "symbols",
         "symbols_total", "comments", "parsed_json", "file_count",
-        "results", "results_total", "errors", "warnings", "stderr_tail",
+        "results", "results_total", "error", "error_type", "errors",
+        "warnings", "stderr_tail",
     ):
         if source.get(key) not in (None, "", [], {}):
             useful[key] = strip_public_artifact_paths(source.get(key))
@@ -209,7 +210,7 @@ def successful_tool_turns(
             continue
         result = history_tool_result(item)
         tool = str(result.get("tool") or "")
-        if not tool or tool == "controller_guard" or not result.get("ok"):
+        if not tool or tool == "controller_guard":
             continue
         decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
         response = public_tool_response(
@@ -248,7 +249,7 @@ def public_tool_artifact_rows(
             continue
         result = history_tool_result(item)
         tool = str(result.get("tool") or "")
-        if not tool or tool == "controller_guard" or not result.get("ok"):
+        if not tool or tool == "controller_guard":
             continue
         response = public_tool_response(
             result,
@@ -265,7 +266,7 @@ def public_tool_artifact_rows(
             "substep": item.get("substep"),
             "tool": tool,
             "arguments": arguments,
-            "ok": True,
+            "ok": result.get("ok"),
         }
         if tool == "repo_read":
             for read_item in response.get("items") or []:

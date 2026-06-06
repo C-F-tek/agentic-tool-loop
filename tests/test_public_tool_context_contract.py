@@ -115,6 +115,33 @@ def test_public_tool_artifact_rows_do_not_expose_local_artifact_path() -> None:
     assert "artifact" not in artifact
 
 
+def test_public_tool_artifact_rows_include_failed_tool_payload_inline() -> None:
+    history = [{
+        "step": 1,
+        "decision": {"tool": "repo_git_apply_check", "arguments": {"patch": "diff --git a/x b/x\n"}},
+        "tool_result": {
+            "tool": "repo_git_apply_check",
+            "ok": False,
+            "artifact": "tool-results/repo_git_apply_check.json",
+            "error": "patch_does_not_apply",
+            "returncode": 1,
+            "stderr_tail": "error: patch failed",
+        },
+    }]
+
+    rows = public_tool_artifact_rows(
+        history,
+        same_tool_artifact_payload=_same_tool_payload,
+        repo_read_item_full_content=_repo_read_full_content,
+        code_product_build_state_kind="code_product_build_state",
+    )
+
+    assert rows[0]["ok"] is False
+    assert rows[0]["artifact"]["kind"] == "diff_validation"
+    assert rows[0]["artifact"]["error"] == "patch_does_not_apply"
+    assert "artifact" not in rows[0]["artifact"]
+
+
 def test_public_tool_context_limits_reports_partial_lists() -> None:
     limits = public_tool_context_limits([{
         "producer_step": 2,
