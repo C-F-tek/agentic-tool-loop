@@ -153,6 +153,41 @@ def test_legacy_context_compactor_name_uses_explicit_builder() -> None:
     assert result["evidence_guide_for_30b"]
 
 
+def test_bridge_helper_does_not_mutate_3572_public_payload_for_blocked_job(monkeypatch) -> None:
+    from vulkan_bridge import app
+
+    broker_payload = {
+        "ok": True,
+        "job_ok": False,
+        "service": "vulkan_agent",
+        "status": "blocked_needs_attention",
+        "job_id": "job-x",
+        "evidence_guide_for_30b": "guide",
+        "payload_index_for_30b": {"concrete_results": [{"tool": "repo_search"}]},
+        "priority_evidence_for_30b": {"items": [{"kind": "tool_result_inline"}]},
+        "materialization_report": {"schema": "public_evidence_materialization.v1", "ok": True},
+        "tool_context_for_30b": {"artifacts": [{"tool": "repo_search", "artifact": {"ok": True}}]},
+    }
+
+    monkeypatch.setattr(app, "_post_json", lambda *args, **kwargs: dict(broker_payload))
+
+    result = app._handle_helper(
+        app.HelperForAllRequest(
+            request="run",
+            return_mode="wait",
+            wait_seconds=10,
+        ),
+        "vulkan_helper",
+    )
+
+    assert result == {**broker_payload, "service": "vulkan_agent"}
+    assert "bridge_public_tool" not in result
+    assert "bridge_alias_called" not in result
+    assert "bridge_forwarded_to_vulkan" not in result
+    assert "bridge_forwarding_mode" not in result
+    assert "bridge_received_payload_shape" not in result
+
+
 def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payload() -> None:
     from vulkan_bridge import app
 

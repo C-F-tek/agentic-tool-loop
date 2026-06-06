@@ -120,3 +120,19 @@ def test_candidate_gate_rejects_missing_validator_admissibility_for_repo_read() 
     )
 
     assert candidate_rejection_reason(action) == "candidate_not_validator_admissible"
+
+
+def test_candidate_gate_keeps_validation_tool_with_existing_non_evidence_path() -> None:
+    action = attach_action_proof(
+        {"tool": "repo_ruff_check", "arguments": {"paths": ["Tools/check.py"]}},
+        source="test",
+        path_exists=True,
+        path_readable=False,
+        under_scope=True,
+    )
+
+    gate = gate_candidate_actions([action])
+
+    assert candidate_rejection_reason(action) == ""
+    assert gate["candidate_next_actions"] == [action]
+    assert gate["rejected_candidate_actions"] == []

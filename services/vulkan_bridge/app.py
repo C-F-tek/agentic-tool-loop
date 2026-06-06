@@ -714,11 +714,6 @@ def _handle_helper(req: HelperForAllRequest, alias_called: str) -> dict[str, Any
     result.setdefault("service", "vulkan_bridge")
     if result.get("status") == "completed" or result.get("job_ok") is True:
         return result
-    result["bridge_public_tool"] = public_tool_x
-    result["bridge_alias_called"] = alias_called
-    result["bridge_received_payload_shape"] = sorted(raw_payload.keys())
-    result["bridge_forwarded_to_vulkan"] = True
-    result["bridge_forwarding_mode"] = "native_multi_tool_alias_to_3572"
     return result
 
 

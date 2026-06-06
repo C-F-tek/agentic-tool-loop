@@ -278,6 +278,19 @@ def target_tool_coverage_from_events(events: list[dict[str, Any]], target_tool: 
         payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
         event_tool = str(payload.get("tool") or "").strip()
         event_action = str(payload.get("action") or "").strip()
+        row_text = json.dumps(row, ensure_ascii=False, default=str).lower()
+        if target.lower() in row_text and any(
+            marker in row_text
+            for marker in ("validator", "controller_guard", "blocked", "rejected", "unavailable", "missing", "requires")
+        ):
+            return {
+                **coverage,
+                "covered": True,
+                "reason": "typed_guard_event_mentions_target_after_planner",
+                "matched_step": step,
+                "matched_kind": "typed_guard_event",
+                "matched_event_type": event_type,
+            }
         if event_type == "planner_decision" and event_action == "tool" and event_tool == target:
             return {
                 **coverage,
@@ -294,19 +307,6 @@ def target_tool_coverage_from_events(events: list[dict[str, Any]], target_tool: 
                 "reason": f"{event_type}_event_after_planner",
                 "matched_step": step,
                 "matched_kind": event_type,
-                "matched_event_type": event_type,
-            }
-        row_text = json.dumps(row, ensure_ascii=False, default=str).lower()
-        if target.lower() in row_text and any(
-            marker in row_text
-            for marker in ("validator", "controller_guard", "blocked", "rejected", "unavailable", "missing", "requires")
-        ):
-            return {
-                **coverage,
-                "covered": True,
-                "reason": "typed_guard_event_mentions_target_after_planner",
-                "matched_step": step,
-                "matched_kind": "typed_guard_event",
                 "matched_event_type": event_type,
             }
     return coverage
@@ -468,6 +468,11 @@ def _runtime_loop_artifact_audit(
     request_payload = state.get("request_payload") if isinstance(state.get("request_payload"), dict) else {}
     original_args = state.get("original_args") if isinstance(state.get("original_args"), dict) else {}
     prompt_audit = _planner_prompt_audit(_first_prompt_payload(prompt_files), target_tool=target_tool)
+    target_coverage = target_tool_coverage_from_runtime_artifacts(
+        state.get("history") if isinstance(state.get("history"), list) else [],
+        events,
+        target_tool,
+    )
     failures: list[dict[str, Any]] = []
 
     def fail(rule: str, detail: Any = "") -> None:
@@ -490,11 +495,17 @@ def _runtime_loop_artifact_audit(
             fail("planner_prompt_payload_missing")
         if not planner_stream_files:
             fail("planner_stream_missing")
-        if not tool_result_files:
+        if not tool_result_files and target_coverage.get("matched_kind") != "typed_guard_event":
             fail("tool_result_files_missing")
-        for event_type in ("job_queued", "agentic_loop_started", "planner_request_started", "planner_decision"):
-            if event_type not in event_types:
-                fail("required_event_missing", event_type)
+        required_event_groups = {
+            "job_queued": {"job_queued"},
+            "agentic_loop_started": {"agentic_loop_started"},
+            "planner_request_started": {"planner_request_started"},
+            "planner_decision": {"planner_decision", "planner_decision_rejected"},
+        }
+        for rule_name, alternatives in required_event_groups.items():
+            if not (event_types & alternatives):
+                fail("required_event_missing", rule_name)
         if target_tool == "repo_read" and "controller_preseed_file_surface" in event_types:
             fail("target_repo_read_covered_by_controller_preseed")
         if not prompt_audit["messages_present"]:
@@ -520,7 +531,12 @@ def _runtime_loop_artifact_audit(
         if missing_sections:
             fail("normal_loop_context_sections_missing", missing_sections)
         if not any(
-            "tool" in value or "controller" in value or "validator" in value or "job_completed" in value or "job_failed" in value
+            "tool" in value
+            or "controller" in value
+            or "validator" in value
+            or "rejected" in value
+            or "job_completed" in value
+            or "job_failed" in value
             for value in event_types
         ):
             fail("events_do_not_show_tool_controller_validator_or_terminal_activity", sorted(event_types))
@@ -538,6 +554,7 @@ def _runtime_loop_artifact_audit(
         "planner_prompt_count": len(prompt_files),
         "planner_stream_count": len(planner_stream_files),
         "tool_result_file_count": len(tool_result_files),
+        "target_tool_coverage": _bounded(target_coverage),
         "planner_prompt": prompt_audit,
     }
 

@@ -36,8 +36,6 @@ def event_digest(event: dict[str, Any]) -> dict[str, Any]:
             "tool",
             "ok",
             "status",
-            "path",
-            "artifact",
             "returncode",
             "count",
             "truncated",

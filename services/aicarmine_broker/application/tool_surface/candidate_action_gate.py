@@ -30,6 +30,17 @@ def _has_path_contract(action: dict[str, Any]) -> bool:
     return any(key in args for key in ("path", "paths", "file_path"))
 
 
+def _requires_readable_evidence_path(action: dict[str, Any]) -> bool:
+    tool = str(action.get("tool") or "").strip().replace(".", "_")
+    return tool in {
+        "repo_read",
+        "repo_ast_grep_search",
+        "repo_ast_grep_dry_run",
+        "repo_tree_sitter_parse",
+        "repo_propose_code_edit",
+    }
+
+
 def candidate_rejection_reason(action: dict[str, Any]) -> str:
     if not isinstance(action, dict) or not action.get("tool"):
         return "invalid_candidate_action"
@@ -39,7 +50,7 @@ def candidate_rejection_reason(action: dict[str, Any]) -> str:
     if _has_path_contract(action):
         if proof.get("path_exists") is not True:
             return "candidate_path_not_existing"
-        if proof.get("path_readable") is not True:
+        if _requires_readable_evidence_path(action) and proof.get("path_readable") is not True:
             return "candidate_path_not_readable"
         if proof.get("under_scope") is False:
             return "candidate_path_out_of_scope"

@@ -218,6 +218,45 @@ def test_planner_evidence_contract_surfaces_explicit_non_read_target_tool(tmp_pa
     assert "repo_ast_grep_search" in native_names
 
 
+def test_planner_evidence_contract_surfaces_explicit_validation_target_tool(tmp_path, monkeypatch) -> None:
+    target_rel = "Tools/validation/runtime_mesh_contract_smoke/__init__.py"
+    target = tmp_path / target_rel
+    target.parent.mkdir(parents=True)
+    target.write_text("", encoding="utf-8")
+    monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
+
+    intrinsic_context = {
+        "explicit_request_context": {
+            "schema": "operator_explicit_request_context.v1",
+            "target_internal_tool": "repo_ruff_check",
+            "target_arguments": {"paths": [target_rel], "limit": 80},
+        }
+    }
+
+    contract = planner.planner_evidence_contract(
+        "Structured operator request. Target arguments are in explicit_request_context.",
+        [],
+        intrinsic_context,
+    )
+
+    target_actions = [
+        action
+        for action in contract["candidate_next_actions"]
+        if action.get("tool") == "repo_ruff_check"
+    ]
+
+    assert target_actions
+    assert target_actions[0]["action_proof"]["path_exists"] is True
+    assert target_actions[0]["action_proof"]["path_readable"] is False
+    assert contract["rejected_candidate_actions"] == []
+    native_names = planner._tool_surface_names_for_turn(
+        goal="Structured operator request. Target arguments are in explicit_request_context.",
+        evidence_contract=contract,
+        intrinsic_context=intrinsic_context,
+    )
+    assert "repo_ruff_check" in native_names
+
+
 def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
 
