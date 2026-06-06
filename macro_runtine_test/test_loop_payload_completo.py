@@ -102,7 +102,6 @@ def _check_operator_present() -> None:
 
 def _preflight(urls: RuntimeUrls) -> dict[str, Any]:
     from aicarmine_broker.application.tool_surface.dispatcher import build_default_dispatcher
-    from aicarmine_broker.config import BROKER_CONFIG
     from aicarmine_broker.tool_registry import VALID_INTERNAL_TOOLS_LIST
 
     # OpenWebUI may return HTML; reachability is enough for this macro test.
@@ -150,10 +149,17 @@ def _preflight(urls: RuntimeUrls) -> dict[str, Any]:
         raise AssertionError(f"ollama_task_url must target 11435 repair/task lane, got {task_url}")
     if planner_url == task_url:
         raise AssertionError("planner_url and ollama_task_url must remain distinct")
-    if not BROKER_CONFIG.native_tools or not BROKER_CONFIG.require_native_tools:
+    native_contract = (
+        broker_health.get("agentic_planner_native_tools")
+        if isinstance(broker_health.get("agentic_planner_native_tools"), dict)
+        else {}
+    )
+    native_enabled = native_contract.get("enabled")
+    native_required = native_contract.get("required")
+    if native_enabled is not True or native_required is not True:
         raise AssertionError(
-            "native tool mode must be fully enabled for macro loop test: "
-            f"native_tools={BROKER_CONFIG.native_tools} require_native_tools={BROKER_CONFIG.require_native_tools}"
+            "native tool mode must be fully enabled in the live 3572 process for macro loop test: "
+            f"native_tools={native_enabled!r} require_native_tools={native_required!r}"
         )
     if int(broker_health.get("agentic_planner_num_ctx_effective") or 0) <= 0:
         raise AssertionError("agentic planner context is not configured")
@@ -219,7 +225,7 @@ def _request_for_case(
             "native tool call -> 3572 validator/controller -> internal tool dispatch or typed "
             "guard -> final serializer. "
             f"The target coverage tool for this macro case is {case.tool}. "
-            "Read the structured explicit_request_context and target arguments in the planner payload. Use any supporting "
+            "Read the JSON explicit_request_context and target arguments in the planner payload. Use any supporting "
             "tool if the validator/evidence contract requires it, but the case is not covered "
             f"unless {case.tool} is attempted, blocked with a typed guard, or produces a typed "
             f"unavailable result. The exact target arguments are in explicit_request_context "
