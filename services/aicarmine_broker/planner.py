@@ -2636,8 +2636,25 @@ def _agentic_v2_decision_paths(tool: str, args: dict[str, Any]) -> list[str]:
         if p and p not in paths:
             paths.append(p)
 
-    if tool in {"repo_list_files", "repo_tree", "repo_search"}:
+    if tool in {
+        "repo_list_files",
+        "repo_tree",
+        "repo_search",
+        "repo_fd_files",
+        "repo_rg_search",
+        "repo_ast_grep_search",
+        "repo_ast_grep_dry_run",
+        "repo_tree_sitter_parse",
+        "repo_ctags_symbols",
+        "repo_semgrep_scan",
+        "repo_shellcheck",
+        "repo_ruff_check",
+        "repo_pyright_check",
+        "repo_pytest_run",
+        "repo_jq_query",
+    }:
         add(args.get("path") or ".")
+        add(args.get("paths"))
     elif tool == "repo_read":
         add(args.get("path"))
         add(args.get("paths"))

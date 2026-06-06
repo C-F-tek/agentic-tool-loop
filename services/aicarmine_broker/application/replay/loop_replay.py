@@ -252,6 +252,84 @@ def target_tool_coverage_from_history(history: list[dict[str, Any]], target_tool
     return coverage
 
 
+def target_tool_coverage_from_events(events: list[dict[str, Any]], target_tool: str) -> dict[str, Any]:
+    target = str(target_tool or "").strip()
+    coverage = {
+        "covered": False,
+        "target_tool": target,
+        "reason": "target_tool_not_attempted_after_planner",
+        "matched_step": None,
+        "matched_kind": "",
+        "matched_source": "events_ndjson",
+        "matched_event_type": "",
+    }
+    if not target:
+        return coverage
+    for row in events if isinstance(events, list) else []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            step = int(row.get("step") or 0)
+        except Exception:
+            step = 0
+        if step <= 0:
+            continue
+        event_type = str(row.get("event_type") or "").strip()
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        event_tool = str(payload.get("tool") or "").strip()
+        event_action = str(payload.get("action") or "").strip()
+        if event_type == "planner_decision" and event_action == "tool" and event_tool == target:
+            return {
+                **coverage,
+                "covered": True,
+                "reason": "planner_decision_event_tool_after_planner",
+                "matched_step": step,
+                "matched_kind": "planner_decision_event",
+                "matched_event_type": event_type,
+            }
+        if event_type in {"tool_start", "tool_result"} and event_tool == target:
+            return {
+                **coverage,
+                "covered": True,
+                "reason": f"{event_type}_event_after_planner",
+                "matched_step": step,
+                "matched_kind": event_type,
+                "matched_event_type": event_type,
+            }
+        row_text = json.dumps(row, ensure_ascii=False, default=str).lower()
+        if target.lower() in row_text and any(
+            marker in row_text
+            for marker in ("validator", "controller_guard", "blocked", "rejected", "unavailable", "missing", "requires")
+        ):
+            return {
+                **coverage,
+                "covered": True,
+                "reason": "typed_guard_event_mentions_target_after_planner",
+                "matched_step": step,
+                "matched_kind": "typed_guard_event",
+                "matched_event_type": event_type,
+            }
+    return coverage
+
+
+def target_tool_coverage_from_runtime_artifacts(
+    history: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    target_tool: str,
+) -> dict[str, Any]:
+    history_coverage = target_tool_coverage_from_history(history, target_tool)
+    if history_coverage.get("covered") is True:
+        history_coverage["matched_source"] = "job_history"
+        return history_coverage
+    event_coverage = target_tool_coverage_from_events(events, target_tool)
+    if event_coverage.get("covered") is True:
+        event_coverage["history_coverage"] = _bounded(history_coverage)
+        return event_coverage
+    history_coverage["matched_source"] = "job_history"
+    history_coverage["event_coverage"] = _bounded(event_coverage)
+    return history_coverage
+
+
 def _validator_rejections_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in _guard_result_rows_from_history(history):
@@ -546,7 +624,11 @@ def replay_loop_job(
         "repeated_invalid_decisions": _bounded(repeated_invalid_decisions),
     }
     if target_tool:
-        report["target_tool_coverage"] = target_tool_coverage_from_history(history, target_tool)
+        report["target_tool_coverage"] = target_tool_coverage_from_runtime_artifacts(
+            history,
+            events,
+            target_tool,
+        )
     return _json_roundtrip(report)
 
 

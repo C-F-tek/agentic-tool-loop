@@ -170,6 +170,54 @@ def test_planner_evidence_contract_accepts_explicit_request_context_repo_read_ta
     assert contract["explicit_request_context"]["admissible_read_paths"] == [target_rel]
 
 
+def test_planner_evidence_contract_surfaces_explicit_non_read_target_tool(tmp_path, monkeypatch) -> None:
+    target_rel = "ia_carmine/runtime/heap_gate/provider_context.py"
+    target = tmp_path / target_rel
+    target.parent.mkdir(parents=True)
+    target.write_text("def provider_context():\n    return {}\n", encoding="utf-8")
+    monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
+
+    intrinsic_context = {
+        "explicit_request_context": {
+            "schema": "operator_explicit_request_context.v1",
+            "target_internal_tool": "repo_ast_grep_search",
+            "target_arguments": {
+                "path": target_rel,
+                "language": "python",
+                "pattern": "def $FUNC($$$ARGS): $$$BODY",
+            },
+        }
+    }
+
+    contract = planner.planner_evidence_contract(
+        "Structured operator request. Target arguments are in explicit_request_context.",
+        [],
+        intrinsic_context,
+    )
+
+    target_actions = [
+        action
+        for action in contract["candidate_next_actions"]
+        if action.get("tool") == "repo_ast_grep_search"
+    ]
+
+    assert target_actions
+    assert target_actions[0]["arguments"]["path"] == target_rel
+    assert target_actions[0]["action_proof"]["path_exists"] is True
+    assert target_actions[0]["action_proof"]["path_readable"] is True
+    assert contract["explicit_request_context"]["target_tool_pending"] is True
+    assert contract["finalization_contract"]["final_allowed"] is False
+    assert "repo_ast_grep_search" in contract["required_next_progress"]
+
+    native_names = planner._tool_surface_names_for_turn(
+        goal="Structured operator request. Target arguments are in explicit_request_context.",
+        evidence_contract=contract,
+        intrinsic_context=intrinsic_context,
+    )
+
+    assert "repo_ast_grep_search" in native_names
+
+
 def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
 

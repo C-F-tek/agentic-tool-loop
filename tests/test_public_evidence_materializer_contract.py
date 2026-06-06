@@ -86,6 +86,42 @@ def test_materializer_promotes_unified_diff_without_local_paths() -> None:
     assert "final_path" not in serialized
 
 
+def test_materializer_indexes_generic_successful_tool_result_without_copying_payload() -> None:
+    materialized = materialize_public_evidence(
+        tool_context={
+            "not_a_summary": True,
+            "artifacts": [
+                {
+                    "producer_step": 1,
+                    "tool": "repo_search",
+                    "ok": True,
+                    "artifact": {
+                        "kind": "tool_result",
+                        "matches": ["README.md:1:def demo"],
+                        "returncode": 0,
+                    },
+                }
+            ],
+        },
+        evidence_guide="Use the search matches.",
+        completed=False,
+    )
+
+    priority_item = materialized["priority_evidence_for_30b"]["items"][0]
+    index_row = materialized["payload_index_for_30b"]["concrete_results"][0]
+    serialized_index = json.dumps(materialized["payload_index_for_30b"], ensure_ascii=False)
+
+    assert priority_item["kind"] == "tool_result_inline"
+    assert priority_item["tool"] == "repo_search"
+    assert priority_item["payload_is_complete"] is True
+    assert index_row["payload_type"] == "tool_result"
+    assert index_row["primary_location"] == "tool_context_for_30b.artifacts[0].artifact"
+    assert "README.md:1:def demo" not in serialized_index
+    assert materialized["materialization_report"]["owner"] == "3572_broker"
+    assert materialized["materialization_report"]["ok"] is True
+    assert materialized["materialization_report"]["payload_index"]["resolved_count"] > 0
+
+
 def test_materializer_reports_unresolved_payload_index_targets() -> None:
     materialized = materialize_public_evidence(
         tool_context={"not_a_summary": True, "artifacts": []},

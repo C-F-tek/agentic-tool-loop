@@ -23,11 +23,13 @@ Avvio:
 .\macro_runtine_test\run_loop_payload_completo.ps1
 ```
 
-Il lancio senza argomenti deve sempre testare tutta la matrice tool scoperta
-dal runtime. Il runner rimuove esplicitamente eventuali variabili di filtro
-rimaste nella sessione PowerShell (`LOOP_PAYLOAD_ONLY_TOOL`,
-`LOOP_PAYLOAD_MAX_TOOLS`, `LOOP_PAYLOAD_SEED`) quando i parametri corrispondenti
-non sono passati. Per limitare volontariamente la matrice usare:
+Il lancio senza argomenti testa tutta la matrice tool scoperta dal runtime.
+Questo runner e' operator-only: deve essere lanciato manualmente
+dall'operatore, con OpenWebUI/3571/3572 gia' attivi. Il runner rimuove
+esplicitamente eventuali variabili di filtro rimaste nella sessione PowerShell
+(`LOOP_PAYLOAD_ONLY_TOOL`, `LOOP_PAYLOAD_MAX_TOOLS`, `LOOP_PAYLOAD_SEED`) quando
+i parametri corrispondenti non sono passati. Per limitare volontariamente la
+matrice usare:
 
 ```powershell
 .\macro_runtine_test\run_loop_payload_completo.ps1 -OnlyTool repo_read
@@ -67,11 +69,10 @@ Definizione di copertura macro:
   prompt pack, native schema 11434, validator/controller, tool result o guard
   tipizzato, serializer 3572 OpenWebUI-audience, payload pubblico 3571.
 
-Il macro non scarica direttamente i modelli Ollama: verifica il componente
-runtime gia' presente in 3571. Il payload pubblico deve contenere
-`openwebui_final_handoff` e `openwebui_final_unload_planner` con unload
-`attempted=true` e `ok=true`; se questi campi mancano o non sono coerenti, il
-macro fallisce.
+Il macro non scarica direttamente i modelli Ollama e non pretende diagnostica
+di handoff/unload nel payload pubblico. In 3571 quei campi sono transport-only
+e vengono rimossi prima della superficie OpenWebUI; il macro deve validare il
+payload pubblico effettivo, non reintrodurre diagnostica interna.
 
 Per ogni tool coperto il macro crea un job nuovo con id `job-macro-...`.
 Il `seed` rende riproducibile il sampling dei file, ma il `run_id` viene

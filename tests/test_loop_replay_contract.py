@@ -220,6 +220,44 @@ def test_loop_replay_target_coverage_requires_planner_turn_attempt(tmp_path: Pat
     assert report["target_tool_coverage"]["matched_kind"] == "decision"
 
 
+def test_loop_replay_target_coverage_uses_events_when_history_is_empty(tmp_path: Path) -> None:
+    _write_job(tmp_path, history=[])
+    events = [
+        {
+            "event_type": "planner_decision",
+            "step": 1,
+            "payload": {"action": "tool", "tool": "repo_read", "arguments": {"path": "README.md"}},
+        },
+        {
+            "event_type": "tool_start",
+            "step": 1,
+            "payload": {"tool": "repo_read", "arguments": {"path": "README.md"}},
+        },
+        {
+            "event_type": "tool_result",
+            "step": 1,
+            "payload": {"tool": "repo_read", "ok": True},
+        },
+    ]
+    (tmp_path / "events.ndjson").write_text(
+        "\n".join(json.dumps(row) for row in events) + "\n",
+        encoding="utf-8",
+    )
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        target_tool="repo_read",
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    coverage = report["target_tool_coverage"]
+    assert coverage["covered"] is True
+    assert coverage["matched_source"] == "events_ndjson"
+    assert coverage["matched_step"] == 1
+    assert coverage["matched_kind"] == "planner_decision_event"
+
+
 def test_loop_replay_full_loop_audit_uses_persisted_runtime_artifacts(tmp_path: Path) -> None:
     _write_job(
         tmp_path,

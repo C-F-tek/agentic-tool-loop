@@ -275,6 +275,23 @@ class EvidenceBuilder:
             if isinstance(explicit_request_context.get("target_arguments"), dict)
             else {}
         )
+        explicit_request_target_covered = bool(
+            explicit_request_tool
+            and explicit_request_tool != "repo_read"
+            and history_has_tool(history, explicit_request_tool)
+        )
+        explicit_request_target_pending = bool(
+            explicit_request_tool
+            and explicit_request_tool != "repo_read"
+            and not explicit_request_target_covered
+        )
+        if explicit_request_target_pending:
+            final_allowed = False
+            final_reason = (
+                "Structured explicit_request_context target "
+                f"{explicit_request_tool} has not been covered by the runtime loop yet. "
+                "Planner must attempt the target native tool with target_arguments, or return a typed block/unavailable result."
+            )
         explicit_request_read_paths: list[str] = []
         if explicit_request_tool == "repo_read":
             raw_targets: list[Any] = []
@@ -314,6 +331,20 @@ class EvidenceBuilder:
                     if isinstance(item, dict)
                 ):
                     candidates.insert(0, action)
+        elif explicit_request_tool:
+            action = {
+                "tool": explicit_request_tool,
+                "arguments": dict(explicit_request_args),
+                "reason": "explicit_request_context_target_tool",
+                "source": "explicit_request_context",
+            }
+            if not any(
+                isinstance(item, dict)
+                and str(item.get("tool") or "").strip() == explicit_request_tool
+                and (item.get("arguments") if isinstance(item.get("arguments"), dict) else {}) == explicit_request_args
+                for item in candidates
+            ):
+                candidates.insert(0, action)
         candidate_repo_read_paths: list[str] = []
         for action in candidates:
             if not isinstance(action, dict) or action.get("tool") != "repo_read":
@@ -495,6 +526,8 @@ class EvidenceBuilder:
                 "target_internal_tool": explicit_request_tool,
                 "target_arguments": explicit_request_args,
                 "admissible_read_paths": explicit_request_read_paths,
+                "target_tool_covered": explicit_request_target_covered,
+                "target_tool_pending": explicit_request_target_pending,
                 "source": "original_args.context",
             } if explicit_request_context else {},
             "scoped_concrete_read_target": SCOPED_CONCRETE_READ_TARGET if target_scope else None,
@@ -916,6 +949,12 @@ class EvidenceBuilder:
                     "read the target with repo_read, then call repo_propose_code_edit with a complete inline code product. "
                     "Do not final with prose-only output."
                 )
+        elif explicit_request_target_pending:
+            contract["required_next_progress"] = (
+                "Structured explicit_request_context target is pending. Planner must call "
+                f"{explicit_request_tool} with target_arguments from explicit_request_context, or return a typed "
+                "block/unavailable result if that tool cannot be run. Do not produce final before this target is covered."
+            )
         elif final_allowed:
             contract["required_next_progress"] = (
                 "Quality gate is satisfied. Planner must produce action=final using operational_notes.read_notes, "

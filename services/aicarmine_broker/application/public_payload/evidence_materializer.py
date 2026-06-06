@@ -120,6 +120,31 @@ def _priority_item_from_artifact(row: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _generic_tool_result_priority_item(row: dict[str, Any], *, artifact_index: int) -> dict[str, Any]:
+    artifact = _as_dict(row.get("artifact"))
+    if not artifact:
+        return {}
+    if row.get("ok") is False or artifact.get("ok") is False:
+        return {}
+    kind = str(artifact.get("kind") or "")
+    if kind in {"repo_read", "code_edit_proposal"}:
+        return {}
+    tool = str(row.get("tool") or artifact.get("tool") or "")
+    if not tool:
+        return {}
+    return _clean({
+        "kind": "tool_result_inline",
+        "tool": tool,
+        "step": row.get("producer_step"),
+        "ok": row.get("ok", True),
+        "payload_is_complete": True,
+        "payload_type": kind or "tool_result",
+        "artifact_index": artifact_index,
+        "result_keys": sorted(str(key) for key in artifact.keys())[:40],
+        "summary": artifact.get("summary") or row.get("summary"),
+    })
+
+
 def _analysis_priority_item(tool_context: dict[str, Any], planner_text: str) -> dict[str, Any]:
     evidence_files: list[dict[str, Any]] = []
     for row in _as_list(tool_context.get("artifacts")):
@@ -273,6 +298,28 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
                 "interno non ha completato; non trattarlo come diff completato"
             ),
         })
+    if kind == "tool_result_inline":
+        artifact_index = item.get("artifact_index")
+        try:
+            artifact_index = int(artifact_index)
+        except Exception:
+            artifact_index = None
+        if artifact_index is None or artifact_index < 0:
+            primary_location = "tool_context_for_30b.artifacts[*].artifact"
+        else:
+            primary_location = f"tool_context_for_30b.artifacts[{artifact_index}].artifact"
+        return _clean({
+            "kind": "tool_result_inline",
+            "payload_type": item.get("payload_type") or "tool_result",
+            "tool": item.get("tool"),
+            "payload_is_complete": item.get("payload_is_complete", True),
+            "primary_location": primary_location,
+            "full_context_location": primary_location,
+            "role": (
+                "risultato concreto: payload inline prodotto dal tool; leggere "
+                "l'artifact indicato senza richiamare il tool"
+            ),
+        })
     return {}
 
 
@@ -314,9 +361,18 @@ class PublicEvidenceMaterializer:
         *,
         completed: bool,
     ) -> dict[str, Any]:
+        artifact_rows = [_as_dict(row) for row in _as_list(tool_context.get("artifacts"))]
         artifact_items = [
             item
-            for item in (_priority_item_from_artifact(_as_dict(row)) for row in _as_list(tool_context.get("artifacts")))
+            for item in (_priority_item_from_artifact(row) for row in artifact_rows)
+            if item
+        ]
+        generic_artifact_items = [
+            item
+            for item in (
+                _generic_tool_result_priority_item(row, artifact_index=index)
+                for index, row in enumerate(artifact_rows)
+            )
             if item
         ]
         partial_items = _partial_priority_items(tool_context)
@@ -324,10 +380,12 @@ class PublicEvidenceMaterializer:
         items: list[dict[str, Any]] = []
         if completed:
             items.extend(artifact_items)
+            items.extend(generic_artifact_items)
             items.extend(partial_items)
         else:
             items.extend(partial_items)
             items.extend(artifact_items)
+            items.extend(generic_artifact_items)
         if analysis_item:
             items.append(analysis_item)
         return _clean({
@@ -448,7 +506,7 @@ class PublicEvidenceMaterializer:
         priority_items = _as_list(priority_evidence.get("items"))
         concrete_items = [
             item for item in priority_items
-            if _as_dict(item).get("kind") in {"repo_file_full_content", "code_edit_proposal"}
+            if _as_dict(item).get("kind") in {"repo_file_full_content", "code_edit_proposal", "tool_result_inline"}
             and _as_dict(item).get("payload_is_complete") is not False
         ]
         ok = bool(resolution.get("ok")) and bool(tool_context)

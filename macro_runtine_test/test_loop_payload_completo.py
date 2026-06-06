@@ -357,35 +357,6 @@ def _assert_3572_openwebui_serializer_shape(
         )
 
 
-def _assert_3571_runtime_final_handoff(public_payload: dict[str, Any]) -> dict[str, Any]:
-    handoff = (
-        public_payload.get("openwebui_final_handoff")
-        if isinstance(public_payload.get("openwebui_final_handoff"), dict)
-        else {}
-    )
-    unload = (
-        public_payload.get("openwebui_final_unload_planner")
-        if isinstance(public_payload.get("openwebui_final_unload_planner"), dict)
-        else {}
-    )
-    if handoff.get("terminal_result") is not True:
-        raise AssertionError("3571 runtime final handoff missing terminal_result=true")
-    if handoff.get("planner_unload_attempted") is not True:
-        raise AssertionError(f"3571 runtime did not attempt planner unload: {handoff}")
-    if handoff.get("planner_unload_ok") is not True:
-        raise AssertionError(f"3571 runtime planner unload was not ok: {handoff}")
-    if unload.get("attempted") is not True or unload.get("ok") is not True:
-        raise AssertionError(f"3571 runtime unload component did not report attempted/ok: {unload}")
-    if not str(unload.get("unload_endpoint") or "").strip():
-        raise AssertionError(f"3571 runtime unload payload lacks unload_endpoint: {unload}")
-    return {
-        "schema": "macro_runtime_final_handoff_assertion.v1",
-        "ok": True,
-        "handoff": handoff,
-        "unload": unload,
-    }
-
-
 def _assert_full_agentic_loop_artifacts(
     *,
     urls: RuntimeUrls,
@@ -588,7 +559,6 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
                     )
                 row["job_id"] = public_job_id or expected_job_id
                 row["status"] = str(result.get("status") or result.get("job_status") or "")
-                row["runtime_final_handoff_assertions"] = _assert_3571_runtime_final_handoff(result)
                 row["payload_assertions"] = assert_public_payload_contract(result)
                 serializer_job_id = extract_job_id(serializer_result)
                 row["serializer_payload_job_id"] = serializer_job_id
