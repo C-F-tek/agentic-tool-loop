@@ -406,103 +406,25 @@ def _assert_full_agentic_loop_artifacts(
     job_state = _read_json_file(job_root / "job.json")
     final_json = _read_json_file(job_root / "final.json")
     events = _read_events(job_root / "events.ndjson")
-    if str(job_state.get("public_tool_name") or "") != "vulkan_helper":
-        raise AssertionError(
-            f"full loop job was not created through public vulkan_helper: "
-            f"public_tool_name={job_state.get('public_tool_name')!r}"
-        )
     request_payload = job_state.get("request_payload") if isinstance(job_state.get("request_payload"), dict) else {}
-    original_args = job_state.get("original_args") if isinstance(job_state.get("original_args"), dict) else {}
-    if request_payload.get("tool_name") != "vulkan_helper":
-        raise AssertionError(f"3572 job request_payload.tool_name is not vulkan_helper for job {job_id}")
-    if request_payload.get("bridge_public_tool_x") != "vulkan_helper":
-        raise AssertionError(f"3572 job request_payload.bridge_public_tool_x is not vulkan_helper for job {job_id}")
-    for forbidden_key in ("function", "tool_name", "requested_tool_name"):
-        value = original_args.get(forbidden_key)
-        if isinstance(value, str) and value.strip() and value.strip() != "vulkan_helper":
-            raise AssertionError(
-                f"macro original_args leaked internal dispatch key {forbidden_key}={value!r} "
-                f"instead of preserving planner-owned tool selection"
-            )
     prompt_files = sorted((job_root / "planner-prompts").glob("step-*-planner-payload.json"))
     stream_files = sorted((job_root / "planner-stream").glob("*.txt"))
-    if not prompt_files:
-        raise AssertionError(f"planner prompt payload captures missing for job {job_id}")
-    if not stream_files:
-        raise AssertionError(f"planner stream captures missing for job {job_id}")
 
-    first_prompt = _read_json_file(prompt_files[0])
-    planner_payload = first_prompt.get("planner_payload") if isinstance(first_prompt.get("planner_payload"), dict) else first_prompt
-    user_payload = first_prompt.get("user_payload") if isinstance(first_prompt.get("user_payload"), dict) else {}
-    messages = planner_payload.get("messages") if isinstance(planner_payload, dict) else None
-    if not isinstance(messages, list) or not messages:
-        raise AssertionError(f"planner payload has no messages for job {job_id}")
-    native_tools = planner_payload.get("tools") if isinstance(planner_payload, dict) else None
-    if not isinstance(native_tools, list) or not native_tools:
-        raise AssertionError(f"planner payload did not include native tools for job {job_id}")
-    native_tool_names = [
-        str((item.get("function") or {}).get("name") or "")
-        for item in native_tools
-        if isinstance(item, dict) and isinstance(item.get("function"), dict)
-    ]
-    if target_tool not in native_tool_names:
-        raise AssertionError(
-            f"planner native tools did not include target tool {target_tool} for job {job_id}: "
-            f"{native_tool_names}"
-        )
-    if isinstance(planner_payload, dict) and planner_payload.get("format") == "json":
-        raise AssertionError(f"planner payload used legacy JSON format instead of native tools for job {job_id}")
-    explicit_request_context = (
-        user_payload.get("explicit_request_context")
-        if isinstance(user_payload.get("explicit_request_context"), dict)
-        else {}
-    )
-    if explicit_request_context.get("target_internal_tool") != target_tool:
-        raise AssertionError(
-            f"planner payload explicit_request_context missing target tool {target_tool} for job {job_id}"
-        )
-    explicit_args = (
-        explicit_request_context.get("target_arguments")
-        if isinstance(explicit_request_context.get("target_arguments"), dict)
-        else {}
-    )
-    if target_tool == "repo_read" and not str(explicit_args.get("path") or "").strip():
-        raise AssertionError(f"planner payload explicit_request_context lacks repo_read path for job {job_id}")
-    prompt_pack = user_payload.get("prompt_pack_contract") if isinstance(user_payload.get("prompt_pack_contract"), dict) else {}
-    if prompt_pack.get("native_tools_schema_accounted_in_budget") is not True:
-        raise AssertionError(f"prompt pack did not account for native tool schema for job {job_id}")
-    if int(prompt_pack.get("native_tools_schema_chars") or 0) <= 0:
-        raise AssertionError(f"prompt pack native_tools_schema_chars missing/zero for job {job_id}")
-    user_payload_text = json.dumps(user_payload, ensure_ascii=False, default=str)
-    for required in ("evidence_contract", "available_tools", "required_working_set"):
-        if required not in user_payload_text:
-            raise AssertionError(f"planner prompt missing normal loop context section {required} for job {job_id}")
-
-    event_types = {str(item.get("event_type") or "") for item in events}
-    if "job_queued" not in event_types:
-        raise AssertionError(f"job_queued event missing for job {job_id}")
-    if "agentic_loop_started" not in event_types:
-        raise AssertionError(f"agentic_loop_started event missing for job {job_id}")
-    if "planner_request_started" not in event_types:
-        raise AssertionError(f"planner_request_started event missing for job {job_id}")
-    if "planner_decision" not in event_types:
-        raise AssertionError(f"planner_decision event missing for job {job_id}")
-    if target_tool == "repo_read" and "controller_preseed_file_surface" in event_types:
-        raise AssertionError(
-            f"target repo_read was covered by deterministic controller preseed before planner for job {job_id}"
-        )
-    if not any(("tool" in value or "controller" in value or "validator" in value or "job_completed" in value or "job_failed" in value) for value in event_types):
-        raise AssertionError(f"events do not show tool/controller/validator/terminal loop activity for job {job_id}: {sorted(event_types)}")
-
-    replay_report = replay_loop_job(job_root=job_root, target_tool=target_tool)
+    replay_report = replay_loop_job(job_root=job_root, target_tool=target_tool, require_full_loop=True)
     if replay_report.get("schema") != "loop_replay_report.v1":
         raise AssertionError(f"runtime loop replay returned wrong schema for job {job_id}: {replay_report.get('schema')}")
     if replay_report.get("replay_ok") is not True:
         raise AssertionError(f"runtime loop replay failed for job {job_id}: {replay_report}")
-    if int(replay_report.get("planner_stream_file_count") or 0) <= 0:
-        raise AssertionError(f"runtime loop replay did not see planner stream files for job {job_id}")
-    if int(replay_report.get("tool_result_file_count") or 0) <= 0:
-        raise AssertionError(f"runtime loop replay did not see tool result files for job {job_id}")
+    loop_audit = (
+        replay_report.get("runtime_loop_artifact_audit")
+        if isinstance(replay_report.get("runtime_loop_artifact_audit"), dict)
+        else {}
+    )
+    if loop_audit.get("ok") is not True:
+        raise AssertionError(
+            f"runtime loop replay full-loop audit failed for job {job_id}: "
+            + json.dumps(loop_audit.get("failures") or loop_audit, ensure_ascii=False, default=str)
+        )
     target_coverage = (
         replay_report.get("target_tool_coverage")
         if isinstance(replay_report.get("target_tool_coverage"), dict)
@@ -514,6 +436,7 @@ def _assert_full_agentic_loop_artifacts(
             f"{target_tool}; coverage={target_coverage}"
         )
 
+    first_prompt = _read_json_file(prompt_files[0])
     planner_lab = get_json_or_none(urls.broker_3572 + f"/jobs/{job_id}/planner-lab.json", timeout=20)
     return {
         "job_root": str(job_root),
@@ -532,13 +455,13 @@ def _assert_full_agentic_loop_artifacts(
         "request_payload_tool_name": request_payload.get("tool_name"),
         "request_payload_bridge_public_tool_x": request_payload.get("bridge_public_tool_x"),
         "event_count": len(events),
-        "event_types_preview": sorted(event_types)[:20],
+        "event_types_preview": loop_audit.get("event_types_preview"),
         "planner_prompt_count": len(prompt_files),
         "planner_stream_count": len(stream_files),
-        "native_tool_schema_count": len(native_tools),
-        "native_tool_names": native_tool_names,
-        "explicit_request_context": explicit_request_context,
-        "prompt_pack_contract": prompt_pack,
+        "native_tool_schema_count": len(loop_audit.get("planner_prompt", {}).get("native_tool_names") or []),
+        "native_tool_names": loop_audit.get("planner_prompt", {}).get("native_tool_names"),
+        "explicit_request_context": loop_audit.get("planner_prompt", {}).get("explicit_request_context"),
+        "prompt_pack_contract": loop_audit.get("planner_prompt", {}).get("prompt_pack_contract"),
         "first_prompt_preview": _artifact_preview(prompt_files[0]),
         "first_stream_preview": _artifact_preview(stream_files[0]),
         "final_status": final_json.get("status"),
@@ -549,6 +472,7 @@ def _assert_full_agentic_loop_artifacts(
             "tool_result_file_count": replay_report.get("tool_result_file_count"),
             "planner_stream_file_count": replay_report.get("planner_stream_file_count"),
             "validator_rejections": replay_report.get("validator_rejections"),
+            "runtime_loop_artifact_audit": loop_audit,
             "target_tool_coverage": target_coverage,
         },
         "target_tool_coverage": target_coverage,

@@ -327,11 +327,149 @@ def _json_roundtrip(report: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(report, ensure_ascii=False, sort_keys=True, default=str))
 
 
+def _first_prompt_payload(prompt_files: list[Path]) -> dict[str, Any]:
+    if not prompt_files:
+        return {}
+    parsed = _read_json(prompt_files[0], {})
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _planner_prompt_audit(first_prompt: dict[str, Any], *, target_tool: str) -> dict[str, Any]:
+    planner_payload = (
+        first_prompt.get("planner_payload")
+        if isinstance(first_prompt.get("planner_payload"), dict)
+        else first_prompt
+    )
+    user_payload = first_prompt.get("user_payload") if isinstance(first_prompt.get("user_payload"), dict) else {}
+    messages = planner_payload.get("messages") if isinstance(planner_payload, dict) else None
+    native_tools = planner_payload.get("tools") if isinstance(planner_payload, dict) else None
+    native_tool_names = [
+        str((item.get("function") or {}).get("name") or "")
+        for item in native_tools
+        if isinstance(item, dict) and isinstance(item.get("function"), dict)
+    ] if isinstance(native_tools, list) else []
+    explicit_request_context = (
+        user_payload.get("explicit_request_context")
+        if isinstance(user_payload.get("explicit_request_context"), dict)
+        else {}
+    )
+    prompt_pack = user_payload.get("prompt_pack_contract") if isinstance(user_payload.get("prompt_pack_contract"), dict) else {}
+    user_payload_text = json.dumps(user_payload, ensure_ascii=False, default=str)
+    return {
+        "schema": "planner_prompt_payload_audit.v1",
+        "messages_present": isinstance(messages, list) and bool(messages),
+        "native_tools_present": isinstance(native_tools, list) and bool(native_tools),
+        "native_tool_names": native_tool_names,
+        "target_tool_in_native_schema": bool(target_tool and target_tool in native_tool_names),
+        "legacy_json_format": isinstance(planner_payload, dict) and planner_payload.get("format") == "json",
+        "explicit_request_context": _bounded(explicit_request_context),
+        "explicit_request_context_target_matches": (
+            not target_tool or explicit_request_context.get("target_internal_tool") == target_tool
+        ),
+        "prompt_pack_contract": _bounded(prompt_pack),
+        "native_tools_schema_accounted_in_budget": prompt_pack.get("native_tools_schema_accounted_in_budget") is True,
+        "native_tools_schema_chars": int(prompt_pack.get("native_tools_schema_chars") or 0),
+        "normal_loop_context_sections": {
+            key: key in user_payload_text
+            for key in ("evidence_contract", "available_tools", "required_working_set")
+        },
+    }
+
+
+def _runtime_loop_artifact_audit(
+    *,
+    state: dict[str, Any],
+    events: list[dict[str, Any]],
+    prompt_files: list[Path],
+    planner_stream_files: list[Path],
+    tool_result_files: list[Path],
+    target_tool: str,
+    require_full_loop: bool,
+) -> dict[str, Any]:
+    event_types = {str(item.get("event_type") or "") for item in events if isinstance(item, dict)}
+    request_payload = state.get("request_payload") if isinstance(state.get("request_payload"), dict) else {}
+    original_args = state.get("original_args") if isinstance(state.get("original_args"), dict) else {}
+    prompt_audit = _planner_prompt_audit(_first_prompt_payload(prompt_files), target_tool=target_tool)
+    failures: list[dict[str, Any]] = []
+
+    def fail(rule: str, detail: Any = "") -> None:
+        failures.append({"rule": rule, "detail": _bounded(detail)})
+
+    if require_full_loop:
+        if state.get("public_tool_name") != "vulkan_helper":
+            fail("job_not_created_through_public_vulkan_helper", {"public_tool_name": state.get("public_tool_name")})
+        if request_payload.get("tool_name") != "vulkan_helper":
+            fail("request_payload_tool_name_not_vulkan_helper", {"tool_name": request_payload.get("tool_name")})
+        if request_payload.get("bridge_public_tool_x") != "vulkan_helper":
+            fail("request_payload_bridge_public_tool_x_not_vulkan_helper", {
+                "bridge_public_tool_x": request_payload.get("bridge_public_tool_x")
+            })
+        for key in ("function", "tool_name", "requested_tool_name"):
+            value = original_args.get(key)
+            if isinstance(value, str) and value.strip() and value.strip() != "vulkan_helper":
+                fail("original_args_internal_dispatch_key_leak", {key: value})
+        if not prompt_files:
+            fail("planner_prompt_payload_missing")
+        if not planner_stream_files:
+            fail("planner_stream_missing")
+        if not tool_result_files:
+            fail("tool_result_files_missing")
+        for event_type in ("job_queued", "agentic_loop_started", "planner_request_started", "planner_decision"):
+            if event_type not in event_types:
+                fail("required_event_missing", event_type)
+        if target_tool == "repo_read" and "controller_preseed_file_surface" in event_types:
+            fail("target_repo_read_covered_by_controller_preseed")
+        if not prompt_audit["messages_present"]:
+            fail("planner_payload_messages_missing")
+        if not prompt_audit["native_tools_present"]:
+            fail("planner_payload_native_tools_missing")
+        if target_tool and not prompt_audit["target_tool_in_native_schema"]:
+            fail("target_tool_missing_from_native_schema", {
+                "target_tool": target_tool,
+                "native_tool_names": prompt_audit["native_tool_names"],
+            })
+        if prompt_audit["legacy_json_format"]:
+            fail("planner_payload_legacy_json_format")
+        if not prompt_audit["explicit_request_context_target_matches"]:
+            fail("explicit_request_context_target_mismatch", prompt_audit["explicit_request_context"])
+        if not prompt_audit["native_tools_schema_accounted_in_budget"]:
+            fail("native_tools_schema_not_accounted_in_budget")
+        if int(prompt_audit["native_tools_schema_chars"] or 0) <= 0:
+            fail("native_tools_schema_chars_missing")
+        missing_sections = [
+            key for key, present in prompt_audit["normal_loop_context_sections"].items() if not present
+        ]
+        if missing_sections:
+            fail("normal_loop_context_sections_missing", missing_sections)
+        if not any(
+            "tool" in value or "controller" in value or "validator" in value or "job_completed" in value or "job_failed" in value
+            for value in event_types
+        ):
+            fail("events_do_not_show_tool_controller_validator_or_terminal_activity", sorted(event_types))
+
+    return {
+        "schema": "runtime_loop_artifact_audit.v1",
+        "diagnostic_only": True,
+        "require_full_loop": bool(require_full_loop),
+        "ok": not failures,
+        "failures": failures,
+        "public_tool_name": state.get("public_tool_name"),
+        "request_payload_tool_name": request_payload.get("tool_name"),
+        "request_payload_bridge_public_tool_x": request_payload.get("bridge_public_tool_x"),
+        "event_types_preview": sorted(event_types)[:MAX_PREVIEW_ITEMS],
+        "planner_prompt_count": len(prompt_files),
+        "planner_stream_count": len(planner_stream_files),
+        "tool_result_file_count": len(tool_result_files),
+        "planner_prompt": prompt_audit,
+    }
+
+
 def replay_loop_job(
     *,
     job_id: str | None = None,
     job_root: str | Path | None = None,
     target_tool: str | None = None,
+    require_full_loop: bool = False,
     evidence_builder: EvidenceBuilder | None = None,
     validator: Validator | None = None,
 ) -> dict[str, Any]:
@@ -344,6 +482,7 @@ def replay_loop_job(
     history = [row for row in history if isinstance(row, dict)]
     events = _read_ndjson(root / "events.ndjson")
     tool_result_files = sorted((root / "tool-results").glob("*.json")) if (root / "tool-results").exists() else []
+    prompt_files = sorted((root / "planner-prompts").glob("step-*-planner-payload.json")) if (root / "planner-prompts").exists() else []
     planner_stream_files = sorted((root / "planner-stream").glob("*.txt")) if (root / "planner-stream").exists() else []
 
     evidence_fn = evidence_builder or _default_evidence_builder
@@ -394,6 +533,15 @@ def replay_loop_job(
             if isinstance(evidence_contract.get("evidence_coverage"), dict)
             else {}
         ),
+        "runtime_loop_artifact_audit": _runtime_loop_artifact_audit(
+            state=state,
+            events=events,
+            prompt_files=prompt_files,
+            planner_stream_files=planner_stream_files,
+            tool_result_files=tool_result_files,
+            target_tool=str(target_tool or ""),
+            require_full_loop=require_full_loop,
+        ),
         "suspected_loop": bool(repeated_invalid_decisions),
         "repeated_invalid_decisions": _bounded(repeated_invalid_decisions),
     }
@@ -407,11 +555,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--job-id", default="", help="Agent job id to resolve through configured job storage.")
     parser.add_argument("--job-root", default="", help="Absolute or relative path to a persisted job root.")
     parser.add_argument("--target-tool", default="", help="Optional planner-internal tool that must be covered after planner turn.")
+    parser.add_argument("--require-full-loop", action="store_true", help="Require full 3571/3572 agentic loop artifacts.")
     args = parser.parse_args(list(argv) if argv is not None else None)
     report = replay_loop_job(
         job_id=args.job_id or None,
         job_root=args.job_root or None,
         target_tool=args.target_tool or None,
+        require_full_loop=args.require_full_loop,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

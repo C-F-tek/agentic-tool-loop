@@ -218,3 +218,84 @@ def test_loop_replay_target_coverage_requires_planner_turn_attempt(tmp_path: Pat
     assert report["target_tool_coverage"]["covered"] is True
     assert report["target_tool_coverage"]["matched_step"] == 1
     assert report["target_tool_coverage"]["matched_kind"] == "decision"
+
+
+def test_loop_replay_full_loop_audit_uses_persisted_runtime_artifacts(tmp_path: Path) -> None:
+    _write_job(
+        tmp_path,
+        history=[
+            {
+                "step": 1,
+                "decision": {"action": "tool", "tool": "repo_read"},
+                "tool_result": {"tool": "repo_read", "ok": True},
+            }
+        ],
+    )
+    job = {
+        "job_id": "job-test",
+        "goal": "read README.md",
+        "public_tool_name": "vulkan_helper",
+        "request_payload": {
+            "tool_name": "vulkan_helper",
+            "bridge_public_tool_x": "vulkan_helper",
+        },
+        "original_args": {},
+        "history": [
+            {
+                "step": 1,
+                "decision": {"action": "tool", "tool": "repo_read"},
+                "tool_result": {"tool": "repo_read", "ok": True},
+            }
+        ],
+    }
+    (tmp_path / "job.json").write_text(json.dumps(job), encoding="utf-8")
+    events = [
+        {"event_type": "job_queued"},
+        {"event_type": "agentic_loop_started"},
+        {"event_type": "planner_request_started"},
+        {"event_type": "planner_decision"},
+        {"event_type": "tool_result"},
+    ]
+    (tmp_path / "events.ndjson").write_text(
+        "\n".join(json.dumps(row) for row in events) + "\n",
+        encoding="utf-8",
+    )
+    prompt_dir = tmp_path / "planner-prompts"
+    prompt_dir.mkdir()
+    (prompt_dir / "step-001-planner-payload.json").write_text(
+        json.dumps(
+            {
+                "planner_payload": {
+                    "messages": [{"role": "user", "content": "payload"}],
+                    "tools": [{"type": "function", "function": {"name": "repo_read"}}],
+                },
+                "user_payload": {
+                    "explicit_request_context": {
+                        "target_internal_tool": "repo_read",
+                        "target_arguments": {"path": "README.md"},
+                    },
+                    "prompt_pack_contract": {
+                        "native_tools_schema_accounted_in_budget": True,
+                        "native_tools_schema_chars": 100,
+                    },
+                    "evidence_contract": {},
+                    "available_tools": [],
+                    "required_working_set": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        target_tool="repo_read",
+        require_full_loop=True,
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    audit = report["runtime_loop_artifact_audit"]
+    assert audit["schema"] == "runtime_loop_artifact_audit.v1"
+    assert audit["ok"] is True
+    assert audit["planner_prompt"]["target_tool_in_native_schema"] is True
