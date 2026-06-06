@@ -1,24 +1,9 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
-
-LOCAL_PATH_RE = re.compile(r"[A-Za-z]:\\Users\\", re.IGNORECASE)
-SUMMARY_DUPLICATE_KEYS = {
-    "answer_for_30b",
-    "message_for_30b",
-    "summary_for_30b",
-}
-OMISSION_MARKERS = {
-    "local_path_omitted",
-    "local_url_omitted",
-    "job_workspace_path_omitted",
-    "job_path_omitted",
-    "tool_result_path_omitted",
-    "sqlite_path_omitted",
-}
+from vulkan_bridge.application.public_payload_linter import lint_public_payload
 
 
 def _decode_tool_context(value: Any) -> dict[str, Any]:
@@ -46,13 +31,15 @@ def _walk(value: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...],
     return rows
 
 
-def _under_operator_diagnostics(path: tuple[str, ...]) -> bool:
-    return "operator_diagnostics" in path
-
-
 def assert_public_payload_contract(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise AssertionError("public payload must be a dict")
+    lint = lint_public_payload(payload, mode="block")
+    if lint.get("ok") is not True:
+        raise AssertionError(
+            "runtime public_payload_linter rejected payload: "
+            + json.dumps(lint.get("violations") or lint, ensure_ascii=False, default=str)
+        )
 
     guide = payload.get("evidence_guide_for_30b")
     if not isinstance(guide, str) or not guide.strip():
@@ -80,10 +67,12 @@ def assert_public_payload_contract(payload: dict[str, Any]) -> dict[str, Any]:
         raise AssertionError("missing materialization_report object")
     if materialization.get("schema") != "public_evidence_materialization.v1":
         raise AssertionError("materialization_report schema mismatch")
+    if materialization.get("ok") is not True:
+        raise AssertionError(f"materialization_report is not ok: {materialization}")
+    if materialization.get("owner") != "3572_broker":
+        raise AssertionError(f"materialization_report owner is not 3572_broker: {materialization.get('owner')}")
 
     tool_context = _decode_tool_context(payload.get("tool_context_for_30b"))
-    if any(key in tool_context for key in SUMMARY_DUPLICATE_KEYS | {"evidence_guide_for_30b", "content"}):
-        raise AssertionError("tool_context_for_30b contains redundant summary/answer/content keys")
     artifacts = tool_context.get("artifacts")
     if artifacts is not None:
         if not isinstance(artifacts, list):
@@ -97,25 +86,9 @@ def assert_public_payload_contract(payload: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(artifact, (dict, list)) or artifact in ({}, []):
                 raise AssertionError("tool_context_for_30b artifact must be a non-empty inline serialized payload")
 
-    duplicate_top_level = [key for key in SUMMARY_DUPLICATE_KEYS if key in payload]
-    if duplicate_top_level:
-        raise AssertionError(f"redundant top-level 30B summary fields present: {duplicate_top_level}")
-    if isinstance(payload.get("content"), str) and payload["content"].strip() == guide.strip():
-        raise AssertionError("top-level content duplicates evidence_guide_for_30b")
-
-    for path, value in _walk(payload):
-        if isinstance(value, str) and LOCAL_PATH_RE.search(value) and not _under_operator_diagnostics(path):
-            dotted = ".".join(path)
-            raise AssertionError(f"local Windows path leaked outside operator_diagnostics at {dotted}")
-        if isinstance(value, str) and any(marker in value for marker in OMISSION_MARKERS) and not _under_operator_diagnostics(path):
-            dotted = ".".join(path)
-            raise AssertionError(f"local path omission marker leaked into public payload at {dotted}")
-        if path and path[-1] in {"final_path", "artifact_path", "workspace"} and not _under_operator_diagnostics(path):
-            dotted = ".".join(path)
-            raise AssertionError(f"local path field leaked outside operator_diagnostics at {dotted}")
-
     return {
         "payload_ok": True,
+        "runtime_public_payload_lint": lint,
         "priority_items": len(items),
         "tool_context_artifacts": len(artifacts or []),
         "materialization_owner": materialization.get("owner"),

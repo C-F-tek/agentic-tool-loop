@@ -12,6 +12,11 @@ OpenWebUI/30B -> 3571 vulkan_helper -> 3572 broker -> prompt pack ->
 Non viene raccolta dal gate standard `python -m pytest`, perche' il root
 `pytest.ini` limita `testpaths` a `tests services`.
 
+I test sotto `tests/` non dimostrano il runtime completo: proteggono solo i
+componenti runtime riusati dal macro, come `loop_replay` e
+`public_payload_linter`. La prova del sistema completo e' solo questo macro
+operator-only, eseguito contro i processi reali 8080/3571/3572.
+
 Avvio:
 
 ```powershell
@@ -49,6 +54,13 @@ Definizione di copertura macro:
 - la copertura di un tool target vale solo se il job history contiene, dopo una
   turn planner (`step > 0`), una decisione tool, un tool result o un guard
   tipizzato riferito a quel tool;
+- questa copertura non viene interpretata da una funzione privata del macro:
+  viene calcolata dal componente runtime
+  `aicarmine_broker.application.replay.loop_replay` sullo stesso `job_id` e
+  salvata come `loop_replay_report.v1`;
+- la validazione della superficie pubblica non viene rifatta con regole private
+  del macro: viene eseguita dal componente runtime
+  `vulkan_bridge.application.public_payload_linter`;
 - la presenza del nome del tool nel payload finale o nei preseed non e'
   sufficiente;
 - il macro deve provare il passaggio runtime completo: 3571 pubblico, job 3572,
@@ -74,7 +86,8 @@ fallisce. Il report salva:
 - payload richiesta 3571;
 - payload pubblico materializzato da 3571;
 - payload serializer finale 3572 OpenWebUI-audience;
-- `job.json`, `final.json`, eventi, planner prompt e planner stream del job.
+- `job.json`, `final.json`, eventi, planner prompt, planner stream e
+  `loop_replay_report.v1` del job.
 
 Il test fallisce se non vede il prompt pack normale, native tool schema,
 eventi planner/validator/tool, serializer finale, payload pubblico

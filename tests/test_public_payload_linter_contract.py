@@ -216,3 +216,27 @@ def test_public_payload_linter_rejects_completed_summary_as_payload_substitute()
 
     rules = [row["rule"] for row in result["violations"]]
     assert "summary_used_as_payload_substitute" in rules
+
+
+def test_public_payload_linter_rejects_redundant_top_level_30b_alias() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "evidence_guide_for_30b": "Read priority evidence.",
+        "answer_for_30b": "duplicate narrative",
+        "tool_context_for_30b": {},
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "top_level_redundant_30b_summary_field"
+
+
+def test_public_payload_linter_rejects_content_duplicate_of_evidence_guide() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "evidence_guide_for_30b": "Read priority evidence.",
+        "content": "Read priority evidence.",
+        "tool_context_for_30b": {},
+    })
+
+    rules = [row["rule"] for row in result["violations"]]
+    assert "top_level_content_duplicates_evidence_guide" in rules

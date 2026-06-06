@@ -197,6 +197,61 @@ def _candidate_validator_mismatches(contract: dict[str, Any]) -> list[dict[str, 
     return mismatches
 
 
+def target_tool_coverage_from_history(history: list[dict[str, Any]], target_tool: str) -> dict[str, Any]:
+    target = str(target_tool or "").strip()
+    coverage = {
+        "covered": False,
+        "target_tool": target,
+        "reason": "target_tool_not_attempted_after_planner",
+        "matched_step": None,
+        "matched_kind": "",
+    }
+    if not target:
+        return coverage
+    for row in history if isinstance(history, list) else []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            step = int(row.get("step") or 0)
+        except Exception:
+            step = 0
+        if step <= 0:
+            continue
+        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
+        tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+        decision_tool = str(decision.get("tool") or "").strip()
+        result_tool = str(tool_result.get("tool") or "").strip()
+        if str(decision.get("action") or "").strip() == "tool" and decision_tool == target:
+            return {
+                "covered": True,
+                "target_tool": target,
+                "reason": "planner_decision_tool_after_planner",
+                "matched_step": step,
+                "matched_kind": "decision",
+            }
+        if result_tool == target:
+            return {
+                "covered": True,
+                "target_tool": target,
+                "reason": "tool_result_after_planner",
+                "matched_step": step,
+                "matched_kind": "tool_result",
+            }
+        row_text = json.dumps(row, ensure_ascii=False, default=str).lower()
+        if target.lower() in row_text and any(
+            marker in row_text
+            for marker in ("validator", "controller_guard", "blocked", "rejected", "unavailable", "missing", "requires")
+        ):
+            return {
+                "covered": True,
+                "target_tool": target,
+                "reason": "typed_guard_mentions_target_after_planner",
+                "matched_step": step,
+                "matched_kind": "typed_guard",
+            }
+    return coverage
+
+
 def _validator_rejections_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in _guard_result_rows_from_history(history):
@@ -276,6 +331,7 @@ def replay_loop_job(
     *,
     job_id: str | None = None,
     job_root: str | Path | None = None,
+    target_tool: str | None = None,
     evidence_builder: EvidenceBuilder | None = None,
     validator: Validator | None = None,
 ) -> dict[str, Any]:
@@ -341,6 +397,8 @@ def replay_loop_job(
         "suspected_loop": bool(repeated_invalid_decisions),
         "repeated_invalid_decisions": _bounded(repeated_invalid_decisions),
     }
+    if target_tool:
+        report["target_tool_coverage"] = target_tool_coverage_from_history(history, target_tool)
     return _json_roundtrip(report)
 
 
@@ -348,10 +406,12 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Replay an agentic planner job offline.")
     parser.add_argument("--job-id", default="", help="Agent job id to resolve through configured job storage.")
     parser.add_argument("--job-root", default="", help="Absolute or relative path to a persisted job root.")
+    parser.add_argument("--target-tool", default="", help="Optional planner-internal tool that must be covered after planner turn.")
     args = parser.parse_args(list(argv) if argv is not None else None)
     report = replay_loop_job(
         job_id=args.job_id or None,
         job_root=args.job_root or None,
+        target_tool=args.target_tool or None,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

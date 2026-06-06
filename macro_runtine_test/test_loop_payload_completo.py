@@ -26,6 +26,7 @@ from macro_runtine_test.payload_assertions import (
 )
 from macro_runtine_test.runtime_client import RuntimeUrls, get_json, get_json_or_none, get_text, post_json
 from macro_runtine_test.tool_cases import build_tool_cases, missing_cases_for_tools
+from aicarmine_broker.application.replay.loop_replay import replay_loop_job
 
 
 RUNS_DIR = Path(__file__).resolve().parent / ".runs"
@@ -290,61 +291,6 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _target_tool_coverage_from_history(history: list[dict[str, Any]], target_tool: str) -> dict[str, Any]:
-    target = str(target_tool or "").strip()
-    coverage = {
-        "covered": False,
-        "target_tool": target,
-        "reason": "target_tool_not_attempted_after_planner",
-        "matched_step": None,
-        "matched_kind": "",
-    }
-    if not target:
-        return coverage
-    for row in history if isinstance(history, list) else []:
-        if not isinstance(row, dict):
-            continue
-        try:
-            step = int(row.get("step") or 0)
-        except Exception:
-            step = 0
-        if step <= 0:
-            continue
-        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-        tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
-        decision_tool = str(decision.get("tool") or "").strip()
-        result_tool = str(tool_result.get("tool") or "").strip()
-        if str(decision.get("action") or "").strip() == "tool" and decision_tool == target:
-            return {
-                "covered": True,
-                "target_tool": target,
-                "reason": "planner_decision_tool_after_planner",
-                "matched_step": step,
-                "matched_kind": "decision",
-            }
-        if result_tool == target:
-            return {
-                "covered": True,
-                "target_tool": target,
-                "reason": "tool_result_after_planner",
-                "matched_step": step,
-                "matched_kind": "tool_result",
-            }
-        row_text = json.dumps(row, ensure_ascii=False, default=str).lower()
-        if target.lower() in row_text and any(
-            marker in row_text
-            for marker in ("validator", "controller_guard", "blocked", "rejected", "unavailable", "missing", "requires")
-        ):
-            return {
-                "covered": True,
-                "target_tool": target,
-                "reason": "typed_guard_mentions_target_after_planner",
-                "matched_step": step,
-                "matched_kind": "typed_guard",
-            }
-    return coverage
-
-
 def _artifact_preview(path: Path, *, limit: int = 800) -> str:
     if not path.exists():
         return ""
@@ -548,11 +494,23 @@ def _assert_full_agentic_loop_artifacts(
     if not any(("tool" in value or "controller" in value or "validator" in value or "job_completed" in value or "job_failed" in value) for value in event_types):
         raise AssertionError(f"events do not show tool/controller/validator/terminal loop activity for job {job_id}: {sorted(event_types)}")
 
-    final_history = final_json.get("history") if isinstance(final_json.get("history"), list) else []
-    target_coverage = _target_tool_coverage_from_history(final_history, target_tool)
+    replay_report = replay_loop_job(job_root=job_root, target_tool=target_tool)
+    if replay_report.get("schema") != "loop_replay_report.v1":
+        raise AssertionError(f"runtime loop replay returned wrong schema for job {job_id}: {replay_report.get('schema')}")
+    if replay_report.get("replay_ok") is not True:
+        raise AssertionError(f"runtime loop replay failed for job {job_id}: {replay_report}")
+    if int(replay_report.get("planner_stream_file_count") or 0) <= 0:
+        raise AssertionError(f"runtime loop replay did not see planner stream files for job {job_id}")
+    if int(replay_report.get("tool_result_file_count") or 0) <= 0:
+        raise AssertionError(f"runtime loop replay did not see tool result files for job {job_id}")
+    target_coverage = (
+        replay_report.get("target_tool_coverage")
+        if isinstance(replay_report.get("target_tool_coverage"), dict)
+        else {}
+    )
     if target_coverage.get("covered") is not True:
         raise AssertionError(
-            f"full loop history does not show target tool attempt or typed guard after planner: "
+            f"runtime loop replay does not show target tool attempt or typed guard after planner: "
             f"{target_tool}; coverage={target_coverage}"
         )
 
@@ -563,6 +521,7 @@ def _assert_full_agentic_loop_artifacts(
         "final_json_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-final-json", final_json),
         "events_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-events", events),
         "first_planner_payload_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-first-planner-payload", first_prompt),
+        "loop_replay_report_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-loop-replay-report", replay_report),
         **(
             {"planner_lab_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-planner-lab", planner_lab)}
             if isinstance(planner_lab, dict)
@@ -583,6 +542,15 @@ def _assert_full_agentic_loop_artifacts(
         "first_prompt_preview": _artifact_preview(prompt_files[0]),
         "first_stream_preview": _artifact_preview(stream_files[0]),
         "final_status": final_json.get("status"),
+        "loop_replay_report": {
+            "schema": replay_report.get("schema"),
+            "history_events": replay_report.get("history_events"),
+            "event_count": replay_report.get("event_count"),
+            "tool_result_file_count": replay_report.get("tool_result_file_count"),
+            "planner_stream_file_count": replay_report.get("planner_stream_file_count"),
+            "validator_rejections": replay_report.get("validator_rejections"),
+            "target_tool_coverage": target_coverage,
+        },
         "target_tool_coverage": target_coverage,
         "target_tool_in_final": bool(target_coverage.get("covered")),
         "planner_lab_available": isinstance(planner_lab, dict),

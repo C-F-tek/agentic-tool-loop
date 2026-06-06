@@ -59,6 +59,11 @@ TOOL_CONTEXT_ROOT_NARRATIVE_KEYS = {
     "summary_for_30b",
     "text",
 }
+TOP_LEVEL_REDUNDANT_30B_KEYS = {
+    "answer_for_30b",
+    "message_for_30b",
+    "summary_for_30b",
+}
 TERMINAL_STATUSES = {
     "blocked_needs_attention",
     "blocked_needs_consent",
@@ -262,6 +267,18 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
                 violations.append({"rule": "public_payload_omission_marker", "path": _path(parts)})
             if _looks_object_repr(value) and not operator_diagnostics:
                 violations.append({"rule": "public_payload_object_repr", "path": _path(parts)})
+        for key in sorted(TOP_LEVEL_REDUNDANT_30B_KEYS):
+            if payload.get(key) not in (None, "", [], {}):
+                violations.append({"rule": "top_level_redundant_30b_summary_field", "path": key})
+        evidence_guide = payload.get("evidence_guide_for_30b")
+        content = payload.get("content")
+        if (
+            isinstance(evidence_guide, str)
+            and isinstance(content, str)
+            and evidence_guide.strip()
+            and content.strip() == evidence_guide.strip()
+        ):
+            violations.append({"rule": "top_level_content_duplicates_evidence_guide", "path": "content"})
         tool_context = payload.get("tool_context_for_30b")
         if tool_context is not None and not _tool_context_serializable(tool_context):
             violations.append({"rule": "tool_context_for_30b_string_not_json_object", "path": "tool_context_for_30b"})

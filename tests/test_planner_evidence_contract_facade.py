@@ -144,11 +144,11 @@ def test_planner_evidence_contract_accepts_explicit_request_context_repo_read_ta
     monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
 
     contract = planner.planner_evidence_contract(
-        "MACRO_RUNTIME_LOOP_PAYLOAD_TEST. Target arguments are in explicit_request_context.",
+        "Structured operator request. Target arguments are in explicit_request_context.",
         [],
         {
             "explicit_request_context": {
-                "schema": "macro_runtime_loop_payload_case.v1",
+                "schema": "operator_explicit_request_context.v1",
                 "target_internal_tool": "repo_read",
                 "target_arguments": {"path": target_rel, "max_chars": 20000},
             }

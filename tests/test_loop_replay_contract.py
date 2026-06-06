@@ -171,3 +171,50 @@ def test_loop_replay_report_is_json_serializable(tmp_path: Path) -> None:
 
     assert report["validator_results_recomputed"][0]["ok"] is False
     json.dumps(report)
+
+
+def test_loop_replay_target_coverage_ignores_controller_preseed_only(tmp_path: Path) -> None:
+    _write_job(
+        tmp_path,
+        history=[
+            {
+                "step": 0,
+                "decision": {"action": "controller_preseed", "tool": "repo_read"},
+                "tool_result": {"tool": "repo_read", "ok": True, "controller_preseed": True},
+            }
+        ],
+    )
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        target_tool="repo_read",
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert report["target_tool_coverage"]["covered"] is False
+    assert report["target_tool_coverage"]["reason"] == "target_tool_not_attempted_after_planner"
+
+
+def test_loop_replay_target_coverage_requires_planner_turn_attempt(tmp_path: Path) -> None:
+    _write_job(
+        tmp_path,
+        history=[
+            {
+                "step": 1,
+                "decision": {"action": "tool", "tool": "repo_read"},
+                "tool_result": {"tool": "repo_read", "ok": True},
+            }
+        ],
+    )
+
+    report = replay_loop_job(
+        job_root=tmp_path,
+        target_tool="repo_read",
+        evidence_builder=lambda goal, history: _evidence_contract(),
+        validator=lambda goal, decision, history: {"ok": True, "violations": []},
+    )
+
+    assert report["target_tool_coverage"]["covered"] is True
+    assert report["target_tool_coverage"]["matched_step"] == 1
+    assert report["target_tool_coverage"]["matched_kind"] == "decision"

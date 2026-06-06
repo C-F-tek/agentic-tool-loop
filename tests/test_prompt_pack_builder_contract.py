@@ -108,7 +108,7 @@ def test_build_planner_user_payload_keeps_prompt_contract_sections() -> None:
 
 def test_build_planner_user_payload_exposes_original_args_context() -> None:
     context = {
-        "schema": "macro_runtime_loop_payload_case.v1",
+        "schema": "operator_explicit_request_context.v1",
         "target_internal_tool": "repo_read",
         "target_arguments": {"path": "ia_carmine/runtime/x.py", "max_chars": 20000},
     }
