@@ -14,7 +14,7 @@ from ..public_payload.terminal_sanitizer import (
     public_terminal_sanitize_value,
 )
 from ..public_payload.terminal_result import public_terminal_result_for_30b
-from ..public_payload.tool_context import public_tool_artifact_rows, successful_tool_turns
+from ..public_payload.tool_context import failed_tool_turns, public_tool_artifact_rows, successful_tool_turns
 
 
 RepoReadContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
@@ -283,6 +283,12 @@ def build_compact_terminal_response(
             repo_read_item_full_content=content_loader,
             code_product_build_state_kind="code_product_build_state",
         )
+        public_failed_turns = failed_tool_turns(
+            history,
+            same_tool_artifact_payload=artifact_loader,
+            repo_read_item_full_content=content_loader,
+            code_product_build_state_kind="code_product_build_state",
+        )
         if status == "failed" and public_artifacts:
             answer = public_terminal_sanitize_text(
                 "Il job interno e' terminato con status=failed, ma l'evidenza "
@@ -302,6 +308,7 @@ def build_compact_terminal_response(
             "result": public_result or result_digest,
             "artifacts": public_artifacts,
             "successful_tool_turns": public_successful_turns,
+            "failed_tool_turns": public_failed_turns,
             "history_count": public_result.get("history_count") if isinstance(public_result, dict) else None,
             "history_schema": public_result.get("history_schema") if isinstance(public_result, dict) else None,
             "history": public_result.get("history") if isinstance(public_result, dict) else [],

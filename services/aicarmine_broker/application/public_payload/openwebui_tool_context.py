@@ -164,6 +164,7 @@ class OpenWebUIPayloadBuilder:
             "turn_memory": turn_memory,
             "ollama_turns": turn_memory.get("ollama_turns", []),
             "successful_tool_turns": turn_memory.get("successful_tool_turns", []),
+            "failed_tool_turns": turn_memory.get("failed_tool_turns", []),
             "evidence_contract_at_finish": evidence_contract,
             "evidence_contract_at_terminal": evidence_contract,
             "planner_memory": state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else {},

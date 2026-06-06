@@ -197,12 +197,13 @@ def public_tool_response(
     return drop_empty_dict_values(useful)
 
 
-def successful_tool_turns(
+def _public_tool_turns(
     history: list[dict[str, Any]],
     *,
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
+    expected_ok: bool,
 ) -> list[dict[str, Any]]:
     turns: list[dict[str, Any]] = []
     for item in history if isinstance(history, list) else []:
@@ -211,6 +212,8 @@ def successful_tool_turns(
         result = history_tool_result(item)
         tool = str(result.get("tool") or "")
         if not tool or tool == "controller_guard":
+            continue
+        if bool(result.get("ok")) is not expected_ok:
             continue
         decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
         response = public_tool_response(
@@ -227,12 +230,50 @@ def successful_tool_turns(
             "producer": "controller_preseed"
             if str(decision.get("action") or "") == "controller_preseed"
             else "planner",
+            "tool_ok": result.get("ok"),
             "ollama_done_reason": history_item_ollama_turn(item).get("done_reason"),
             "ollama_turn": history_item_ollama_turn(item),
             "tool_call": decision_for_turn_memory(decision),
-            "tool_response": response,
+            "tool_response": response if expected_ok else None,
+            "payload_location": (
+                "tool_context_for_30b.artifacts[*].artifact matching step/tool"
+                if not expected_ok
+                else None
+            ),
         }))
     return turns
+
+
+def successful_tool_turns(
+    history: list[dict[str, Any]],
+    *,
+    same_tool_artifact_payload: ArtifactPayloadLoader,
+    repo_read_item_full_content: RepoReadContentLoader,
+    code_product_build_state_kind: str,
+) -> list[dict[str, Any]]:
+    return _public_tool_turns(
+        history,
+        same_tool_artifact_payload=same_tool_artifact_payload,
+        repo_read_item_full_content=repo_read_item_full_content,
+        code_product_build_state_kind=code_product_build_state_kind,
+        expected_ok=True,
+    )
+
+
+def failed_tool_turns(
+    history: list[dict[str, Any]],
+    *,
+    same_tool_artifact_payload: ArtifactPayloadLoader,
+    repo_read_item_full_content: RepoReadContentLoader,
+    code_product_build_state_kind: str,
+) -> list[dict[str, Any]]:
+    return _public_tool_turns(
+        history,
+        same_tool_artifact_payload=same_tool_artifact_payload,
+        repo_read_item_full_content=repo_read_item_full_content,
+        code_product_build_state_kind=code_product_build_state_kind,
+        expected_ok=False,
+    )
 
 
 def public_tool_artifact_rows(
@@ -386,7 +427,7 @@ def planner_turn_memory(
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
 ) -> dict[str, Any]:
-    return drop_empty_dict_values({
+    return {
         "contract": (
             "Ollama done_reason closes one planner response turn only; "
             "3572 validator/finalization still decides job status."
@@ -398,7 +439,13 @@ def planner_turn_memory(
             repo_read_item_full_content=repo_read_item_full_content,
             code_product_build_state_kind=code_product_build_state_kind,
         ),
-    })
+        "failed_tool_turns": failed_tool_turns(
+            history,
+            same_tool_artifact_payload=same_tool_artifact_payload,
+            repo_read_item_full_content=repo_read_item_full_content,
+            code_product_build_state_kind=code_product_build_state_kind,
+        ),
+    }
 
 
 def ollama_turn_summary_text(

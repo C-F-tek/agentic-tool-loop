@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "services"))
 
 
 from aicarmine_broker.application.public_payload.tool_context import (  # noqa: E402
+    failed_tool_turns,
     final_summary_with_ollama_done_reasons,
     planner_turn_memory,
     public_tool_artifact_rows,
@@ -140,6 +141,49 @@ def test_public_tool_artifact_rows_include_failed_tool_payload_inline() -> None:
     assert rows[0]["artifact"]["kind"] == "diff_validation"
     assert rows[0]["artifact"]["error"] == "patch_does_not_apply"
     assert "artifact" not in rows[0]["artifact"]
+
+
+def test_failed_tool_turns_index_failed_payload_without_duplicate_inline_copy() -> None:
+    history = [{
+        "step": 1,
+        "decision": {"tool": "repo_git_apply_check", "arguments": {"patch": "diff --git a/x b/x\n"}},
+        "tool_result": {
+            "tool": "repo_git_apply_check",
+            "ok": False,
+            "error": "patch_does_not_apply",
+            "returncode": 1,
+            "stderr_tail": "error: patch failed",
+        },
+    }]
+
+    success = successful_tool_turns(
+        history,
+        same_tool_artifact_payload=_same_tool_payload,
+        repo_read_item_full_content=_repo_read_full_content,
+        code_product_build_state_kind="code_product_build_state",
+    )
+    failed = failed_tool_turns(
+        history,
+        same_tool_artifact_payload=_same_tool_payload,
+        repo_read_item_full_content=_repo_read_full_content,
+        code_product_build_state_kind="code_product_build_state",
+    )
+    memory = planner_turn_memory(
+        history,
+        same_tool_artifact_payload=_same_tool_payload,
+        repo_read_item_full_content=_repo_read_full_content,
+        code_product_build_state_kind="code_product_build_state",
+    )
+
+    assert success == []
+    assert failed[0]["tool_ok"] is False
+    assert "tool_response" not in failed[0]
+    assert failed[0]["payload_location"] == "tool_context_for_30b.artifacts[*].artifact matching step/tool"
+    assert memory["successful_tool_turns"] == []
+    assert "tool_response" not in memory["failed_tool_turns"][0]
+    assert memory["failed_tool_turns"][0]["payload_location"] == (
+        "tool_context_for_30b.artifacts[*].artifact matching step/tool"
+    )
 
 
 def test_public_tool_context_limits_reports_partial_lists() -> None:
