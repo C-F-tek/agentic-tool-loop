@@ -13,7 +13,12 @@ if str(ROOT) not in sys.path:
 
 from aicarmine_broker import planner
 from aicarmine_broker.application.prompt.pack_builder import explicit_request_context_from_state
-from macro_runtine_test.test_loop_payload_completo import _request_for_case, _safe_job_id
+from macro_runtine_test.test_loop_payload_completo import (
+    _ollama_unload_targets_from_health,
+    _request_for_case,
+    _safe_job_id,
+    _target_tool_coverage_from_history,
+)
 from macro_runtine_test.tool_cases import build_tool_cases
 
 
@@ -52,3 +57,60 @@ def test_macro_repo_read_prompt_does_not_trigger_controller_preseed() -> None:
     )
 
     assert "repo_read" in native_tool_names
+
+
+def test_macro_target_coverage_ignores_controller_preseed_only() -> None:
+    coverage = _target_tool_coverage_from_history(
+        [
+            {
+                "step": 0,
+                "decision": {"action": "controller_preseed", "tool": "repo_read"},
+                "tool_result": {"tool": "repo_read", "ok": True, "controller_preseed": True},
+            }
+        ],
+        "repo_read",
+    )
+
+    assert coverage["covered"] is False
+    assert coverage["reason"] == "target_tool_not_attempted_after_planner"
+
+
+def test_macro_target_coverage_requires_planner_step_attempt() -> None:
+    coverage = _target_tool_coverage_from_history(
+        [
+            {
+                "step": 1,
+                "decision": {"action": "tool", "tool": "repo_read"},
+                "tool_result": {"tool": "repo_read", "ok": True},
+            }
+        ],
+        "repo_read",
+    )
+
+    assert coverage["covered"] is True
+    assert coverage["matched_step"] == 1
+    assert coverage["matched_kind"] == "decision"
+
+
+def test_macro_ollama_unload_targets_come_from_broker_health() -> None:
+    targets = _ollama_unload_targets_from_health({
+        "planner_url": "http://127.0.0.1:11434/api/chat",
+        "planner_model": "qwen3-coder:30b",
+        "ollama_task_url": "http://127.0.0.1:11435/api/chat",
+        "ollama_task_model": "qwen3-coder:30b",
+    })
+
+    assert targets == [
+        {
+            "label": "planner_11434",
+            "model": "qwen3-coder:30b",
+            "base_url": "http://127.0.0.1:11434",
+            "unload_endpoint": "http://127.0.0.1:11434/api/generate",
+        },
+        {
+            "label": "task_11435",
+            "model": "qwen3-coder:30b",
+            "base_url": "http://127.0.0.1:11435",
+            "unload_endpoint": "http://127.0.0.1:11435/api/generate",
+        },
+    ]

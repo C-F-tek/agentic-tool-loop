@@ -92,6 +92,97 @@ def _openapi_visible_paths(schema: dict[str, Any]) -> set[str]:
     return set(paths)
 
 
+def _ollama_base_url_from_api_url(url: str) -> str:
+    raw = str(url or "").strip().rstrip("/")
+    for suffix in ("/api/chat", "/api/generate"):
+        if raw.endswith(suffix):
+            return raw[: -len(suffix)]
+    if "/api/" in raw:
+        return raw.split("/api/", 1)[0].rstrip("/")
+    return raw
+
+
+def _ollama_unload_targets_from_health(broker_health: dict[str, Any]) -> list[dict[str, str]]:
+    health = broker_health if isinstance(broker_health, dict) else {}
+    candidates = [
+        {
+            "label": "planner_11434",
+            "url": str(health.get("planner_url") or ""),
+            "model": str(health.get("planner_model") or ""),
+        },
+        {
+            "label": "task_11435",
+            "url": str(health.get("ollama_task_url") or ""),
+            "model": str(health.get("ollama_task_model") or ""),
+        },
+    ]
+    targets: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in candidates:
+        model = candidate["model"].strip()
+        base_url = _ollama_base_url_from_api_url(candidate["url"])
+        if not model or not base_url:
+            continue
+        key = (base_url, model)
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append({
+            "label": candidate["label"],
+            "model": model,
+            "base_url": base_url,
+            "unload_endpoint": base_url.rstrip("/") + "/api/generate",
+        })
+    return targets
+
+
+def _unload_ollama_models_for_macro(preflight: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
+    broker_health = preflight.get("broker_health") if isinstance(preflight.get("broker_health"), dict) else {}
+    targets = _ollama_unload_targets_from_health(broker_health)
+    result: dict[str, Any] = {
+        "schema": "macro_ollama_unload.v1",
+        "attempted": bool(targets),
+        "targets": [],
+        "ok": True,
+    }
+    if not targets:
+        result["ok"] = False
+        result["reason"] = "missing_ollama_models_or_urls_from_3572_health"
+        return result
+    for target in targets:
+        started = time.time()
+        payload = {
+            "model": target["model"],
+            "prompt": "",
+            "stream": False,
+            "keep_alive": 0,
+        }
+        row = {
+            "label": target["label"],
+            "model": target["model"],
+            "base_url": target["base_url"],
+            "unload_endpoint": target["unload_endpoint"],
+            "payload": payload,
+        }
+        try:
+            response = post_json(target["unload_endpoint"], payload, timeout=timeout)
+            row.update({
+                "ok": True,
+                "elapsed_seconds": round(time.time() - started, 3),
+                "response_preview": json.dumps(response, ensure_ascii=False, default=str)[:1000],
+            })
+        except Exception as exc:
+            row.update({
+                "ok": False,
+                "elapsed_seconds": round(time.time() - started, 3),
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:1000],
+            })
+            result["ok"] = False
+        result["targets"].append(row)
+    return result
+
+
 def _check_operator_present() -> None:
     if not _truthy(os.environ.get("AICARMINE_OPERATOR_PRESENT")):
         pytest.skip(
@@ -290,6 +381,61 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
+def _target_tool_coverage_from_history(history: list[dict[str, Any]], target_tool: str) -> dict[str, Any]:
+    target = str(target_tool or "").strip()
+    coverage = {
+        "covered": False,
+        "target_tool": target,
+        "reason": "target_tool_not_attempted_after_planner",
+        "matched_step": None,
+        "matched_kind": "",
+    }
+    if not target:
+        return coverage
+    for row in history if isinstance(history, list) else []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            step = int(row.get("step") or 0)
+        except Exception:
+            step = 0
+        if step <= 0:
+            continue
+        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
+        tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+        decision_tool = str(decision.get("tool") or "").strip()
+        result_tool = str(tool_result.get("tool") or "").strip()
+        if str(decision.get("action") or "").strip() == "tool" and decision_tool == target:
+            return {
+                "covered": True,
+                "target_tool": target,
+                "reason": "planner_decision_tool_after_planner",
+                "matched_step": step,
+                "matched_kind": "decision",
+            }
+        if result_tool == target:
+            return {
+                "covered": True,
+                "target_tool": target,
+                "reason": "tool_result_after_planner",
+                "matched_step": step,
+                "matched_kind": "tool_result",
+            }
+        row_text = json.dumps(row, ensure_ascii=False, default=str).lower()
+        if target.lower() in row_text and any(
+            marker in row_text
+            for marker in ("validator", "controller_guard", "blocked", "rejected", "unavailable", "missing", "requires")
+        ):
+            return {
+                "covered": True,
+                "target_tool": target,
+                "reason": "typed_guard_mentions_target_after_planner",
+                "matched_step": step,
+                "matched_kind": "typed_guard",
+            }
+    return coverage
+
+
 def _artifact_preview(path: Path, *, limit: int = 800) -> str:
     if not path.exists():
         return ""
@@ -464,16 +610,12 @@ def _assert_full_agentic_loop_artifacts(
     if not any(("tool" in value or "controller" in value or "validator" in value or "job_completed" in value or "job_failed" in value) for value in event_types):
         raise AssertionError(f"events do not show tool/controller/validator/terminal loop activity for job {job_id}: {sorted(event_types)}")
 
-    observed_tools = extract_tools_observed(final_json)
-    final_text = json.dumps(final_json, ensure_ascii=False, default=str)
-    typed_result_for_target = (
-        target_tool in observed_tools
-        or f'"tool": "{target_tool}"' in final_text
-        or target_tool in final_text and any(marker in final_text for marker in ("unavailable", "blocked", "missing", "requires"))
-    )
-    if not typed_result_for_target:
+    final_history = final_json.get("history") if isinstance(final_json.get("history"), list) else []
+    target_coverage = _target_tool_coverage_from_history(final_history, target_tool)
+    if target_coverage.get("covered") is not True:
         raise AssertionError(
-            f"full loop final artifact does not show target tool attempt/typed block: {target_tool}"
+            f"full loop history does not show target tool attempt or typed guard after planner: "
+            f"{target_tool}; coverage={target_coverage}"
         )
 
     planner_lab = get_json_or_none(urls.broker_3572 + f"/jobs/{job_id}/planner-lab.json", timeout=20)
@@ -503,7 +645,8 @@ def _assert_full_agentic_loop_artifacts(
         "first_prompt_preview": _artifact_preview(prompt_files[0]),
         "first_stream_preview": _artifact_preview(stream_files[0]),
         "final_status": final_json.get("status"),
-        "target_tool_in_final": typed_result_for_target,
+        "target_tool_coverage": target_coverage,
+        "target_tool_in_final": bool(target_coverage.get("covered")),
         "planner_lab_available": isinstance(planner_lab, dict),
         "planner_lab_schema": planner_lab.get("schema") if isinstance(planner_lab, dict) else None,
     }
@@ -542,6 +685,7 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
         "cases": [],
         "failures": [],
     }
+    preflight: dict[str, Any] = {}
     try:
         preflight = _preflight(urls)
         report["runtime"] = preflight
@@ -662,6 +806,16 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
                 + json.dumps(report["failures"], ensure_ascii=False, indent=2)
             )
     finally:
+        unload_result = _unload_ollama_models_for_macro(
+            preflight,
+            timeout=_int_env("LOOP_PAYLOAD_OLLAMA_UNLOAD_TIMEOUT", 30),
+        )
+        report["ollama_unload"] = unload_result
         report["finished_at"] = time.time()
         report_path = _write_report(report)
         print(f"\nmacro_loop_payload_completo_report={report_path}")
+        if sys.exc_info()[1] is None and unload_result.get("ok") is not True:
+            raise AssertionError(
+                "macro Ollama unload failed: "
+                + json.dumps(unload_result, ensure_ascii=False, indent=2, default=str)
+            )

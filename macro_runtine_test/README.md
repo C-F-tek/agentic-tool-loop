@@ -43,6 +43,23 @@ Il test scopre dinamicamente i tool planner-internal dal runtime e dal registry
 locale. Se un nuovo tool viene aggiunto senza un case macro, il test fallisce
 con `missing_macro_case_for_tool`.
 
+Definizione di copertura macro:
+
+- `controller_preseed` a `step=0` non copre un tool target;
+- la copertura di un tool target vale solo se il job history contiene, dopo una
+  turn planner (`step > 0`), una decisione tool, un tool result o un guard
+  tipizzato riferito a quel tool;
+- la presenza del nome del tool nel payload finale o nei preseed non e'
+  sufficiente;
+- il macro deve provare il passaggio runtime completo: 3571 pubblico, job 3572,
+  prompt pack, native schema 11434, validator/controller, tool result o guard
+  tipizzato, serializer 3572 OpenWebUI-audience, payload pubblico 3571.
+
+A fine run il macro invia unload esplicito ai modelli Ollama usati dal runtime
+vivo, ricavati dal `/health` 3572 (`planner_url/planner_model` e
+`ollama_task_url/ollama_task_model`). Il report contiene `ollama_unload`; se lo
+scarico fallisce e non esiste gia' un failure principale, il test fallisce.
+
 Per ogni tool coperto il macro crea un job nuovo con id `job-macro-...`.
 Il `seed` rende riproducibile il sampling dei file, ma il `run_id` viene
 materializzato a ogni lancio con timestamp ad alta risoluzione e GUID: i
