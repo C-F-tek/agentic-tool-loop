@@ -56,9 +56,9 @@ def _router_fixture(tmp_path: Path):
         calls["status"].append((job_id, include_events))
         return {"ok": True, "mode": "status", "job_id": job_id}
 
-    def compact_agent_terminal_response(job_id):
-        calls["result"].append(job_id)
-        return {"ok": True, "mode": "result", "job_id": job_id}
+    def compact_agent_terminal_response(job_id, *, audience="operator"):
+        calls["result"].append((job_id, audience))
+        return {"ok": True, "mode": "result", "job_id": job_id, "audience": audience}
 
     def load_state(job_id: str) -> dict[str, Any]:
         return dict(states.get(job_id) or {})
@@ -114,9 +114,19 @@ def test_job_action_router_status_and_result(tmp_path: Path) -> None:
     result = router.handle({"action": "result", "job_id": "job-1"})
 
     assert status == {"ok": True, "mode": "status", "job_id": "job-1"}
-    assert result == {"ok": True, "mode": "result", "job_id": "job-1"}
+    assert result == {"ok": True, "mode": "result", "job_id": "job-1", "audience": "operator"}
     assert calls["status"] == [("job-1", True)]
-    assert calls["result"] == ["job-1"]
+    assert calls["result"] == [("job-1", "operator")]
+    assert selector.calls == []
+
+
+def test_job_action_router_result_supports_openwebui_audience(tmp_path: Path) -> None:
+    router, calls, _states, selector = _router_fixture(tmp_path)
+
+    result = router.handle({"action": "result", "job_id": "job-1", "audience": "openwebui"})
+
+    assert result == {"ok": True, "mode": "result", "job_id": "job-1", "audience": "openwebui"}
+    assert calls["result"] == [("job-1", "openwebui")]
     assert selector.calls == []
 
 

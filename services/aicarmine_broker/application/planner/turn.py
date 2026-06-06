@@ -6,6 +6,7 @@ import json
 from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
+from ..prompt.pack_builder import explicit_request_context_from_state
 
 
 def planner_decision(
@@ -121,6 +122,9 @@ def planner_decision(
     if isinstance(intrinsic_context.get("budget_report"), dict):
         intrinsic_context["budget_report"]["num_ctx_requested"] = AGENTIC_PLANNER_NUM_CTX_REQUESTED
         intrinsic_context["budget_report"]["num_ctx_cap"] = AGENTIC_PLANNER_NUM_CTX_CAP
+    explicit_request_context = explicit_request_context_from_state(state)
+    if explicit_request_context:
+        intrinsic_context["explicit_request_context"] = explicit_request_context
     evidence_contract = planner_evidence_contract(goal, history, intrinsic_context=intrinsic_context)
 
     native_tool_names = _tool_surface_names_for_turn(

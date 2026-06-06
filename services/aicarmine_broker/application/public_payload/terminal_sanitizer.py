@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 PUBLIC_TERMINAL_POINTER_KEYS = {
     "artifact_path",
     "producer_artifact",
@@ -36,7 +35,6 @@ def public_terminal_content_key(key: Any) -> bool:
         "stderr",
         "stdout_tail",
         "stderr_tail",
-        "text",
     }
 
 
@@ -44,16 +42,21 @@ def public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
     text = str(value or "")
     if not text:
         return ""
-    if content:
-        return text
-    text = re.sub(r"\s+(?:backup_)?artifact=[^\s,}\]]+", "", text)
-    text = re.sub(r'"(?:artifact|artifact_path|producer_artifact|document_id|db|db_path|sqlite_path)"\s*:\s*"[^"]*",?', "", text)
-    text = re.sub(r"[A-Za-z]:\\[^\s,}\]]+", "[local_path_omitted]", text)
-    text = re.sub(r"https?://(?:127\.0\.0\.1|localhost)[^\s,}\]]*", "[local_url_omitted]", text, flags=re.I)
-    text = re.sub(r"\bqwen-agent-workspace[^\s,}\]]*", "[job_workspace_path_omitted]", text)
-    text = re.sub(r"\bagent-jobs[^\s,}\]]*", "[job_path_omitted]", text)
-    text = re.sub(r"\btool-results\\[^\s,}\]]*", "[tool_result_path_omitted]", text)
-    text = re.sub(r"\S+\.sqlite\b", "[sqlite_path_omitted]", text, flags=re.I)
+    text = re.sub(r"(?:^|\s+)(?:backup_)?artifact=[A-Za-z]:\\[^\s,}\]]+", " ", text)
+    if not content:
+        text = re.sub(r"(?:^|\s+)(?:backup_)?artifact=[^\s,}\]]+", " ", text)
+        text = re.sub(r'"(?:artifact|artifact_path|producer_artifact|document_id|db|db_path|sqlite_path)"\s*:\s*"[^"]*",?', "", text)
+    text = re.sub(r"[A-Za-z]:\\[^\s,}\]]+", "", text)
+    text = re.sub(r"https?://(?:127\.0\.0\.1|localhost)[^\s,}\]]*", "", text, flags=re.I)
+    text = re.sub(r"\bqwen-agent-workspace[^\s,}\]]*", "", text)
+    text = re.sub(r"\bagent-jobs[^\s,}\]]*", "", text)
+    text = re.sub(r"\btool-results\\[^\s,}\]]*", "", text)
+    text = re.sub(r"\S+\.sqlite\b", "", text, flags=re.I)
+    text = re.sub(r"\[[a-z_]+_omitted\]", "", text, flags=re.I)
+    text = re.sub(r"\b[a-z_]+_omitted\b", "", text, flags=re.I)
+    if not content:
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        text = re.sub(r"[ \t]+\n", "\n", text)
     return text
 
 

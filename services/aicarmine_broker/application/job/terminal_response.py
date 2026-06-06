@@ -9,7 +9,10 @@ from typing import Any, Callable
 from .response_values import compact_text, event_digest, strip_narrative_duplicates_from_context
 from ..public_payload.history_ledger import build_public_result_digest
 from ..public_payload.evidence_materializer import materialize_public_evidence
-from ..public_payload.terminal_sanitizer import public_terminal_sanitize_text
+from ..public_payload.terminal_sanitizer import (
+    public_terminal_sanitize_text,
+    public_terminal_sanitize_value,
+)
 from ..public_payload.terminal_result import public_terminal_result_for_30b
 from ..public_payload.tool_context import public_tool_artifact_rows, successful_tool_turns
 
@@ -28,6 +31,78 @@ def _inline_repo_read_item_content(item: dict[str, Any]) -> tuple[str, dict[str,
 
 def _identity_artifact_payload(result: dict[str, Any]) -> dict[str, Any]:
     return result if isinstance(result, dict) else {}
+
+
+_PUBLIC_JSON_POINTER_KEYS = {
+    "artifact",
+    "artifact_path",
+    "producer_artifact",
+    "final_json",
+    "tool_result_json",
+}
+
+
+def _load_job_json_pointer(value: Any, *, job_root: Path | None) -> Any:
+    if job_root is None or not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        pointer = Path(value)
+        if not pointer.is_absolute():
+            pointer = job_root / pointer
+        resolved_pointer = pointer.resolve()
+        resolved_root = job_root.resolve()
+        if not str(resolved_pointer).lower().startswith(str(resolved_root).lower()):
+            return None
+        if not resolved_pointer.is_file():
+            return None
+        loaded = json.loads(resolved_pointer.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return None
+    if loaded in ({}, []):
+        return None
+    if isinstance(loaded, (dict, list)):
+        return loaded
+    return None
+
+
+def _concretize_public_json_pointers(value: Any, *, job_root: Path | None, depth: int = 0) -> Any:
+    if depth > 14:
+        return {}
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        pending_artifact_payload: Any = None
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text in _PUBLIC_JSON_POINTER_KEYS and isinstance(item, str):
+                loaded = _load_job_json_pointer(item, job_root=job_root)
+                if loaded is not None:
+                    if key_text == "artifact":
+                        out["artifact"] = _concretize_public_json_pointers(
+                            loaded,
+                            job_root=job_root,
+                            depth=depth + 1,
+                        )
+                    else:
+                        pending_artifact_payload = _concretize_public_json_pointers(
+                            loaded,
+                            job_root=job_root,
+                            depth=depth + 1,
+                        )
+                continue
+            out[key_text] = _concretize_public_json_pointers(
+                item,
+                job_root=job_root,
+                depth=depth + 1,
+            )
+        if "artifact" not in out and pending_artifact_payload not in (None, "", [], {}):
+            out["artifact"] = pending_artifact_payload
+        return out
+    if isinstance(value, list):
+        return [
+            _concretize_public_json_pointers(item, job_root=job_root, depth=depth + 1)
+            for item in value
+        ]
+    return value
 
 
 def build_missing_job_response(job_id: str) -> dict[str, Any]:
@@ -140,6 +215,7 @@ def build_compact_terminal_response(
     audience: str = "operator",
     repo_read_item_full_content: RepoReadContentLoader | None = None,
     same_tool_artifact_payload: ArtifactPayloadLoader | None = None,
+    job_root: Path | None = None,
 ) -> dict[str, Any]:
     status = str(state.get("status") or "unknown")
     public_tool = str(state.get("public_tool_name") or "vulkan_helper")
@@ -234,6 +310,10 @@ def build_compact_terminal_response(
         }
     else:
         tool_context = strip_narrative_duplicates_from_context(tool_context)
+    if audience == "openwebui":
+        tool_context = _concretize_public_json_pointers(tool_context, job_root=job_root)
+        sanitized_tool_context = public_terminal_sanitize_value(tool_context)
+        tool_context = sanitized_tool_context if isinstance(sanitized_tool_context, dict) else {}
 
     context_alias = {
         "schema": "agentic_terminal_context_alias.v1",
@@ -320,6 +400,36 @@ def build_compact_terminal_response(
             "source": "internal_3572_job_status",
         },
     )
+    working_memory = (
+        state.get("working_memory_for_30b")
+        or final_data.get("working_memory_for_30b")
+        or {}
+    )
+    if not isinstance(working_memory, dict):
+        working_memory = {}
+    if audience == "openwebui":
+        working_memory = _concretize_public_json_pointers(working_memory, job_root=job_root)
+        sanitized_working_memory = public_terminal_sanitize_value(working_memory)
+        working_memory = sanitized_working_memory if isinstance(sanitized_working_memory, dict) else {}
+    evidence_contract = (
+        state.get("evidence_contract")
+        or final_data.get("evidence_contract")
+        or {}
+    )
+    if not isinstance(evidence_contract, dict):
+        evidence_contract = {}
+    planner_emission_interpreter = (
+        state.get("planner_emission_interpreter")
+        or final_data.get("planner_emission_interpreter")
+        or {}
+    )
+    if not isinstance(planner_emission_interpreter, dict):
+        planner_emission_interpreter = {}
+    if audience == "openwebui":
+        sanitized_evidence_contract = public_terminal_sanitize_value(evidence_contract)
+        evidence_contract = sanitized_evidence_contract if isinstance(sanitized_evidence_contract, dict) else {}
+        sanitized_planner_emission = public_terminal_sanitize_value(planner_emission_interpreter)
+        planner_emission_interpreter = sanitized_planner_emission if isinstance(sanitized_planner_emission, dict) else {}
 
     response = {
         "ok": True,
@@ -347,15 +457,9 @@ def build_compact_terminal_response(
         ),
         "final_summary": summary,
         "next_action_for_30b": next_action,
-        "working_memory_for_30b": state.get("working_memory_for_30b")
-        or final_data.get("working_memory_for_30b")
-        or {},
-        "evidence_contract": state.get("evidence_contract")
-        or final_data.get("evidence_contract")
-        or {},
-        "planner_emission_interpreter": state.get("planner_emission_interpreter")
-        or final_data.get("planner_emission_interpreter")
-        or {},
+        "working_memory_for_30b": working_memory,
+        "evidence_contract": evidence_contract,
+        "planner_emission_interpreter": planner_emission_interpreter,
         "openwebui_usage": openwebui_usage,
         "tool_context_for_30b": tool_context,
         "result": result_digest,

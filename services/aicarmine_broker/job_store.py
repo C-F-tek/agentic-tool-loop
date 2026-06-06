@@ -440,6 +440,7 @@ def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") 
         audience=audience,
         repo_read_item_full_content=repo_read_item_full_content,
         same_tool_artifact_payload=same_tool_artifact_payload,
+        job_root=job_root,
     )
 
 
@@ -471,7 +472,6 @@ def wait_for_agent_terminal(
         last_status = compact_agent_status(job_id, include_events=False)
         if str(last_status.get("status") or "") in AGENT_TERMINAL_STATUSES:
             terminal = compact_agent_terminal_response(job_id, audience="openwebui")
-            terminal["mode"] = "agent_job_final_waited_compact"
             terminal["wait_completed"] = True
             if not terminal.get("evidence_guide_for_30b"):
                 terminal["evidence_guide_for_30b"] = (

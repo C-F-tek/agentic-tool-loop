@@ -7,6 +7,35 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
+def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Return structured user/operator context saved with a job request.
+
+    This is intentionally separate from ``goal``. The controller preseed logic
+    parses the free-form goal for explicit file/scope requests; structured
+    request context is planner-visible evidence and must not cause deterministic
+    controller reads before the planner turn.
+    """
+    original_args = state.get("original_args") if isinstance(state.get("original_args"), dict) else {}
+    raw = original_args.get("context")
+    if isinstance(raw, dict):
+        parsed = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            loaded = json.loads(raw)
+        except Exception:
+            loaded = {}
+        parsed = loaded if isinstance(loaded, dict) else {}
+    else:
+        parsed = {}
+    if not parsed:
+        return {}
+    return {
+        key: value
+        for key, value in parsed.items()
+        if key not in {"raw_events", "history", "planner_stream"}
+    }
+
+
 @dataclass(frozen=True)
 class PromptPackBuilder:
     """Owner for measured planner prompt payload construction."""
@@ -64,6 +93,7 @@ class PromptPackBuilder:
         internal_tool_prompt = deps["internal_tool_prompt"]
 
         goal = str(state.get("goal") or "")
+        explicit_request_context = explicit_request_context_from_state(state)
         compact_tools = _compact_tool_manifest_for_prompt(tool_manifest)
         available_tools_for_payload = _available_tools_for_user_payload(compact_tools)
         system_prompt_for_budget = _planner_system_for_current_mode()
@@ -172,6 +202,11 @@ class PromptPackBuilder:
                 "available_tools": available_tools_for_payload,
                 "tool_shape_examples": tool_shape_examples,
                 "required_working_set": required_working_set,
+                **(
+                    {"explicit_request_context": explicit_request_context}
+                    if explicit_request_context
+                    else {}
+                ),
                 "optional_context": _optional_context_for_prompt(
                     root=root,
                     goal=goal,

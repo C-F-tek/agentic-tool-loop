@@ -136,6 +136,40 @@ def test_planner_evidence_contract_candidate_actions_have_proof(tmp_path, monkey
     assert proof["validator_admissible"] is True
 
 
+def test_planner_evidence_contract_accepts_explicit_request_context_repo_read_target(tmp_path, monkeypatch) -> None:
+    target_rel = "ia_carmine/runtime/heap_gate/provider_context.py"
+    target = tmp_path / target_rel
+    target.parent.mkdir(parents=True)
+    target.write_text("def provider_context():\n    return {}\n", encoding="utf-8")
+    monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
+
+    contract = planner.planner_evidence_contract(
+        "MACRO_RUNTIME_LOOP_PAYLOAD_TEST. Target arguments are in explicit_request_context.",
+        [],
+        {
+            "explicit_request_context": {
+                "schema": "macro_runtime_loop_payload_case.v1",
+                "target_internal_tool": "repo_read",
+                "target_arguments": {"path": target_rel, "max_chars": 20000},
+            }
+        },
+    )
+
+    repo_read_actions = [
+        action
+        for action in contract["candidate_next_actions"]
+        if action.get("tool") == "repo_read"
+        and (action.get("arguments") or {}).get("path") == target_rel
+    ]
+
+    assert target_rel in contract["validator_admissible_repo_read_paths"]
+    assert repo_read_actions
+    assert repo_read_actions[0]["action_proof"]["path_exists"] is True
+    assert repo_read_actions[0]["action_proof"]["path_readable"] is True
+    assert repo_read_actions[0]["action_proof"]["validator_admissible"] is True
+    assert contract["explicit_request_context"]["admissible_read_paths"] == [target_rel]
+
+
 def test_planner_evidence_contract_excludes_missing_core_discovery_candidate(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(planner, "LAB_REPO", tmp_path)
 

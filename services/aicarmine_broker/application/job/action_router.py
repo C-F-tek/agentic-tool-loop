@@ -16,7 +16,7 @@ TextFromPayload = Callable[..., str]
 ParseBool = Callable[[Any, bool], bool]
 StartAgentJob = Callable[[dict[str, Any], str, dict[str, Any], str], dict[str, Any]]
 CompactStatus = Callable[..., dict[str, Any]]
-CompactTerminalResponse = Callable[[str], dict[str, Any]]
+CompactTerminalResponse = Callable[..., dict[str, Any]]
 LoadState = Callable[[str], dict[str, Any]]
 WriteState = Callable[[dict[str, Any]], None]
 AppendEvent = Callable[..., None]
@@ -69,7 +69,8 @@ class AgentJobActionRouter:
         if job_action == "status":
             return self.compact_agent_status(job_id, include_events=True)
         if job_action == "result":
-            return self.compact_agent_terminal_response(job_id)
+            audience = self._result_audience(payload, original_args)
+            return self.compact_agent_terminal_response(job_id, audience=audience)
         if job_action == "cancel":
             state = self.load_state(job_id)
             if not state:
@@ -140,3 +141,17 @@ class AgentJobActionRouter:
         if public_tool_name == "vulkan_helper":
             return "start", job_id
         return raw_job_action, job_id
+
+    @staticmethod
+    def _result_audience(
+        payload: dict[str, Any],
+        original_args: dict[str, Any],
+    ) -> str:
+        raw = str(
+            original_args.get("audience")
+            or payload.get("audience")
+            or ""
+        ).strip().lower()
+        if raw in {"operator", "openwebui", "internal"}:
+            return raw
+        return "operator"

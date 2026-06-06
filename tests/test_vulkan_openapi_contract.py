@@ -228,6 +228,71 @@ def test_terminal_openwebui_response_sanitizes_local_pointers_but_preserves_payl
     assert result["public_payload_lint"]["ok"] is True
 
 
+def test_bridge_returns_broker_materialized_payload_without_resealing() -> None:
+    from vulkan_bridge import app
+
+    broker_payload = {
+        "ok": True,
+        "service": "vulkan_agent",
+        "mode": "agent_job_final_compact",
+        "status": "completed",
+        "job_id": "job-x",
+        "tool_name": "vulkan_helper",
+        "tool_result_for": "vulkan_helper",
+        "called_by_30b": "vulkan_helper",
+        "evidence_guide_for_30b": "read this guide",
+        "payload_index_for_30b": {
+            "index_kind": "openwebui_payload_index.v1",
+            "concrete_results": [
+                {
+                    "kind": "repo_file_full_content",
+                    "primary_location": "priority_evidence_for_30b.items[0].content",
+                }
+            ],
+        },
+        "priority_evidence_for_30b": {
+            "schema": "openwebui.priority_evidence_for_30b.v1",
+            "items": [
+                {
+                    "kind": "repo_file_full_content",
+                    "content": "abc",
+                    "payload_is_complete": True,
+                }
+            ],
+        },
+        "tool_context_for_30b": {
+            "type": "agentic_loop_complete_structured_context",
+            "artifacts": [
+                {
+                    "tool": "repo_read",
+                    "artifact": {"kind": "repo_read", "content": "abc"},
+                }
+            ],
+        },
+        "materialization_report": {
+            "schema": "public_evidence_materialization.v1",
+            "owner": "3572_broker",
+            "ok": True,
+        },
+        "operator_diagnostics": {
+            "local_final_path": r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\job-x\final.json",
+        },
+    }
+    decoded = {
+        **broker_payload,
+        "bridge_status": "AGENT_RESULT_RETURNED",
+        "bridge_elapsed_seconds": 1.0,
+        "bridge_agent_url": "http://127.0.0.1:3572/vulkan/agent",
+        "arguments_from_30b": {"request": "x"},
+        "operation_id": "vulkan_helper",
+        "wrapper_expected_contract": {"owner": "3572"},
+    }
+
+    result = app._compact_for_openwebui(decoded)
+
+    assert result == broker_payload
+
+
 def test_terminal_openwebui_response_tool_context_is_artifact_mirror_not_full_dump() -> None:
     from vulkan_bridge import app
 
@@ -495,6 +560,16 @@ def test_terminal_openwebui_response_preserves_broker_materialization_without_re
             "status": "completed",
             "tool_name": "vulkan_helper",
             "job_id": "job-broker-materialized",
+            "workspace": r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\job-broker-materialized",
+            "wait_completed": True,
+            "openwebui_final_tool_settle_applied": True,
+            "openwebui_final_tool_settle_seconds": 1,
+            "openwebui_final_unload_planner": {"attempted": True, "ok": True},
+            "openwebui_final_handoff": {"terminal_result": True},
+            "started_job": {
+                "job_id": "job-broker-materialized",
+                "workspace": r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\job-broker-materialized",
+            },
             "evidence_guide_for_30b": "Read indexed content.",
             "payload_index_for_30b": {
                 "index_kind": "openwebui_payload_index.v1",
@@ -546,12 +621,17 @@ def test_terminal_openwebui_response_preserves_broker_materialization_without_re
         }
     )
 
-    tool_context = json.loads(result["tool_context_for_30b"])
+    tool_context = result["tool_context_for_30b"]
 
     assert result["materialization_report"]["owner"] == "3572_broker"
     assert "bridge_emergency_rehydration_used" not in result["materialization_report"]
     assert result["priority_evidence_for_30b"]["items"][0]["content"] == "# Broker\n"
     assert tool_context["artifacts"][0]["artifact"]["content"] == "# Broker\n"
+    assert "started_job" not in result
+    assert "workspace" not in result
+    assert "wait_completed" not in result
+    assert "openwebui_final_handoff" not in result
+    assert "openwebui_final_unload_planner" not in result
 
 
 def test_terminal_openwebui_response_orders_result_after_primary_evidence() -> None:

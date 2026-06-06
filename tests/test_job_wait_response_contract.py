@@ -98,6 +98,7 @@ def test_wait_terminal_response_uses_openwebui_audience(tmp_path: Path, monkeypa
     response = job_store.wait_for_agent_terminal("job-terminal", timeout_seconds=1)
 
     assert response["wait_completed"] is True
+    assert response["mode"] == "agent_job_final_compact"
     assert "final_path" not in response
     assert response["operator_diagnostics"]["local_final_path"] == str(final_path)
     assert response["openwebui_usage"]["structured_context_field"] == "tool_context_for_30b"

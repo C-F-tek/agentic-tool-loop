@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .payload_index_resolver import resolve_payload_index
@@ -26,6 +27,20 @@ LOCAL_PATH_KEYS = {
     "sqlite_path",
     "workspace",
 }
+OMISSION_MARKERS = {
+    "local_path_omitted",
+    "local_url_omitted",
+    "job_path_omitted",
+    "job_workspace_path_omitted",
+    "sqlite_path_omitted",
+    "tool_result_path_omitted",
+}
+OBJECT_REPR_RE = re.compile(r"<[^>\n]{1,160}\s+object\s+at\s+0x[0-9a-fA-F]+>")
+LOCAL_POINTER_LOCATION_RE = re.compile(
+    r"(^|[\\/])(?:tool-results|reads|agent-jobs)([\\/]|$)|"
+    r"\b(?:artifact_path|final_path|events_path|workspace|sqlite_path|document_id)\b",
+    re.IGNORECASE,
+)
 CONCRETE_PRIORITY_KEYS = {
     "content",
     "new_text",
@@ -64,6 +79,19 @@ def _mode(value: str | None) -> str:
 
 def _looks_local_path(value: str) -> bool:
     return any(marker in value for marker in LOCAL_PATH_MARKERS)
+
+
+def _contains_omission_marker(value: str) -> bool:
+    lowered = value.lower()
+    return any(marker in lowered for marker in OMISSION_MARKERS)
+
+
+def _looks_object_repr(value: str) -> bool:
+    return bool(OBJECT_REPR_RE.search(value))
+
+
+def _looks_local_pointer_location(value: str) -> bool:
+    return bool(LOCAL_POINTER_LOCATION_RE.search(value) or _looks_local_path(value))
 
 
 def _path(parts: list[str]) -> str:
@@ -197,6 +225,14 @@ def _payload_index_copy_violations(payload_index: dict[str, Any]) -> list[dict[s
     return violations
 
 
+def _payload_index_has_result(payload_index: dict[str, Any]) -> bool:
+    for section in ("concrete_results", "partial_results", "descriptive_only"):
+        rows = payload_index.get(section)
+        if isinstance(rows, list) and rows:
+            return True
+    return False
+
+
 def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[str, Any]:
     selected_mode = _mode(mode)
     warnings: list[dict[str, Any]] = []
@@ -222,6 +258,10 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
                 violations.append({"rule": "local_pointer_key_outside_operator_diagnostics", "path": _path(parts)})
             if _looks_local_path(value) and not operator_diagnostics:
                 violations.append({"rule": "local_path_value_outside_operator_diagnostics", "path": _path(parts)})
+            if _contains_omission_marker(value) and not operator_diagnostics:
+                violations.append({"rule": "public_payload_omission_marker", "path": _path(parts)})
+            if _looks_object_repr(value) and not operator_diagnostics:
+                violations.append({"rule": "public_payload_object_repr", "path": _path(parts)})
         tool_context = payload.get("tool_context_for_30b")
         if tool_context is not None and not _tool_context_serializable(tool_context):
             violations.append({"rule": "tool_context_for_30b_string_not_json_object", "path": "tool_context_for_30b"})
@@ -240,6 +280,24 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
                 "section": row.get("section"),
                 "row_index": row.get("row_index"),
             })
+        for section in ("concrete_results", "partial_results"):
+            rows = payload_index.get(section)
+            if not isinstance(rows, list):
+                continue
+            for row_index, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    continue
+                for key in ("primary_location", "full_context_location", "field"):
+                    value = row.get(key)
+                    values = value.values() if isinstance(value, dict) else [value]
+                    for location in values:
+                        if isinstance(location, str) and _looks_local_pointer_location(location):
+                            violations.append({
+                                "rule": "payload_index_target_points_to_local_pointer",
+                                "path": location,
+                                "section": section,
+                                "row_index": row_index,
+                            })
         for row in index_resolution.get("empty_targets") or []:
             violations.append({
                 "rule": "payload_index_target_empty",
@@ -259,6 +317,17 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
                     "rule": "completed_payload_with_artifacts_has_no_concrete_inline_evidence",
                     "path": "priority_evidence_for_30b.items",
                 })
+        if (
+            terminal_status == "completed"
+            and not _payload_index_has_result(payload_index)
+            and not _has_concrete_payload(priority_evidence)
+            and not _has_concrete_payload(_tool_context_object(tool_context))
+            and any(payload.get(key) for key in ("evidence_guide_for_30b", "final_summary", "summary_for_30b", "content"))
+        ):
+            violations.append({
+                "rule": "summary_used_as_payload_substitute",
+                "path": "payload_index_for_30b",
+            })
 
     return {
         "schema": SCHEMA,

@@ -36,8 +36,8 @@ def test_public_terminal_history_ledger_repo_read_uses_content_metadata_not_loca
 
     row = ledger[0]
     assert row["tool"] == "repo_read"
-    assert row["arguments"]["path"] == "[local_path_omitted]"
-    assert row["path"] == "[local_path_omitted]"
+    assert "arguments" not in row
+    assert "path" not in row
     assert row["items"][0]["content_chars"] == 9
     assert row["items"][0]["path"] == "a.py"
     assert "content_sha256" in row["items"][0]

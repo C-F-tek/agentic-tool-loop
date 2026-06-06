@@ -122,6 +122,22 @@ def test_public_payload_linter_rejects_payload_index_dangling_reference() -> Non
     assert result["violations"][0]["rule"] == "payload_index_target_missing"
 
 
+def test_public_payload_linter_rejects_payload_index_local_pointer_target() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "payload_index_for_30b": {
+            "concrete_results": [
+                {"primary_location": "tool-results/proposal.json"}
+            ]
+        },
+        "priority_evidence_for_30b": {"items": [{"content": "inline"}]},
+        "tool_context_for_30b": "{}",
+    })
+
+    rules = [row["rule"] for row in result["violations"]]
+    assert "payload_index_target_points_to_local_pointer" in rules
+
+
 def test_public_payload_linter_rejects_payload_index_content_copy() -> None:
     result = lint_public_payload({
         "ok": True,
@@ -151,6 +167,26 @@ def test_public_payload_linter_rejects_tool_context_root_narrative_alias() -> No
     assert result["violations"][0]["rule"] == "tool_context_root_narrative_alias"
 
 
+def test_public_payload_linter_rejects_omission_marker_as_payload() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "tool_context_for_30b": {"artifacts": [{"artifact": {"content": "[local_path_omitted]"}}]},
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "public_payload_omission_marker"
+
+
+def test_public_payload_linter_rejects_object_repr_as_payload() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "tool_context_for_30b": {"artifacts": [{"artifact": {"content": "<object object at 0x1234ABCD>"}}]},
+    })
+
+    assert result["ok"] is False
+    assert result["violations"][0]["rule"] == "public_payload_object_repr"
+
+
 def test_public_payload_linter_rejects_completed_payload_without_materialization_report() -> None:
     result = lint_public_payload({
         "ok": True,
@@ -161,3 +197,22 @@ def test_public_payload_linter_rejects_completed_payload_without_materialization
 
     assert result["ok"] is False
     assert result["violations"][0]["rule"] == "terminal_payload_missing_materialization_report"
+
+
+def test_public_payload_linter_rejects_completed_summary_as_payload_substitute() -> None:
+    result = lint_public_payload({
+        "ok": True,
+        "status": "completed",
+        "evidence_guide_for_30b": "summary only",
+        "final_summary": "summary only",
+        "payload_index_for_30b": {},
+        "priority_evidence_for_30b": {"items": []},
+        "tool_context_for_30b": {},
+        "materialization_report": {
+            "schema": "public_evidence_materialization.v1",
+            "ok": False,
+        },
+    })
+
+    rules = [row["rule"] for row in result["violations"]]
+    assert "summary_used_as_payload_substitute" in rules

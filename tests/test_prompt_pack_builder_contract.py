@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services"))
 
 
-from aicarmine_broker.application.prompt.pack_builder import build_planner_user_payload  # noqa: E402
+from aicarmine_broker.application.prompt.pack_builder import (  # noqa: E402
+    build_planner_user_payload,
+    explicit_request_context_from_state,
+)
 
 
 def _json_len(value: Any) -> int:
@@ -101,6 +104,34 @@ def test_build_planner_user_payload_keeps_prompt_contract_sections() -> None:
     assert payload["evidence_contract"]["finalization_contract"]["final_allowed"] is True
     assert payload["required_response_format"]["json_only"] is True
     assert report["required_working_set_errors"] == []
+
+
+def test_build_planner_user_payload_exposes_original_args_context() -> None:
+    context = {
+        "schema": "macro_runtime_loop_payload_case.v1",
+        "target_internal_tool": "repo_read",
+        "target_arguments": {"path": "ia_carmine/runtime/x.py", "max_chars": 20000},
+    }
+
+    payload, _report = build_planner_user_payload(
+        job_id="job-1",
+        state={
+            "goal": "macro request without literal file path",
+            "original_args": {"context": json.dumps(context, ensure_ascii=False)},
+        },
+        step=1,
+        history=[],
+        tool_manifest=[{"name": "repo_read"}],
+        evidence_contract={"finalization_contract": {"final_allowed": False}},
+        planner_memory={},
+        intrinsic_context={},
+        last_tool_result={},
+        deps=_deps(),
+        config=_config(),
+    )
+
+    assert explicit_request_context_from_state({"original_args": {"context": context}}) == context
+    assert payload["explicit_request_context"] == context
 
 
 def test_build_planner_user_payload_preserves_required_continuation_surface() -> None:

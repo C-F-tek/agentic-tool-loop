@@ -16,14 +16,17 @@ from aicarmine_broker.application.public_payload.terminal_sanitizer import (  # 
 
 
 def test_public_terminal_content_key_preserves_payload_text_fields() -> None:
-    for key in ("content", "unified_diff", "stdout_tail", "text"):
+    for key in ("content", "unified_diff", "stdout_tail"):
         assert public_terminal_content_key(key)
+    assert not public_terminal_content_key("text")
     assert not public_terminal_content_key("summary")
 
 
-def test_public_terminal_sanitize_text_preserves_content_verbatim() -> None:
+def test_public_terminal_sanitize_text_removes_local_paths_even_in_content() -> None:
     text = r"C:\Users\carmi\AI\agent-jobs\x\file.sqlite"
-    assert public_terminal_sanitize_text(text, content=True) == text
+    cleaned = public_terminal_sanitize_text(text, content=True)
+    assert r"C:\Users" not in cleaned
+    assert "local_path_omitted" not in cleaned
 
 
 def test_public_terminal_sanitize_text_omits_local_paths_and_internal_urls() -> None:
@@ -42,8 +45,16 @@ def test_public_terminal_sanitize_text_omits_local_paths_and_internal_urls() -> 
     assert "127.0.0.1" not in cleaned
     assert "tool-results\\1.json" not in cleaned
     assert "rag.sqlite" not in cleaned
-    assert "[local_path_omitted]" in cleaned
-    assert "[local_url_omitted]" in cleaned
+    assert "local_path_omitted" not in cleaned
+    assert "local_url_omitted" not in cleaned
+
+
+def test_public_terminal_sanitize_text_removes_legacy_omission_markers() -> None:
+    cleaned = public_terminal_sanitize_text("artifact=[local_path_omitted] db=sqlite_path_omitted")
+
+    assert "local_path_omitted" not in cleaned
+    assert "sqlite_path_omitted" not in cleaned
+    assert "artifact=" not in cleaned
 
 
 def test_public_terminal_sanitize_value_drops_pointer_keys_but_keeps_content() -> None:
@@ -56,7 +67,5 @@ def test_public_terminal_sanitize_value_drops_pointer_keys_but_keeps_content() -
     })
 
     assert cleaned == {
-        "summary": "[local_path_omitted]",
-        "content": r"C:\Users\carmi\AI\visible.txt",
         "items": [{"text": "real text"}],
     }

@@ -220,7 +220,178 @@ def test_failed_terminal_response_sanitizes_local_path_from_public_answer() -> N
     )
 
     assert r"C:\Users\carmi" not in response["evidence_guide_for_30b"]
-    assert "[local_path_omitted]" in response["evidence_guide_for_30b"]
+    assert "local_path_omitted" not in response["evidence_guide_for_30b"]
+    assert "agent-jobs" not in response["evidence_guide_for_30b"]
+    assert response["operator_diagnostics"]["local_events_path"] == "events.ndjson"
+
+
+def test_openwebui_terminal_response_sanitizes_working_memory_local_paths() -> None:
+    response = build_compact_terminal_response(
+        job_id="job-x",
+        state={
+            "status": "completed",
+            "goal": "read repo file",
+            "final_summary": "summary",
+            "result": {"ok": True},
+            "working_memory_for_30b": {
+                "planner_memory": {
+                    "scratchpad": {
+                        "available": True,
+                        "count": 0,
+                        "items": [],
+                        "artifact": r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\job-x\planner_scratchpad.json",
+                    },
+                    "loop_turn_memory": {
+                        "items": [
+                            {
+                                "text": (
+                                    "summary=repo_tree path=. artifact="
+                                    r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker"
+                                    r"\agent-jobs\job-x\tool-results\123-repo_tree.json"
+                                )
+                            }
+                        ]
+                    },
+                    "persistent": {
+                        "db": r"C:\Users\carmi\ProjectsDir\repo\indexAI\agent_memory\agent_memory.sqlite",
+                    },
+                }
+            },
+            "evidence_contract": {
+                "core_discovery_status": {
+                    "lab_repo": r"C:\Users\carmi\AI\lab-worktrees\repo",
+                    "paths": ["README.md"],
+                }
+            },
+            "planner_emission_interpreter": {
+                "debug_path": r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\job-x\planner.json",
+            },
+        },
+        final_data={},
+        events_tail=[],
+        events_path="events.ndjson",
+        job_url_value="http://127.0.0.1:3572/jobs/job-x",
+        public_result_inline_chars=1000,
+        public_summary_chars=1000,
+        public_answer_chars=1000,
+        audience="openwebui",
+    )
+
+    serialized = json.dumps(response["working_memory_for_30b"], ensure_ascii=False)
+    assert r"C:\Users\carmi" not in serialized
+    assert "local_path_omitted" not in serialized
+    assert "artifact=" not in serialized
+    assert r"C:\Users\carmi" not in json.dumps(response["evidence_contract"], ensure_ascii=False)
+    assert r"C:\Users\carmi" not in json.dumps(response["planner_emission_interpreter"], ensure_ascii=False)
+    assert response["operator_diagnostics"]["local_events_path"] == "events.ndjson"
+
+
+def test_openwebui_terminal_response_materializes_job_json_artifact_pointers(tmp_path: Path) -> None:
+    artifact = tmp_path / "tool-results" / "scratchpad.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text(
+        json.dumps(
+            {
+                "schema": "scratchpad_payload.v1",
+                "content": "inline serialized payload",
+                "items": [{"text": "real item"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    response = build_compact_terminal_response(
+        job_id="job-x",
+        state={
+            "status": "completed",
+            "goal": "read repo file",
+            "final_summary": "summary",
+            "result": {"ok": True},
+            "working_memory_for_30b": {
+                "planner_memory": {
+                    "scratchpad": {
+                        "available": True,
+                        "artifact": str(artifact),
+                    },
+                }
+            },
+            "tool_context_for_30b": {
+                "not_a_summary": True,
+                "artifacts": [
+                    {
+                        "producer_step": 1,
+                        "tool": "planner_scratchpad_read",
+                        "artifact_path": str(artifact),
+                    }
+                ],
+            },
+        },
+        final_data={},
+        events_tail=[],
+        events_path="events.ndjson",
+        job_url_value="http://127.0.0.1:3572/jobs/job-x",
+        public_result_inline_chars=1000,
+        public_summary_chars=1000,
+        public_answer_chars=1000,
+        audience="openwebui",
+        job_root=tmp_path,
+    )
+
+    serialized = json.dumps(response, ensure_ascii=False, default=str)
+    assert r"C:\Users" not in serialized
+    assert "local_path_omitted" not in serialized
+    assert response["working_memory_for_30b"]["planner_memory"]["scratchpad"]["artifact"] == {
+        "schema": "scratchpad_payload.v1",
+        "content": "inline serialized payload",
+        "items": [{"text": "real item"}],
+    }
+    tool_context = response["tool_context_for_30b"]
+    assert "artifact_path" not in json.dumps(tool_context, ensure_ascii=False, default=str)
+    assert tool_context["artifacts"][0]["artifact"]["content"] == "inline serialized payload"
+
+
+def test_openwebui_terminal_response_sanitizes_tool_context_local_paths() -> None:
+    response = build_compact_terminal_response(
+        job_id="job-x",
+        state={
+            "status": "completed",
+            "goal": "read repo file",
+            "final_summary": "summary",
+            "result": {"ok": True},
+            "tool_context_for_30b": {
+                "planner": {
+                    "validation_rejections": [
+                        {
+                            "evidence_contract": {
+                                "core_discovery_status": {
+                                    "lab_repo": r"C:\Users\carmi\AI\lab-worktrees\repo",
+                                }
+                            }
+                        }
+                    ]
+                },
+                "artifacts": [
+                    {
+                        "tool": "repo_read",
+                        "artifact": {"content": "inline content", "path": "README.md"},
+                    }
+                ],
+            },
+        },
+        final_data={},
+        events_tail=[],
+        events_path="events.ndjson",
+        job_url_value="http://127.0.0.1:3572/jobs/job-x",
+        public_result_inline_chars=1000,
+        public_summary_chars=1000,
+        public_answer_chars=1000,
+        audience="openwebui",
+    )
+
+    serialized = json.dumps(response["tool_context_for_30b"], ensure_ascii=False)
+    assert r"C:\Users\carmi" not in serialized
+    assert "inline content" in serialized
     assert response["operator_diagnostics"]["local_events_path"] == "events.ndjson"
 
 

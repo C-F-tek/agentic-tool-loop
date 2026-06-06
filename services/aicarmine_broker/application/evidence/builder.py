@@ -263,6 +263,57 @@ class EvidenceBuilder:
             list_failed,
             core_discovery_candidates,
         )
+        explicit_request_context = (
+            intrinsic_context.get("explicit_request_context")
+            if isinstance(intrinsic_context, dict)
+            and isinstance(intrinsic_context.get("explicit_request_context"), dict)
+            else {}
+        )
+        explicit_request_tool = str(explicit_request_context.get("target_internal_tool") or "").strip()
+        explicit_request_args = (
+            explicit_request_context.get("target_arguments")
+            if isinstance(explicit_request_context.get("target_arguments"), dict)
+            else {}
+        )
+        explicit_request_read_paths: list[str] = []
+        if explicit_request_tool == "repo_read":
+            raw_targets: list[Any] = []
+            if explicit_request_args.get("path") not in (None, "", [], {}):
+                raw_targets.append(explicit_request_args.get("path"))
+            if isinstance(explicit_request_args.get("paths"), list):
+                raw_targets.extend(explicit_request_args.get("paths") or [])
+            for raw_target in raw_targets:
+                if isinstance(raw_target, dict):
+                    continue
+                p = _repo_rel_token(raw_target)
+                if (
+                    p
+                    and p != "."
+                    and p not in explicit_request_read_paths
+                    and p not in read_ok
+                    and _path_exists_repo_relative(p)
+                    and _repo_readable_evidence_file(p)
+                ):
+                    explicit_request_read_paths.append(p)
+            for p in reversed(explicit_request_read_paths):
+                try:
+                    max_chars = int(explicit_request_args.get("max_chars") or 10000)
+                except Exception:
+                    max_chars = 10000
+                action = {
+                    "tool": "repo_read",
+                    "arguments": {"path": p, "max_chars": max(1000, min(max_chars, 50000))},
+                    "reason": "explicit_request_context_target_read",
+                    "source": "explicit_request_context",
+                }
+                if not any(
+                    isinstance(item, dict)
+                    and item.get("tool") == "repo_read"
+                    and _repo_rel_token((item.get("arguments") or {}).get("path") or "") == p
+                    for item in candidates
+                    if isinstance(item, dict)
+                ):
+                    candidates.insert(0, action)
         candidate_repo_read_paths: list[str] = []
         for action in candidates:
             if not isinstance(action, dict) or action.get("tool") != "repo_read":
@@ -440,6 +491,12 @@ class EvidenceBuilder:
             "user_scope_claims": user_scope_claims[:12],
             "core_discovery_status": core_discovery_status,
             "core_discovery_candidates": core_discovery_candidates[:16],
+            "explicit_request_context": {
+                "target_internal_tool": explicit_request_tool,
+                "target_arguments": explicit_request_args,
+                "admissible_read_paths": explicit_request_read_paths,
+                "source": "original_args.context",
+            } if explicit_request_context else {},
             "scoped_concrete_read_target": SCOPED_CONCRETE_READ_TARGET if target_scope else None,
             "scoped_concrete_read_required": scope_required_read_count or None,
             "scoped_available_read_candidates": scope_available_read_candidates[:120],
