@@ -14,9 +14,9 @@ if str(ROOT) not in sys.path:
 from aicarmine_broker import planner
 from aicarmine_broker.application.prompt.pack_builder import explicit_request_context_from_state
 from macro_runtine_test.test_loop_payload_completo import (
-    _ollama_unload_targets_from_health,
     _request_for_case,
     _safe_job_id,
+    _assert_3571_runtime_final_handoff,
     _target_tool_coverage_from_history,
 )
 from macro_runtine_test.tool_cases import build_tool_cases
@@ -92,25 +92,22 @@ def test_macro_target_coverage_requires_planner_step_attempt() -> None:
     assert coverage["matched_kind"] == "decision"
 
 
-def test_macro_ollama_unload_targets_come_from_broker_health() -> None:
-    targets = _ollama_unload_targets_from_health({
-        "planner_url": "http://127.0.0.1:11434/api/chat",
-        "planner_model": "qwen3-coder:30b",
-        "ollama_task_url": "http://127.0.0.1:11435/api/chat",
-        "ollama_task_model": "qwen3-coder:30b",
-    })
-
-    assert targets == [
-        {
-            "label": "planner_11434",
-            "model": "qwen3-coder:30b",
-            "base_url": "http://127.0.0.1:11434",
+def test_macro_asserts_existing_3571_runtime_final_handoff() -> None:
+    assertion = _assert_3571_runtime_final_handoff({
+        "openwebui_final_handoff": {
+            "terminal_result": True,
+            "planner_unload_attempted": True,
+            "planner_unload_ok": True,
+            "reason": "free_planner_vram_before_returning_vulkan_helper_result_to_openwebui",
+        },
+        "openwebui_final_unload_planner": {
+            "attempted": True,
+            "ok": True,
+            "planner_model": "qwen3-coder:30b",
+            "planner_url": "http://127.0.0.1:11434/api/chat",
             "unload_endpoint": "http://127.0.0.1:11434/api/generate",
         },
-        {
-            "label": "task_11435",
-            "model": "qwen3-coder:30b",
-            "base_url": "http://127.0.0.1:11435",
-            "unload_endpoint": "http://127.0.0.1:11435/api/generate",
-        },
-    ]
+    })
+
+    assert assertion["ok"] is True
+    assert assertion["unload"]["unload_endpoint"] == "http://127.0.0.1:11434/api/generate"

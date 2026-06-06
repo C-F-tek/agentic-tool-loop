@@ -55,10 +55,11 @@ Definizione di copertura macro:
   prompt pack, native schema 11434, validator/controller, tool result o guard
   tipizzato, serializer 3572 OpenWebUI-audience, payload pubblico 3571.
 
-A fine run il macro invia unload esplicito ai modelli Ollama usati dal runtime
-vivo, ricavati dal `/health` 3572 (`planner_url/planner_model` e
-`ollama_task_url/ollama_task_model`). Il report contiene `ollama_unload`; se lo
-scarico fallisce e non esiste gia' un failure principale, il test fallisce.
+Il macro non scarica direttamente i modelli Ollama: verifica il componente
+runtime gia' presente in 3571. Il payload pubblico deve contenere
+`openwebui_final_handoff` e `openwebui_final_unload_planner` con unload
+`attempted=true` e `ok=true`; se questi campi mancano o non sono coerenti, il
+macro fallisce.
 
 Per ogni tool coperto il macro crea un job nuovo con id `job-macro-...`.
 Il `seed` rende riproducibile il sampling dei file, ma il `run_id` viene

@@ -92,97 +92,6 @@ def _openapi_visible_paths(schema: dict[str, Any]) -> set[str]:
     return set(paths)
 
 
-def _ollama_base_url_from_api_url(url: str) -> str:
-    raw = str(url or "").strip().rstrip("/")
-    for suffix in ("/api/chat", "/api/generate"):
-        if raw.endswith(suffix):
-            return raw[: -len(suffix)]
-    if "/api/" in raw:
-        return raw.split("/api/", 1)[0].rstrip("/")
-    return raw
-
-
-def _ollama_unload_targets_from_health(broker_health: dict[str, Any]) -> list[dict[str, str]]:
-    health = broker_health if isinstance(broker_health, dict) else {}
-    candidates = [
-        {
-            "label": "planner_11434",
-            "url": str(health.get("planner_url") or ""),
-            "model": str(health.get("planner_model") or ""),
-        },
-        {
-            "label": "task_11435",
-            "url": str(health.get("ollama_task_url") or ""),
-            "model": str(health.get("ollama_task_model") or ""),
-        },
-    ]
-    targets: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for candidate in candidates:
-        model = candidate["model"].strip()
-        base_url = _ollama_base_url_from_api_url(candidate["url"])
-        if not model or not base_url:
-            continue
-        key = (base_url, model)
-        if key in seen:
-            continue
-        seen.add(key)
-        targets.append({
-            "label": candidate["label"],
-            "model": model,
-            "base_url": base_url,
-            "unload_endpoint": base_url.rstrip("/") + "/api/generate",
-        })
-    return targets
-
-
-def _unload_ollama_models_for_macro(preflight: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
-    broker_health = preflight.get("broker_health") if isinstance(preflight.get("broker_health"), dict) else {}
-    targets = _ollama_unload_targets_from_health(broker_health)
-    result: dict[str, Any] = {
-        "schema": "macro_ollama_unload.v1",
-        "attempted": bool(targets),
-        "targets": [],
-        "ok": True,
-    }
-    if not targets:
-        result["ok"] = False
-        result["reason"] = "missing_ollama_models_or_urls_from_3572_health"
-        return result
-    for target in targets:
-        started = time.time()
-        payload = {
-            "model": target["model"],
-            "prompt": "",
-            "stream": False,
-            "keep_alive": 0,
-        }
-        row = {
-            "label": target["label"],
-            "model": target["model"],
-            "base_url": target["base_url"],
-            "unload_endpoint": target["unload_endpoint"],
-            "payload": payload,
-        }
-        try:
-            response = post_json(target["unload_endpoint"], payload, timeout=timeout)
-            row.update({
-                "ok": True,
-                "elapsed_seconds": round(time.time() - started, 3),
-                "response_preview": json.dumps(response, ensure_ascii=False, default=str)[:1000],
-            })
-        except Exception as exc:
-            row.update({
-                "ok": False,
-                "elapsed_seconds": round(time.time() - started, 3),
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:1000],
-            })
-            result["ok"] = False
-        result["targets"].append(row)
-    return result
-
-
 def _check_operator_present() -> None:
     if not _truthy(os.environ.get("AICARMINE_OPERATOR_PRESENT")):
         pytest.skip(
@@ -502,6 +411,35 @@ def _assert_3572_openwebui_serializer_shape(
         )
 
 
+def _assert_3571_runtime_final_handoff(public_payload: dict[str, Any]) -> dict[str, Any]:
+    handoff = (
+        public_payload.get("openwebui_final_handoff")
+        if isinstance(public_payload.get("openwebui_final_handoff"), dict)
+        else {}
+    )
+    unload = (
+        public_payload.get("openwebui_final_unload_planner")
+        if isinstance(public_payload.get("openwebui_final_unload_planner"), dict)
+        else {}
+    )
+    if handoff.get("terminal_result") is not True:
+        raise AssertionError("3571 runtime final handoff missing terminal_result=true")
+    if handoff.get("planner_unload_attempted") is not True:
+        raise AssertionError(f"3571 runtime did not attempt planner unload: {handoff}")
+    if handoff.get("planner_unload_ok") is not True:
+        raise AssertionError(f"3571 runtime planner unload was not ok: {handoff}")
+    if unload.get("attempted") is not True or unload.get("ok") is not True:
+        raise AssertionError(f"3571 runtime unload component did not report attempted/ok: {unload}")
+    if not str(unload.get("unload_endpoint") or "").strip():
+        raise AssertionError(f"3571 runtime unload payload lacks unload_endpoint: {unload}")
+    return {
+        "schema": "macro_runtime_final_handoff_assertion.v1",
+        "ok": True,
+        "handoff": handoff,
+        "unload": unload,
+    }
+
+
 def _assert_full_agentic_loop_artifacts(
     *,
     urls: RuntimeUrls,
@@ -758,6 +696,7 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
                     )
                 row["job_id"] = public_job_id or expected_job_id
                 row["status"] = str(result.get("status") or result.get("job_status") or "")
+                row["runtime_final_handoff_assertions"] = _assert_3571_runtime_final_handoff(result)
                 row["payload_assertions"] = assert_public_payload_contract(result)
                 serializer_job_id = extract_job_id(serializer_result)
                 row["serializer_payload_job_id"] = serializer_job_id
@@ -806,16 +745,6 @@ def test_loop_payload_completo_dynamic_tool_matrix() -> None:
                 + json.dumps(report["failures"], ensure_ascii=False, indent=2)
             )
     finally:
-        unload_result = _unload_ollama_models_for_macro(
-            preflight,
-            timeout=_int_env("LOOP_PAYLOAD_OLLAMA_UNLOAD_TIMEOUT", 30),
-        )
-        report["ollama_unload"] = unload_result
         report["finished_at"] = time.time()
         report_path = _write_report(report)
         print(f"\nmacro_loop_payload_completo_report={report_path}")
-        if sys.exc_info()[1] is None and unload_result.get("ok") is not True:
-            raise AssertionError(
-                "macro Ollama unload failed: "
-                + json.dumps(unload_result, ensure_ascii=False, indent=2, default=str)
-            )
