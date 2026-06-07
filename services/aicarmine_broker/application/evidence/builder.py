@@ -37,25 +37,15 @@ class EvidenceBuilder:
         _build_operational_notebook = deps["build_operational_notebook"]
         _candidate_actions_from_evidence = deps["candidate_actions_from_evidence"]
         _canonical_invalid_code_product_decision_signature = deps["canonical_invalid_code_product_decision_signature"]
-        _code_product_action_has_complete_payload = deps["code_product_action_has_complete_payload"]
-        _code_product_build_state_propose_action = deps["code_product_build_state_propose_action"]
-        _code_product_build_state_read_action = deps["code_product_build_state_read_action"]
-        _code_product_build_state_write_action = deps["code_product_build_state_write_action"]
-        _code_product_candidate_action = deps["code_product_candidate_action"]
-        _code_product_payload_rejection_count = deps["code_product_payload_rejection_count"]
-        _code_product_payload_violations = deps["code_product_payload_violations"]
-        _code_product_source_window_candidate = deps["code_product_source_window_candidate"]
         _compact_validation_rejections_tail = deps["compact_validation_rejections_tail"]
         _core_discovery_candidates_from_intrinsic = deps["core_discovery_candidates_from_intrinsic"]
         _disallowed_invalid_code_product_signatures = deps["disallowed_invalid_code_product_signatures"]
-        _failed_code_edit_proposal_validation_row = deps["failed_code_edit_proposal_validation_row"]
         _file_memory_from_history = deps["file_memory_from_history"]
         _goal_exact_text_block = deps["goal_exact_text_block"]
         _goal_target_file = deps["goal_target_file"]
         _goal_target_kind = deps["goal_target_kind"]
         _initial_orientation_surface_from_history = deps["initial_orientation_surface_from_history"]
         _input_error_goal = deps["input_error_goal"]
-        _latest_code_product_build_state = deps["latest_code_product_build_state"]
         _low_signal_top_dir = deps["low_signal_top_dir"]
         _meaningful_read_candidates_from_evidence = deps["meaningful_read_candidates_from_evidence"]
         _path_exists_repo_relative = deps["path_exists_repo_relative"]
@@ -82,7 +72,6 @@ class EvidenceBuilder:
         latest_file_list_result = deps["latest_file_list_result"]
         requested_file_limit_from_goal = deps["requested_file_limit_from_goal"]
         semantic_goal_classification = deps["semantic_goal_classification"]
-        successful_code_edit_proposals = deps["successful_code_edit_proposals"]
         successful_repo_read_paths = deps["successful_repo_read_paths"]
         failed_repo_read_paths = deps["failed_repo_read_paths"]
         failed_repo_list_files_paths = deps["failed_repo_list_files_paths"]
@@ -371,16 +360,29 @@ class EvidenceBuilder:
         for p in candidate_repo_read_paths:
             if p not in validator_admissible_read_paths:
                 validator_admissible_read_paths.append(p)
+        goal_requests_code_product_value = goal_requests_code_product(goal)
         code_product_required = bool(semantic_classification.get("must_produce_code_product")) and not goal_requests_apply(goal)
-        code_product_proposals = successful_code_edit_proposals(history)
+        code_product_history_required = bool(code_product_required or goal_requests_code_product_value)
+        if code_product_history_required:
+            successful_code_edit_proposals = deps["successful_code_edit_proposals"]
+            code_product_proposals = successful_code_edit_proposals(history)
+        else:
+            code_product_proposals = []
         latest_code_product = code_product_proposals[-1] if code_product_proposals else {}
-        latest_code_product_violations = (
-            _code_product_payload_violations(latest_code_product, verified_read_path_set)
-            if latest_code_product else ["missing_code_product_candidate"]
-        )
+        if latest_code_product:
+            _code_product_payload_violations = deps["code_product_payload_violations"]
+            latest_code_product_violations = _code_product_payload_violations(
+                latest_code_product,
+                verified_read_path_set,
+            )
+        else:
+            latest_code_product_violations = (
+                ["missing_code_product_candidate"] if code_product_required else []
+            )
         code_product_blocks_final = code_product_required and bool(latest_code_product_violations)
         code_product_candidate_target = ""
         code_product_candidate_line_count = 0
+        code_product_build_state: dict[str, Any] = {}
         if code_product_blocks_final:
             candidate_paths = [target_file]
             ranked_code_reads = sorted(
@@ -418,10 +420,12 @@ class EvidenceBuilder:
                                 code_product_candidate_line_count = 0
                             break
                     break
-        code_product_build_state = _latest_code_product_build_state(
-            history,
-            code_product_candidate_target or target_file,
-        )
+        if code_product_history_required:
+            _latest_code_product_build_state = deps["latest_code_product_build_state"]
+            code_product_build_state = _latest_code_product_build_state(
+                history,
+                code_product_candidate_target or target_file,
+            )
         if (
             code_product_blocks_final
             and not code_product_candidate_target
@@ -436,6 +440,7 @@ class EvidenceBuilder:
                 + ", ".join(str(v) for v in latest_code_product_violations)
             )
             if code_product_candidate_target:
+                _code_product_candidate_action = deps["code_product_candidate_action"]
                 code_candidate = _code_product_candidate_action(
                     target_file=code_product_candidate_target,
                     latest_violations=latest_code_product_violations,
@@ -473,7 +478,8 @@ class EvidenceBuilder:
                         )
                     ),
                 })
-            else:
+            elif code_product_history_required:
+                _failed_code_edit_proposal_validation_row = deps["failed_code_edit_proposal_validation_row"]
                 failed_code_edit_row = _failed_code_edit_proposal_validation_row(item)
                 if failed_code_edit_row:
                     failed_code_edit_row["invalid_decision_signature"] = (
@@ -504,7 +510,7 @@ class EvidenceBuilder:
             "controller_must_not_auto_read_or_auto_final": True,
             "semantic_goal_classification": semantic_classification,
             "goal_requests_python_file_review": goal_requests_python_file_review(goal),
-            "goal_requests_code_product": goal_requests_code_product(goal),
+            "goal_requests_code_product": goal_requests_code_product_value,
             "goal_requires_code_product_report": code_product_required,
             "goal_requests_apply": goal_requests_apply(goal),
             "action_plan_candidate": action_plan_candidate or None,
@@ -657,6 +663,12 @@ class EvidenceBuilder:
         contract = _agentic_v2_enrich_evidence_contract(contract, goal, history)
         contract["operational_notes"] = _build_operational_notebook(goal, contract)
         if code_product_blocks_final:
+            _code_product_action_has_complete_payload = deps["code_product_action_has_complete_payload"]
+            _code_product_build_state_propose_action = deps["code_product_build_state_propose_action"]
+            _code_product_build_state_read_action = deps["code_product_build_state_read_action"]
+            _code_product_build_state_write_action = deps["code_product_build_state_write_action"]
+            _code_product_payload_rejection_count = deps["code_product_payload_rejection_count"]
+            _code_product_source_window_candidate = deps["code_product_source_window_candidate"]
             payload_rejection_count = _code_product_payload_rejection_count(
                 validation_rejections,
                 code_product_candidate_target,

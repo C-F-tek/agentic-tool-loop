@@ -216,26 +216,6 @@ def original_text(original_args: dict[str, Any]) -> str:
             return value.strip()
     return ''
 
-def _paths_from_items(value: object) -> list[str]:
-    paths: list[str] = []
-    if isinstance(value, dict):
-        value = [value]
-    if not isinstance(value, list):
-        return paths
-    for item in value:
-        if isinstance(item, str) and item.strip():
-            paths.append(item.strip())
-        elif isinstance(item, dict):
-            for key in ('path', 'file', 'filename', 'name'):
-                candidate = item.get(key)
-                if isinstance(candidate, str) and candidate.strip():
-                    paths.append(candidate.strip())
-                    break
-            nested = item.get('paths') or item.get('files')
-            if isinstance(nested, list):
-                paths.extend(str(p).strip() for p in nested if str(p).strip())
-    return paths
-
 
 def sanitize_tool_args(tool_name: str, call_args: dict[str, Any], original_args: dict[str, Any], public_tool_name: str) -> dict[str, Any]:
     args = dict(call_args or {})

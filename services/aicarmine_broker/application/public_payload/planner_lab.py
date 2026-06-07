@@ -6,6 +6,8 @@ import hashlib
 import json
 from typing import Any
 
+from ..evidence.goal_classifier import goal_requests_apply, goal_requests_code_product
+
 
 SCHEMA = "planner_payload_lab.v1"
 DEFAULT_SUMMARY_TEXT_CHARS = 4000
@@ -259,6 +261,503 @@ def _first_non_empty_text(*values: Any) -> str:
     return ""
 
 
+def _type_name(value: Any) -> str:
+    if isinstance(value, dict):
+        return "dict"
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, str):
+        return "str"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
+
+def _value_measure(value: Any, *, preview_chars: int = 500) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {
+            "type": "dict",
+            "keys": len(value),
+            "key_names": sorted(str(key) for key in value.keys())[:30],
+        }
+    if isinstance(value, list):
+        return {"type": "list", "items": len(value)}
+    if isinstance(value, str):
+        return {
+            "type": "str",
+            "chars": len(value),
+            "lines": value.count("\n") + 1 if value else 0,
+            "preview": _clip(value, preview_chars),
+        }
+    return {"type": _type_name(value), "value": value}
+
+
+def _field_role(path: str) -> str:
+    if path == "$.evidence_guide_for_30b":
+        return "global_human_guide"
+    if path.startswith("$.payload_index_for_30b"):
+        return "navigation_index"
+    if path.startswith("$.priority_evidence_for_30b.items"):
+        return "priority_inline_evidence"
+    if path.startswith("$.tool_context_for_30b.artifacts"):
+        return "tool_artifact_inline_context"
+    if path.startswith("$.tool_context_for_30b"):
+        return "tool_context_structured_support"
+    if path in {"$.final_summary", "$.planner_final_summary"}:
+        return "terminal_summary"
+    return "payload_field"
+
+
+def _inline_payload_field(path: str, value: Any) -> bool:
+    if not isinstance(value, (str, list, dict)):
+        return False
+    leaf = path.rsplit(".", 1)[-1].split("[", 1)[0]
+    return leaf in {
+        "artifact",
+        "content",
+        "text",
+        "unified_diff",
+        "structured_operations",
+        "old_text",
+        "new_text",
+        "items",
+        "entries",
+        "files",
+        "paths",
+    }
+
+
+def _payload_shape_rows(
+    value: Any,
+    *,
+    path: str = "$",
+    depth: int = 0,
+    max_depth: int = 7,
+    max_nodes: int = 320,
+    rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if rows is None:
+        rows = []
+    if len(rows) >= max_nodes or depth > max_depth:
+        return rows
+    measure = _value_measure(value, preview_chars=220)
+    row = {
+        "path": path,
+        "depth": depth,
+        "role": _field_role(path),
+        "inline_payload_candidate": _inline_payload_field(path, value),
+        **{k: v for k, v in measure.items() if k != "preview"},
+    }
+    if measure.get("preview"):
+        row["preview"] = measure["preview"]
+    rows.append(row)
+    if depth >= max_depth:
+        return rows
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if len(rows) >= max_nodes:
+                break
+            _payload_shape_rows(
+                item,
+                path=f"{path}.{key}",
+                depth=depth + 1,
+                max_depth=max_depth,
+                max_nodes=max_nodes,
+                rows=rows,
+            )
+    elif isinstance(value, list):
+        for index, item in enumerate(value[:80]):
+            if len(rows) >= max_nodes:
+                break
+            _payload_shape_rows(
+                item,
+                path=f"{path}[{index}]",
+                depth=depth + 1,
+                max_depth=max_depth,
+                max_nodes=max_nodes,
+                rows=rows,
+            )
+    return rows
+
+
+def _inline_fields_from_item(
+    item: dict[str, Any],
+    *,
+    base_path: str,
+    preview_chars: int,
+) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    for key in (
+        "content",
+        "text",
+        "summary",
+        "unified_diff",
+        "structured_operations",
+        "old_text",
+        "new_text",
+        "artifact",
+        "items",
+        "entries",
+        "files",
+        "paths",
+    ):
+        if key not in item:
+            continue
+        value = item.get(key)
+        if value in (None, "", [], {}):
+            continue
+        measure = _value_measure(value, preview_chars=preview_chars)
+        fields.append({
+            "field": key,
+            "path": f"{base_path}.{key}",
+            "payload_is_inline": True,
+            **measure,
+        })
+    return fields
+
+
+def _useful_payload_field(
+    *,
+    owner: str,
+    request_type: str,
+    payload_kind: str,
+    path: str,
+    field: str,
+    value: Any,
+    preview_chars: int,
+    reason: str,
+    derived_from: str = "",
+) -> dict[str, Any]:
+    measure = _value_measure(value, preview_chars=preview_chars)
+    out = {
+        "owner": owner,
+        "request_type": request_type,
+        "payload_kind": payload_kind,
+        "path": path,
+        "field": field,
+        "payload_is_inline": value not in (None, "", [], {}),
+        "reason": reason,
+        **measure,
+    }
+    if derived_from:
+        out["derived_from"] = derived_from
+    if isinstance(value, str):
+        out["text"] = _clip(value, preview_chars)
+        out["lab_display_truncated"] = len(value) > preview_chars
+    elif isinstance(value, (dict, list)):
+        out["json_preview"] = _bounded_json(value, preview_chars)
+    return out
+
+
+def _first_priority_item(
+    priority_items: list[Any],
+    *,
+    kind: str,
+) -> tuple[int, dict[str, Any]]:
+    for index, item in enumerate(priority_items):
+        if isinstance(item, dict) and item.get("kind") == kind:
+            return index, item
+    return -1, {}
+
+
+def _first_code_product_field(
+    priority_items: list[Any],
+    *,
+    preview_chars: int,
+) -> dict[str, Any]:
+    for index, item in enumerate(priority_items):
+        if not isinstance(item, dict) or item.get("kind") != "code_edit_proposal":
+            continue
+        base = f"priority_evidence_for_30b.items[{index}]"
+        for field, payload_kind in (
+            ("unified_diff", "complete_unified_diff"),
+            ("structured_operations", "structured_operations"),
+            ("old_text", "exact_old_text"),
+            ("new_text", "exact_new_text"),
+            ("text", "code_product_text"),
+            ("summary", "code_product_summary"),
+        ):
+            value = item.get(field)
+            if value in (None, "", [], {}):
+                continue
+            return _useful_payload_field(
+                owner="application.code_product",
+                request_type="code_product",
+                payload_kind=payload_kind,
+                path=f"{base}.{field}",
+                field=field,
+                value=value,
+                preview_chars=preview_chars,
+                reason="Goal requests a diff/code product; this is the first complete code-product payload field.",
+            )
+    return {}
+
+
+def _first_apply_artifact_field(
+    tool_context: Any,
+    *,
+    preview_chars: int,
+) -> dict[str, Any]:
+    artifacts = tool_context.get("artifacts") if isinstance(tool_context, dict) and isinstance(tool_context.get("artifacts"), list) else []
+    for index, row in enumerate(artifacts):
+        if not isinstance(row, dict):
+            continue
+        artifact = row.get("artifact") if isinstance(row.get("artifact"), dict) else {}
+        tool = str(row.get("tool") or artifact.get("tool") or artifact.get("kind") or "")
+        if tool != "repo_apply_patch":
+            continue
+        value = artifact or row
+        return _useful_payload_field(
+            owner="application.patch_apply",
+            request_type="apply_patch",
+            payload_kind="repo_apply_patch_result",
+            path=f"tool_context_for_30b.artifacts[{index}].artifact",
+            field="artifact",
+            value=value,
+            preview_chars=preview_chars,
+            reason="Goal requests applying/editing; repo_apply_patch produced the useful terminal payload.",
+        )
+    return {}
+
+
+def build_owner_payload_focus(
+    *,
+    user_goal: str,
+    priority_evidence: dict[str, Any],
+    tool_context: Any,
+    code_products: list[dict[str, Any]],
+    evidence_guide: str,
+    preview_chars: int,
+) -> dict[str, Any]:
+    priority_items = priority_evidence.get("items") if isinstance(priority_evidence.get("items"), list) else []
+    apply_field = _first_apply_artifact_field(tool_context, preview_chars=preview_chars)
+    if apply_field:
+        return {
+            "schema": "planner_lab.owner_payload_focus.v1",
+            "owner": "application.patch_apply",
+            "request_type": "apply_patch",
+            "primary_field": apply_field,
+            "supporting_fields": [],
+        }
+    code_field = _first_code_product_field(priority_items, preview_chars=preview_chars)
+    if code_field:
+        return {
+            "schema": "planner_lab.owner_payload_focus.v1",
+            "owner": "application.code_product",
+            "request_type": "code_product",
+            "primary_field": code_field,
+            "supporting_fields": [],
+        }
+    if goal_requests_apply(user_goal):
+        for item in code_products if isinstance(code_products, list) else []:
+            if not isinstance(item, dict) or not item.get("apply_supported"):
+                continue
+            return {
+                "schema": "planner_lab.owner_payload_focus.v1",
+                "owner": "application.patch_apply",
+                "request_type": "apply_patch",
+                "primary_field": _useful_payload_field(
+                    owner="application.patch_apply",
+                    request_type="apply_patch",
+                    payload_kind="exact_old_new_text_payload",
+                    path=str(item.get("source_path") or "code_products[*]"),
+                    field="old_text/new_text",
+                    value={
+                        "target_file": item.get("target_file"),
+                        "old_text": item.get("old_text"),
+                        "new_text": item.get("new_text"),
+                        "apply_tool_call": item.get("apply_tool_call"),
+                    },
+                    preview_chars=preview_chars,
+                    reason="Goal requests applying/editing; no apply result is present, but exact old/new payload is available.",
+                    derived_from=str(item.get("source_path") or ""),
+                ),
+                "supporting_fields": [],
+            }
+    if goal_requests_code_product(user_goal):
+        for item in code_products if isinstance(code_products, list) else []:
+            if not isinstance(item, dict):
+                continue
+            value = item.get("unified_diff") or item.get("structured_operations") or item
+            field = "unified_diff" if item.get("unified_diff") else "structured_operations" if item.get("structured_operations") else "candidate"
+            return {
+                "schema": "planner_lab.owner_payload_focus.v1",
+                "owner": "application.code_product",
+                "request_type": "code_product",
+                "primary_field": _useful_payload_field(
+                    owner="application.code_product",
+                    request_type="code_product",
+                    payload_kind="extracted_code_product_candidate",
+                    path=str(item.get("source_path") or "code_products[*]"),
+                    field=field,
+                    value=value,
+                    preview_chars=preview_chars,
+                    reason="Goal requests a diff/code product; extracted candidate is the useful payload.",
+                    derived_from=str(item.get("source_path") or ""),
+                ),
+                "supporting_fields": [],
+            }
+    summary_index, summary_item = _first_priority_item(priority_items, kind="repo_analysis_summary")
+    if summary_item:
+        return {
+            "schema": "planner_lab.owner_payload_focus.v1",
+            "owner": "application.evidence",
+            "request_type": "repo_analysis",
+            "primary_field": _useful_payload_field(
+                owner="application.evidence",
+                request_type="repo_analysis",
+                payload_kind="repo_analysis_summary",
+                path=f"priority_evidence_for_30b.items[{summary_index}].summary",
+                field="summary",
+                value=summary_item.get("summary"),
+                preview_chars=preview_chars,
+                reason="Repository-analysis request; the useful answer field is the materialized analysis summary.",
+            ),
+            "supporting_fields": [
+                {
+                    "path": f"priority_evidence_for_30b.items[{index}].content",
+                    "kind": item.get("kind"),
+                    "path_value": item.get("path"),
+                    "chars": item.get("chars"),
+                }
+                for index, item in enumerate(priority_items)
+                if isinstance(item, dict)
+                and item.get("kind") == "repo_file_full_content"
+            ][:20],
+        }
+    return {
+        "schema": "planner_lab.owner_payload_focus.v1",
+        "owner": "application.public_payload",
+        "request_type": "generic_payload",
+        "primary_field": _useful_payload_field(
+            owner="application.public_payload",
+            request_type="generic_payload",
+            payload_kind="evidence_guide",
+            path="$.evidence_guide_for_30b",
+            field="evidence_guide_for_30b",
+            value=evidence_guide,
+            preview_chars=preview_chars,
+            reason="No specialized owner payload was detected; use the global guide before the full index.",
+        ),
+        "supporting_fields": [],
+    }
+
+
+def build_public_tool_response_view(
+    *,
+    openwebui_payload: dict[str, Any],
+    tool_context: Any,
+    payload_index: dict[str, Any],
+    priority_evidence: dict[str, Any],
+    owner_payload_focus: dict[str, Any],
+    evidence_guide: str,
+    preview_chars: int,
+) -> dict[str, Any]:
+    top_level_fields = [
+        {
+            "field": str(key),
+            "path": f"$.{key}",
+            "role": _field_role(f"$.{key}"),
+            **_value_measure(value, preview_chars=220),
+        }
+        for key, value in openwebui_payload.items()
+    ]
+    priority_items = priority_evidence.get("items") if isinstance(priority_evidence.get("items"), list) else []
+    priority_rows: list[dict[str, Any]] = []
+    for index, item in enumerate(priority_items):
+        if not isinstance(item, dict):
+            continue
+        base_path = f"priority_evidence_for_30b.items[{index}]"
+        priority_rows.append({
+            "index": index,
+            "path": base_path,
+            "kind": item.get("kind"),
+            "tool": item.get("tool"),
+            "ok": item.get("ok"),
+            "repo_path": item.get("path") or item.get("target_file"),
+            "payload_is_complete": item.get("payload_is_complete"),
+            "validator_accepted": item.get("validator_accepted"),
+            "inline_fields": _inline_fields_from_item(
+                item,
+                base_path=base_path,
+                preview_chars=preview_chars,
+            ),
+            "keys": sorted(str(key) for key in item.keys()),
+        })
+    artifacts = tool_context.get("artifacts") if isinstance(tool_context, dict) and isinstance(tool_context.get("artifacts"), list) else []
+    artifact_rows: list[dict[str, Any]] = []
+    for index, row in enumerate(artifacts):
+        if not isinstance(row, dict):
+            continue
+        artifact = row.get("artifact") if isinstance(row.get("artifact"), dict) else {}
+        base_path = f"tool_context_for_30b.artifacts[{index}]"
+        artifact_rows.append({
+            "index": index,
+            "path": base_path,
+            "tool": row.get("tool") or artifact.get("tool"),
+            "ok": row.get("ok") if "ok" in row else artifact.get("ok"),
+            "kind": artifact.get("kind") or row.get("kind"),
+            "repo_path": artifact.get("repo_path") or artifact.get("path") or row.get("path"),
+            "payload_is_complete": artifact.get("payload_is_complete", row.get("payload_is_complete")),
+            "artifact_keys": sorted(str(key) for key in artifact.keys())[:60],
+            "inline_fields": _inline_fields_from_item(
+                artifact,
+                base_path=f"{base_path}.artifact",
+                preview_chars=preview_chars,
+            ),
+        })
+    public_payload_for_shape = {
+        "evidence_guide_for_30b": openwebui_payload.get("evidence_guide_for_30b"),
+        "payload_index_for_30b": payload_index,
+        "priority_evidence_for_30b": priority_evidence,
+        "tool_context_for_30b": tool_context,
+    }
+    shape_rows = _payload_shape_rows(public_payload_for_shape)
+    deep_inline_locations = [
+        row["path"]
+        for row in shape_rows
+        if row.get("inline_payload_candidate") and int(row.get("depth") or 0) >= 4
+    ][:80]
+    return {
+        "schema": "planner_lab.public_tool_response_view.v1",
+        "source": "terminal_response_returned_to_3571",
+        "purpose": (
+            "Human-readable view composed only from fields already returned in "
+            "the public 3571/OpenWebUI payload. It preserves field paths and "
+            "nesting so the operator can inspect inline evidence and structure."
+        ),
+        "status": openwebui_payload.get("status"),
+        "job_completed": payload_index.get("job_completed"),
+        "top_level_fields": top_level_fields,
+        "human_answer": {
+            "field": "evidence_guide_for_30b",
+            "path": "$.evidence_guide_for_30b",
+            "text": _clip(evidence_guide, preview_chars),
+        },
+        "owner_payload_focus": owner_payload_focus,
+        "navigation": {
+            "search_order": payload_index.get("search_order") if isinstance(payload_index.get("search_order"), list) else [],
+            "concrete_results": payload_index.get("concrete_results") if isinstance(payload_index.get("concrete_results"), list) else [],
+            "partial_results": payload_index.get("partial_results") if isinstance(payload_index.get("partial_results"), list) else [],
+            "descriptive_only": payload_index.get("descriptive_only") if isinstance(payload_index.get("descriptive_only"), list) else [],
+        },
+        "priority_evidence_items": priority_rows,
+        "tool_context_artifacts": artifact_rows,
+        "structure_map": {
+            "max_rendered_depth": 7,
+            "rendered_nodes": len(shape_rows),
+            "deep_inline_locations": deep_inline_locations,
+            "rows": shape_rows,
+        },
+    }
+
+
 def build_payload_redundancy_audit(
     *,
     openwebui_payload: dict[str, Any],
@@ -385,6 +884,12 @@ def build_planner_payload_lab(
         maximum=200,
     )
     openwebui_payload = terminal_response if isinstance(terminal_response, dict) else {}
+    job = ia_view_payload.get("job") if isinstance(ia_view_payload.get("job"), dict) else {}
+    user_goal = _first_non_empty_text(
+        job.get("goal"),
+        openwebui_payload.get("task"),
+        openwebui_payload.get("request"),
+    )
     raw_tool_context = openwebui_payload.get("tool_context_for_30b")
     if raw_tool_context in (None, "", {}, []) and isinstance(ia_view_payload.get("openwebui_30b_payload"), dict):
         raw_tool_context = ia_view_payload["openwebui_30b_payload"]
@@ -425,7 +930,7 @@ def build_planner_payload_lab(
         readiness_warnings.append("tool_context_for_30b_missing")
     if not concrete_results and not priority_items:
         readiness_warnings.append("no_priority_or_concrete_payload_index")
-    if not code_products and "diff" in json.dumps(openwebui_payload, ensure_ascii=False, default=str).lower():
+    if not code_products and goal_requests_code_product(user_goal):
         readiness_warnings.append("diff_goal_without_extractable_code_product")
     if not redundancy_audit.get("ok"):
         readiness_warnings.extend(redundancy_audit.get("violations") or [])
@@ -442,6 +947,23 @@ def build_planner_payload_lab(
         "apply_supported_candidates": len([item for item in code_products if item.get("apply_supported")]),
         "warnings": readiness_warnings,
     }
+    owner_payload_focus = build_owner_payload_focus(
+        user_goal=user_goal,
+        priority_evidence=priority_evidence,
+        tool_context=tool_context,
+        code_products=code_products,
+        evidence_guide=evidence_guide,
+        preview_chars=max(800, min(safe_summary_chars, 6000)),
+    )
+    public_tool_response_view = build_public_tool_response_view(
+        openwebui_payload=openwebui_payload,
+        tool_context=tool_context,
+        payload_index=payload_index,
+        priority_evidence=priority_evidence,
+        owner_payload_focus=owner_payload_focus,
+        evidence_guide=evidence_guide,
+        preview_chars=max(800, min(safe_summary_chars, 6000)),
+    )
     step_summaries = build_step_summaries(ia_view_payload, limit=safe_step_limit)
     chat_turn = build_chat_turn_summary(
         job_id=job_id,
@@ -465,6 +987,8 @@ def build_planner_payload_lab(
         },
         "job": ia_view_payload.get("job") if isinstance(ia_view_payload.get("job"), dict) else {"job_id": job_id},
         "payload_readiness": payload_readiness,
+        "owner_payload_focus": owner_payload_focus,
+        "public_tool_response_view": public_tool_response_view,
         "chat_turn": chat_turn,
         "model_visible_text": {key: value for key, value in model_visible_text.items() if value},
         "redundancy_audit": redundancy_audit,
@@ -552,6 +1076,8 @@ def build_planner_lab_compose_request(
         "chat_turn": lab_payload.get("chat_turn"),
         "model_visible_text": lab_payload.get("model_visible_text"),
         "payload_readiness": lab_payload.get("payload_readiness"),
+        "owner_payload_focus": lab_payload.get("owner_payload_focus"),
+        "public_tool_response_view": lab_payload.get("public_tool_response_view"),
         "redundancy_audit": lab_payload.get("redundancy_audit"),
         "thinking_step_summary": lab_payload.get("thinking_step_summary"),
         "code_products": lab_payload.get("code_products"),

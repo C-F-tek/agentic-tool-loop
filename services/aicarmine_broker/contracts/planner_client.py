@@ -6,11 +6,11 @@ from typing import Any, Mapping, Protocol, Sequence
 class PlannerClient(Protocol):
     """Transport port for one 11434 planner turn."""
 
-    def complete(
+    def plan(
         self,
-        *,
-        messages: Sequence[Mapping[str, Any]],
-        tools: Sequence[Mapping[str, Any]],
-        options: Mapping[str, Any],
+        job_id: str,
+        turn_index: int,
+        state: Mapping[str, Any],
+        history: Sequence[Mapping[str, Any]],
     ) -> Mapping[str, Any]:
-        """Return the raw planner response for a measured prompt payload."""
+        """Execute one planner turn and return the new state."""

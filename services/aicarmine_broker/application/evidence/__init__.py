@@ -14,6 +14,8 @@ _PUBLIC_EXPORTS = {
     'goal_requests_apply': 'goal_classifier',
     'goal_requests_code_product': 'goal_classifier',
     'planner_evidence_contract': 'builder',
+    'repo_analysis_final_answer_quality': 'final_quality',
+    'repo_analysis_final_answer_too_shallow': 'final_quality',
     'repo_path_kind': 'repo_path_policy',
     'required_working_set_for_prompt': 'required_working_set',
     'score_evidence_coverage': 'coverage_scorer',
@@ -21,8 +23,7 @@ _PUBLIC_EXPORTS = {
 
 }
 
-__all__ = sorted(_PUBLIC_EXPORTS)
-
+__all__: list[str] = sorted(_PUBLIC_EXPORTS)
 
 def __getattr__(name: str):
     module_name = _PUBLIC_EXPORTS.get(name)

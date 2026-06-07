@@ -3,7 +3,6 @@ param(
     [int]$WaitSeconds = 240,
     [int]$MaxSteps = 8,
     [string]$Request = "",
-    [string]$ExpectTool = "",
     [string]$RunId = ""
 )
 
@@ -47,11 +46,6 @@ if ($Request) {
 } else {
     throw "Pass -Request with the operator request to send through 3571 /vulkan_helper."
 }
-if ($ExpectTool) {
-    $env:LOOP_PAYLOAD_EXPECT_TOOL = $ExpectTool
-} else {
-    Remove-Item Env:LOOP_PAYLOAD_EXPECT_TOOL -ErrorAction SilentlyContinue
-}
 $LaunchNonce = "{0}-{1}" -f (Get-Date -Format "yyyyMMddHHmmssffff"), ([guid]::NewGuid().ToString("N").Substring(0, 12))
 if ($RunId) {
     $EffectiveRunId = "{0}-{1}" -f $RunId, $LaunchNonce
@@ -67,7 +61,6 @@ Write-Host "Python: $Python"
 Write-Host "WaitSeconds: $WaitSeconds MaxSteps: $MaxSteps"
 if ($Seed) { Write-Host "Seed: $Seed" }
 Write-Host "Request: $Request"
-if ($ExpectTool) { Write-Host "ExpectTool: $ExpectTool" }
 Write-Host "RunId: $EffectiveRunId"
 
 & $Python -m pytest (Join-Path $ScriptRoot "test_loop_payload_completo.py") -q -s --tb=short

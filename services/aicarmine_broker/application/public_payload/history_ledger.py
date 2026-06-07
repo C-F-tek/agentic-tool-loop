@@ -3,14 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..job.response_values import compact_text
 
-def compact_text(value: Any, limit: int) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    if int(limit or 0) <= 0:
-        return text
-    if len(text) <= limit:
-        return text
-    return text[: max(0, limit - 40)] + "\n... <see final.md/final.json for full output>"
 
 
 def compact_json(value: Any, limit: int) -> str:

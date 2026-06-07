@@ -14,7 +14,6 @@ class CommandResult:
 
 class CommandRunner(Protocol):
     """Guarded command execution port."""
-
     def run(
         self,
         command: tuple[str, ...],

@@ -67,7 +67,6 @@ def planner_decision(
     planner_evidence_contract = deps["planner_evidence_contract"]
     planner_memory_surface = deps["planner_memory_surface"]
     post_json_stream_to_file = deps["post_json_stream_to_file"]
-    successful_code_edit_proposals = deps["successful_code_edit_proposals"]
     summarize_history_artifacts = deps["summarize_history_artifacts"]
     write_json = deps["write_json"]
 
@@ -617,7 +616,12 @@ def planner_decision(
     raw_text = str(message.get("content") or response.get("response") or "")
 
     if planner_done_token(raw_text):
-        if goal_requires_code_product_report(goal) and not successful_code_edit_proposals(history):
+        if goal_requires_code_product_report(goal):
+            successful_code_edit_proposals = deps["successful_code_edit_proposals"]
+            has_code_product_candidate = bool(successful_code_edit_proposals(history))
+        else:
+            has_code_product_candidate = True
+        if not has_code_product_candidate:
             return {
                 "action": "block",
                 "reason": "planner done token without required code product candidate",

@@ -65,6 +65,7 @@ let activeRequestText = "";
 let guidedConversation = [];
 let guidedTurnCounter = 0;
 let guidedDraftText = "";
+let guidedComposeInFlight = false;
 
 function htmlEscape(value) {{
   return String(value ?? "").replace(/[&<>"']/g, ch => ({{"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}}[ch]));
@@ -105,8 +106,14 @@ async function startPlannerJob(returnMode = "background") {{
     setStatus("start_failed");
   }}
 }}
-async function loadJob() {{
+async function loadJob(force = false) {{
   captureGuidedDraft();
+  const guidedPrompt = document.getElementById("guided-operator-prompt");
+  const guidedInputFocused = guidedPrompt && document.activeElement === guidedPrompt;
+  if (!force && (guidedComposeInFlight || guidedInputFocused || guidedDraftText.trim())) {{
+    setStatus(guidedComposeInFlight ? "poll_paused_composing" : "poll_paused_guided_input");
+    return;
+  }}
   const jobId = (document.getElementById("job-id").value || currentJobId || "").trim();
   if (!jobId) {{
     setStatus("job_id_missing");
@@ -132,7 +139,7 @@ function labLimitParams() {{
 }}
 function startPolling() {{
   if (pollTimer) clearInterval(pollTimer);
-  loadJob();
+  loadJob(true);
   pollTimer = setInterval(loadJob, 2500);
 }}
 function renderMetrics(readiness) {{
@@ -153,6 +160,123 @@ function renderTopLevelSurface(data) {{
     ${{contextAliases.length ? `<p><b>tool_context root aliases</b></p><pre>${{htmlEscape(contextAliases.join("\\n"))}}</pre>` : ""}}
     <details open><summary>evidence_guide_for_30b</summary><pre>${{htmlEscape(visible.evidence_guide_for_30b || "")}}</pre></details>
     <details><summary>Redundancy audit JSON</summary><pre>${{htmlEscape(pretty(audit))}}</pre></details>
+  </div>`;
+}}
+function renderInlineFields(fields) {{
+  if (!Array.isArray(fields) || fields.length === 0) return "<p class='muted'>No inline payload fields detected here.</p>";
+  return fields.map(field => {{
+    const size = field.chars ?? field.items ?? field.keys ?? "";
+    const label = `${{field.path || field.field || ""}} · ${{field.type || ""}} ${{size}}`;
+    const body = field.preview ? field.preview : pretty(field);
+    return `<details><summary>${{htmlEscape(label)}}</summary><pre>${{htmlEscape(body)}}</pre></details>`;
+  }}).join("");
+}}
+function renderResultRows(rows) {{
+  if (!Array.isArray(rows) || rows.length === 0) return "<p class='muted'>None.</p>";
+  return `<table><thead><tr><th>kind</th><th>path/tool</th><th>complete</th><th>primary location</th></tr></thead><tbody>${{
+    rows.map(row => `<tr>
+      <td>${{htmlEscape(row.kind || row.payload_type || "")}}</td>
+      <td>${{htmlEscape(row.path || row.tool || "")}}</td>
+      <td>${{htmlEscape(row.payload_is_complete)}}</td>
+      <td>${{htmlEscape(typeof row.primary_location === "object" ? pretty(row.primary_location) : (row.primary_location || row.full_context_location || ""))}}</td>
+    </tr>`).join("")
+  }}</tbody></table>`;
+}}
+function renderOwnerPayloadFocus(focus) {{
+  if (!focus || !focus.primary_field) return "<p class='muted'>No owner-specific payload focus.</p>";
+  const field = focus.primary_field || {{}};
+  const body = field.text || field.json_preview || field.preview || pretty(field);
+  const supporting = Array.isArray(focus.supporting_fields) ? focus.supporting_fields : [];
+  return `<div class="step-card ok">
+    <h3>Owner useful payload</h3>
+    <div class="metric-row">
+      <div class="metric"><span>owner</span><b>${{htmlEscape(focus.owner || field.owner || "")}}</b></div>
+      <div class="metric"><span>request_type</span><b>${{htmlEscape(focus.request_type || field.request_type || "")}}</b></div>
+      <div class="metric"><span>payload_kind</span><b>${{htmlEscape(field.payload_kind || "")}}</b></div>
+      <div class="metric"><span>field</span><b>${{htmlEscape(field.field || "")}}</b></div>
+    </div>
+    <p class="muted">${{htmlEscape(field.reason || "")}}</p>
+    <details open><summary>${{htmlEscape(field.path || "")}}</summary><pre>${{htmlEscape(body)}}</pre></details>
+    ${{supporting.length ? `<details><summary>supporting inline fields</summary><pre>${{htmlEscape(pretty(supporting))}}</pre></details>` : ""}}
+    <details><summary>owner focus JSON</summary><pre>${{htmlEscape(pretty(focus))}}</pre></details>
+  </div>`;
+}}
+function renderPriorityRows(rows) {{
+  if (!Array.isArray(rows) || rows.length === 0) return "<p class='muted'>No priority evidence items.</p>";
+  return rows.map(row => `<div class="step-card">
+    <b>#${{htmlEscape(row.index)}} ${{htmlEscape(row.kind || "")}}</b>
+    <div class="muted">${{htmlEscape(row.path || "")}}</div>
+    <div>tool=${{htmlEscape(row.tool || "")}} path=${{htmlEscape(row.repo_path || "")}} complete=${{htmlEscape(row.payload_is_complete)}} accepted=${{htmlEscape(row.validator_accepted)}}</div>
+    ${{renderInlineFields(row.inline_fields || [])}}
+    <details><summary>keys</summary><pre>${{htmlEscape((row.keys || []).join("\\n"))}}</pre></details>
+  </div>`).join("");
+}}
+function renderArtifactRows(rows) {{
+  if (!Array.isArray(rows) || rows.length === 0) return "<p class='muted'>No tool_context artifacts.</p>";
+  return rows.map(row => `<div class="step-card">
+    <b>#${{htmlEscape(row.index)}} ${{htmlEscape(row.tool || "")}} · ${{htmlEscape(row.kind || "")}}</b>
+    <div class="muted">${{htmlEscape(row.path || "")}}</div>
+    <div>ok=${{htmlEscape(row.ok)}} path=${{htmlEscape(row.repo_path || "")}} complete=${{htmlEscape(row.payload_is_complete)}}</div>
+    ${{renderInlineFields(row.inline_fields || [])}}
+    <details><summary>artifact keys</summary><pre>${{htmlEscape((row.artifact_keys || []).join("\\n"))}}</pre></details>
+  </div>`).join("");
+}}
+function renderStructureRows(rows) {{
+  if (!Array.isArray(rows) || rows.length === 0) return "<p class='muted'>No structure map.</p>";
+  const visible = rows.slice(0, 260);
+  return `<table><thead><tr><th>depth</th><th>path</th><th>role</th><th>type/size</th><th>inline</th></tr></thead><tbody>${{
+    visible.map(row => {{
+      const size = row.chars ?? row.items ?? row.keys ?? "";
+      return `<tr>
+        <td>${{htmlEscape(row.depth)}}</td>
+        <td>${{htmlEscape(row.path || "")}}</td>
+        <td>${{htmlEscape(row.role || "")}}</td>
+        <td>${{htmlEscape(`${{row.type || ""}} ${{size}}`)}}</td>
+        <td>${{htmlEscape(row.inline_payload_candidate)}}</td>
+      </tr>`;
+    }}).join("")
+  }}</tbody></table>`;
+}}
+function renderPublicToolResponse(data) {{
+  const view = data.public_tool_response_view || {{}};
+  if (!view.schema) return "";
+  const topFields = Array.isArray(view.top_level_fields) ? view.top_level_fields : [];
+  const nav = view.navigation || {{}};
+  const shape = view.structure_map || {{}};
+  const focus = view.owner_payload_focus || data.owner_payload_focus || {{}};
+  return `<div class="card">
+    <h2>3571 public tool response</h2>
+    <div class="metric-row">
+      <div class="metric"><span>status</span><b>${{htmlEscape(view.status || "")}}</b></div>
+      <div class="metric"><span>job_completed</span><b>${{htmlEscape(view.job_completed)}}</b></div>
+      <div class="metric"><span>top_level_fields</span><b>${{htmlEscape(topFields.length)}}</b></div>
+      <div class="metric"><span>structure_nodes</span><b>${{htmlEscape(shape.rendered_nodes || 0)}}</b></div>
+    </div>
+    <details open><summary>human answer from $.evidence_guide_for_30b</summary><pre>${{htmlEscape((view.human_answer || {{}}).text || "")}}</pre></details>
+    ${{renderOwnerPayloadFocus(focus)}}
+    <details open><summary>top-level returned fields</summary>
+      <table><thead><tr><th>field</th><th>role</th><th>type</th><th>size</th></tr></thead><tbody>${{
+        topFields.map(row => `<tr>
+          <td>${{htmlEscape(row.field || "")}}</td>
+          <td>${{htmlEscape(row.role || "")}}</td>
+          <td>${{htmlEscape(row.type || "")}}</td>
+          <td>${{htmlEscape(row.chars ?? row.items ?? row.keys ?? "")}}</td>
+        </tr>`).join("")
+      }}</tbody></table>
+    </details>
+    <details open><summary>payload_index concrete results</summary>${{renderResultRows(nav.concrete_results || [])}}</details>
+    <details><summary>payload_index partial / descriptive</summary>
+      <h3>partial_results</h3>${{renderResultRows(nav.partial_results || [])}}
+      <h3>descriptive_only</h3><pre>${{htmlEscape(pretty(nav.descriptive_only || []))}}</pre>
+      <h3>search_order</h3><pre>${{htmlEscape((nav.search_order || []).join("\\n"))}}</pre>
+    </details>
+    <details open><summary>priority_evidence_for_30b items</summary>${{renderPriorityRows(view.priority_evidence_items || [])}}</details>
+    <details><summary>tool_context_for_30b artifacts</summary>${{renderArtifactRows(view.tool_context_artifacts || [])}}</details>
+    <details><summary>nesting / field-depth map</summary>
+      <p class="muted">Deep inline locations</p>
+      <pre>${{htmlEscape((shape.deep_inline_locations || []).join("\\n"))}}</pre>
+      ${{renderStructureRows(shape.rows || [])}}
+    </details>
   </div>`;
 }}
 function renderPendingChat(task) {{
@@ -243,7 +367,7 @@ async function applyCandidate(candidateId) {{
   const data = await response.json();
   document.getElementById("apply-result").textContent = pretty(data);
   setStatus(data.ok ? "apply_done" : "apply_blocked");
-  loadJob();
+  loadJob(true);
 }}
 function captureGuidedDraft() {{
   const input = document.getElementById("guided-operator-prompt");
@@ -252,6 +376,10 @@ function captureGuidedDraft() {{
 async function composeFromPayload() {{
   if (!currentJobId) {{
     setStatus("job_id_missing");
+    return;
+  }}
+  if (guidedComposeInFlight) {{
+    setStatus("compose_already_running");
     return;
   }}
   captureGuidedDraft();
@@ -277,46 +405,63 @@ async function composeFromPayload() {{
     ts: new Date().toISOString()
   }});
   guidedDraftText = "";
+  guidedComposeInFlight = true;
   renderGuidedConversation();
   setStatus("compose_waiting_for_ollama");
-  const params = labLimitParams();
-  const body = {{
-    instruction,
-    conversation: priorConversation,
-    think: Boolean(document.getElementById("compose-think")?.checked),
-    summary_chars: Number(params.get("summary_chars") || 4000),
-    step_limit: Number(params.get("step_limit") || 80),
-    code_product_limit: Number(params.get("code_product_limit") || 40),
-    max_payload_chars: Number(document.getElementById("compose-payload-chars")?.value || 30000),
-    timeout_seconds: Number(document.getElementById("compose-timeout")?.value || 60)
-  }};
-  const response = await fetch(`/jobs/${{encodeURIComponent(currentJobId)}}/planner-lab/compose`, {{
-    method: "POST",
-    headers: {{"Content-Type": "application/json"}},
-    body: JSON.stringify(body)
-  }});
-  const data = await response.json();
-  guidedConversation = guidedConversation.filter(turn => turn.waiting_for !== turnId);
-  const result = (data || {{}}).result || {{}};
-  const structured = result.structured_answer || {{}};
-  guidedConversation.push({{
-    role: "assistant",
-    turn_id: `${{turnId}}-assistant`,
-    status: data.ok ? "ok" : "failed",
-    content: structured.answer_markdown || result.content || data.error || "No structured answer returned.",
-    structured_answer: structured,
-    thinking: result.thinking || "",
-    raw: data,
-    ts: new Date().toISOString()
-  }});
-  renderGuidedConversation();
-  setStatus(data.ok ? "compose_done" : "compose_failed");
+  try {{
+    const params = labLimitParams();
+    const body = {{
+      instruction,
+      conversation: priorConversation,
+      think: Boolean(document.getElementById("compose-think")?.checked),
+      summary_chars: Number(params.get("summary_chars") || 4000),
+      step_limit: Number(params.get("step_limit") || 80),
+      code_product_limit: Number(params.get("code_product_limit") || 40),
+      max_payload_chars: Number(document.getElementById("compose-payload-chars")?.value || 30000),
+      timeout_seconds: Number(document.getElementById("compose-timeout")?.value || 60)
+    }};
+    const response = await fetch(`/jobs/${{encodeURIComponent(currentJobId)}}/planner-lab/compose`, {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json"}},
+      body: JSON.stringify(body)
+    }});
+    const data = await response.json();
+    guidedConversation = guidedConversation.filter(turn => turn.waiting_for !== turnId);
+    const result = (data || {{}}).result || {{}};
+    const structured = result.structured_answer || {{}};
+    guidedConversation.push({{
+      role: "assistant",
+      turn_id: `${{turnId}}-assistant`,
+      status: data.ok ? "ok" : "failed",
+      content: structured.answer_markdown || result.content || data.error || "No structured answer returned.",
+      structured_answer: structured,
+      thinking: result.thinking || "",
+      raw: data,
+      ts: new Date().toISOString()
+    }});
+    renderGuidedConversation();
+    setStatus(data.ok ? "compose_done" : "compose_failed");
+  }} catch (err) {{
+    guidedConversation = guidedConversation.filter(turn => turn.waiting_for !== turnId);
+    guidedConversation.push({{
+      role: "assistant",
+      turn_id: `${{turnId}}-assistant-error`,
+      status: "failed",
+      content: String(err && err.message ? err.message : err),
+      raw: {{error: String(err && err.message ? err.message : err)}},
+      ts: new Date().toISOString()
+    }});
+    renderGuidedConversation();
+    setStatus("compose_failed");
+  }} finally {{
+    guidedComposeInFlight = false;
+  }}
 }}
 function renderGuidedConversation() {{
   const target = document.getElementById("guided-conversation");
   if (!target) return;
   const prompt = document.getElementById("guided-operator-prompt");
-  if (prompt && guidedDraftText) prompt.value = guidedDraftText;
+  if (prompt) prompt.value = guidedDraftText;
   if (!guidedConversation.length) {{
     target.innerHTML = "<p class='muted'>No guided turns yet. Ask a follow-up prompt to test what the payload can support.</p>";
     return;
@@ -348,6 +493,7 @@ function renderLab(data) {{
   document.getElementById("lab-output").innerHTML = `
     ${{renderChatTurn(data)}}
     ${{renderTopLevelSurface(data)}}
+    ${{renderPublicToolResponse(data)}}
     <div class="card ${{statusClass}}">
       <h2>Payload readiness</h2>
       ${{renderMetrics(readiness)}}
@@ -416,7 +562,7 @@ def planner_lab_index_html(*, limit: int = 20) -> str:
     <div class="card">
       <h2>Load existing job</h2>
       <input id="job-id" placeholder="job-..." />
-      <button onclick="loadJob()">Load once</button>
+      <button onclick="loadJob(true)">Load once</button>
       <button class="secondary" onclick="startPolling()">Poll</button>
       <pre id="apply-result"></pre>
     </div>
@@ -464,7 +610,7 @@ def agent_job_planner_lab_html(job_id: str) -> str:
     <div class="card">
       <h2>Job</h2>
       <input id="job-id" value="{safe_job}" />
-      <button onclick="loadJob()">Load once</button>
+      <button onclick="loadJob(true)">Load once</button>
       <button class="secondary" onclick="startPolling()">Poll</button>
       <div class="muted">Status: <span id="lab-status">idle</span></div>
       <pre id="apply-result"></pre>

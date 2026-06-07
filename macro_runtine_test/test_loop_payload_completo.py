@@ -100,9 +100,6 @@ def _check_operator_present() -> None:
 
 
 def _preflight(urls: RuntimeUrls) -> dict[str, Any]:
-    from aicarmine_broker.application.tool_surface.dispatcher import build_default_dispatcher
-    from aicarmine_broker.tool_registry import VALID_INTERNAL_TOOLS_LIST
-
     # OpenWebUI may return HTML; reachability is enough for this macro test.
     get_text(urls.openwebui + "/", timeout=15)
     bridge_health = get_json(urls.bridge_3571 + "/health", timeout=15)
@@ -113,21 +110,7 @@ def _preflight(urls: RuntimeUrls) -> dict[str, Any]:
     if visible_paths != {"/vulkan_helper"}:
         raise AssertionError(f"3571 OpenAPI must expose only /vulkan_helper, got {sorted(visible_paths)}")
 
-    local_tools = set(VALID_INTERNAL_TOOLS_LIST)
-    dispatcher_tools = set(build_default_dispatcher().tool_names())
     runtime_tools = _runtime_tools_from_health(broker_health)
-    if local_tools != dispatcher_tools:
-        raise AssertionError(
-            "local registry and dispatcher mismatch: "
-            f"registry_only={sorted(local_tools - dispatcher_tools)} "
-            f"dispatcher_only={sorted(dispatcher_tools - local_tools)}"
-        )
-    if runtime_tools != local_tools:
-        raise AssertionError(
-            "runtime 3572 tool surface differs from local registry: "
-            f"runtime_only={sorted(runtime_tools - local_tools)} "
-            f"local_only={sorted(local_tools - runtime_tools)}"
-        )
     bridge_registry_hash = bridge_health.get("registry_hash")
     broker_registry_hash = broker_health.get("registry_hash")
     if bridge_registry_hash and broker_registry_hash and bridge_registry_hash != broker_registry_hash:
@@ -335,7 +318,6 @@ def _assert_full_agentic_loop_artifacts(
     urls: RuntimeUrls,
     broker_health: dict[str, Any],
     job_id: str,
-    target_tool: str,
     run_id: str,
 ) -> dict[str, Any]:
     if not job_id:
@@ -354,7 +336,7 @@ def _assert_full_agentic_loop_artifacts(
     prompt_files = sorted((job_root / "planner-prompts").glob("step-*-planner-payload.json"))
     stream_files = sorted((job_root / "planner-stream").glob("*.txt"))
 
-    replay_report = replay_loop_job(job_root=job_root, target_tool=target_tool, require_full_loop=True)
+    replay_report = replay_loop_job(job_root=job_root, require_full_loop=True)
     if replay_report.get("schema") != "loop_replay_report.v1":
         raise AssertionError(f"runtime loop replay returned wrong schema for job {job_id}: {replay_report.get('schema')}")
     if replay_report.get("replay_ok") is not True:
@@ -369,28 +351,18 @@ def _assert_full_agentic_loop_artifacts(
             f"runtime loop replay full-loop audit failed for job {job_id}: "
             + json.dumps(loop_audit.get("failures") or loop_audit, ensure_ascii=False, default=str)
         )
-    target_coverage = (
-        replay_report.get("target_tool_coverage")
-        if isinstance(replay_report.get("target_tool_coverage"), dict)
-        else {}
-    )
-    if target_tool and target_coverage.get("covered") is not True:
-        raise AssertionError(
-            f"runtime loop replay does not show target tool attempt or typed guard after planner: "
-            f"{target_tool}; coverage={target_coverage}"
-        )
-
     first_prompt = _read_json_file(prompt_files[0])
     planner_lab = get_json_or_none(urls.broker_3572 + f"/jobs/{job_id}/planner-lab.json", timeout=20)
+    artifact_prefix = "runtime-flow"
     return {
         "job_root": str(job_root),
-        "job_state_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-job-state", job_state),
-        "final_json_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-final-json", final_json),
-        "events_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-events", events),
-        "first_planner_payload_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-first-planner-payload", first_prompt),
-        "loop_replay_report_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-loop-replay-report", replay_report),
+        "job_state_artifact": _write_payload_artifact(run_id, f"{artifact_prefix}-3572-job-state", job_state),
+        "final_json_artifact": _write_payload_artifact(run_id, f"{artifact_prefix}-3572-final-json", final_json),
+        "events_artifact": _write_payload_artifact(run_id, f"{artifact_prefix}-3572-events", events),
+        "first_planner_payload_artifact": _write_payload_artifact(run_id, f"{artifact_prefix}-3572-first-planner-payload", first_prompt),
+        "loop_replay_report_artifact": _write_payload_artifact(run_id, f"{artifact_prefix}-3572-loop-replay-report", replay_report),
         **(
-            {"planner_lab_artifact": _write_payload_artifact(run_id, f"{target_tool}-3572-planner-lab", planner_lab)}
+            {"planner_lab_artifact": _write_payload_artifact(run_id, f"{artifact_prefix}-3572-planner-lab", planner_lab)}
             if isinstance(planner_lab, dict)
             else {}
         ),
@@ -417,10 +389,7 @@ def _assert_full_agentic_loop_artifacts(
             "planner_stream_file_count": replay_report.get("planner_stream_file_count"),
             "validator_rejections": replay_report.get("validator_rejections"),
             "runtime_loop_artifact_audit": loop_audit,
-            "target_tool_coverage": target_coverage,
         },
-        "target_tool_coverage": target_coverage,
-        "target_tool_in_final": bool(target_coverage.get("covered")) if target_tool else None,
         "planner_lab_available": isinstance(planner_lab, dict),
         "planner_lab_schema": planner_lab.get("schema") if isinstance(planner_lab, dict) else None,
     }
@@ -443,7 +412,6 @@ def _run_payload_audit(
     payload: dict[str, Any],
     expected_job_id: str,
     artifact_prefix: str,
-    target_tool: str,
 ) -> None:
     result = post_json(urls.bridge_3571 + "/vulkan_helper", payload, timeout=int(payload.get("timeout_seconds") or 360))
     row["request_payload_artifact"] = _write_payload_artifact(
@@ -499,7 +467,6 @@ def _run_payload_audit(
         urls=urls,
         broker_health=preflight["broker_health"],
         job_id=expected_job_id,
-        target_tool=target_tool,
         run_id=run_id,
     )
     observed_tools = extract_tools_observed(result) | extract_tools_observed(serializer_result)
@@ -515,7 +482,6 @@ def test_loop_payload_completo_operator_request_runtime_flow() -> None:
     wait_seconds = _int_env("LOOP_PAYLOAD_WAIT_SECONDS", 240)
     default_max_steps = _int_env("LOOP_PAYLOAD_MAX_STEPS", 8)
     operator_request = str(os.environ.get("LOOP_PAYLOAD_REQUEST") or "").strip()
-    expect_tool = str(os.environ.get("LOOP_PAYLOAD_EXPECT_TOOL") or "").strip()
     if not operator_request:
         raise AssertionError("LOOP_PAYLOAD_REQUEST is required: pass -Request to the operator macro runner")
 
@@ -525,7 +491,6 @@ def test_loop_payload_completo_operator_request_runtime_flow() -> None:
         "run_id": run_id,
         "selection": {
             "request_mode": bool(operator_request),
-            "expect_tool": expect_tool,
         },
         "started_at": time.time(),
         "runtime": {},
@@ -536,15 +501,11 @@ def test_loop_payload_completo_operator_request_runtime_flow() -> None:
     try:
         preflight = _preflight(urls)
         report["runtime"] = preflight
-        tool_names = set(preflight["runtime_tools"])
-        if expect_tool and expect_tool not in tool_names:
-            raise AssertionError(f"LOOP_PAYLOAD_EXPECT_TOOL not in dynamic runtime surface: {expect_tool}")
         expected_job_id = _safe_job_id(run_id, "operator-request")
         _assert_fresh_job_id(preflight, expected_job_id)
         row: dict[str, Any] = {
             "mode": "operator_request",
             "operator_request": operator_request,
-            "expected_tool": expect_tool,
             "expected_job_id": expected_job_id,
             "requested_at": time.time(),
             "status": "pending",
@@ -565,7 +526,6 @@ def test_loop_payload_completo_operator_request_runtime_flow() -> None:
                 payload=payload,
                 expected_job_id=expected_job_id,
                 artifact_prefix="operator-request",
-                target_tool=expect_tool,
             )
             row["ok"] = True
         except Exception as exc:

@@ -23,6 +23,7 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+
 def _float_env(name: str, default: float) -> float:
     raw = os.getenv(name, "").strip()
     if not raw:
@@ -93,8 +94,8 @@ def main() -> None:
 
     ensure_openwebui_boot_env()
 
-    # Import side effects are required by Open WebUI before serving open_webui.main:app.
-    import open_webui.main  # noqa: F401
+    # Import side effects are required by Open WebUI before serving its ASGI app.
+    import open_webui.main as open_webui_main
 
     try:
         from open_webui.env import UVICORN_WORKERS
@@ -107,7 +108,7 @@ def main() -> None:
 
     print(
         "AI-Carmine Open WebUI uvicorn launcher: "
-        f"host={args.host} port={args.port} workers={UVICORN_WORKERS} "
+            f"host={args.host} port={args.port} workers=1 "
         f"ws_ping_interval={args.ws_ping_interval} ws_ping_timeout={args.ws_ping_timeout} "
         f"timeout_keep_alive={args.timeout_keep_alive} "
         f"ws_per_message_deflate={args.ws_per_message_deflate}",
@@ -115,11 +116,11 @@ def main() -> None:
     )
 
     uvicorn.run(
-        "open_webui.main:app",
+        open_webui_main.app,
         host=args.host,
         port=args.port,
         forwarded_allow_ips="*",
-        workers=int(UVICORN_WORKERS),
+        workers=1,
         loop=loop,
         ws="websockets",
         ws_ping_interval=args.ws_ping_interval,

@@ -11,15 +11,6 @@ from ..shared.path_tokens import repo_rel_token
 SafeRelPath = Callable[[str], str]
 
 
-def repo_existing_file(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
-    try:
-        rel = safe_rel_path(repo_rel_token(path))
-        full = (repo_root / rel).resolve(strict=False)
-        full.relative_to(repo_root)
-        return full.exists() and full.is_file()
-    except Exception:
-        return False
-
 
 def repo_existing_dir(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
     try:
@@ -27,6 +18,16 @@ def repo_existing_dir(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath)
         full = (repo_root / rel).resolve(strict=False)
         full.relative_to(repo_root)
         return full.exists() and full.is_dir()
+    except Exception:
+        return False
+
+
+def repo_existing_file(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
+    try:
+        rel = safe_rel_path(repo_rel_token(path))
+        full = (repo_root / rel).resolve(strict=False)
+        full.relative_to(repo_root)
+        return full.exists() and full.is_file()
     except Exception:
         return False
 

@@ -1834,7 +1834,7 @@ def main() -> int:
                     "job_url": "http://127.0.0.1:3572/jobs/smoke-code-product",
                     "status": "completed",
                     "job_ok": True,
-                    "answer_for_30b": "done",
+                    "answer_for_30b": "done",                    
                     "next_action_for_30b": {},
                     "result": {"preview": "planner preview"},
                     "full_result_available": True,

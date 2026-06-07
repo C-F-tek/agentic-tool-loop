@@ -34,15 +34,6 @@ def _parse_context(value: Any) -> tuple[dict[str, Any], bool]:
     return (parsed, True) if isinstance(parsed, dict) else ({}, False)
 
 
-def _has_concrete_payload(value: Any) -> bool:
-    if isinstance(value, dict):
-        if any(value.get(key) not in (None, "", [], {}) for key in CONCRETE_KEYS):
-            return True
-        return any(_has_concrete_payload(item) for item in value.values())
-    if isinstance(value, list):
-        return any(_has_concrete_payload(item) for item in value)
-    return False
-
 
 def _artifact_rows(tool_context: dict[str, Any]) -> list[dict[str, Any]]:
     rows = tool_context.get("artifacts")
@@ -78,7 +69,6 @@ def build_materialization_report(
     return {
         "schema": SCHEMA,
         "owner": owner,
-        "target_owner": "3572_broker",
         "ok": ok,
         "diagnostic_only": True,
         "inline_json_required": True,

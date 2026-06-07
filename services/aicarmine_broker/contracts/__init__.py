@@ -9,7 +9,7 @@ from .repo_filesystem import RepoFilesystem
 from .tool import AgenticTool
 from .validator import PlannerValidator
 
-__all__ = [
+__all__: list[str] = [
     "AgenticTool",
     "CommandResult",
     "CommandRunner",

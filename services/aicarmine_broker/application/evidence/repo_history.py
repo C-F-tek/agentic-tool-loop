@@ -166,6 +166,47 @@ def repo_list_evidence(
     return rows
 
 
+def successful_repo_read_paths(
+    history: list[dict[str, Any]],
+    *,
+    same_tool_artifact_payload: SameToolArtifactPayload,
+) -> list[str]:
+    paths: list[str] = []
+    for item in history if isinstance(history, list) else []:
+        result = history_tool_result(item)
+        if result.get("tool") != "repo_read" or result.get("ok") is not True:
+            continue
+        source = same_tool_artifact_payload(result)
+        raw_items = source.get("items") if isinstance(source.get("items"), list) else []
+        if not raw_items and source.get("path"):
+            raw_items = [source]
+        if not raw_items:
+            raw_items = result.get("items") if isinstance(result.get("items"), list) else []
+        if not raw_items and result.get("path"):
+            raw_items = [result]
+        for sub in raw_items:
+            if not isinstance(sub, dict) or sub.get("ok") is False:
+                continue
+            path = repo_rel_token(sub.get("path") or sub.get("repo_path") or "")
+            if path and path not in paths:
+                paths.append(path)
+    return paths
+
+
+def failed_repo_read_paths(history: list[dict[str, Any]]) -> list[str]:
+    paths: list[str] = []
+    for item in history if isinstance(history, list) else []:
+        result = history_tool_result(item)
+        if result.get("tool") != "repo_read":
+            continue
+        for sub in result.get("items") or []:
+            if isinstance(sub, dict) and sub.get("ok") is False and sub.get("path"):
+                path = repo_rel_token(sub.get("path") or "")
+                if path and path not in paths:
+                    paths.append(path)
+    return paths
+
+
 def failed_repo_list_files_paths(history: list[dict[str, Any]]) -> list[str]:
     paths: list[str] = []
     for item in history if isinstance(history, list) else []:

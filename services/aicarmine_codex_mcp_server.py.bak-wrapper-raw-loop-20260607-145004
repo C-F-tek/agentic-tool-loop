@@ -1,0 +1,33 @@
+﻿"""AI-Carmine Codex MCP wrapper.
+
+Keeps the public entrypoint stable even if codex_bridge.mcp_server exports
+serve() but not main().
+"""
+
+from __future__ import annotations
+
+import sys
+
+from codex_bridge import mcp_server
+
+
+def main() -> int:
+    if hasattr(mcp_server, "main") and callable(mcp_server.main):
+        return int(mcp_server.main() or 0)
+
+    if ("--self-test" in sys.argv or "--self-test-content-length" in sys.argv):
+        self_test = getattr(mcp_server, "self_test", None)
+        if callable(self_test):
+            return int(self_test() or 0)
+
+    serve = getattr(mcp_server, "serve", None)
+    if callable(serve):
+        return int(serve() or 0)
+
+    raise RuntimeError(
+        "codex_bridge.mcp_server exposes neither main(), self_test(), nor serve()"
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

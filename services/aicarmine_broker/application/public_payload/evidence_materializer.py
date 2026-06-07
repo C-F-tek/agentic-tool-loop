@@ -78,7 +78,6 @@ def _priority_item_from_artifact(row: dict[str, Any]) -> dict[str, Any]:
             "ok": row.get("ok", True),
             "path": artifact.get("repo_path"),
             "payload_is_complete": True,
-            "content_sha256": _sha256_text(content),
             "chars": len(content),
             "line_count": artifact.get("line_count"),
             "content": content,
@@ -236,8 +235,6 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "path": item.get("path"),
             "payload_is_complete": item.get("payload_is_complete"),
             "primary_location": f"{base}.content",
-            "full_context_location": _context_location(tool_context, item),
-            "role": "risultato concreto: contenuto file letto",
         })
     if kind == "code_edit_proposal":
         edit_kind = str(item.get("edit_kind") or "")
@@ -257,8 +254,6 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "edit_kind": edit_kind,
             "payload_is_complete": item.get("payload_is_complete"),
             "primary_location": f"{base}.{field}",
-            "full_context_location": _context_location(tool_context, item),
-            "role": "risultato concreto: proposta patch/diff richiesta",
         })
     if kind in {
         "partial_code_product_candidate",
@@ -440,18 +435,15 @@ class PublicEvidenceMaterializer:
                     suggestions_only.extend([
                         {
                             "field": f"{base}.manual_review_required",
-                            "role": "metadata di review, non payload richiesto",
                         },
                         {
                             "field": f"{base}.validation_commands",
-                            "role": "comandi suggeriti per validazione manuale, non payload richiesto",
                         },
                     ])
                 continue
             if item.get("kind") == "repo_analysis_summary":
                 descriptive_only.append({
                     "field": f"priority_evidence_for_30b.items[{index}].summary",
-                    "role": "descrizione del planner, non diff/contenuto concreto",
                 })
         has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
         return _clean({
@@ -472,17 +464,14 @@ class PublicEvidenceMaterializer:
             "descriptive_only": descriptive_only + [
                 {
                     "field": "priority_evidence_for_30b.items[*].summary",
-                    "role": "descrizione del planner, non diff/contenuto concreto",
                 },
             ],
             "suggestions_or_review_metadata_only": suggestions_only + [
                 {
                     "field": "priority_evidence_for_30b.limits",
-                    "role": "limiti/troncamenti dichiarati, non richiesta automatica di nuovo tool",
                 },
                 {
                     "field": "openwebui_usage",
-                    "role": "istruzioni di navigazione",
                 },
             ],
             "search_order": [

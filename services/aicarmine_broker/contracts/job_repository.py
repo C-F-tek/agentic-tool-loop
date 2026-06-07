@@ -10,7 +10,7 @@ class JobRepository(Protocol):
 
     def load(self, job_id: str) -> AgentJobSnapshot:
         """Load a stable job snapshot."""
-
+        
     def append_event(
         self,
         job_id: str,

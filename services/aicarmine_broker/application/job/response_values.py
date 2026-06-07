@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 
+
 def compact_text(value: Any, limit: int) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
     if int(limit or 0) <= 0:
@@ -20,6 +21,7 @@ def compact_json(value: Any, limit: int) -> str:
     except Exception:
         text = str(value)
     return compact_text(text, limit)
+
 
 
 def event_digest(event: dict[str, Any]) -> dict[str, Any]:

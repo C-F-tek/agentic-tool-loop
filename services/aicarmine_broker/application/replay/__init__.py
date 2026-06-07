@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["replay_loop_job"]
+__all__: list[str] = ["replay_loop_job"]
 
 
 def __getattr__(name: str):

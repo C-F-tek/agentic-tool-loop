@@ -125,6 +125,14 @@ def internal_tool_prompt(exclude_vulkan: bool = False) -> str:
     )
 
 
+def internal_tools_list(exclude_vulkan: bool = False) -> list[str]:
+    return (
+        VALID_INTERNAL_TOOLS_LIST_EXCLUDING_VULKAN
+        if exclude_vulkan
+        else VALID_INTERNAL_TOOLS_LIST
+    )
+
+
 def ollama_options(num_predict: int | None = None) -> dict:
     options: dict = {
         "temperature": env_float("AICARMINE_VULKAN_TEMPERATURE", 0.1),

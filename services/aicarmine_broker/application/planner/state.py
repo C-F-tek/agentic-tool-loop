@@ -32,6 +32,5 @@ class PlannerLoopState:
 
     def snapshot(self) -> dict[str, Any]:
         return {
-            "history_count": len(self._history),
             "evidence_contract": self._state.get("evidence_contract"),
         }

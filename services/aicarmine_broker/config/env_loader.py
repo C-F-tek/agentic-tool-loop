@@ -49,6 +49,7 @@ def env_first(
     return default
 
 
+
 def env_bool(name: str, default: bool, env: EnvMapping | None = None) -> bool:
     return parse_bool(_env(env).get(name), default)
 

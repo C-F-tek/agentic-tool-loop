@@ -71,11 +71,9 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                                     "type": "string",
                                     "description": "Exact top-level field path, for example priority_evidence_for_30b.items[0].unified_diff.",
                                 },
-                                "full_context_location": {
                                     "type": "string",
                                     "description": "Mirror location inside tool_context_for_30b.artifacts[*].artifact.",
                                 },
-                                "role": {"type": "string"},
                             },
                         },
                     },
@@ -123,8 +121,8 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                 "description": "Runtime instructions naming the primary payload fields and concrete evidence locations.",
                 "additionalProperties": True,
             },
-        },
-    }
+    },
+    
 
 
 def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:

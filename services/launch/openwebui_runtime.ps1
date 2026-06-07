@@ -42,7 +42,8 @@ $config = @{
     EXECUTOR_PORT = 3560
     OPENVINO_PORT = 3550
     NPU_PHI_PORT = 3551
-    JUPYTER_PORT = 8888
+    JUPYTER_PORT = 8889
+    OPEN_TERMINAL_PORT = 8888
     CUDA_DEVICE = "GPU-751537aa-1f63-6ad0-db71-9727edd22244"
 }
 
@@ -57,7 +58,7 @@ $OLLAMA_BASE_URL = Set-UserEnvValue "OLLAMA_BASE_URL" "http://$($config.HOSTNAME
 $TASK_MODEL = Set-UserEnvValue "TASK_MODEL" "gpu0/qwen3-task-8k"
 $RAG_EMBEDDING_BATCH_SIZE = Set-UserEnvValue "RAG_EMBEDDING_BATCH_SIZE" "4"
 $ENABLE_QUERIES_CACHE = Set-UserEnvValue "ENABLE_QUERIES_CACHE" "True"
-$MODELS_CACHE_TTL = Set-UserEnvValue "MODELS_CACHE_TTL" "600"
+$MODELS_CACHE_TTL = Set-UserEnvValue "MODELS_CACHE_TTL" "1"
 $RAG_SYSTEM_CONTEXT = Set-UserEnvValue "RAG_SYSTEM_CONTEXT" "True"
 
 # Main NVIDIA RTX 5080 / Ollama runtime defaults.
@@ -449,6 +450,83 @@ function Stop-PortOwnerIfUnhealthy {
     }
 }
 
+function Get-AICarmineLogTail {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [int]$Lines = 120
+    )
+
+    if (-not (Test-Path $Path)) {
+        return "<missing log: $Path>"
+    }
+
+    try {
+        $Tail = Get-Content -Path $Path -Tail $Lines -ErrorAction Stop
+        if ($null -eq $Tail -or $Tail.Count -eq 0) {
+            return "<empty log: $Path>"
+        }
+        return ($Tail -join [Environment]::NewLine)
+    }
+    catch {
+        return "<log read failed: $Path :: $($_.Exception.Message)>"
+    }
+}
+
+function Format-UvicornStartupFailure {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [int]$Port,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Module,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Python,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ServicesRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StdoutPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StderrPath,
+
+        [int]$ProcessId = 0,
+
+        [string]$ExitCode = "",
+
+        [string]$Reason = "startup_failed"
+    )
+
+    $StdoutTail = Get-AICarmineLogTail -Path $StdoutPath -Lines 80
+    $StderrTail = Get-AICarmineLogTail -Path $StderrPath -Lines 160
+
+    return @"
+$Name processo terminato durante startup.
+Reason=$Reason
+PID=$ProcessId
+ExitCode=$ExitCode
+Module=$Module
+Port=$Port
+Python=$Python
+ServicesRoot=$ServicesRoot
+StdoutLog=$StdoutPath
+StderrLog=$StderrPath
+
+--- stdout tail ---
+$StdoutTail
+
+--- stderr tail ---
+$StderrTail
+"@
+}
+
 function Start-UvicornServiceIfNeeded {
     param(
         [Parameter(Mandatory = $true)]
@@ -466,6 +544,15 @@ function Start-UvicornServiceIfNeeded {
 
     $ServicesRoot = "$AI_ROOT\\services"
     $Py = Get-AICarmineLabtoolsPython
+    $LogRoot = Join-Path $AI_ROOT "logs"
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $SafeName = ($Name -replace '[^a-zA-Z0-9_.-]+', '_').Trim('_')
+    if (-not $SafeName) {
+        $SafeName = "uvicorn"
+    }
+    $Stamp = Get-Date -Format "yyyyMMdd_HHmmss_fff"
+    $StdoutPath = Join-Path $LogRoot "$SafeName-$Port-$Stamp.stdout.log"
+    $StderrPath = Join-Path $LogRoot "$SafeName-$Port-$Stamp.stderr.log"
 
     if (& $HealthCheck) {
         Write-Host "$Name gia' sano su porta $Port"
@@ -480,14 +567,28 @@ function Start-UvicornServiceIfNeeded {
         -FilePath $Py `
         -ArgumentList @("-m", "uvicorn", "$Module`:app", "--host", $config.HOSTNAME, "--port", "$Port") `
         -WorkingDirectory $ServicesRoot `
+        -RedirectStandardOutput $StdoutPath `
+        -RedirectStandardError $StderrPath `
         -WindowStyle Minimized `
         -PassThru
 
     Write-Host "$Name processo avviato: PID=$($Proc.Id)"
+    Write-Host "$Name stdout: $StdoutPath"
+    Write-Host "$Name stderr: $StderrPath"
 
     for ($i = 0; $i -lt 60; $i++) {
         if ($Proc.HasExited) {
-            throw "$Name processo terminato durante startup: PID=$($Proc.Id) ExitCode=$($Proc.ExitCode)"
+            throw (Format-UvicornStartupFailure `
+                -Name $Name `
+                -Port $Port `
+                -Module $Module `
+                -Python $Py `
+                -ServicesRoot $ServicesRoot `
+                -StdoutPath $StdoutPath `
+                -StderrPath $StderrPath `
+                -ProcessId $Proc.Id `
+                -ExitCode "$($Proc.ExitCode)" `
+                -Reason "process_exited_before_healthcheck")
         }
         if (& $HealthCheck) {
             Write-Host "$Name sano su porta $Port"
@@ -496,7 +597,17 @@ function Start-UvicornServiceIfNeeded {
         Start-Sleep -Seconds 1
     }
 
-    throw "$Name non risponde su $($config.HOSTNAME):$Port"
+    throw (Format-UvicornStartupFailure `
+        -Name $Name `
+        -Port $Port `
+        -Module $Module `
+        -Python $Py `
+        -ServicesRoot $ServicesRoot `
+        -StdoutPath $StdoutPath `
+        -StderrPath $StderrPath `
+        -ProcessId $Proc.Id `
+        -ExitCode "still_running" `
+        -Reason "healthcheck_timeout")
 }
 
 function Start-AICarmineVulkanBridgeStack {
@@ -603,11 +714,11 @@ if ([string]::IsNullOrWhiteSpace($env:AICARMINE_SAFE_COMMAND_RUNNER)) {
 }
 $env:AICARMINE_LAB_REPO = [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User")
 if ([string]::IsNullOrWhiteSpace($env:AICARMINE_LAB_REPO)) {
-    $env:AICARMINE_LAB_REPO = "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
+    $env:AICARMINE_LAB_REPO = "C:\Users\carmi\AI\"
 }
 $env:AICARMINE_REAL_REPO = [Environment]::GetEnvironmentVariable("AICARMINE_REAL_REPO", "User")
 if ([string]::IsNullOrWhiteSpace($env:AICARMINE_REAL_REPO)) {
-    $env:AICARMINE_REAL_REPO = "C:\Users\carmi\ProjectsDir\blender-audio-project"
+    $env:AICARMINE_REAL_REPO = "C:\Users\carmi\AI\"
 }
 
 Set-Location "$AI_ROOT\services"
@@ -627,7 +738,7 @@ function Start-AICarmineExecutor {
     $ExecutorScript = New-AICarmineExecutorWrapper
 
     if (Test-AICarmineExecutor) {
-        Write-Host "AI-Carmine Executor giÃƒÆ’Ã‚Â  sano su http://127.0.0.1:3560/health"
+        Write-Host "AI-Carmine Executor sano su http://127.0.0.1:3560/health"
         return
     }
 
@@ -686,7 +797,7 @@ function New-AICarmineJupyterTokenFile {
 
     New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
 
-    $Token = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 48 | ForEach-Object {[char]$_})
+    $Token = CODE_EXECUTION_JUPYTER_AUTH_TOKEN
     $Secure = ConvertTo-SecureString $Token -AsPlainText -Force
     $Secure | ConvertFrom-SecureString | Set-Content -Path $Path -Encoding ASCII
 
@@ -749,7 +860,7 @@ function Start-AICarmineJupyter {
     }
 
     if (Test-AICarmineJupyter) {
-        Write-Host "AI-Carmine Jupyter giÃƒÆ’Ã‚Â  sano su http://127.0.0.1:8888"
+        Write-Host "AI-Carmine Jupyter gia' sano su http://$($config.HOSTNAME):$($config.JUPYTER_PORT)"
         return
     }
 
@@ -763,7 +874,10 @@ function Start-AICarmineJupyter {
         Stop-Process -Id $proc.ProcessId -Force
     }
 
-    Write-Host "Avvio AI-Carmine Jupyter Code Interpreter su http://127.0.0.1:8888..."
+    $null = Set-UserEnvValue "AICARMINE_JUPYTER_PORT" ([string]$config.JUPYTER_PORT)
+    $env:AICARMINE_JUPYTER_PORT = [string]$config.JUPYTER_PORT
+
+    Write-Host "Avvio AI-Carmine Jupyter Code Interpreter su http://$($config.HOSTNAME):$($config.JUPYTER_PORT)..."
 
     $p = Start-Process `
         -FilePath "powershell.exe" `
@@ -775,19 +889,19 @@ function Start-AICarmineJupyter {
 
     for ($i = 0; $i -lt 45; $i++) {
         if (Test-AICarmineJupyter) {
-            Write-Host "AI-Carmine Jupyter sano su http://127.0.0.1:8888"
+            Write-Host "AI-Carmine Jupyter sano su http://$($config.HOSTNAME):$($config.JUPYTER_PORT)"
             return
         }
 
         Start-Sleep -Seconds 1
     }
 
-    throw "AI-Carmine Jupyter non risponde su http://127.0.0.1:8888"
+    throw "AI-Carmine Jupyter non risponde su http://$($config.HOSTNAME):$($config.JUPYTER_PORT)"
 }
 
 
 # >>> AIC_OPEN_TERMINAL_REPLACES_JUPYTER
-# Open Terminal replaces the old Jupyter Code Interpreter.
+# Open Terminal runs alongside Jupyter Code Interpreter on a distinct port.
 # v3 invariant: this block must be top-level PowerShell code, not inside a here-string.
 
 $script:AICOpenTerminalStarted = $false
@@ -893,7 +1007,7 @@ function Start-AICOpenTerminal {
         [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User"),
         "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
     )
-    $cwd = Get-AICFirstNonEmpty @($labRepoForTerminal, $env:OPEN_TERMINAL_CWD)
+    $cwd = Get-AICFirstNonEmpty @($env:OPEN_TERMINAL_CWD, [Environment]::GetEnvironmentVariable("OPEN_TERMINAL_CWD", "User"), $labRepoForTerminal)
     if ([string]::IsNullOrWhiteSpace($cwd) -or -not (Test-Path -LiteralPath $cwd)) {
         throw "[open-terminal-replaces-jupyter] AICARMINE_LAB_REPO/Open Terminal cwd non valido: $cwd"
     }
@@ -920,7 +1034,7 @@ function Start-AICOpenTerminal {
     Write-Host "[open-terminal-replaces-jupyter] cwd=$cwd"
     Write-Host "[open-terminal-replaces-jupyter] url=$baseUrl"
     Write-Host "[open-terminal-replaces-jupyter] token_source=same-token-as-old-jupyter"
-    Write-Host "[open-terminal-replaces-jupyter] Jupyter/JupyterLab will not be started."
+    Write-Host "[open-terminal-replaces-jupyter] Jupyter/JupyterLab runs separately on port $($config.JUPYTER_PORT)."
 
     $args = @("run", "--host", $hostAddress, "--port", "$port", "--api-key", "$token")
 
@@ -936,30 +1050,60 @@ function Start-AICOpenTerminal {
 # <<< AIC_OPEN_TERMINAL_REPLACES_JUPYTER
 
 # ------------------------------------------------------------------
-# Servizio: AI-Carmine Open Terminal
-#   Replaces the old Jupyter Code Interpreter process.
+# Servizi: AI-Carmine Jupyter Code Interpreter + Open Terminal
+#   Jupyter resta il backend coding di OpenWebUI; Open Terminal resta shell separata.
 # ------------------------------------------------------------------
 
-$OpenTerminalToken = Get-AICFirstNonEmpty @($env:OPEN_TERMINAL_API_KEY, (Get-AICarmineJupyterToken))
+$OpenTerminalToken = Get-AICFirstNonEmpty @(
+    $env:OPEN_TERMINAL_API_KEY,
+    $env:CODE_INTERPRETER_JUPYTER_AUTH_TOKEN,
+    $env:CODE_EXECUTION_JUPYTER_AUTH_TOKEN,
+    [Environment]::GetEnvironmentVariable("OPEN_TERMINAL_API_KEY", "User"),
+    [Environment]::GetEnvironmentVariable("CODE_INTERPRETER_JUPYTER_AUTH_TOKEN", "User"),
+    [Environment]::GetEnvironmentVariable("CODE_EXECUTION_JUPYTER_AUTH_TOKEN", "User")
+)
+if ([string]::IsNullOrWhiteSpace($OpenTerminalToken)) {
+    $OpenTerminalToken = Get-AICarmineJupyterToken
+}
 $OpenTerminalHost = Get-AICFirstNonEmpty @($env:OPEN_TERMINAL_HOST, $config.HOSTNAME, "127.0.0.1")
-$OpenTerminalPort = 8888
-$OpenTerminalPortRaw = Get-AICFirstNonEmpty @($env:OPEN_TERMINAL_PORT, $config.JUPYTER_PORT)
+$OpenTerminalPort = [int]$config.OPEN_TERMINAL_PORT
+$OpenTerminalPortRaw = Get-AICFirstNonEmpty @($env:OPEN_TERMINAL_PORT, $config.OPEN_TERMINAL_PORT)
 
 if (-not [string]::IsNullOrWhiteSpace($OpenTerminalPortRaw)) {
-    try { $OpenTerminalPort = [int]$OpenTerminalPortRaw } catch { throw "OPEN_TERMINAL_PORT/JUPYTER_PORT non valido: $OpenTerminalPortRaw" }
+    try { $OpenTerminalPort = [int]$OpenTerminalPortRaw } catch { throw "OPEN_TERMINAL_PORT non valido: $OpenTerminalPortRaw" }
+}
+
+if ($OpenTerminalPort -eq [int]$config.JUPYTER_PORT) {
+    $OpenTerminalPort = [int]$config.OPEN_TERMINAL_PORT
 }
 
 $OpenTerminalUrl = ("http://{0}:{1}" -f $OpenTerminalHost, $OpenTerminalPort)
-$OpenTerminalCwd = Get-AICFirstNonEmpty @(
-    $env:AICARMINE_LAB_REPO,
-    [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User"),
-    "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
-)
+$JupyterUrl = "http://$($config.HOSTNAME):$($config.JUPYTER_PORT)"
+$OpenTerminalCwd = $AI_ROOT
 if ([string]::IsNullOrWhiteSpace($OpenTerminalCwd) -or -not (Test-Path -LiteralPath $OpenTerminalCwd)) {
     throw "AICARMINE_LAB_REPO/Open Terminal cwd non valido: $OpenTerminalCwd"
 }
 
 $null = Set-UserEnvValue "AICARMINE_JUPYTER_TOKEN_FILE" "C:\Users\carmi\AI\secrets\jupyter_code_token.dpapi"
+$null = Set-UserEnvValue "AICARMINE_JUPYTER_URL" $JupyterUrl
+$null = Set-UserEnvValue "AICARMINE_JUPYTER_PORT" ([string]$config.JUPYTER_PORT)
+$null = Set-UserEnvValue "AICARMINE_JUPYTER_WORKDIR" $OpenTerminalCwd
+$null = Set-UserEnvValue "ENABLE_CODE_EXECUTION" "true"
+$null = Set-UserEnvValue "ENABLE_CODE_INTERPRETER" "true"
+$null = Set-UserEnvValue "USER_PERMISSIONS_FEATURES_CODE_INTERPRETER" "true"
+$null = Set-UserEnvValue "CODE_EXECUTION_ENGINE" "jupyter"
+$null = Set-UserEnvValue "CODE_EXECUTION_JUPYTER_URL" $JupyterUrl
+$null = Set-UserEnvValue "CODE_EXECUTION_JUPYTER_AUTH" "token"
+$null = Set-UserEnvValue "CODE_EXECUTION_JUPYTER_AUTH_TOKEN" $OpenTerminalToken
+$null = Set-UserEnvValue "CODE_EXECUTION_JUPYTER_AUTH_PASSWORD" ""
+$null = Set-UserEnvValue "CODE_EXECUTION_JUPYTER_KERNEL" "python3"
+$null = Set-UserEnvValue "CODE_EXECUTION_JUPYTER_TIMEOUT" "120"
+$null = Set-UserEnvValue "CODE_INTERPRETER_ENGINE" "jupyter"
+$null = Set-UserEnvValue "CODE_INTERPRETER_JUPYTER_URL" $JupyterUrl
+$null = Set-UserEnvValue "CODE_INTERPRETER_JUPYTER_AUTH" "token"
+$null = Set-UserEnvValue "CODE_INTERPRETER_JUPYTER_AUTH_TOKEN" $OpenTerminalToken
+$null = Set-UserEnvValue "CODE_INTERPRETER_JUPYTER_AUTH_PASSWORD" ""
+$null = Set-UserEnvValue "CODE_INTERPRETER_JUPYTER_TIMEOUT" "120"
 $null = Set-UserEnvValue "OPEN_TERMINAL_API_KEY" $OpenTerminalToken
 $null = Set-UserEnvValue "OPEN_TERMINAL_URL" $OpenTerminalUrl
 $null = Set-UserEnvValue "OPEN_TERMINAL_HOST" $OpenTerminalHost
@@ -968,31 +1112,32 @@ $null = Set-UserEnvValue "OPEN_TERMINAL_CWD" $OpenTerminalCwd
 $null = Set-UserEnvValue "AICARMINE_OPEN_TERMINAL_URL" $OpenTerminalUrl
 $null = Set-UserEnvValue "AICARMINE_OPEN_TERMINAL_WORKDIR" $OpenTerminalCwd
 
-# Remove the legacy Jupyter Code Execution configuration from this launcher.
-$null = Clear-UserEnvValue "AICARMINE_JUPYTER_URL"
-$null = Clear-UserEnvValue "AICARMINE_JUPYTER_WORKDIR"
-$null = Clear-UserEnvValue "CODE_EXECUTION_ENGINE"
-$null = Clear-UserEnvValue "CODE_EXECUTION_JUPYTER_URL"
-$null = Clear-UserEnvValue "CODE_EXECUTION_JUPYTER_AUTH"
-$null = Clear-UserEnvValue "CODE_EXECUTION_JUPYTER_AUTH_TOKEN"
-$null = Clear-UserEnvValue "CODE_EXECUTION_JUPYTER_KERNEL"
-$null = Clear-UserEnvValue "CODE_EXECUTION_JUPYTER_TIMEOUT"
-
+$env:AICARMINE_JUPYTER_URL = $JupyterUrl
+$env:AICARMINE_JUPYTER_PORT = [string]$config.JUPYTER_PORT
+$env:AICARMINE_JUPYTER_WORKDIR = $OpenTerminalCwd
+$env:ENABLE_CODE_EXECUTION = "true"
+$env:ENABLE_CODE_INTERPRETER = "true"
+$env:USER_PERMISSIONS_FEATURES_CODE_INTERPRETER = "true"
+$env:CODE_EXECUTION_ENGINE = "jupyter"
+$env:CODE_EXECUTION_JUPYTER_URL = $JupyterUrl
+$env:CODE_EXECUTION_JUPYTER_AUTH = "token"
+$env:CODE_EXECUTION_JUPYTER_AUTH_TOKEN = $OpenTerminalToken
+$env:CODE_EXECUTION_JUPYTER_AUTH_PASSWORD = ""
+$env:CODE_EXECUTION_JUPYTER_KERNEL = "python3"
+$env:CODE_EXECUTION_JUPYTER_TIMEOUT = "120"
+$env:CODE_INTERPRETER_ENGINE = "jupyter"
+$env:CODE_INTERPRETER_JUPYTER_URL = $JupyterUrl
+$env:CODE_INTERPRETER_JUPYTER_AUTH = "token"
+$env:CODE_INTERPRETER_JUPYTER_AUTH_TOKEN = $OpenTerminalToken
+$env:CODE_INTERPRETER_JUPYTER_AUTH_PASSWORD = ""
+$env:CODE_INTERPRETER_JUPYTER_TIMEOUT = "120"
 $env:OPEN_TERMINAL_API_KEY = $OpenTerminalToken
 $env:OPEN_TERMINAL_URL = $OpenTerminalUrl
 $env:OPEN_TERMINAL_HOST = $OpenTerminalHost
 $env:OPEN_TERMINAL_PORT = [string]$OpenTerminalPort
 $env:OPEN_TERMINAL_CWD = $OpenTerminalCwd
 
-Remove-Item Env:AICARMINE_JUPYTER_URL -ErrorAction SilentlyContinue
-Remove-Item Env:AICARMINE_JUPYTER_WORKDIR -ErrorAction SilentlyContinue
-Remove-Item Env:CODE_EXECUTION_ENGINE -ErrorAction SilentlyContinue
-Remove-Item Env:CODE_EXECUTION_JUPYTER_URL -ErrorAction SilentlyContinue
-Remove-Item Env:CODE_EXECUTION_JUPYTER_AUTH -ErrorAction SilentlyContinue
-Remove-Item Env:CODE_EXECUTION_JUPYTER_AUTH_TOKEN -ErrorAction SilentlyContinue
-Remove-Item Env:CODE_EXECUTION_JUPYTER_KERNEL -ErrorAction SilentlyContinue
-Remove-Item Env:CODE_EXECUTION_JUPYTER_TIMEOUT -ErrorAction SilentlyContinue
-
+Start-AICarmineJupyter
 Start-AICOpenTerminal -ApiKeyCandidate $OpenTerminalToken -PortCandidate $OpenTerminalPort -HostCandidate $OpenTerminalHost
 
 # ------------------------------------------------------------------
@@ -1188,6 +1333,7 @@ function Stop-AICarmineManagedServices {
     Stop-ProcessByCommandLinePattern -Label "AI-Carmine Executor" -Pattern "aicarmine-executor-server"
     Stop-ProcessByCommandLinePattern -Label "Lab mirror watchdog" -Pattern "watch-lab-mirror"
     Stop-ProcessByCommandLinePattern -Label "Lab mirror sync" -Pattern "sync-lab-from-main"
+    Stop-ProcessByCommandLinePattern -Label "AI-Carmine Open Terminal" -Pattern "open-terminal"
     Stop-ProcessByCommandLinePattern -Label "AI-Carmine Jupyter" -Pattern "aicarmine-jupyter-codeinterpreter"
     Stop-ProcessByCommandLinePattern -Label "OVMS reranker wrapper" -Pattern "ovms-reranker"
 
@@ -1200,6 +1346,7 @@ function Stop-AICarmineManagedServices {
         @{ Port = $config.EXECUTOR_PORT; Label = "AI-Carmine Executor" }
         @{ Port = 3562; Label = "Legacy AI-Carmine Qwen Patch Tools" }
         @{ Port = 3563; Label = "Legacy AI-Carmine Qwen Guide Tools" }
+        @{ Port = $config.OPEN_TERMINAL_PORT; Label = "AI-Carmine Open Terminal" }
         @{ Port = $config.JUPYTER_PORT; Label = "Jupyter Code Interpreter" }
         @{ Port = $config.WEBUI_PORT; Label = "Open WebUI" }
     )
@@ -1223,6 +1370,8 @@ function Stop-AICarmineManagedServices {
 Write-Host ""
 Write-Host "Runtime topology:"
 Write-Host "  Open WebUI        = http://$($config.HOSTNAME):$($config.WEBUI_PORT)"
+Write-Host "  Open Terminal     = http://$($config.HOSTNAME):$($config.OPEN_TERMINAL_PORT)"
+Write-Host "  Jupyter coding    = http://$($config.HOSTNAME):$($config.JUPYTER_PORT)"
 Write-Host "  Ollama main       = http://$($config.HOSTNAME):$($config.OLLAMA_MAIN_PORT)"
 Write-Host "  Ollama GPU0 task  = http://$($config.HOSTNAME):$($config.OLLAMA_TASK_PORT)"
 Write-Host "  CPU fallback      = disabled"

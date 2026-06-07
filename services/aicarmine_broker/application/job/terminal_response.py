@@ -321,7 +321,6 @@ def build_compact_terminal_response(
         tool_context = _concretize_public_json_pointers(tool_context, job_root=job_root)
         sanitized_tool_context = public_terminal_sanitize_value(tool_context)
         tool_context = sanitized_tool_context if isinstance(sanitized_tool_context, dict) else {}
-
     context_alias = {
         "schema": "agentic_terminal_context_alias.v1",
         "alias_of": "tool_context_for_30b",

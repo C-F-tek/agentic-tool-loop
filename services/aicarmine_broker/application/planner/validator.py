@@ -38,6 +38,7 @@ def validate_planner_decision_against_evidence(
     _decision_paths = deps["decision_paths"]
     _final_answer_is_action_plan_without_code_product = deps["final_answer_is_action_plan_without_code_product"]
     _final_composition_tool_names_from_candidates = deps["final_composition_tool_names_from_candidates"]
+    _repo_analysis_final_answer_quality = deps["repo_analysis_final_answer_quality"]
     _invalid_code_product_decision_signature_count = deps["invalid_code_product_decision_signature_count"]
     _invalid_decision_signature_key = deps["invalid_decision_signature_key"]
     _native_required_tool_decision_has_transport_provenance = deps["native_required_tool_decision_has_transport_provenance"]
@@ -63,7 +64,6 @@ def validate_planner_decision_against_evidence(
     latest_file_list_result = deps["latest_file_list_result"]
     goal_requires_code_product_report = deps["goal_requires_code_product_report"]
     planner_evidence_contract = deps["planner_evidence_contract"]
-    successful_code_edit_proposals = deps["successful_code_edit_proposals"]
     validate_unified_diff_text = deps["validate_unified_diff_text"]
 
     decision = _normalize_terminal_planner_decision(decision if isinstance(decision, dict) else {})
@@ -186,6 +186,7 @@ def validate_planner_decision_against_evidence(
                 for row in verified_rows
                 if isinstance(row, dict) and row.get("path")
             }
+            successful_code_edit_proposals = deps["successful_code_edit_proposals"]
             proposals = successful_code_edit_proposals(history)
             if not proposals:
                 violations.append("missing_code_product_candidate")
@@ -215,13 +216,19 @@ def validate_planner_decision_against_evidence(
                 violations.append(f"final_without_in_scope_tree_or_list:{target_scope}")
             if not scope_reads and not final_allowed:
                 violations.append(f"final_without_in_scope_concrete_read:{target_scope}")
-        # Validator-only boundary: for generic repository analysis, once the
-        # evidence gate says final_allowed=true, the controller must not keep
-        # rejecting the planner's final only because its prose is not ideal.
-        # Empty finals are still invalid; content quality is exposed as evidence
-        # to the outer model, not turned into another hidden controller loop.
         if _repo_analysis_goal(goal) and not final_answer.strip():
             violations.append("final_empty_answer")
+        elif _repo_analysis_goal(goal):
+            quality = _repo_analysis_final_answer_quality(final_answer, contract)
+            quality_violations = (
+                quality.get("violations")
+                if isinstance(quality.get("violations"), list)
+                else []
+            )
+            if quality_violations:
+                violations.extend(str(v) for v in quality_violations)
+                contract["repo_analysis_final_quality"] = quality
+                contract["required_next_progress"] = quality.get("required_next_progress")
         if review_goal and not read_ok:
             violations.append("final_without_successful_repo_read_for_python_review")
         if review_goal and target_scope and any(not _path_under_scope(p, target_scope) for p in read_ok):

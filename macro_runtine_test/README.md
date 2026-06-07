@@ -10,7 +10,7 @@ OpenWebUI/30B -> 3571 vulkan_helper -> 3572 broker -> prompt pack ->
 ```
 
 Non viene raccolto dal gate standard `python -m pytest`, perche' il root
-`pytest.ini` limita `testpaths` a `tests services`.
+`pytest.ini` limita `testpaths` a `services`.
 
 Il macro test non e' un catalogo di tool e non simula il runtime a pezzi. Usa
 una richiesta operatore reale inviata al tool pubblico 3571 `/vulkan_helper`,
@@ -21,19 +21,6 @@ poi verifica sullo stesso `job_id` gli artifact prodotti dal runtime.
 ```powershell
 .\macro_runtine_test\run_loop_payload_completo.ps1 -Request "analizza la repo e descrivi dettagliatamente ogni script presente nel core"
 ```
-
-Con audit opzionale di un tool atteso:
-
-```powershell
-.\macro_runtine_test\run_loop_payload_completo.ps1 `
-  -Request "leggi il file README.md e riporta il contenuto rilevante inline" `
-  -ExpectTool repo_read
-```
-
-`-ExpectTool` non viene passato come dispatch interno e non forza il planner.
-Serve solo al replay runtime per verificare, dopo il job, che quel tool sia
-stato scelto, bloccato con guard tipizzato o reso indisponibile in modo
-tipizzato dalla catena reale.
 
 ## Prerequisiti
 

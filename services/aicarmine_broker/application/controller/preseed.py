@@ -43,6 +43,7 @@ def root_surface_entries(result: dict[str, Any], *, repo_root: Path) -> list[dic
     return entries
 
 
+
 def root_surface_file_paths(
     result: dict[str, Any],
     *,
@@ -59,7 +60,6 @@ def root_surface_file_paths(
         ):
             paths.append(path)
     return paths
-
 
 def root_surface_dir_paths(
     result: dict[str, Any],

@@ -10,7 +10,6 @@ class PromptStore(Protocol):
 
     def write_document(self, *, section: str, text: str) -> str:
         """Persist a complete prompt document and return its document id."""
-
     def read_window(
         self,
         *,

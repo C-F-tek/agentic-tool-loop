@@ -244,6 +244,7 @@ def _public_tool_turns(
     return turns
 
 
+
 def successful_tool_turns(
     history: list[dict[str, Any]],
     *,

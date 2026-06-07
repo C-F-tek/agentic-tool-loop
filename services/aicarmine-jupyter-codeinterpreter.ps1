@@ -2,28 +2,57 @@
 
 $AI_ROOT = "C:\Users\carmi\AI"
 $Python = "$AI_ROOT\venvs\codeinterpreter\Scripts\python.exe"
-$WorkDir = [Environment]::GetEnvironmentVariable("AICARMINE_JUPYTER_WORKDIR", "User")
-$TokenFile = [Environment]::GetEnvironmentVariable("AICARMINE_JUPYTER_TOKEN_FILE", "User")
+$WorkDir = $env:AICARMINE_JUPYTER_WORKDIR
+if ([string]::IsNullOrWhiteSpace($WorkDir)) {
+    $WorkDir = [Environment]::GetEnvironmentVariable("AICARMINE_JUPYTER_WORKDIR", "User")
+}
+$TokenFile = $env:AICARMINE_JUPYTER_TOKEN_FILE
+if ([string]::IsNullOrWhiteSpace($TokenFile)) {
+    $TokenFile = [Environment]::GetEnvironmentVariable("AICARMINE_JUPYTER_TOKEN_FILE", "User")
+}
+$Port = $env:AICARMINE_JUPYTER_PORT
+if ([string]::IsNullOrWhiteSpace($Port)) {
+    $Port = [Environment]::GetEnvironmentVariable("AICARMINE_JUPYTER_PORT", "User")
+}
 
 if ([string]::IsNullOrWhiteSpace($WorkDir)) {
-    $WorkDir = "$AI_ROOT\code-interpreter-workdir"
+    $WorkDir = $AI_ROOT
 }
 
 if ([string]::IsNullOrWhiteSpace($TokenFile)) {
     $TokenFile = "$AI_ROOT\secrets\jupyter_code_token.dpapi"
 }
 
+if ([string]::IsNullOrWhiteSpace($Port)) {
+    $Port = "8889"
+}
+
 if (-not (Test-Path $Python)) {
     throw "Python Code Interpreter non trovato: $Python"
 }
 
-if (-not (Test-Path $TokenFile)) {
-    throw "Token Jupyter non trovato: $TokenFile"
+$Token = $env:CODE_INTERPRETER_JUPYTER_AUTH_TOKEN
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    $Token = $env:CODE_EXECUTION_JUPYTER_AUTH_TOKEN
+}
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    $Token = $env:OPEN_TERMINAL_API_KEY
 }
 
-$RawToken = (Get-Content $TokenFile -Raw).Trim()
-$SecureToken = ConvertTo-SecureString -String $RawToken
-$Token = [System.Net.NetworkCredential]::new("", $SecureToken).Password
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    if (-not (Test-Path $TokenFile)) {
+        throw "Token Jupyter non trovato: $TokenFile"
+    }
+
+    $RawToken = (Get-Content $TokenFile -Raw).Trim()
+    if ($RawToken.Length -eq 48 -and $RawToken -match '^[A-Za-z0-9]+$') {
+        $Token = $RawToken
+    }
+    else {
+        $SecureToken = ConvertTo-SecureString -String $RawToken
+        $Token = [System.Net.NetworkCredential]::new("", $SecureToken).Password
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
@@ -36,7 +65,7 @@ Set-Location $WorkDir
 
 & $Python -m jupyter lab `
   --ServerApp.ip=127.0.0.1 `
-  --ServerApp.port=8888 `
+  --ServerApp.port=$Port `
   --ServerApp.open_browser=False `
   --IdentityProvider.token="$Token" `
   --ServerApp.password="" `
