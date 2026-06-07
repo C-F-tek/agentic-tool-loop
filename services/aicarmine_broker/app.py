@@ -63,7 +63,7 @@ from .job_html import (
 )
 from .job_planner_lab import agent_job_planner_lab_html, planner_lab_index_html
 from .job_store import agent_job_root, append_agent_event, compact_agent_terminal_response, list_agent_jobs
-from .application.public_payload.planner_lab import (
+from .application.public_payload.lab import (
     build_planner_lab_apply_tool_call,
     build_planner_lab_compose_request,
     build_planner_payload_lab,
