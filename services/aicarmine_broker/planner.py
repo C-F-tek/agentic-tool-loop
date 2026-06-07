@@ -23,6 +23,7 @@ from typing import Any
 
 from .config import (
     AGENTIC_PLANNER_FORCED_DECISION_TIMEOUT,
+    WRITE_GUARDED_TOOLS,
     AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,
     AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY,
     AGENTIC_PLANNER_NATIVE_TOOLS,
@@ -4166,16 +4167,10 @@ def _agentic_tool_allowed(
 ) -> tuple[bool, str]:
     mode = str(approval_mode or "safe_write_lab").lower()
     readonly_modes = {"read_only", "readonly", "no_write", "dry_run"}
-    if tool in {"repo_apply_patch", "repo_write_file"} and mode in {
-        "read_only", "readonly", "no_write", "dry_run"
-    }:
+    # Use WRITE_GUARDED_TOOLS directly instead of hardcoded names to prevent drift
+    if tool in WRITE_GUARDED_TOOLS and mode in readonly_modes:
         return False, f"{tool} blocked by read_only approval_mode"
-    if (
-        tool == "runtime_sqlite_memory_cleanup"
-        and bool(args.get("apply"))
-        and mode in readonly_modes
-    ):
-        return False, "runtime_sqlite_memory_cleanup apply blocked by read_only approval_mode"
+    # repo_command has an additional safety gate beyond write-guard
     if tool == "repo_command":
         from .repo_tools import dangerous_command  # noqa: PLC0415
         if mode in readonly_modes and dangerous_command(

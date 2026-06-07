@@ -669,6 +669,10 @@ MCP_PUBLIC_TOOLS: tuple[str, ...] = (
     "aicarmine_memory_state_packet",
 )
 
+# Write-guarded tools: these change repo filesystem state (creates, overwrites,
+# patches, or runs commands that may produce output files). Does not include
+# scratchpad/memory/state writes (those are session-scoped, not repo-scoped).
+
 WRITE_GUARDED_TOOLS: frozenset[str] = frozenset(
     {
         "repo_apply_patch",
@@ -772,6 +776,7 @@ TOOL_ALIASES: dict[str, str] = {
     "files": "repo_list_files",
     "find_files": "repo_list_files",
     "diff_check": "repo_command",
+    "help": "vulkan_helper",
     "helper": "vulkan_helper",
     "helper_for_all": "vulkan_helper",
     "help_for_all": "vulkan_helper",

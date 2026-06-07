@@ -122,7 +122,7 @@ TOOL_ALIASES = {
     'apply_patch': 'repo_apply_patch', 'patch': 'repo_apply_patch',
     'patch_file': 'repo_apply_patch', 'edit': 'repo_apply_patch',
     'edit_file': 'repo_apply_patch', 'modify_file': 'repo_apply_patch',
-    'write_file': 'repo_write_file', 'repo_write_file': 'repo_write_file',
+    'write_file': 'repo_write_file',
     'create_file': 'repo_write_file', 'overwrite_file': 'repo_write_file',
     'save_file': 'repo_write_file',
     'validate': 'repo_validate', 'validation': 'repo_validate', 'smoke': 'repo_validate',
@@ -135,7 +135,7 @@ TOOL_ALIASES = {
     'memory_search': 'runtime_sqlite_memory_search', 'memory_write': 'runtime_sqlite_memory_write',
     'memory_cleanup': 'runtime_sqlite_memory_cleanup',
     'runtime_sqlite_memory': 'runtime_sqlite_memory_search',
-    'tree': 'repo_tree', 'repo_tree': 'repo_tree', 'list_dir': 'repo_tree',
+    'tree': 'repo_tree', 'list_dir': 'repo_tree',
     'directory': 'repo_tree', 'directory_structure': 'repo_tree',
     # File inventories must not be normalized to repo_tree: that loses suffix/limit.
     'list_files': 'repo_list_files', 'file_inventory': 'repo_list_files',
