@@ -414,6 +414,7 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
 def _ensure_db_schema(db: Path) -> None:
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA synchronous=NORMAL')
     try:
@@ -547,7 +548,7 @@ def _chunk_lines(text, max_lines, max_chars):
 
 def _delta_reindex(repo_path, db, since):
     repo = git.Repo(str(repo_path))
-    repo_root = repo.root
+    repo_root = repo.working_dir
     import time, hashlib
     now = int(time.time())
     file_count = 0
@@ -559,7 +560,7 @@ def _delta_reindex(repo_path, db, since):
             diff_output = repo.git.diff(since, name_status=True).strip()
             for line in diff_output.splitlines():
                 parts = line.split(chr(9))
-                if len(parts) >= 3:
+                if len(parts) >= 2:
                     status_code = parts[0]
                     fpath = parts[-1]
                     if status_code != 'D':
@@ -570,10 +571,18 @@ def _delta_reindex(repo_path, db, since):
             diff_output = repo.git.diff(name_status=True).strip()
             for line in diff_output.splitlines():
                 parts = line.split(chr(9))
-                if len(parts) >= 3:
+                if len(parts) >= 2:
                     changed_files.append(parts[-1])
 
-    untracked = repo.git.ls_files(z=True, others=True, ignored=True, exclude_standard=True)
+    else:
+        # Full reindex: all tracked files
+        ls_output = repo.git.ls_files(z=True).strip()
+        if ls_output:
+            for f in ls_output.replace(chr(0), chr(10)).strip().split(chr(10)):
+                if f:
+                    changed_files.append(f)
+
+    untracked = repo.git.ls_files(z=True, others=True, exclude_standard=True)
     if untracked:
         tracked_set = set(changed_files)
         for f in untracked.replace(chr(0), chr(10)).strip().split(chr(10)):
@@ -605,17 +614,13 @@ def _delta_reindex(repo_path, db, since):
             continue
         kind = suffix.lower().lstrip('.') or 'text'
         conn = sqlite3.connect(str(db))
-        existing = conn.execute('SELECT id FROM chunks WHERE path = ?', (rel_path,)).fetchone()
+        # Always DELETE old chunks for this file, then re-insert fresh chunks.
+        conn.execute('DELETE FROM chunks WHERE path = ?', (rel_path,))
         for start_line, end_line, chunk_content in _chunk_lines(text, 180, 12000):
             digest = hashlib.sha256(chunk_content.encode('utf-8', errors='replace')).hexdigest()
             symbol = _guess_symbol(chunk_content.splitlines()[:80])
-            if existing:
-                conn.execute('UPDATE chunks SET start_line=?, end_line=?, symbol=?, kind=?, content=?, content_hash=?, updated_at=? WHERE id=?',
-                    (start_line, end_line, symbol, kind, chunk_content, digest, now, existing[0]))
-            else:
-                conn.execute('INSERT INTO chunks (repo_root, path, start_line, end_line, symbol, kind, content, content_hash, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-                    (str(repo_root), rel_path, start_line, end_line, symbol, kind, chunk_content, digest, now))
-                existing = conn.execute('SELECT last_insert_rowid() as id').fetchone()
+            conn.execute('INSERT INTO chunks (repo_root, path, start_line, end_line, symbol, kind, content, content_hash, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+                (str(repo_root), rel_path, start_line, end_line, symbol, kind, chunk_content, digest, now))
         conn.commit()
         file_count += 1
         conn.close()
