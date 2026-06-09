@@ -1,0 +1,1 @@
+from aicarmine_contracts.tool_context import validate_mcp_tool_response\n\n# Replace this check in codex_bridge/mcp_server.py\n# BEFORE: if 'artifact' not in tool_response or not tool_response['artifact']:\n# AFTER: is_valid, errors = validate_mcp_tool_response(tool_response)\n#        if not is_valid: return {'error': ', '.join(errors)}

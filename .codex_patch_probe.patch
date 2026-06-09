@@ -1,0 +1,8 @@
+--- a/.codex_patch_probe.txt
++++ b/.codex_patch_probe.txt
+diff --git a/.codex_patch_probe.txt b/.codex_patch_probe.txt
+--- a/.codex_patch_probe.txt
++++ b/.codex_patch_probe.txt
+@@ -1 +1,1 @@
+-before
++after

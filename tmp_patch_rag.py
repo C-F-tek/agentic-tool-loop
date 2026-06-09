@@ -17,7 +17,6 @@ import json
 import os
 import re
 import sqlite3
-import git
 import sys
 import traceback
 import urllib.error
@@ -25,13 +24,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, BinaryIO
 
-
-# --- MCP roots support ---
-CLIENT_SUPPORTS_ROOTS = False
-SERVER_REQUEST_ID = 100000
-
 SERVER_NAME = "aicarmine-codex-rag-mcp"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.0.0"
 STDIO_TRANSPORT = os.environ.get("AICARMINE_RAG_MCP_STDIO_TRANSPORT", "").strip().lower()
 DEBUG = os.environ.get("AICARMINE_RAG_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -410,225 +404,6 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-
-def _ensure_db_schema(db: Path) -> None:
-    db.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db))
-    conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA synchronous=NORMAL')
-    try:
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
-        table_names = {str(r['name']) for r in tables}
-        if 'chunks' not in table_names:
-            conn.execute(
-                "CREATE TABLE chunks (id INTEGER PRIMARY KEY, repo_root TEXT NOT NULL, path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, symbol TEXT, kind TEXT, content TEXT NOT NULL, content_hash TEXT NOT NULL, updated_at INTEGER NOT NULL)"
-            )
-            conn.execute("CREATE INDEX idx_chunks_path ON chunks(path)")
-            conn.execute("CREATE INDEX idx_chunks_hash ON chunks(content_hash)")
-            conn.execute(
-                "CREATE VIRTUAL TABLE chunks_fts USING fts5(path, symbol, kind, content, content='chunks', content_rowid='id', tokenize='unicode61')"
-            )
-            conn.execute(
-                "CREATE TRIGGER chunks_ai AFTER INSERT ON chunks BEGIN INSERT INTO chunks_fts(rowid, path, symbol, kind, content) VALUES (new.id, new.path, new.symbol, new.kind, new.content); END;"
-            )
-            conn.execute(
-                "CREATE TRIGGER chunks_ad AFTER DELETE ON chunks BEGIN INSERT INTO chunks_fts(chunks_fts, rowid, path, symbol, kind, content) VALUES ('delete', old.id, old.path, old.symbol, old.kind, old.content); END;"
-            )
-            conn.execute(
-                "CREATE TRIGGER chunks_au AFTER UPDATE ON chunks BEGIN INSERT INTO chunks_fts(chunks_fts, rowid, path, symbol, kind, content) VALUES ('delete', old.id, old.path, old.symbol, old.kind, old.content); INSERT INTO chunks_fts(rowid, path, symbol, kind, content) VALUES (new.id, new.path, new.symbol, new.kind, new.content); END;"
-            )
-            conn.execute("CREATE TABLE IF NOT EXISTS index_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-    finally:
-        conn.close()
-
-
-def _next_server_request_id() -> int:
-    global SERVER_REQUEST_ID
-    SERVER_REQUEST_ID += 1
-    return SERVER_REQUEST_ID
-
-
-def _request_client_roots() -> list:
-    if not CLIENT_SUPPORTS_ROOTS:
-        raise RuntimeError('Codex MCP client did not advertise roots capability')
-    request_id = _next_server_request_id()
-    request = {'jsonrpc': '2.0', 'id': request_id, 'method': 'roots/list', 'params': {}}
-    _write_message(sys.stdout.buffer, request)
-    while True:
-        message = _read_message(sys.stdin.buffer)
-        if message is None:
-            raise RuntimeError('Codex MCP client closed before roots/list response')
-        if message.get('id') == request_id:
-            if 'error' in message:
-                raise RuntimeError('roots/list failed: ' + str(message['error']))
-            result = message.get('result') if isinstance(message.get('result'), dict) else {}
-            roots = result.get('roots') if isinstance(result.get('roots'), list) else []
-            return [root for root in roots if isinstance(root, dict)]
-        response = _handle_rpc(message)
-        if response is not None:
-            _write_message(sys.stdout.buffer, response)
-
-
-def _path_from_file_uri(uri):
-    if not uri.startswith('file://'):
-        raise RuntimeError('unsupported root uri: ' + uri)
-    raw = uri[7:]
-    if raw.startswith('/') and len(raw) >= 4 and raw[2] == ':':
-        raw = raw[1:]
-    return Path(raw).expanduser().resolve()
-
-
-def _git_root(candidate):
-    current = candidate.resolve()
-    if current.is_file():
-        current = current.parent
-    for item in [current] + list(current.parents):
-        if (item / '.git').exists():
-            return item
-    raise RuntimeError('MCP root is not inside a git repository: ' + str(candidate))
-
-
-def _codex_app_repo_root():
-    roots = _request_client_roots()
-    if not roots:
-        raise RuntimeError('Codex MCP client returned no roots')
-    if len(roots) != 1:
-        raise RuntimeError('Codex MCP client returned multiple roots: ' + str(roots))
-    uri = str(roots[0].get('uri') or '')
-    if not uri:
-        raise RuntimeError('Codex MCP root has no uri: ' + str(roots[0]))
-    return _git_root(_path_from_file_uri(uri))
-
-
-def _read_text_file(path):
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return None
-    if b'\x00' in data[:4096]:
-        return None
-    for enc in ('utf-8', 'utf-8-sig', 'cp1252'):
-        try:
-            return data.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return data.decode('utf-8', errors='replace')
-
-
-def _guess_symbol(line_list):
-    for line in line_list:
-        s = line.strip()
-        if s.startswith('def ') or s.startswith('async def '):
-            return s.split(':', 1)[0][:240]
-        if s.startswith('class '):
-            return s.split(':', 1)[0][:240]
-        if s.startswith('function '):
-            return s.split('{', 1)[0][:240]
-    return ''
-
-
-def _chunk_lines(text, max_lines, max_chars):
-    lines_t = text.splitlines()
-    start = 0
-    result = []
-    while start < len(lines_t):
-        end = min(len(lines_t), start + max_lines)
-        chunk = chr(10).join(lines_t[start:end]).strip()
-        while len(chunk) > max_chars and end - start > 20:
-            end = start + max(20, (end - start) // 2)
-            chunk = chr(10).join(lines_t[start:end]).strip()
-        if chunk:
-            result.append((start + 1, end, chunk))
-        start = end
-    return result
-
-
-def _delta_reindex(repo_path, db, since):
-    repo = git.Repo(str(repo_path))
-    repo_root = repo.root
-    import time, hashlib
-    now = int(time.time())
-    file_count = 0
-    changed_files = []
-    removed_files = []
-
-    if since:
-        try:
-            diff_output = repo.git.diff(since, name_status=True).strip()
-            for line in diff_output.splitlines():
-                parts = line.split(chr(9))
-                if len(parts) >= 3:
-                    status_code = parts[0]
-                    fpath = parts[-1]
-                    if status_code != 'D':
-                        changed_files.append(fpath)
-                    else:
-                        removed_files.append(fpath)
-        except Exception:
-            diff_output = repo.git.diff(name_status=True).strip()
-            for line in diff_output.splitlines():
-                parts = line.split(chr(9))
-                if len(parts) >= 3:
-                    changed_files.append(parts[-1])
-
-    untracked = repo.git.ls_files(z=True, others=True, ignored=True, exclude_standard=True)
-    if untracked:
-        tracked_set = set(changed_files)
-        for f in untracked.replace(chr(0), chr(10)).strip().split(chr(10)):
-            if f and f not in tracked_set:
-                changed_files.append(f)
-
-    changed_files = list(dict.fromkeys(changed_files))
-    removed_files = list(dict.fromkeys(removed_files))
-
-    if removed_files:
-        conn = sqlite3.connect(str(db))
-        placeholders = ','.join('?' for _ in removed_files)
-        conn.execute('DELETE FROM chunks WHERE path IN (' + placeholders + ')', removed_files)
-        conn.commit()
-        conn.close()
-
-    allowed_suffixes = {'.py','.pyi','.ps1','.md','.toml','.yaml','.yml','.json','.txt','.ini','.cfg','.env','.sh','.bat','.cmd'}
-    for rel_path in changed_files:
-        full_path = Path(repo_root) / rel_path
-        if not full_path.exists() or not full_path.is_file():
-            continue
-        if full_path.stat().st_size > 2000000:
-            continue
-        suffix = full_path.suffix.lower()
-        if suffix not in allowed_suffixes:
-            continue
-        text = _read_text_file(full_path)
-        if text is None or not text.strip():
-            continue
-        kind = suffix.lower().lstrip('.') or 'text'
-        conn = sqlite3.connect(str(db))
-        existing = conn.execute('SELECT id FROM chunks WHERE path = ?', (rel_path,)).fetchone()
-        for start_line, end_line, chunk_content in _chunk_lines(text, 180, 12000):
-            digest = hashlib.sha256(chunk_content.encode('utf-8', errors='replace')).hexdigest()
-            symbol = _guess_symbol(chunk_content.splitlines()[:80])
-            if existing:
-                conn.execute('UPDATE chunks SET start_line=?, end_line=?, symbol=?, kind=?, content=?, content_hash=?, updated_at=? WHERE id=?',
-                    (start_line, end_line, symbol, kind, chunk_content, digest, now, existing[0]))
-            else:
-                conn.execute('INSERT INTO chunks (repo_root, path, start_line, end_line, symbol, kind, content, content_hash, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-                    (str(repo_root), rel_path, start_line, end_line, symbol, kind, chunk_content, digest, now))
-                existing = conn.execute('SELECT last_insert_rowid() as id').fetchone()
-        conn.commit()
-        file_count += 1
-        conn.close()
-
-    conn = sqlite3.connect(str(db))
-    conn.execute("INSERT OR REPLACE INTO index_meta(key, value) VALUES (?, ?)", ('repo_root', str(repo_root)))
-    conn.execute("INSERT OR REPLACE INTO index_meta(key, value) VALUES (?, ?)", ('indexed_at', str(now)))
-    conn.execute("INSERT OR REPLACE INTO index_meta(key, value) VALUES (?, ?)", ('last_delta_since', str(since)))
-    conn.commit()
-    conn.close()
-
-    return {'ok': True, 'operation': 'reindex', 'db': str(db), 'repo_root': str(repo_root), 'delta_mode': True, 'since': since, 'changed_files': len(changed_files), 'removed_files': len(removed_files), 'files_indexed': file_count, 'indexed_at': now}
-
 def _handle_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     operation = str(arguments.get("operation") or "search").strip().lower()
     db = Path(arguments.get("db") or _db_path()).expanduser()
@@ -642,31 +417,6 @@ def _handle_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 
     if operation == "search":
         return _tool_content(_search(arguments))
-
-    if operation == "reindex":
-        repo_arg = arguments.get("repo")
-        if repo_arg:
-            repo_path = Path(repo_arg).expanduser()
-        else:
-            try:
-                repo_path = _codex_app_repo_root()
-            except RuntimeError as exc:
-                return _tool_content({
-                    "ok": False, "operation": "reindex",
-                    "error": str(exc),
-                    "hint": "Pass repo parameter or start from a Codex session with MCP roots.",
-                }, is_error=True)
-        since = arguments.get("since")
-        _ensure_db_schema(db)
-        try:
-            result = _delta_reindex(repo_path, db, since)
-            return _tool_content(result)
-        except Exception as exc:
-            return _tool_content({
-                "ok": False, "operation": "reindex",
-                "error": type(exc).__name__,
-                "detail": str(exc),
-            }, is_error=True)
 
     return _tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
 
@@ -686,8 +436,7 @@ TOOL_SCHEMAS = [
                 "max_chunk_chars": {"type": "integer", "default": 4000},
                 "max_total_chars": {"type": "integer", "default": 50000},
             },
-            "repo": {"type": "string", "description": "Override repo root for reindex; defaults to MCP roots if not provided."},
-            "since": {"type": "string", "description": "Git commit ref or branch for delta reindex; defaults to HEAD."},
+            "additionalProperties": True,
         },
     }
 ]
@@ -695,8 +444,7 @@ TOOL_SCHEMAS = [
 INSTRUCTIONS = (
     "AI-Carmine single-purpose RAG MCP. Exposes exactly one read-only tool: "
     "aicarmine_rag_context. Use it for codebase retrieval only; use other MCP "
-    "servers for file reads, edits, validation, or commands. "
-    "Operations: search (default), inspect, health, reindex."
+    "servers for file reads, edits, validation, or commands."
 )
 
 
@@ -710,20 +458,11 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 
     try:
         if method == "initialize":
-            global CLIENT_SUPPORTS_ROOTS
-            capabilities = params.get("capabilities") if isinstance(params.get("capabilities"), dict) else {}
-            CLIENT_SUPPORTS_ROOTS = isinstance(capabilities.get("roots"), dict)
-            server_roots_caps = {}
-            if CLIENT_SUPPORTS_ROOTS:
-                server_roots_caps["roots"] = {"listChanged": False}
             return _ok(
                 msg_id,
                 {
                     "protocolVersion": params.get("protocolVersion") or "2024-11-05",
-                    "capabilities": {
-                        "tools": {"listChanged": False},
-                        "roots": server_roots_caps,
-                    },
+                    "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
                     "instructions": INSTRUCTIONS,
                 },

@@ -25,14 +25,12 @@ from .tool_schemas import (
     VALID_INTERNAL_TOOLS_PROMPT,
     VALID_INTERNAL_TOOLS_PROMPT_EXCLUDING_VULKAN,
     WRITE_GUARDED_TOOLS,
+    REGISTRY_VERSION as _registry_version,
+    RUNTIME_CONTRACT as _runtime_contract,
 )
 
-REGISTRY_VERSION = "2026-06-01.registry-v2"
-RUNTIME_CONTRACT = (
-    "3571 receives OpenWebUI tool call -> 3571 forwards to 3572 and waits -> "
-    "3572 runs the agentic planner loop -> 3572 wraps the terminal result -> "
-    "3572 returns wrapper to 3571 -> 3571 returns ok/result wrapper to OpenWebUI"
-)
+REGISTRY_VERSION = _registry_version
+RUNTIME_CONTRACT = _runtime_contract
 
 
 def tools_schema() -> list[dict[str, Any]]:
