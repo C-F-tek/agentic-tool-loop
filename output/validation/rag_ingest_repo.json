@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "kind": "rag_repo_ingest",
+  "generated_at": "2026-06-10T12:28:43.653755+00:00",
+  "repo_root": "C:\\Users\\carmi\\AI",
+  "passed": true,
+  "errors": [],
+  "warnings": [
+    "diag-qwen30b-20260607-133905/ollama-list.txt: binary_nul_detected",
+    "diag-qwen30b-20260607-133905/ollama-version.txt: binary_nul_detected"
+  ],
+  "action": "noop_current",
+  "rag_index_ready": true,
+  "resource_lane": "ollama_embedding_gpu1",
+  "ollama_embedding_performed": false,
+  "embedding_provider_role": "rag_index_embedding_not_provider_planning",
+  "providers_not_started_reason": "",
+  "provider_execution_performed": false,
+  "patch_application_performed": false,
+  "source_writes_performed": false,
+  "db_path": "services/codex_bridge/aicarmine_rag.db",
+  "startup_repo_scan_index_used": false,
+  "startup_repo_scan_file_count": 0,
+  "sqlite_integrity_check": "ok",
+  "indexed_file_count": 498,
+  "read_file_count": 2,
+  "chunked_file_count": 0,
+  "candidate_file_count": 500,
+  "skipped_file_count": 39,
+  "skipped_files_sample": [
+    {
+      "path": "$null",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": ".codex/config.toml.disabled",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": ".codex_patch_probe.patch",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": ".gitignore",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "cache/README.md",
+      "reason": "excluded_path_part"
+    },
+    {
+      "path": "codex_ollama_bridge_applied/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "codex_ollama_bridge_applied/useful_tools/context/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "codex_ollama_bridge_applied/useful_tools/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "codex_ollama_bridge_applied/useful_tools/memory/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "diag-qwen30b-20260607-133905/api-show.pretty.json",
+      "reason": "max_file_size_exceeded"
+    },
+    {
+      "path": "diag-qwen30b-20260607-133905/api-show.response.json",
+      "reason": "max_file_size_exceeded"
+    },
+    {
+      "path": "flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "logs/README.md",
+      "reason": "excluded_path_part"
+    },
+    {
+      "path": "macro_runtine_test/.gitignore",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "modelfiles/Modelfile.Modelfile.qwen3task-8k",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "modelfiles/Modelfile.devstral-32k",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "modelfiles/Modelfile.qwen3coder-32k",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "modelfiles/Modelfile.qwen3task-8k",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen3-vl-30b-thinking-codex-balanced.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen3-vl-30b-thinking-codex-lean.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen3-vl-4b-bf16-codex-balanced.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen3-vl-8b-q8-codex-balanced.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen3-vl-8b-thinking-codex-balanced.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen3-vl-8b-thinking-codex-lean.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen36-35b-codex-balanced.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "ollama-modelfiles/qwen36-35b-codex-lean.Modelfile",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "output/validation/rag_ingest_repo.json",
+      "reason": "excluded_path_part"
+    },
+    {
+      "path": "output/validation/rag_ingest_repo.md",
+      "reason": "excluded_path_part"
+    },
+    {
+      "path": "output/validation/rag_query_context.json",
+      "reason": "excluded_path_part"
+    },
+    {
+      "path": "output/validation/rag_query_context.md",
+      "reason": "excluded_path_part"
+    },
+    {
+      "path": "project-openwebui-pipelines-controller/.env.example",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "qwen36-lean-show.json",
+      "reason": "max_file_size_exceeded"
+    },
+    {
+      "path": "services/aicarmine_broker/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "services/codex_bridge/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "services/codex_bridge/mcp_server.py.patch",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "services/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "services/launch/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "services/model_export/flow.svg",
+      "reason": "unsupported_suffix"
+    },
+    {
+      "path": "services/vulkan_bridge/flow.svg",
+      "reason": "unsupported_suffix"
+    }
+  ],
+  "chunk_count": 0,
+  "changed_document_count": 0,
+  "unchanged_document_count": 498,
+  "unchanged_ref_only_document_count": 498,
+  "removed_document_count": 0,
+  "missing_embedding_count_before": 0,
+  "missing_embedding_count_after": 0,
+  "embedding_written_count": 0,
+  "embedding_failure_samples": [],
+  "embedding_retry_events": [],
+  "embedding_model": "bge-m3",
+  "embedding_endpoint": "http://127.0.0.1:11434",
+  "batch_size": 8,
+  "chunk_policy": {
+    "min_chars": 1500,
+    "max_chars": 4000,
+    "overlap_chars": 300
+  },
+  "db_status": {
+    "document_count": 498,
+    "active_chunk_count": 1491,
+    "embedding_count": 1491,
+    "retrieval_event_count": 2
+  }
+}
