@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .tool_context import slim_public_tool_context
+
 
 JobRootForId = Callable[[str], Any]
 ComposedAnswerLoader = Callable[[Any], dict[str, Any]]
@@ -178,7 +180,8 @@ class OpenWebUIPayloadBuilder:
             "blocked_by": result.get("blocked_by"),
             "local_references_omitted_for_openwebui": True,
         }
-        return self._strip_public_local_references(context)
+        public_context = slim_public_tool_context(context)
+        return self._strip_public_local_references(public_context)
 
 
 def build_tool_context_for_30b(

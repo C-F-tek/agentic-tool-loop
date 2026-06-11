@@ -10,12 +10,19 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 
 SCHEMA = "loop_replay_report.v1"
 MAX_PREVIEW_ITEMS = 20
+FULL_LOOP_REQUIRED_EVENT_GROUPS = {
+    "job_queued": {"job_queued"},
+    "agentic_loop_started": {"agentic_loop_started"},
+    "planner_request_started": {"planner_request_started"},
+    "planner_decision": {"planner_decision", "planner_decision_rejected"},
+}
 
 EvidenceBuilder = Callable[[str, list[dict[str, Any]]], dict[str, Any]]
 Validator = Callable[[str, dict[str, Any], list[dict[str, Any]]], dict[str, Any]]
@@ -52,6 +59,137 @@ def _read_ndjson(path: Path) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def _event_types(events: list[dict[str, Any]]) -> set[str]:
+    return {str(item.get("event_type") or "") for item in events if isinstance(item, dict)}
+
+
+def _missing_full_loop_events(events: list[dict[str, Any]]) -> list[str]:
+    event_types = _event_types(events)
+    return [
+        rule_name
+        for rule_name, alternatives in FULL_LOOP_REQUIRED_EVENT_GROUPS.items()
+        if not (event_types & alternatives)
+    ]
+
+
+def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not job_id:
+        return [], {"available": False, "reason": "job_id_missing"}
+    try:
+        from ...config import AGENT_JOB_DB  # Late import keeps CLI import lightweight.
+    except Exception as exc:
+        return [], {
+            "available": False,
+            "reason": "config_import_failed",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:1000],
+        }
+    db_path = Path(AGENT_JOB_DB)
+    if not db_path.exists() or not db_path.is_file():
+        return [], {
+            "available": False,
+            "reason": "sqlite_db_missing",
+            "db_path": str(db_path),
+        }
+    uri = "file:" + str(db_path).replace("\\", "/") + "?mode=ro"
+    try:
+        with sqlite3.connect(uri, uri=True) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                """
+                SELECT id, job_id, ts, step, event_type, message, payload_json
+                FROM events
+                WHERE job_id = ?
+                ORDER BY id
+                """,
+                (job_id,),
+            ).fetchall()
+    except Exception as exc:
+        return [], {
+            "available": False,
+            "reason": "sqlite_event_read_failed",
+            "db_path": str(db_path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:1000],
+        }
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        payload: dict[str, Any] = {}
+        raw_payload = row["payload_json"]
+        if isinstance(raw_payload, str) and raw_payload.strip():
+            try:
+                parsed = json.loads(raw_payload)
+                payload = parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                payload = {
+                    "_read_error": "invalid_sqlite_event_payload_json",
+                    "payload_preview": raw_payload[:500],
+                }
+        events.append({
+            "ts": row["ts"],
+            "job_id": row["job_id"],
+            "step": row["step"],
+            "event_type": row["event_type"],
+            "message": row["message"],
+            "payload": payload,
+            "event_storage": "sqlite_index",
+            "sqlite_event_id": row["id"],
+        })
+    return events, {
+        "available": True,
+        "db_path": str(db_path),
+        "count": len(events),
+    }
+
+
+def _select_replay_events(
+    *,
+    events_ndjson: list[dict[str, Any]],
+    sqlite_events: list[dict[str, Any]],
+    sqlite_diagnostic: dict[str, Any],
+    require_full_loop: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ndjson_missing = _missing_full_loop_events(events_ndjson) if require_full_loop else []
+    sqlite_missing = _missing_full_loop_events(sqlite_events) if require_full_loop and sqlite_events else []
+    selected = "events_ndjson"
+    events = events_ndjson
+    notes: list[dict[str, Any]] = []
+    if sqlite_events and not events_ndjson:
+        selected = "sqlite_index"
+        events = sqlite_events
+        notes.append({
+            "rule": "events_ndjson_empty_or_missing",
+            "sqlite_index_used": True,
+        })
+    elif require_full_loop and sqlite_events and ndjson_missing and not sqlite_missing:
+        selected = "sqlite_index_recovered_required_events"
+        events = sqlite_events
+        notes.append({
+            "rule": "events_ndjson_missing_required_events_recovered_from_sqlite",
+            "events_ndjson_missing_required_events": ndjson_missing,
+            "sqlite_index_used": True,
+        })
+    elif sqlite_events and len(sqlite_events) != len(events_ndjson):
+        notes.append({
+            "rule": "event_source_count_mismatch",
+            "events_ndjson_count": len(events_ndjson),
+            "sqlite_index_count": len(sqlite_events),
+            "selected_source": selected,
+        })
+    return events, {
+        "selected": selected,
+        "events_ndjson": {
+            "count": len(events_ndjson),
+            "missing_required_full_loop_events": ndjson_missing,
+        },
+        "sqlite_index": {
+            **sqlite_diagnostic,
+            "missing_required_full_loop_events": sqlite_missing,
+        },
+        "notes": notes,
+    }
 
 
 def _resolve_job_root(*, job_id: str | None, job_root: str | Path | None) -> Path:
@@ -466,7 +604,7 @@ def _runtime_loop_artifact_audit(
     target_tool: str,
     require_full_loop: bool,
 ) -> dict[str, Any]:
-    event_types = {str(item.get("event_type") or "") for item in events if isinstance(item, dict)}
+    event_types = _event_types(events)
     request_payload = state.get("request_payload") if isinstance(state.get("request_payload"), dict) else {}
     original_args = state.get("original_args") if isinstance(state.get("original_args"), dict) else {}
     prompt_audit = _planner_prompt_audit(_first_prompt_payload(prompt_files), target_tool=target_tool)
@@ -499,13 +637,7 @@ def _runtime_loop_artifact_audit(
             fail("planner_stream_missing")
         if not tool_result_files and target_coverage.get("matched_kind") != "typed_guard_event":
             fail("tool_result_files_missing")
-        required_event_groups = {
-            "job_queued": {"job_queued"},
-            "agentic_loop_started": {"agentic_loop_started"},
-            "planner_request_started": {"planner_request_started"},
-            "planner_decision": {"planner_decision", "planner_decision_rejected"},
-        }
-        for rule_name, alternatives in required_event_groups.items():
+        for rule_name, alternatives in FULL_LOOP_REQUIRED_EVENT_GROUPS.items():
             if not (event_types & alternatives):
                 fail("required_event_missing", rule_name)
         if target_tool == "repo_read" and "controller_preseed_file_surface" in event_types:
@@ -577,7 +709,14 @@ def replay_loop_job(
     goal = str(state.get("goal") or state.get("user_goal") or "")
     history = state.get("history") if isinstance(state.get("history"), list) else []
     history = [row for row in history if isinstance(row, dict)]
-    events = _read_ndjson(root / "events.ndjson")
+    events_ndjson = _read_ndjson(root / "events.ndjson")
+    sqlite_events, sqlite_event_diagnostic = _read_sqlite_events(resolved_job_id)
+    events, event_sources = _select_replay_events(
+        events_ndjson=events_ndjson,
+        sqlite_events=sqlite_events,
+        sqlite_diagnostic=sqlite_event_diagnostic,
+        require_full_loop=require_full_loop,
+    )
     tool_result_files = sorted((root / "tool-results").glob("*.json")) if (root / "tool-results").exists() else []
     prompt_files = sorted((root / "planner-prompts").glob("step-*-planner-payload.json")) if (root / "planner-prompts").exists() else []
     planner_stream_files = sorted((root / "planner-stream").glob("*.txt")) if (root / "planner-stream").exists() else []
@@ -613,6 +752,8 @@ def replay_loop_job(
         "replay_ok": True,
         "history_events": len(history),
         "event_count": len(events),
+        "event_source": event_sources.get("selected"),
+        "event_sources": event_sources,
         "tool_result_file_count": len(tool_result_files),
         "planner_stream_file_count": len(planner_stream_files),
         "validator_rejections": len(validator_rejections),

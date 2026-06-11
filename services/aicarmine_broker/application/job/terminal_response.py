@@ -14,7 +14,12 @@ from ..public_payload.terminal_sanitizer import (
     public_terminal_sanitize_value,
 )
 from ..public_payload.terminal_result import public_terminal_result_for_30b
-from ..public_payload.tool_context import failed_tool_turns, public_tool_artifact_rows, successful_tool_turns
+from ..public_payload.tool_context import (
+    failed_tool_turns,
+    public_tool_artifact_rows,
+    slim_public_tool_context,
+    successful_tool_turns,
+)
 
 
 RepoReadContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
@@ -103,6 +108,28 @@ def _concretize_public_json_pointers(value: Any, *, job_root: Path | None, depth
             for item in value
         ]
     return value
+
+
+def _json_dumps_for_openwebui(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def _openwebui_required_top_level_keys() -> list[str]:
+    return [
+        "ok",
+        "service",
+        "mode",
+        "job_id",
+        "status",
+        "required_top_level_keys",
+        "evidence_guide_for_30b",
+        "primary_payload_for_30b",
+        "payload_index_for_30b",
+        "priority_evidence_for_30b",
+        "materialization_report",
+        "openwebui_usage",
+        "tool_context_for_30b",
+    ]
 
 
 def build_missing_job_response(job_id: str) -> dict[str, Any]:
@@ -293,7 +320,7 @@ def build_compact_terminal_response(
             answer = public_terminal_sanitize_text(
                 "Il job interno e' terminato con status=failed, ma l'evidenza "
                 "raccolta prima del failure e' disponibile inline in "
-                "tool_context_for_30b.artifacts e tool_context_for_30b.history. "
+                "tool_context_for_30b.artifacts. "
                 "Non trattare il failure come assenza di contenuto; usa quei "
                 f"campi per rispondere. Dettaglio failure: {summary}"
             )
@@ -321,6 +348,7 @@ def build_compact_terminal_response(
         tool_context = _concretize_public_json_pointers(tool_context, job_root=job_root)
         sanitized_tool_context = public_terminal_sanitize_value(tool_context)
         tool_context = sanitized_tool_context if isinstance(sanitized_tool_context, dict) else {}
+        tool_context = slim_public_tool_context(tool_context)
     context_alias = {
         "schema": "agentic_terminal_context_alias.v1",
         "alias_of": "tool_context_for_30b",
@@ -369,10 +397,12 @@ def build_compact_terminal_response(
         openwebui_usage = {
             "primary_payload_fields": [
                 "evidence_guide_for_30b",
+                "primary_payload_for_30b.primary_location",
                 "payload_index_for_30b.concrete_results",
                 "priority_evidence_for_30b.items[0].content",
                 "tool_context_for_30b.artifacts[*].artifact",
             ],
+            "primary_payload_field": "primary_payload_for_30b",
             "payload_index_field": "payload_index_for_30b",
             "evidence_guide_field": "evidence_guide_for_30b",
             "concrete_results_field": "payload_index_for_30b.concrete_results",
@@ -381,11 +411,12 @@ def build_compact_terminal_response(
             "structured_context_field": "tool_context_for_30b",
             "rule": (
                 "OpenWebUI cannot read local filesystem paths. Start from "
-                "evidence_guide_for_30b, then use inline payload_index_for_30b, "
-                "priority_evidence_for_30b.items[0].content when present, and "
-                "only after that tool_context_for_30b.artifacts[*].artifact. "
-                "The guide is an evidence index, not a replacement for the "
-                "concrete payload."
+                "evidence_guide_for_30b, then primary_payload_for_30b for the "
+                "owner-selected useful inline field, then payload_index_for_30b "
+                "and priority_evidence_for_30b. Only after that use "
+                "tool_context_for_30b.artifacts[*].artifact as the full mirror. "
+                "The guide and primary descriptor are navigation, not substitutes "
+                "for the referenced concrete payload."
             ),
         }
 
@@ -400,6 +431,7 @@ def build_compact_terminal_response(
         internal_job_status={
             "completed": status == "completed",
             "status": status,
+            "job_id": job_id,
             "payload_available": bool(
                 tool_context.get("artifacts") if isinstance(tool_context, dict) else False
             ),
@@ -436,6 +468,41 @@ def build_compact_terminal_response(
         evidence_contract = sanitized_evidence_contract if isinstance(sanitized_evidence_contract, dict) else {}
         sanitized_planner_emission = public_terminal_sanitize_value(planner_emission_interpreter)
         planner_emission_interpreter = sanitized_planner_emission if isinstance(sanitized_planner_emission, dict) else {}
+
+    if audience == "openwebui":
+        primary_payload = (
+            materialized.get("primary_payload_for_30b")
+            if isinstance(materialized.get("primary_payload_for_30b"), dict)
+            else {}
+        )
+        payload_index = materialized["payload_index_for_30b"]
+        internal_job_status = (
+            payload_index.get("internal_job_status")
+            if isinstance(payload_index.get("internal_job_status"), dict)
+            else {}
+        )
+        openwebui_usage = dict(openwebui_usage)
+        openwebui_usage["primary_payload_field"] = "primary_payload_for_30b"
+        openwebui_usage["primary_payload_location_field"] = "primary_payload_for_30b.primary_location"
+        openwebui_usage["internal_job_status"] = internal_job_status
+        sealed_response: dict[str, Any] = {
+            "ok": True,
+            "service": "vulkan_agent",
+            "mode": "agent_job_final_compact",
+            "job_id": job_id,
+            "status": status,
+            "required_top_level_keys": _openwebui_required_top_level_keys(),
+            "evidence_guide_for_30b": evidence_guide,
+            "primary_payload_for_30b": primary_payload,
+            "payload_index_for_30b": payload_index,
+            "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
+            "materialization_report": materialized["materialization_report"],
+            "openwebui_usage": openwebui_usage,
+            "tool_context_for_30b": _json_dumps_for_openwebui(tool_context),
+        }
+        if result_digest:
+            sealed_response["result"] = result_digest
+        return sealed_response
 
     response = {
         "ok": True,

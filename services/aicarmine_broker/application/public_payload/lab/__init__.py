@@ -6,7 +6,7 @@ import hashlib
 import json
 from typing import Any
 
-from ..evidence.goal_classifier import goal_requests_apply, goal_requests_code_product
+from ...evidence.goal_classifier import goal_requests_apply, goal_requests_code_product
 
 
 SCHEMA = "planner_payload_lab.v1"

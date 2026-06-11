@@ -238,6 +238,16 @@ def _payload_index_has_result(payload_index: dict[str, Any]) -> bool:
     return False
 
 
+def _payload_index_has_resolved_concrete_result(index_resolution: dict[str, Any]) -> bool:
+    rows = index_resolution.get("resolved")
+    if not isinstance(rows, list):
+        return False
+    return any(
+        isinstance(row, dict) and row.get("section") == "concrete_results"
+        for row in rows
+    )
+
+
 def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[str, Any]:
     selected_mode = _mode(mode)
     warnings: list[dict[str, Any]] = []
@@ -322,14 +332,22 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
                 "section": row.get("section"),
                 "row_index": row.get("row_index"),
             })
-        if isinstance(priority_evidence, dict) and not _priority_items_have_concrete_payload(priority_evidence):
+        if (
+            isinstance(priority_evidence, dict)
+            and not _priority_items_have_concrete_payload(priority_evidence)
+            and not _payload_index_has_resolved_concrete_result(index_resolution)
+        ):
             warnings.append({"rule": "priority_evidence_items_have_no_concrete_payload", "path": "priority_evidence_for_30b.items"})
         terminal_status = _terminal_status(payload)
         if terminal_status in TERMINAL_STATUSES and not isinstance(payload.get("materialization_report"), dict):
             violations.append({"rule": "terminal_payload_missing_materialization_report", "path": "materialization_report"})
         if terminal_status == "completed" and _tool_context_has_artifacts(tool_context):
             context_obj = _tool_context_object(tool_context)
-            if not (_has_concrete_payload(priority_evidence) or _has_concrete_payload(context_obj.get("artifacts"))):
+            if not (
+                _has_concrete_payload(priority_evidence)
+                or _has_concrete_payload(context_obj.get("artifacts"))
+                or _payload_index_has_resolved_concrete_result(index_resolution)
+            ):
                 violations.append({
                     "rule": "completed_payload_with_artifacts_has_no_concrete_inline_evidence",
                     "path": "priority_evidence_for_30b.items",

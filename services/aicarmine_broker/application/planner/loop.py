@@ -145,6 +145,86 @@ def run_agentic_planner_job(
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
 
+    def successful_prior_tool_results_for_feedback(
+        tool: str,
+        internal_args: dict[str, Any],
+        *,
+        limit: int = 3,
+    ) -> list[dict[str, Any]]:
+        wanted_tool = normalize_tool_name(tool)
+        wanted_cache_key = _tool_cache_key(wanted_tool, internal_args)
+        rows: list[dict[str, Any]] = []
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+            decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+            result_tool = normalize_tool_name(str(result.get("tool") or decision.get("tool") or ""))
+            if result_tool != wanted_tool or result.get("ok") is False:
+                continue
+            decision_args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+            try:
+                comparable_args = sanitize_tool_args(
+                    wanted_tool,
+                    dict(decision_args),
+                    original_args,
+                    public_tool_name,
+                )
+            except Exception:
+                comparable_args = dict(decision_args)
+            if wanted_cache_key and _tool_cache_key(wanted_tool, comparable_args) != wanted_cache_key:
+                continue
+            digest: dict[str, Any] = {
+                "step": item.get("step"),
+                "tool": wanted_tool,
+                "ok": result.get("ok", True),
+            }
+            for key in (
+                "summary", "count", "items_total", "dry_run", "changed",
+                "deleted_count", "success_count", "failed_count", "all_ok",
+                "status", "mode",
+            ):
+                value = result.get(key)
+                if value not in (None, "", [], {}):
+                    digest[key] = value
+            if result.get("artifact"):
+                digest["artifact_available"] = True
+            rows.append(digest)
+        return rows[-max(1, int(limit or 1)):]
+
+    def enrich_repeated_tool_guard_feedback(
+        guard_result: dict[str, Any],
+        planner_decision: dict[str, Any],
+        validation: dict[str, Any],
+    ) -> None:
+        violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
+        if "repeated_same_tool_arguments_without_progress" not in {str(item) for item in violations}:
+            return
+        tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
+        if not tool:
+            return
+        raw_args = planner_decision.get("arguments") if isinstance(planner_decision.get("arguments"), dict) else {}
+        internal_args = sanitize_tool_args(tool, dict(raw_args), original_args, public_tool_name)
+        prior_results = successful_prior_tool_results_for_feedback(tool, internal_args)
+        next_instruction = (
+            f"Do not call {tool} again with the same arguments. Use the successful "
+            "prior tool result evidence already present in history to return action=final, "
+            "or choose a different tool only if it adds new evidence required by the user."
+        )
+        guard_result["next_instruction"] = next_instruction
+        guard_result["required_next_progress"] = "final_from_existing_tool_result_or_different_new_evidence"
+        guard_result["planner_may_choose_final"] = True
+        if prior_results:
+            guard_result["successful_prior_tool_results"] = prior_results
+        evidence_contract = guard_result.get("evidence_contract")
+        if isinstance(evidence_contract, dict):
+            evidence_contract["required_next_progress"] = guard_result["required_next_progress"]
+            evidence_contract["planner_may_choose_final"] = True
+            operational = evidence_contract.get("operational_notes")
+            operational = operational if isinstance(operational, dict) else {}
+            operational["next_instruction"] = next_instruction
+            evidence_contract["operational_notes"] = operational
+
     def append_repeat_guard_result(
         step_number: int,
         planner_decision: dict[str, Any],
@@ -171,6 +251,7 @@ def run_agentic_planner_job(
             "arguments": internal_args,
             "reason": planner_decision.get("reason"),
         }
+        enrich_repeated_tool_guard_feedback(guard_result, planner_decision, validation_repeat)
         append_agent_event(job_id, "planner_decision_rejected", guard_result["summary"], guard_result, step=step_number)
         row = {
             "step": step_number,
@@ -1004,6 +1085,7 @@ def run_agentic_planner_job(
                 guard_result["invalid_decision_signature"] = rejection_signature
                 guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
                 guard_result["retry_limit"] = repeated_rejection_limit
+                enrich_repeated_tool_guard_feedback(guard_result, decision, validation)
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
@@ -1227,6 +1309,7 @@ def run_agentic_planner_job(
                         )
                         if repair_result.get(k) not in (None, "", [], {})
                     }
+                enrich_repeated_tool_guard_feedback(guard_result, decision, validation)
                 append_agent_event(
                     job_id, "planner_decision_rejected",
                     guard_result.get("summary") or "Planner decision rejected by evidence validator.",

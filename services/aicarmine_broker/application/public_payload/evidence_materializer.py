@@ -11,14 +11,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from typing import Any
 
 from .payload_index_resolver import resolve_payload_index
 
 
 MATERIALIZATION_SCHEMA = "public_evidence_materialization.v1"
+PRIMARY_SCHEMA = "openwebui.primary_payload_for_30b.v1"
 PRIORITY_SCHEMA = "openwebui.priority_evidence_for_30b.v1"
 INDEX_KIND = "openwebui_payload_index.v1"
+_ITEM_INDEX_RE = re.compile(r"priority_evidence_for_30b\.items\[(?P<index>\d+)\]")
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -330,6 +333,163 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
     return {}
 
 
+def _iter_location_strings(value: Any):
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _iter_location_strings(item)
+
+
+def _item_index_from_location(value: Any) -> int | None:
+    for location in _iter_location_strings(value):
+        match = _ITEM_INDEX_RE.search(location)
+        if not match:
+            continue
+        try:
+            return int(match.group("index"))
+        except Exception:
+            return None
+    return None
+
+
+def _first_location_value(row: dict[str, Any]) -> str:
+    for key in ("primary_location", "field", "full_context_location"):
+        for location in _iter_location_strings(row.get(key)):
+            if location:
+                return location
+    return ""
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    value = str(value or "").strip()
+    if value and value not in values:
+        values.append(value)
+
+
+def _payload_search_order(
+    *,
+    concrete_results: list[dict[str, Any]],
+    partial_results: list[dict[str, Any]],
+    descriptive_only: list[dict[str, Any]],
+) -> list[str]:
+    order: list[str] = []
+    _append_unique(order, "evidence_guide_for_30b")
+    _append_unique(order, "primary_payload_for_30b.primary_location")
+    if concrete_results:
+        _append_unique(order, "payload_index_for_30b.concrete_results")
+        for row in concrete_results:
+            _append_unique(order, _first_location_value(row))
+    if partial_results:
+        _append_unique(order, "payload_index_for_30b.partial_results")
+        for row in partial_results:
+            _append_unique(order, _first_location_value(row))
+    for row in descriptive_only:
+        _append_unique(order, _first_location_value(row))
+    if not concrete_results and not partial_results:
+        _append_unique(order, "tool_context_for_30b.artifacts[*].artifact")
+    return order
+
+
+def _owner_for_priority_item(item: dict[str, Any], row: dict[str, Any] | None = None) -> tuple[str, str]:
+    row = row or {}
+    kind = str(item.get("kind") or row.get("kind") or "")
+    tool = str(item.get("tool") or row.get("tool") or "")
+    if tool == "repo_apply_patch":
+        return "application.patch_apply", "apply_patch"
+    if kind in {"repo_file_full_content", "repo_analysis_summary"}:
+        return "application.evidence", "repo_analysis"
+    if kind == "code_edit_proposal" or kind.startswith("partial_code_product"):
+        return "application.code_product", "code_product"
+    if kind.startswith("partial_"):
+        return "application.public_payload", "partial_terminal_payload"
+    if kind == "tool_result_inline":
+        return "application.tool_surface", "tool_result"
+    return "application.public_payload", "generic_payload"
+
+
+def _primary_descriptor_from_row(
+    *,
+    row: dict[str, Any],
+    item: dict[str, Any],
+    item_index: int | None,
+    section: str,
+) -> dict[str, Any]:
+    owner, request_type = _owner_for_priority_item(item, row)
+    primary_location = row.get("primary_location") or row.get("field")
+    payload_kind = row.get("payload_type") or item.get("kind") or row.get("kind")
+    return _clean({
+        "schema": PRIMARY_SCHEMA,
+        "owner": owner,
+        "request_type": request_type,
+        "payload_kind": payload_kind,
+        "kind": item.get("kind") or row.get("kind"),
+        "tool": item.get("tool") or row.get("tool"),
+        "path": item.get("path") or row.get("path"),
+        "target_file": item.get("target_file") or row.get("target_file"),
+        "item_index": item_index,
+        "source_index_section": section,
+        "primary_location": primary_location,
+        "full_context_location": row.get("full_context_location"),
+        "payload_is_complete": row.get("payload_is_complete", item.get("payload_is_complete")),
+        "validator_accepted": row.get("validator_accepted", item.get("validator_accepted", True)),
+        "read_before_payload_index": True,
+        "content_not_duplicated_here": True,
+        "reason": (
+            "This is the owner-selected first useful inline payload location. "
+            "Read the referenced field in this same JSON payload; this descriptor "
+            "does not copy the content."
+        ),
+    })
+
+
+def _primary_payload_descriptor(
+    priority_evidence: dict[str, Any],
+    payload_index: dict[str, Any],
+) -> dict[str, Any]:
+    priority_items = [_as_dict(item) for item in _as_list(priority_evidence.get("items"))]
+    for section in ("concrete_results", "partial_results"):
+        for row in _as_list(payload_index.get(section)):
+            row = _as_dict(row)
+            if not row:
+                continue
+            location = row.get("primary_location") or row.get("field")
+            item_index = _item_index_from_location(location)
+            item = priority_items[item_index] if item_index is not None and 0 <= item_index < len(priority_items) else {}
+            if not item:
+                item = {
+                    "kind": row.get("kind"),
+                    "tool": row.get("tool"),
+                    "path": row.get("path"),
+                    "target_file": row.get("target_file"),
+                    "payload_is_complete": row.get("payload_is_complete"),
+                    "validator_accepted": row.get("validator_accepted"),
+                }
+            return _primary_descriptor_from_row(
+                row=row,
+                item=item,
+                item_index=item_index,
+                section=section,
+            )
+    for index, item in enumerate(priority_items):
+        if item.get("kind") != "repo_analysis_summary":
+            continue
+        return _primary_descriptor_from_row(
+            row={
+                "kind": "repo_analysis_summary",
+                "payload_type": "repo_analysis_summary",
+                "primary_location": f"priority_evidence_for_30b.items[{index}].summary",
+                "payload_is_complete": item.get("payload_is_complete"),
+                "validator_accepted": True,
+            },
+            item=item,
+            item_index=index,
+            section="descriptive_only",
+        )
+    return {}
+
+
 @dataclass(frozen=True)
 class PublicEvidenceMaterializer:
     """Build the complete 30B evidence surface from broker-side inline context."""
@@ -349,6 +509,7 @@ class PublicEvidenceMaterializer:
         payload_index = self._payload_index(priority, context, completed=completed)
         if isinstance(internal_job_status, dict) and internal_job_status:
             payload_index["internal_job_status"] = _clean(internal_job_status)
+        primary_payload = _primary_payload_descriptor(priority, payload_index)
         report = self._materialization_report(
             tool_context=context,
             priority_evidence=priority,
@@ -356,6 +517,7 @@ class PublicEvidenceMaterializer:
             evidence_guide=evidence_guide,
         )
         return {
+            "primary_payload_for_30b": primary_payload,
             "payload_index_for_30b": payload_index,
             "priority_evidence_for_30b": priority,
             "materialization_report": report,
@@ -445,6 +607,11 @@ class PublicEvidenceMaterializer:
                 descriptive_only.append({
                     "field": f"priority_evidence_for_30b.items[{index}].summary",
                 })
+        descriptive_rows = descriptive_only + [
+            {
+                "field": "priority_evidence_for_30b.items[*].summary",
+            },
+        ]
         has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
         return _clean({
             "index_kind": INDEX_KIND,
@@ -461,11 +628,7 @@ class PublicEvidenceMaterializer:
             ),
             "concrete_results": concrete_results,
             "partial_results": partial_results,
-            "descriptive_only": descriptive_only + [
-                {
-                    "field": "priority_evidence_for_30b.items[*].summary",
-                },
-            ],
+            "descriptive_only": descriptive_rows,
             "suggestions_or_review_metadata_only": suggestions_only + [
                 {
                     "field": "priority_evidence_for_30b.limits",
@@ -474,18 +637,11 @@ class PublicEvidenceMaterializer:
                     "field": "openwebui_usage",
                 },
             ],
-            "search_order": [
-                "evidence_guide_for_30b",
-                "payload_index_for_30b.concrete_results",
-                "priority_evidence_for_30b.items[0].content",
-                "priority_evidence_for_30b.items[*].unified_diff",
-                "priority_evidence_for_30b.items[*].structured_operations",
-                "payload_index_for_30b.partial_results",
-                "priority_evidence_for_30b.items[*].unified_diff when validator_accepted=false",
-                "priority_evidence_for_30b.items[*].text when validator_accepted=false",
-                "priority_evidence_for_30b.items[*].content",
-                "tool_context_for_30b.artifacts[*].artifact",
-            ],
+            "search_order": _payload_search_order(
+                concrete_results=concrete_results,
+                partial_results=partial_results,
+                descriptive_only=descriptive_rows,
+            ),
         })
 
     def _materialization_report(

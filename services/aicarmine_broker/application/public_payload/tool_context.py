@@ -30,6 +30,68 @@ ArtifactPayloadLoader = Callable[[dict[str, Any]], dict[str, Any]]
 RepoReadContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
 
 
+def _slim_job(value: Any) -> dict[str, Any]:
+    job = value if isinstance(value, dict) else {}
+    return drop_empty_dict_values({
+        "job_id": job.get("job_id"),
+        "status": job.get("status"),
+        "goal": job.get("goal"),
+    })
+
+
+def _public_context_usage() -> dict[str, Any]:
+    return {
+        "top_level_evidence_guide_field": "evidence_guide_for_30b",
+        "primary_payload_field": "primary_payload_for_30b",
+        "payload_index_field": "payload_index_for_30b",
+        "priority_evidence_field": "priority_evidence_for_30b.items",
+        "artifact_mirror_field": "tool_context_for_30b.artifacts[*].artifact",
+        "rule": (
+            "This context is a public evidence mirror, not a job dump. Read "
+            "evidence_guide_for_30b, primary_payload_for_30b and "
+            "payload_index_for_30b before using artifacts[*].artifact."
+        ),
+    }
+
+
+def slim_public_tool_context(tool_context: Any) -> dict[str, Any]:
+    """Keep public evidence fields and remove planner/dashboard noise."""
+
+    if not isinstance(tool_context, dict):
+        return {}
+    slim = {
+        "type": "agentic_loop_public_evidence_context",
+        "contract_type": "agentic_loop_public_evidence_context",
+        "not_a_summary": True,
+        "openwebui_usage": _public_context_usage(),
+        "job": _slim_job(tool_context.get("job")),
+        "top_level_evidence_guide_field": "evidence_guide_for_30b",
+        "artifacts": tool_context.get("artifacts")
+        if isinstance(tool_context.get("artifacts"), list)
+        else [],
+        "partial_products_for_30b": tool_context.get("partial_products_for_30b")
+        if isinstance(tool_context.get("partial_products_for_30b"), list)
+        else [],
+        "best_partial_product_for_30b": tool_context.get("best_partial_product_for_30b")
+        if isinstance(tool_context.get("best_partial_product_for_30b"), dict)
+        else {},
+        "limits": tool_context.get("limits")
+        if isinstance(tool_context.get("limits"), list)
+        else [],
+        "evidence_digest_for_30b": tool_context.get("evidence_digest_for_30b"),
+        "evidence_view_for_30b": tool_context.get("evidence_view_for_30b")
+        if isinstance(tool_context.get("evidence_view_for_30b"), list)
+        else [],
+        "initial_orientation_surface": tool_context.get("initial_orientation_surface")
+        if isinstance(tool_context.get("initial_orientation_surface"), dict)
+        else {},
+        "next_action_for_30b": tool_context.get("next_action_for_30b")
+        if isinstance(tool_context.get("next_action_for_30b"), dict)
+        else {},
+    }
+    return drop_empty_dict_values(slim)
+
+
 def decision_for_turn_memory(decision: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(decision, dict):
         return {}
