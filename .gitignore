@@ -138,6 +138,16 @@ desktop.ini
 *.old
 *.orig
 *.pid
+temp_cfg
+temp_cfg.txt
+temp_tool_reg_schema.txt
+.codex/config.toml
+.codex/*.new
+.codex/*.base.env
+.codex/environments/*.toml
+services/aicarmine_broker.py
+services/**/tool_registry_real.txt
+services/**/tool_registry_temp.txt
 
 # Large generated media/artifacts
 *.zip
