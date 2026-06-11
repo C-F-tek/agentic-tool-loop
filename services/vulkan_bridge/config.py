@@ -82,7 +82,7 @@ def load_bridge_config_from_env(env: EnvMapping | None = None) -> BridgeConfig:
                 "AICARMINE_PLANNER_MODEL",
                 "AICARMINE_OLLAMA_PLANNER_MODEL",
             ),
-            "qwen3-coder:30b",
+            "qwen3.5:9b-coding",
             env,
         ),
     )

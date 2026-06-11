@@ -9,6 +9,7 @@ from typing import Any, Callable
 from .response_values import compact_text, event_digest, strip_narrative_duplicates_from_context
 from ..public_payload.history_ledger import build_public_result_digest
 from ..public_payload.evidence_materializer import materialize_public_evidence
+from ..public_payload.field_names import normalize_public_payload_field_names
 from ..public_payload.terminal_sanitizer import (
     public_terminal_sanitize_text,
     public_terminal_sanitize_value,
@@ -502,7 +503,7 @@ def build_compact_terminal_response(
         }
         if result_digest:
             sealed_response["result"] = result_digest
-        return sealed_response
+        return normalize_public_payload_field_names(sealed_response)
 
     response = {
         "ok": True,
@@ -546,6 +547,7 @@ def build_compact_terminal_response(
         response["operator_diagnostics"] = local_paths
         for duplicate_key in ("answer_for_30b", "message_for_30b", "summary_for_30b", "content"):
             response.pop(duplicate_key, None)
+        return normalize_public_payload_field_names(response)
     else:
         response["final_path"] = final_path
         response["final_markdown_path"] = final_markdown_path

@@ -13,11 +13,11 @@ def _decode_tool_context(value: Any) -> dict[str, Any]:
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError as exc:
-            raise AssertionError("tool_context_for_30b is not JSON parseable") from exc
+            raise AssertionError("tool_context is not JSON parseable") from exc
         if not isinstance(parsed, dict):
-            raise AssertionError("tool_context_for_30b parsed to non-object JSON")
+            raise AssertionError("tool_context parsed to non-object JSON")
         return parsed
-    raise AssertionError("tool_context_for_30b must be a JSON string or object")
+    raise AssertionError("tool_context must be a JSON string or object")
 
 
 def _walk(value: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], Any]]:
@@ -34,6 +34,13 @@ def _walk(value: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...],
 def assert_public_payload_contract(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise AssertionError("public payload must be a dict")
+    legacy_keys = [
+        ".".join(path)
+        for path, _ in _walk(payload)
+        if path and ("for_30b" in path[-1] or path[-1] == "called_by_30b")
+    ]
+    if legacy_keys:
+        raise AssertionError(f"public payload contains legacy 30B field names: {legacy_keys[:20]}")
     lint = lint_public_payload(payload, mode="block")
     if lint.get("ok") is not True:
         raise AssertionError(
@@ -41,26 +48,26 @@ def assert_public_payload_contract(payload: dict[str, Any]) -> dict[str, Any]:
             + json.dumps(lint.get("violations") or lint, ensure_ascii=False, default=str)
         )
 
-    guide = payload.get("evidence_guide_for_30b")
+    guide = payload.get("evidence_guide")
     if not isinstance(guide, str) or not guide.strip():
-        raise AssertionError("missing non-empty evidence_guide_for_30b")
+        raise AssertionError("missing non-empty evidence_guide")
 
-    index = payload.get("payload_index_for_30b")
+    index = payload.get("payload_index")
     if not isinstance(index, dict):
-        raise AssertionError("missing payload_index_for_30b object")
+        raise AssertionError("missing payload_index object")
     if not (index.get("concrete_results") or index.get("partial_results")):
-        raise AssertionError("payload_index_for_30b lacks concrete_results/partial_results")
+        raise AssertionError("payload_index lacks concrete_results/partial_results")
 
-    priority = payload.get("priority_evidence_for_30b")
+    priority = payload.get("priority_evidence")
     if not isinstance(priority, dict):
-        raise AssertionError("missing priority_evidence_for_30b object")
+        raise AssertionError("missing priority_evidence object")
     items = priority.get("items")
     if not isinstance(items, list):
-        raise AssertionError("priority_evidence_for_30b.items must be a list")
+        raise AssertionError("priority_evidence.items must be a list")
     if items:
         first_content = items[0].get("content") if isinstance(items[0], dict) else None
         if first_content is not None and not isinstance(first_content, str):
-            raise AssertionError("priority_evidence_for_30b.items[0].content must be text when present")
+            raise AssertionError("priority_evidence.items[0].content must be text when present")
 
     materialization = payload.get("materialization_report")
     if not isinstance(materialization, dict):
@@ -72,19 +79,19 @@ def assert_public_payload_contract(payload: dict[str, Any]) -> dict[str, Any]:
     if materialization.get("owner") != "3572_broker":
         raise AssertionError(f"materialization_report owner is not 3572_broker: {materialization.get('owner')}")
 
-    tool_context = _decode_tool_context(payload.get("tool_context_for_30b"))
+    tool_context = _decode_tool_context(payload.get("tool_context"))
     artifacts = tool_context.get("artifacts")
     if artifacts is not None:
         if not isinstance(artifacts, list):
-            raise AssertionError("tool_context_for_30b.artifacts must be a list when present")
+            raise AssertionError("tool_context.artifacts must be a list when present")
         for artifact_row in artifacts:
             if not isinstance(artifact_row, dict):
-                raise AssertionError("tool_context_for_30b.artifacts rows must be objects")
+                raise AssertionError("tool_context.artifacts rows must be objects")
             if "artifact" not in artifact_row:
-                raise AssertionError("tool_context_for_30b artifact row lacks artifact")
+                raise AssertionError("tool_context artifact row lacks artifact")
             artifact = artifact_row.get("artifact")
             if not isinstance(artifact, (dict, list)) or artifact in ({}, []):
-                raise AssertionError("tool_context_for_30b artifact must be a non-empty inline serialized payload")
+                raise AssertionError("tool_context artifact must be a non-empty inline serialized payload")
 
     return {
         "payload_ok": True,
@@ -109,16 +116,24 @@ def assert_same_openwebui_payload(
 
     public_keys = set(public_3571_payload)
     serializer_keys = set(serializer_3572_payload)
+    public_only_keys = public_keys - serializer_keys
+    bridge_wrapper_keys = {"called_by", "job_url", "tool_name", "tool_result_for"}
     shared_changed = sorted(
         key
         for key in public_keys & serializer_keys
         if public_3571_payload.get(key) != serializer_3572_payload.get(key)
     )
+    if not shared_changed and not (serializer_keys - public_keys) and public_only_keys <= bridge_wrapper_keys:
+        return {
+            "same_openwebui_payload": True,
+            "top_level_keys": sorted(public_3571_payload),
+            "bridge_wrapper_3571_only_keys": sorted(public_only_keys),
+        }
     raise AssertionError(
         "3571 public payload differs from 3572 openwebui serializer payload: "
         + json.dumps(
             {
-                "3571_only_keys": sorted(public_keys - serializer_keys),
+                "3571_only_keys": sorted(public_only_keys),
                 "3572_only_keys": sorted(serializer_keys - public_keys),
                 "changed_shared_keys": shared_changed,
             },

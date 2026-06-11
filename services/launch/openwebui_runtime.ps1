@@ -272,21 +272,23 @@ $null = Set-UserEnvValue "AICARMINE_AGENT_MAX_STEPS" "100"
 
 $env:AICARMINE_AGENT_DEFAULT_MAX_STEPS = "40"
 $env:AICARMINE_AGENT_MAX_STEPS = "100"
+$PlannerNumCtx = "262144"
+$PlannerPromptCharBudget = $PlannerNumCtx
 $AICarminePersistentConfig = @{
     AICARMINE_VULKAN_TOOL_BROKER_OPENAPI = "http://$($config.HOSTNAME):$($config.VULKAN_BRIDGE_PORT)/openapi.json"
     AICARMINE_VULKAN_TOOL_BROKER_URL = "http://$($config.HOSTNAME):$($config.VULKAN_BRIDGE_PORT)"
     AICARMINE_VULKAN_AGENT_URL = "http://$($config.HOSTNAME):$($config.VULKAN_AGENT_PORT)/vulkan/agent"
     AICARMINE_AGENT_PLANNER_URL = "http://$($config.HOSTNAME):$($config.OLLAMA_MAIN_PORT)/api/chat"
-    AICARMINE_AGENT_PLANNER_MODEL = "qwen3-coder:30b"
+    AICARMINE_AGENT_PLANNER_MODEL = "qwen3.5:9b-coding"
     #AICARMINE_AGENT_PLANNER_MODEL = "qwen2.5-coder:14b"
     #AICARMINE_AGENT_PLANNER_MODEL = "ia-carmine-gpu1-qwen3-coder-30b-a3b-q2-tools-4k:latest"
     AICARMINE_AGENTIC_PLANNER_ENABLED = "1"
     AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS = "1"
     AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = "1"
-    AICARMINE_AGENTIC_PLANNER_NUM_CTX = "12288"
-    AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP = "12288"
-    AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET = "48000"
-    AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO = "0.5"
+    AICARMINE_AGENTIC_PLANNER_NUM_CTX = $PlannerNumCtx
+    AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP = $PlannerNumCtx
+    AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET = $PlannerPromptCharBudget
+    AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO = "0.85"
     AICARMINE_AGENTIC_PLANNER_NUM_PREDICT = "-1"
     AICARMINE_AGENTIC_RESULT_COMPACT_CHARS = "50000"
     AICARMINE_AGENT_APPROVAL_MODE = "safe_write_lab"
@@ -713,8 +715,11 @@ if ([string]::IsNullOrWhiteSpace($env:AICARMINE_SAFE_COMMAND_RUNNER)) {
     $env:AICARMINE_SAFE_COMMAND_RUNNER = "C:\Users\carmi\AI\services\aicarmine-run-safe-command.ps1"
 }
 $env:AICARMINE_LAB_REPO = [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User")
-if ([string]::IsNullOrWhiteSpace($env:AICARMINE_LAB_REPO)) {
-    $env:AICARMINE_LAB_REPO = "C:\Users\carmi\AI\"
+if (
+    [string]::IsNullOrWhiteSpace($env:AICARMINE_LAB_REPO) -or
+    ([System.IO.Path]::GetFullPath($env:AICARMINE_LAB_REPO).TrimEnd([char[]]@('\', '/')) -ieq [System.IO.Path]::GetFullPath($AI_ROOT).TrimEnd([char[]]@('\', '/')))
+) {
+    $env:AICARMINE_LAB_REPO = "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
 }
 $env:AICARMINE_REAL_REPO = [Environment]::GetEnvironmentVariable("AICARMINE_REAL_REPO", "User")
 if ([string]::IsNullOrWhiteSpace($env:AICARMINE_REAL_REPO)) {
@@ -1007,7 +1012,19 @@ function Start-AICOpenTerminal {
         [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User"),
         "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
     )
+    if (
+        -not [string]::IsNullOrWhiteSpace($labRepoForTerminal) -and
+        ([System.IO.Path]::GetFullPath($labRepoForTerminal).TrimEnd([char[]]@('\', '/')) -ieq [System.IO.Path]::GetFullPath($AI_ROOT).TrimEnd([char[]]@('\', '/')))
+    ) {
+        $labRepoForTerminal = "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
+    }
     $cwd = Get-AICFirstNonEmpty @($env:OPEN_TERMINAL_CWD, [Environment]::GetEnvironmentVariable("OPEN_TERMINAL_CWD", "User"), $labRepoForTerminal)
+    if (
+        -not [string]::IsNullOrWhiteSpace($cwd) -and
+        ([System.IO.Path]::GetFullPath($cwd).TrimEnd([char[]]@('\', '/')) -ieq [System.IO.Path]::GetFullPath($AI_ROOT).TrimEnd([char[]]@('\', '/')))
+    ) {
+        $cwd = $labRepoForTerminal
+    }
     if ([string]::IsNullOrWhiteSpace($cwd) -or -not (Test-Path -LiteralPath $cwd)) {
         throw "[open-terminal-replaces-jupyter] AICARMINE_LAB_REPO/Open Terminal cwd non valido: $cwd"
     }
@@ -1079,7 +1096,17 @@ if ($OpenTerminalPort -eq [int]$config.JUPYTER_PORT) {
 
 $OpenTerminalUrl = ("http://{0}:{1}" -f $OpenTerminalHost, $OpenTerminalPort)
 $JupyterUrl = "http://$($config.HOSTNAME):$($config.JUPYTER_PORT)"
-$OpenTerminalCwd = $AI_ROOT
+$OpenTerminalCwd = Get-AICFirstNonEmpty @(
+    $env:AICARMINE_LAB_REPO,
+    [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User"),
+    "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
+)
+if (
+    -not [string]::IsNullOrWhiteSpace($OpenTerminalCwd) -and
+    ([System.IO.Path]::GetFullPath($OpenTerminalCwd).TrimEnd([char[]]@('\', '/')) -ieq [System.IO.Path]::GetFullPath($AI_ROOT).TrimEnd([char[]]@('\', '/')))
+) {
+    $OpenTerminalCwd = "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
+}
 if ([string]::IsNullOrWhiteSpace($OpenTerminalCwd) -or -not (Test-Path -LiteralPath $OpenTerminalCwd)) {
     throw "AICARMINE_LAB_REPO/Open Terminal cwd non valido: $OpenTerminalCwd"
 }
@@ -1155,7 +1182,10 @@ $null = Set-UserEnvValue "AICARMINE_QWEN_PATCH_OPENAPI" ""
 $null = Set-UserEnvValue "AICARMINE_QWEN_GUIDE_URL" ""
 $null = Set-UserEnvValue "AICARMINE_QWEN_GUIDE_OPENAPI" ""
 $ResolvedLabRepo = [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User")
-if ([string]::IsNullOrWhiteSpace($ResolvedLabRepo)) {
+if (
+    [string]::IsNullOrWhiteSpace($ResolvedLabRepo) -or
+    ([System.IO.Path]::GetFullPath($ResolvedLabRepo).TrimEnd([char[]]@('\', '/')) -ieq [System.IO.Path]::GetFullPath($AI_ROOT).TrimEnd([char[]]@('\', '/')))
+) {
     $ResolvedLabRepo = "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
 }
 $ResolvedRealRepo = [Environment]::GetEnvironmentVariable("AICARMINE_REAL_REPO", "User")

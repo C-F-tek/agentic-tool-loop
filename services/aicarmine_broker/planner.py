@@ -1929,8 +1929,33 @@ def _should_preseed_root_surface(goal: str, original_args: dict[str, Any]) -> bo
     )
 
 
+def _goal_existing_file_candidates(goal: str) -> list[str]:
+    out: list[str] = []
+    for candidate in re.findall(
+        r"([A-Za-z0-9_./\\-]+?\.(?:py|ps1|md|json|toml|yml|yaml|txt))",
+        str(goal or ""),
+    ):
+        normalized = _repo_rel_token(candidate)
+        try:
+            rel = safe_rel_path(normalized)
+            full = (LAB_REPO / rel).resolve(strict=False)
+            full.relative_to(LAB_REPO)
+        except Exception:
+            continue
+        if full.exists() and full.is_file() and rel not in out:
+            out.append(rel)
+    return out
+
+
 def _goal_target_file(goal: str) -> str:
-    return extract_existing_goal_path(goal)
+    candidates = _goal_existing_file_candidates(goal)
+    if not candidates:
+        return ""
+    # Broad repository-analysis goals often enumerate multiple canonical files.
+    # Do not collapse those requests to the first incidental file mention.
+    if _repo_analysis_goal(goal) and len(candidates) > 1:
+        return ""
+    return candidates[0]
 
 
 def _goal_target_scope(goal: str) -> str:
@@ -1960,12 +1985,21 @@ def _controller_memory_target_key(goal: str, contract: dict[str, Any] | None = N
     return "repo:root" if _repo_analysis_goal(goal) else "goal:general"
 
 
+def _planner_prompt_budget_value(default: int = 24000) -> int:
+    try:
+        return int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or default)
+    except Exception:
+        return int(default)
+
+
 def _single_file_prompt_read_chars() -> int:
-    return max(2000, min(10000, int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 24000) // 2))
+    budget = _planner_prompt_budget_value()
+    return max(2000, min(120000, budget // 4))
 
 
 def _multi_file_prompt_read_chars() -> int:
-    return max(2000, min(6000, int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 24000) // 4))
+    budget = _planner_prompt_budget_value()
+    return max(2000, min(64000, budget // 8))
 
 
 def _controller_preseed_plan(goal: str, original_args: dict[str, Any]) -> dict[str, Any] | None:

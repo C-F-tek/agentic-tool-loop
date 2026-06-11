@@ -21,8 +21,11 @@ if ([string]::IsNullOrWhiteSpace($env:AICARMINE_SAFE_COMMAND_RUNNER)) {
     $env:AICARMINE_SAFE_COMMAND_RUNNER = "C:\Users\carmi\AI\services\aicarmine-run-safe-command.ps1"
 }
 $env:AICARMINE_LAB_REPO = [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User")
-if ([string]::IsNullOrWhiteSpace($env:AICARMINE_LAB_REPO)) {
-    $env:AICARMINE_LAB_REPO = "C:\Users\carmi\AI\"
+if (
+    [string]::IsNullOrWhiteSpace($env:AICARMINE_LAB_REPO) -or
+    ([System.IO.Path]::GetFullPath($env:AICARMINE_LAB_REPO).TrimEnd([char[]]@('\', '/')) -ieq [System.IO.Path]::GetFullPath($AI_ROOT).TrimEnd([char[]]@('\', '/')))
+) {
+    $env:AICARMINE_LAB_REPO = "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
 }
 $env:AICARMINE_REAL_REPO = [Environment]::GetEnvironmentVariable("AICARMINE_REAL_REPO", "User")
 if ([string]::IsNullOrWhiteSpace($env:AICARMINE_REAL_REPO)) {

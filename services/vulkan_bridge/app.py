@@ -24,6 +24,7 @@ from .application.response_values import (
     compact_text,
     json_size,
 )
+from .application.public_field_names import normalize_public_payload_field_names
 from .application.public_payload_linter import lint_public_payload
 from .openapi_builder import build_native_helper_openapi
 
@@ -102,11 +103,11 @@ app = FastAPI(
     description=(
         "OpenWebUI-facing native vulkan_helper tool. "
         "Use one call for a local repo task; the default wait response returns the completed planner "
-        "inline evidence. Completed responses put payload_index_for_30b near the top: "
+        "inline evidence. Completed responses put payload_index near the top: "
         "it tells the model which fields contain concrete results such as diffs/file content and "
         "which fields are only descriptions, review metadata or navigation hints. After a terminal "
-        "result, answer from payload_index_for_30b, priority_evidence_for_30b and "
-        "tool_context_for_30b instead of issuing follow-up tool calls."
+        "result, answer from payload_index, priority_evidence and tool_context instead of issuing "
+        "follow-up tool calls."
     ),
 )
 
@@ -219,6 +220,7 @@ def _public_payload_lint_mode() -> str:
 def _attach_public_payload_lint(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
+    payload = normalize_public_payload_field_names(payload)
     payload["public_payload_lint"] = lint_public_payload(
         payload,
         mode=_public_payload_lint_mode(),
@@ -661,18 +663,20 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
     decoded["bridge_agent_url"] = url
     decoded["bridge_contract"] = payload["bridge_contract"]
     expected_tool = str(payload.get("bridge_public_tool_x") or "helper_for_all")
-    if decoded.get("tool_result_for") != expected_tool or decoded.get("called_by_30b") != expected_tool:
+    called_by_value = decoded.get("called_by") or decoded.get("called_by_30b")
+    if decoded.get("tool_result_for") != expected_tool or called_by_value != expected_tool:
         decoded["bridge_wrapper_guard"] = {
             "expected_public_tool_x": expected_tool,
             "received_tool_name": decoded.get("tool_name"),
             "received_tool_result_for": decoded.get("tool_result_for"),
-            "received_called_by_30b": decoded.get("called_by_30b"),
+            "received_called_by": called_by_value,
             "action": "normalized_public_tool_metadata_only",
         }
     decoded["tool_name"] = expected_tool
     decoded["tool_result_for"] = expected_tool
-    decoded["called_by_30b"] = expected_tool
-    decoded.setdefault("arguments_from_30b", payload.get("raw_bridge_payload") or payload.get("arguments") or {})
+    decoded.pop("called_by_30b", None)
+    decoded["called_by"] = expected_tool
+    decoded.setdefault("arguments_from", payload.get("raw_bridge_payload") or payload.get("arguments") or {})
     decoded.setdefault("operation_id", expected_tool)
     decoded.setdefault("wrapper_expected_contract", payload.get("wrapper_expected_contract"))
     decoded.setdefault(
@@ -3239,7 +3243,13 @@ def _agentic_v9_build_completed_content_text(planner_text, evidence_text):
 def _agentic_v9_has_agent_result(decoded):
     if not isinstance(decoded, dict):
         return False
-    if decoded.get("service") in {"vulkan_agent", "vulkan_bridge"} and (decoded.get("job_id") or decoded.get("job_url") or decoded.get("tool_context_for_30b") or decoded.get("result")):
+    if decoded.get("service") in {"vulkan_agent", "vulkan_bridge"} and (
+        decoded.get("job_id")
+        or decoded.get("job_url")
+        or decoded.get("tool_context")
+        or decoded.get("tool_context_for_30b")
+        or decoded.get("result")
+    ):
         return True
     for key in _agentic_v9_context_keys():
         if isinstance(decoded.get(key), dict):
@@ -3250,8 +3260,14 @@ def _agentic_v9_has_agent_result(decoded):
 def _agentic_v9_broker_materialized_public_evidence(payload):
     payload = _agentic_v9_as_dict(payload)
     report = _agentic_v9_as_dict(payload.get("materialization_report"))
-    priority = _agentic_v9_as_dict(payload.get("priority_evidence_for_30b"))
-    payload_index = _agentic_v9_as_dict(payload.get("payload_index_for_30b"))
+    priority = _agentic_v9_as_dict(
+        payload.get("priority_evidence")
+        or payload.get("priority_evidence_for_30b")
+    )
+    payload_index = _agentic_v9_as_dict(
+        payload.get("payload_index")
+        or payload.get("payload_index_for_30b")
+    )
     if (
         report.get("ok") is True
         and str(report.get("owner") or "") == "3572_broker"
@@ -3267,6 +3283,7 @@ def _agentic_v9_broker_materialized_public_evidence(payload):
 
 
 _AGENTIC_V9_BRIDGE_TRANSPORT_ONLY_KEYS = {
+    "arguments_from",
     "arguments_from_30b",
     "bridge_agent_url",
     "bridge_alias_called",
@@ -3324,7 +3341,9 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
     completed = observation.get("status") == "completed" or observation.get("job_ok") is True
     terminal = _agentic_v9_is_terminal_status(status) or completed
     if terminal and _agentic_v9_broker_materialized_public_evidence(decoded):
-        return _agentic_v9_strip_bridge_transport_only(decoded)
+        return normalize_public_payload_field_names(
+            _agentic_v9_strip_bridge_transport_only(decoded)
+        )
 
     out["bridge_v9_protocol_wrapped_as_field"] = True
     out["bridge_v9_transport_fix"] = "json_object_not_bare_string"
@@ -3525,8 +3544,10 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
 def _compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
     previous = _legacy_compact_for_openwebui(decoded)
     if isinstance(decoded, dict):
-        return _agentic_v9_build_openwebui_response(decoded, previous=previous)
-    return previous
+        return normalize_public_payload_field_names(
+            _agentic_v9_build_openwebui_response(decoded, previous=previous)
+        )
+    return normalize_public_payload_field_names(previous)
 
 
 def _agentic_v2_compact_context_for_openwebui(ctx):

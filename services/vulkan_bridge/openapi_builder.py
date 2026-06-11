@@ -23,16 +23,35 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
             "result": {
                 "description": "Optional existing flow result. When present, it is preserved and not rewritten by the wrapper.",
             },
-            "evidence_guide_for_30b": {
+            "evidence_guide": {
                 "type": "string",
                 "description": (
                     "The only top-level narrative guide for completed terminal jobs. "
                     "It is not a replacement for concrete payloads; it tells the model "
-                    "how to read payload_index_for_30b, priority_evidence_for_30b and "
-                    "tool_context_for_30b for detailed answers."
+                    "how to read payload_index, priority_evidence and tool_context for "
+                    "detailed answers."
                 ),
             },
-            "payload_index_for_30b": {
+            "primary_payload": {
+                "type": "object",
+                "description": (
+                    "Owner-selected descriptor for the concrete payload that should be read first. "
+                    "It names the exact top-level location instead of duplicating large content."
+                ),
+                "additionalProperties": True,
+                "properties": {
+                    "schema": {"type": "string", "example": "openwebui.primary_payload.v1"},
+                    "owner": {"type": "string"},
+                    "request_type": {"type": "string"},
+                    "primary_location": {
+                        "type": "string",
+                        "example": "priority_evidence.items[0].content",
+                    },
+                    "payload_is_complete": {"type": "boolean"},
+                    "content_not_duplicated_here": {"type": "boolean"},
+                },
+            },
+            "payload_index": {
                 "type": "object",
                 "description": (
                     "Expected top-level result field. Read this first. It separates concrete "
@@ -69,10 +88,11 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                                 "payload_is_complete": {"type": "boolean"},
                                 "primary_location": {
                                     "type": "string",
-                                    "description": "Exact top-level field path, for example priority_evidence_for_30b.items[0].unified_diff.",
+                                    "description": "Exact top-level field path, for example priority_evidence.items[0].unified_diff.",
                                 },
+                                "full_context_location": {
                                     "type": "string",
-                                    "description": "Mirror location inside tool_context_for_30b.artifacts[*].artifact.",
+                                    "description": "Mirror location inside tool_context.artifacts[*].artifact.",
                                 },
                             },
                         },
@@ -93,16 +113,16 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                     },
                 },
             },
-            "priority_evidence_for_30b": {
+            "priority_evidence": {
                 "type": "object",
                 "description": "High-priority inline concrete payloads. Code proposals expose unified_diff or structured_operations here.",
                 "additionalProperties": True,
             },
-            "tool_context_for_30b": {
+            "tool_context": {
                 "type": "string",
                 "description": (
                     "Pretty-printed JSON string whose public useful payload is "
-                    "tool_context_for_30b.artifacts[*].artifact. Artifact means real "
+                    "tool_context.artifacts[*].artifact. Artifact means real "
                     "tool result, not a local path. This is not the primary reading "
                     "surface and is not a full job dump."
                 ),
@@ -111,7 +131,7 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                 "type": "object",
                 "description": (
                     "Diagnostic-only contract report proving the public payload was "
-                    "materialized as inline JSON and that payload_index_for_30b targets "
+                    "materialized as inline JSON and that payload_index targets "
                     "resolve to real, non-empty public fields."
                 ),
                 "additionalProperties": True,
@@ -121,7 +141,8 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                 "description": "Runtime instructions naming the primary payload fields and concrete evidence locations.",
                 "additionalProperties": True,
             },
-    },
+        },
+    }
     
 
 
@@ -134,21 +155,21 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
     if not isinstance(operation, dict):
         return
     operation["description"] = (
-        str(operation.get("description") or "").rstrip()
-        + "\n\nCompleted response schema: read `evidence_guide_for_30b` as the guide, then `payload_index_for_30b`. "
-        "`evidence_guide_for_30b` is the single top-level narrative guide; "
-        "`payload_index_for_30b.concrete_results[*].primary_location` points to exact useful payload fields "
-        "such as `priority_evidence_for_30b.items[*].unified_diff`; "
-        "for file content, prefer `priority_evidence_for_30b.items[0].content`; "
-        "only after that inspect `tool_context_for_30b.artifacts[*].artifact`; "
+        "Single OpenWebUI public tool for the local agent. Completed response schema: "
+        "read `evidence_guide` as the guide, then `payload_index`. "
+        "`evidence_guide` is the single top-level narrative guide; "
+        "`payload_index.concrete_results[*].primary_location` points to exact useful payload fields "
+        "such as `priority_evidence.items[*].unified_diff`; "
+        "for file content, prefer `priority_evidence.items[0].content`; "
+        "only after that inspect `tool_context.artifacts[*].artifact`; "
         "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
-        "`answer_for_30b`, `message_for_30b`, `summary_for_30b`, `next_action_for_30b` "
+        "`answer`, `message`, `summary`, `next_action` "
         "and `full_result_hint` are not primary top-level result fields."
     )
     operation.setdefault("responses", {})
     operation["responses"]["200"] = {
         "description": (
-            "Terminal vulkan_helper response. Completed responses include payload_index_for_30b "
+            "Terminal vulkan_helper response. Completed responses include payload_index "
             "near the top so the model can locate concrete results without repeating the same call."
         ),
         "content": {
@@ -194,7 +215,7 @@ def build_native_helper_openapi(
     schema["x-aicarmine-public-surface"] = list(visible_tool_aliases)
     schema["x-aicarmine-contract"] = (
         "OpenAPI exposes only vulkan_helper to OpenWebUI. Completed responses include "
-        "payload_index_for_30b as an expected result field plus inline successful tool evidence."
+        "payload_index as an expected result field plus inline successful tool evidence."
     )
     schema["x-aicarmine-register_this_in_openwebui"] = "http://127.0.0.1:3571/openapi.json"
     annotate_vulkan_helper_openapi_response(schema)

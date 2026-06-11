@@ -77,9 +77,23 @@ def _resolved_path(value: str) -> Path:
     return Path(value).resolve(strict=False)
 
 
+DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding"
+DEFAULT_PLANNER_NUM_CTX = 262144
+
+
+def _default_prompt_char_budget(num_ctx_effective: int) -> int:
+    try:
+        ctx = int(num_ctx_effective)
+    except Exception:
+        ctx = 0
+    if ctx <= 0:
+        return 48000
+    return max(48000, ctx)
+
+
 def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
-    num_ctx_requested = env_int("AICARMINE_AGENTIC_PLANNER_NUM_CTX", 12288, env)
-    num_ctx_cap = env_int("AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP", 12288, env)
+    num_ctx_requested = env_int("AICARMINE_AGENTIC_PLANNER_NUM_CTX", DEFAULT_PLANNER_NUM_CTX, env)
+    num_ctx_cap = env_int("AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP", DEFAULT_PLANNER_NUM_CTX, env)
     num_ctx_effective = (
         min(num_ctx_requested, num_ctx_cap)
         if num_ctx_cap > 0
@@ -149,7 +163,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
                 "AICARMINE_PLANNER_MODEL",
                 "AICARMINE_OLLAMA_PLANNER_MODEL",
             ),
-            "qwen3-coder:30b",
+            DEFAULT_PLANNER_MODEL,
             env,
         ),
         agentic_planner_enabled=env_bool("AICARMINE_AGENTIC_PLANNER_ENABLED", True, env),
@@ -158,8 +172,12 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         num_ctx_requested=num_ctx_requested,
         num_ctx_cap=num_ctx_cap,
         num_ctx_effective=num_ctx_effective,
-        prompt_char_budget=env_int("AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET", 48000, env),
-        prompt_compact_ratio=env_float("AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO", 0.6, env),
+        prompt_char_budget=env_int(
+            "AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET",
+            _default_prompt_char_budget(num_ctx_effective),
+            env,
+        ),
+        prompt_compact_ratio=env_float("AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO", 0.85, env),
         history_prompt_tail=env_int("AICARMINE_AGENTIC_PLANNER_HISTORY_PROMPT_TAIL", 8, env),
         prompt_preview_chars=env_int("AICARMINE_AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS", 360, env),
         num_predict=env_int("AICARMINE_AGENTIC_PLANNER_NUM_PREDICT", -1, env),

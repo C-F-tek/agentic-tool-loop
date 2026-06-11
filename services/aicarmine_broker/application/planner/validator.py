@@ -78,6 +78,13 @@ def validate_planner_decision_against_evidence(
         if isinstance(decision.get("prompt_context_continuation_required"), dict)
         else {}
     )
+    prompt_context_continuation_matches = bool(
+        prompt_context_continuation_required
+        and _decision_matches_prompt_context_continuation(
+            decision,
+            prompt_context_continuation_required,
+        )
+    )
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
         return {
@@ -147,10 +154,7 @@ def validate_planner_decision_against_evidence(
                     "requested_offset": requested_offset,
                     "expected_next_offset": consumed_offset,
                 }
-    if prompt_context_continuation_required and not _decision_matches_prompt_context_continuation(
-        decision,
-        prompt_context_continuation_required,
-    ):
+    if prompt_context_continuation_required and not prompt_context_continuation_matches:
         violations.append("prompt_context_continuation_required")
         return {
             "ok": False,
@@ -304,7 +308,7 @@ def validate_planner_decision_against_evidence(
         violations.append(f"invalid_tool:{tool}")
         return {"ok": False, "violations": violations, "evidence_contract": contract}
 
-    if _contract_final_required_now(contract):
+    if _contract_final_required_now(contract) and not prompt_context_continuation_matches:
         final_composition_tools = _final_composition_tool_names_from_candidates(contract)
         if tool not in final_composition_tools:
             violations.append("final_required_tool_call_disallowed")

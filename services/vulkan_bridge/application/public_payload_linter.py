@@ -50,19 +50,19 @@ CONCRETE_PRIORITY_KEYS = {
     "unified_diff",
 }
 TOOL_CONTEXT_ROOT_NARRATIVE_KEYS = {
-    "answer_for_30b",
+    "answer",
     "composed_answer",
     "content",
-    "evidence_guide_for_30b",
+    "evidence_guide",
     "final_answer",
-    "message_for_30b",
-    "summary_for_30b",
+    "message",
+    "summary",
     "text",
 }
 TOP_LEVEL_REDUNDANT_30B_KEYS = {
-    "answer_for_30b",
-    "message_for_30b",
-    "summary_for_30b",
+    "answer",
+    "message",
+    "summary",
 }
 TERMINAL_STATUSES = {
     "blocked_needs_attention",
@@ -178,7 +178,7 @@ def _tool_context_has_artifacts(tool_context: Any) -> bool:
 
 def _terminal_status(payload: dict[str, Any]) -> str:
     status = str(payload.get("status") or "").strip().lower()
-    payload_index = payload.get("payload_index_for_30b")
+    payload_index = payload.get("payload_index")
     if isinstance(payload_index, dict) and payload_index.get("job_completed") is True:
         return "completed"
     return status
@@ -193,7 +193,7 @@ def _tool_context_root_violations(tool_context: Any) -> list[dict[str, Any]]:
         if parsed.get(key) not in (None, "", [], {}):
             violations.append({
                 "rule": "tool_context_root_narrative_alias",
-                "path": f"tool_context_for_30b.{key}",
+                "path": f"tool_context.{key}",
             })
     artifacts = parsed.get("artifacts")
     if isinstance(artifacts, list):
@@ -201,13 +201,13 @@ def _tool_context_root_violations(tool_context: Any) -> list[dict[str, Any]]:
             if not isinstance(row, dict):
                 violations.append({
                     "rule": "tool_context_artifact_row_not_object",
-                    "path": f"tool_context_for_30b.artifacts[{index}]",
+                    "path": f"tool_context.artifacts[{index}]",
                 })
                 continue
             if "artifact" in row and not isinstance(row.get("artifact"), dict):
                 violations.append({
                     "rule": "tool_context_artifact_payload_not_object",
-                    "path": f"tool_context_for_30b.artifacts[{index}].artifact",
+                    "path": f"tool_context.artifacts[{index}].artifact",
                 })
     return violations
 
@@ -225,7 +225,7 @@ def _payload_index_copy_violations(payload_index: dict[str, Any]) -> list[dict[s
                 if row.get(key) not in (None, "", [], {}):
                     violations.append({
                         "rule": "payload_index_contains_concrete_payload_copy",
-                        "path": f"payload_index_for_30b.{section}[{index}].{key}",
+                        "path": f"payload_index.{section}[{index}].{key}",
                     })
     return violations
 
@@ -269,6 +269,8 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
         for parts, value, operator_diagnostics in _walk(payload, parts=[]):
             key = parts[-1] if parts else ""
             key_l = key.lower()
+            if "for_30b" in key_l or key_l == "called_by_30b":
+                violations.append({"rule": "legacy_30b_public_field_name", "path": _path(parts)})
             if key_l in LOCAL_PATH_KEYS and not operator_diagnostics:
                 violations.append({"rule": "local_pointer_key_outside_operator_diagnostics", "path": _path(parts)})
             if _looks_local_path(value) and not operator_diagnostics:
@@ -280,7 +282,7 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
         for key in sorted(TOP_LEVEL_REDUNDANT_30B_KEYS):
             if payload.get(key) not in (None, "", [], {}):
                 violations.append({"rule": "top_level_redundant_30b_summary_field", "path": key})
-        evidence_guide = payload.get("evidence_guide_for_30b")
+        evidence_guide = payload.get("evidence_guide")
         content = payload.get("content")
         if (
             isinstance(evidence_guide, str)
@@ -289,16 +291,16 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
             and content.strip() == evidence_guide.strip()
         ):
             violations.append({"rule": "top_level_content_duplicates_evidence_guide", "path": "content"})
-        tool_context = payload.get("tool_context_for_30b")
+        tool_context = payload.get("tool_context")
         if tool_context is not None and not _tool_context_serializable(tool_context):
-            violations.append({"rule": "tool_context_for_30b_string_not_json_object", "path": "tool_context_for_30b"})
+            violations.append({"rule": "tool_context_string_not_json_object", "path": "tool_context"})
         violations.extend(_tool_context_root_violations(tool_context))
-        payload_index = payload.get("payload_index_for_30b") if isinstance(payload.get("payload_index_for_30b"), dict) else {}
+        payload_index = payload.get("payload_index") if isinstance(payload.get("payload_index"), dict) else {}
         violations.extend(_payload_index_copy_violations(payload_index))
-        priority_evidence = payload.get("priority_evidence_for_30b")
+        priority_evidence = payload.get("priority_evidence")
         payload_index_text = json.dumps(payload_index, ensure_ascii=False, default=str).lower()
-        if "priority_evidence_for_30b" in payload_index_text and not isinstance(priority_evidence, dict):
-            violations.append({"rule": "payload_index_references_missing_priority_evidence", "path": "payload_index_for_30b"})
+        if "priority_evidence" in payload_index_text and not isinstance(priority_evidence, dict):
+            violations.append({"rule": "payload_index_references_missing_priority_evidence", "path": "payload_index"})
         index_resolution = resolve_payload_index(payload)
         for row in index_resolution.get("unresolved") or []:
             violations.append({
@@ -337,7 +339,7 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
             and not _priority_items_have_concrete_payload(priority_evidence)
             and not _payload_index_has_resolved_concrete_result(index_resolution)
         ):
-            warnings.append({"rule": "priority_evidence_items_have_no_concrete_payload", "path": "priority_evidence_for_30b.items"})
+            warnings.append({"rule": "priority_evidence_items_have_no_concrete_payload", "path": "priority_evidence.items"})
         terminal_status = _terminal_status(payload)
         if terminal_status in TERMINAL_STATUSES and not isinstance(payload.get("materialization_report"), dict):
             violations.append({"rule": "terminal_payload_missing_materialization_report", "path": "materialization_report"})
@@ -350,18 +352,18 @@ def lint_public_payload(payload: dict[str, Any], *, mode: str = "warn") -> dict[
             ):
                 violations.append({
                     "rule": "completed_payload_with_artifacts_has_no_concrete_inline_evidence",
-                    "path": "priority_evidence_for_30b.items",
+                    "path": "priority_evidence.items",
                 })
         if (
             terminal_status == "completed"
             and not _payload_index_has_result(payload_index)
             and not _has_concrete_payload(priority_evidence)
             and not _has_concrete_payload(_tool_context_object(tool_context))
-            and any(payload.get(key) for key in ("evidence_guide_for_30b", "final_summary", "summary_for_30b", "content"))
+            and any(payload.get(key) for key in ("evidence_guide", "final_summary", "summary", "content"))
         ):
             violations.append({
                 "rule": "summary_used_as_payload_substitute",
-                "path": "payload_index_for_30b",
+                "path": "payload_index",
             })
 
     return {

@@ -24,8 +24,8 @@ def _parse_tool_context(value: Any) -> Any:
 
 def _payload_for_resolution(payload: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(payload)
-    if "tool_context_for_30b" in resolved:
-        resolved["tool_context_for_30b"] = _parse_tool_context(resolved.get("tool_context_for_30b"))
+    if "tool_context" in resolved:
+        resolved["tool_context"] = _parse_tool_context(resolved.get("tool_context"))
     return resolved
 
 
@@ -113,7 +113,7 @@ def _iter_index_targets(payload_index: dict[str, Any]):
 def resolve_payload_index(payload: dict[str, Any]) -> dict[str, Any]:
     """Resolve concrete/partial payload index targets against the public payload."""
 
-    payload_index = payload.get("payload_index_for_30b")
+    payload_index = payload.get("payload_index")
     if not isinstance(payload_index, dict):
         return {
             "schema": SCHEMA,

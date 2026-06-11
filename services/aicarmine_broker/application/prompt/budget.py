@@ -10,6 +10,8 @@ from ...config import (
     AGENTIC_PLANNER_PROMPT_COMPACT_RATIO,
 )
 
+PROMPT_CHARS_PER_TOKEN = 2.65
+
 
 def prompt_compaction_threshold() -> int:
     if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET <= 0:
@@ -26,24 +28,36 @@ def planner_token_generation_reserve(num_ctx: int | None = None) -> int:
         ctx = 0
     if ctx <= 0:
         return 0
-    return max(512, min(2048, ctx // 16))
+    return max(512, min(32768, ctx // 16))
 
 
 def prompt_generation_headroom_char_budget() -> int:
     budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
     if budget <= 0:
         return 0
-    generation_reserve = max(12000, min(18000, budget // 4))
+    generation_reserve = int(planner_token_generation_reserve() * PROMPT_CHARS_PER_TOKEN)
+    generation_reserve = max(12000, min(max(12000, budget // 3), generation_reserve))
     char_budget_limit = budget - generation_reserve
-    token_budget_limit = int(max(1, AGENTIC_PLANNER_NUM_CTX - planner_token_generation_reserve()) * 2.65)
+    token_budget_limit = int(max(1, AGENTIC_PLANNER_NUM_CTX - planner_token_generation_reserve()) * PROMPT_CHARS_PER_TOKEN)
     return max(1000, min(char_budget_limit, token_budget_limit))
 
 
 def prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
+    budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
     if compact_mode:
-        sequence = (4000, 3000, 2500, 1800, 1200, 900, 700, 500)
+        base = max(4000, min(64000, budget // 16 if budget > 0 else 4000))
+        sequence = (
+            base,
+            int(base * 0.75),
+            int(base * 0.60),
+            int(base * 0.45),
+            int(base * 0.30),
+            int(base * 0.20),
+            int(base * 0.15),
+            int(base * 0.10),
+        )
         return sequence[min(max(0, attempt), len(sequence) - 1)]
-    return max(1000, min(6000, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET // 5))
+    return max(1000, min(96000, budget // 8 if budget > 0 else 6000))
 
 
 def _json_char_len(value: Any) -> int:

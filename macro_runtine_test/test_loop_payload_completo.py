@@ -302,7 +302,7 @@ def _assert_3572_openwebui_serializer_shape(
         if key in serializer_result
     ]
     has_operator_diagnostics = "operator_diagnostics" in serializer_result
-    if operator_keys or final_path_verification_has_final_path or not has_operator_diagnostics:
+    if operator_keys or final_path_verification_has_final_path or has_operator_diagnostics:
         raise AssertionError(
             "3572 action=result did not honor audience=openwebui; "
             "the live broker returned operator serializer fields. "

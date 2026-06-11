@@ -74,26 +74,27 @@ def test_openwebui_terminal_response_is_sealed_and_owner_focused() -> None:
         "job_id",
         "status",
         "required_top_level_keys",
-        "evidence_guide_for_30b",
-        "primary_payload_for_30b",
-        "payload_index_for_30b",
-        "priority_evidence_for_30b",
+        "evidence_guide",
+        "primary_payload",
+        "payload_index",
+        "priority_evidence",
     ]
     assert list(response)[: len(expected_prefix)] == expected_prefix
     assert "final_summary" not in response
     assert "next_action_for_30b" not in response
     assert "operator_diagnostics" not in response
     assert "agent_context_for_30b" not in response
+    assert not any("for_30b" in key for key in response)
 
-    primary = response["primary_payload_for_30b"]
-    assert primary["schema"] == "openwebui.primary_payload_for_30b.v1"
+    primary = response["primary_payload"]
+    assert primary["schema"] == "openwebui.primary_payload.v1"
     assert primary["owner"] == "application.evidence"
     assert primary["request_type"] == "repo_analysis"
-    assert primary["primary_location"] == "priority_evidence_for_30b.items[0].content"
+    assert primary["primary_location"] == "priority_evidence.items[0].content"
     assert primary["content_not_duplicated_here"] is True
     assert "content" not in primary
 
-    parsed_context = json.loads(response["tool_context_for_30b"])
+    parsed_context = json.loads(response["tool_context"])
     assert parsed_context["type"] == "agentic_loop_public_evidence_context"
     assert parsed_context["artifacts"][0]["artifact"]["content"] == content
     for noisy_key in (
@@ -111,7 +112,7 @@ def test_openwebui_terminal_response_is_sealed_and_owner_focused() -> None:
         "result_digest",
     ):
         assert noisy_key not in parsed_context
-    assert response["priority_evidence_for_30b"]["items"][0]["content"] == content
+    assert response["priority_evidence"]["items"][0]["content"] == content
 
     contract = assert_public_payload_contract(response)
     assert contract["payload_ok"] is True
@@ -156,20 +157,21 @@ def test_openwebui_tool_result_payload_uses_artifact_location_without_priority_w
         job_root=None,
     )
 
-    primary = response["primary_payload_for_30b"]
+    primary = response["primary_payload"]
     assert primary["owner"] == "application.tool_surface"
     assert primary["request_type"] == "tool_result"
-    assert primary["primary_location"] == "tool_context_for_30b.artifacts[0].artifact"
+    assert primary["primary_location"] == "tool_context.artifacts[0].artifact"
     assert "content" not in primary
 
-    search_order = response["payload_index_for_30b"]["search_order"]
-    assert "primary_payload_for_30b.primary_location" in search_order
-    assert "tool_context_for_30b.artifacts[0].artifact" in search_order
-    assert "priority_evidence_for_30b.items[0].content" not in search_order
+    search_order = response["payload_index"]["search_order"]
+    assert "primary_payload.primary_location" in search_order
+    assert "tool_context.artifacts[0].artifact" in search_order
+    assert "priority_evidence.items[0].content" not in search_order
+    assert not any("for_30b" in key for key in response)
 
     lint = lint_public_payload(response, mode="block")
     assert lint["ok"] is True
     assert {
         "rule": "priority_evidence_items_have_no_concrete_payload",
-        "path": "priority_evidence_for_30b.items",
+        "path": "priority_evidence.items",
     } not in lint["warnings"]

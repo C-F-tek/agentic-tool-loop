@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SERVICES = ROOT / "services"
+if str(SERVICES) not in sys.path:
+    sys.path.insert(0, str(SERVICES))
+
+from aicarmine_broker.application.planner.validator import (  # noqa: E402
+    validate_planner_decision_against_evidence,
+)
+
+
+def _any_argument_group_present(args: dict[str, Any], groups: list[list[str]]) -> bool:
+    return any(all(args.get(name) not in (None, "", [], {}) for name in group) for group in groups)
+
+
+def _planner_scratchpad_read_selector_present(args: dict[str, Any]) -> bool:
+    kind = str(args.get("kind") or "")
+    if kind in {"prompt_context_window", "code_product_build_state"}:
+        return _any_argument_group_present(args, [["document_id"], ["section"], ["tag"], ["query"], ["target_file"]])
+    return _any_argument_group_present(args, [["document_id"], ["section"], ["tag"], ["query"], ["kind"]])
+
+
+def _matches_prompt_context_continuation(decision: dict[str, Any], required: dict[str, Any]) -> bool:
+    required_args = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
+    decision_args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+    return (
+        decision.get("tool") == required.get("tool")
+        and decision_args.get("kind") == required_args.get("kind")
+        and decision_args.get("document_id") == required_args.get("document_id")
+        and decision_args.get("offset") == required_args.get("offset")
+        and decision_args.get("max_chars") == required_args.get("max_chars")
+    )
+
+
+def _deps() -> dict[str, Any]:
+    return {
+        "agentic_v2_decision_paths": lambda tool, args: [],
+        "agentic_v2_goal_scope": lambda goal, contract: "",
+        "agentic_v2_read_has_window": lambda args: False,
+        "agentic_v2_successful_read_paths": lambda history: [],
+        "any_argument_group_present": _any_argument_group_present,
+        "apply_duplicate_window_replan_contract": lambda contract, **kwargs: contract,
+        "apply_unverified_old_text_replan_contract": lambda contract, **kwargs: contract,
+        "argument_value_present": lambda args, name: args.get(name) not in (None, "", [], {}),
+        "canonical_invalid_code_product_decision_signature": lambda decision, violations: None,
+        "code_product_build_state_duplicate_write": lambda *args, **kwargs: False,
+        "code_product_build_state_has_collecting_progress": lambda state: True,
+        "code_product_build_state_parse": lambda text: {},
+        "code_product_build_state_ready_payload": lambda state: True,
+        "code_product_low_signal_target": lambda path, contract: False,
+        "code_product_payload_violations": lambda proposal, verified_paths: [],
+        "contract_final_required_now": lambda contract: True,
+        "copyable_example_text": lambda value: False,
+        "decision_matches_prompt_context_continuation": _matches_prompt_context_continuation,
+        "decision_paths": lambda args: [],
+        "final_answer_is_action_plan_without_code_product": lambda answer: False,
+        "final_composition_tool_names_from_candidates": lambda contract: set(),
+        "repo_analysis_final_answer_quality": lambda answer, contract: {"violations": []},
+        "invalid_code_product_decision_signature_count": lambda history, signature: 0,
+        "invalid_decision_signature_key": lambda signature: "",
+        "native_required_tool_decision_has_transport_provenance": (
+            lambda decision: decision.get("native_tool_call") is True
+            and isinstance(decision.get("raw_native_tool_call"), dict)
+        ),
+        "normalize_terminal_planner_decision": lambda decision: decision,
+        "normalize_tool_name": lambda name: str(name or "").strip(),
+        "old_text_verified_by_repo_read": lambda history, path, text: False,
+        "path_exists_repo_relative": lambda path: True,
+        "path_under_scope": lambda path, scope: True,
+        "planner_scratchpad_read_selector_present": _planner_scratchpad_read_selector_present,
+        "planner_scratchpad_window_signature": lambda args: (
+            args.get("kind"),
+            args.get("document_id"),
+            args.get("offset"),
+            args.get("max_chars"),
+        ),
+        "prompt_window_consumed_offsets": lambda history: {},
+        "prompt_window_tracking_metadata_errors": lambda history: [],
+        "repo_analysis_goal": lambda goal: False,
+        "repo_path_kind": lambda path: "file",
+        "repo_read_selector_present": lambda args: _any_argument_group_present(args, [["path"], ["paths"], ["item"], ["items"]]),
+        "repo_read_window_signature": lambda args: None,
+        "repo_readable_evidence_file": lambda path: True,
+        "repo_rel_token": lambda path: str(path or ""),
+        "repeated_tool_call_count": lambda history, tool, args: 0,
+        "scope_claim_conflict_for_path": lambda path, claims: None,
+        "successful_code_edit_proposals": lambda history: [],
+        "successful_window_signatures": lambda history, tool: set(),
+        "target_scope_conflict_resolved": lambda path, args, contract: False,
+        "latest_file_list_result": lambda history: {},
+        "goal_requires_code_product_report": lambda goal: False,
+        "planner_evidence_contract": lambda goal, history: {
+            "finalization_contract": {"final_allowed": True},
+            "candidate_next_actions": [],
+            "code_product_contract": {},
+        },
+        "validate_unified_diff_text": lambda **kwargs: [],
+    }
+
+
+def _config() -> dict[str, Any]:
+    return {
+        "AGENTIC_PLANNER_NATIVE_TOOLS": True,
+        "CODE_PRODUCT_BUILD_STATE_KIND": "code_product_build_state",
+        "VALID_INTERNAL_TOOLS": {"planner_scratchpad_read"},
+    }
+
+
+def test_required_prompt_context_continuation_is_not_blocked_by_final_gate() -> None:
+    continuation_args = {
+        "kind": "prompt_context_window",
+        "document_id": "prompt-context-smoke",
+        "offset": 11135,
+        "max_chars": 500,
+    }
+    continuation_required = {
+        "tool": "planner_scratchpad_read",
+        "arguments": continuation_args,
+    }
+
+    result = validate_planner_decision_against_evidence(
+        "read AGENTS.md",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_read",
+            "arguments": continuation_args,
+            "allowed_tool_names": ["planner_scratchpad_read"],
+            "allowed_native_tool_names": ["planner_scratchpad_read"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_read"}},
+            "prompt_context_continuation_required": continuation_required,
+        },
+        [],
+        deps=_deps(),
+        config=_config(),
+    )
+
+    assert result["ok"] is True
+    assert "final_required_tool_call_disallowed" not in result["violations"]
