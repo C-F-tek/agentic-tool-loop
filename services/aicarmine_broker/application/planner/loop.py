@@ -1384,6 +1384,65 @@ def run_agentic_planner_job(
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
+            if "planner_native_mode_non_json_output" in validation_violations:
+                prior_native_text_guards = controller_guard_count(
+                    history,
+                    "planner_native_mode_non_json_output",
+                )
+                if prior_native_text_guards >= int(retry_limit or 0):
+                    return finalize_agentic_job(
+                        job_id,
+                        state,
+                        "blocked_needs_attention",
+                        (
+                            "planner_native_mode_non_json_output_repeated: planner native tool mode "
+                            "was active and tools were provided to Ollama, but the planner repeatedly "
+                            "returned plain text instead of message.tool_calls or one strict terminal "
+                            "JSON object."
+                        ),
+                        {
+                            "history": history,
+                            "planner_decision": decision,
+                            "blocked_by": "planner_native_mode_non_json_output_repeated",
+                            "validation": validation,
+                            "agent_flow_diagnostics": _agent_flow_diagnostics(
+                                str(state.get("goal") or ""),
+                                history,
+                                planner_memory_snapshot,
+                            ),
+                        },
+                    )
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
+                guard_result["guard_type"] = "planner_native_mode_non_json_output"
+                guard_result["summary"] = "planner_native_mode_non_json_output"
+                guard_result["retry_count"] = prior_native_text_guards
+                guard_result["retry_limit"] = int(retry_limit or 0)
+                append_agent_event(
+                    job_id,
+                    "planner_decision_rejected",
+                    guard_result["summary"],
+                    guard_result,
+                    step=step,
+                )
+                row = {
+                    "step": step,
+                    "decision": {
+                        "action": "continue_required",
+                        "reason": "planner native mode requires native tool_calls or strict terminal JSON",
+                        "raw_planner_text": raw_planner_text[:4000],
+                    },
+                    "tool_result": guard_result,
+                }
+                loop_state.append_history_row(row)
+                persist_loop_turn_memory(row)
+                write_agent_job_state(state)
+                continue
 
             if _is_unrecoverable_plain_text_planner_output(decision, history, retry_limit):
                 final_answer = str(decision.get("final_answer") or decision.get("reason") or "")

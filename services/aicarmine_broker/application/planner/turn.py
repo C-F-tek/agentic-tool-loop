@@ -581,6 +581,18 @@ def planner_decision(
                 if stream_meta:
                     decision["planner_stream_meta"] = stream_meta
                 return decision
+            if action == "tool":
+                decision = normalize_planner_decision(raw_text_for_native_mode, goal, step, state)
+                decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
+                decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
+                decision["native_tool_calls_seen"] = 0
+                decision["allowed_tool_names"] = list(native_tool_names)
+                decision["allowed_native_tool_names"] = list(native_tool_names)
+                if prompt_context_continuation_required:
+                    decision["prompt_context_continuation_required"] = prompt_context_continuation_required
+                if stream_meta:
+                    decision["planner_stream_meta"] = stream_meta
+                return decision
         prompt_eval_count = 0
         try:
             prompt_eval_count = int(response.get("ollama_prompt_eval_count") or 0)
@@ -660,6 +672,21 @@ def planner_decision(
                 "native_tool_calls_seen": 0,
                 "controller_synthesized_protocol_block": True,
                 "prompt_budget_report": prompt_budget,
+                **({"planner_stream_meta": stream_meta} if stream_meta else {}),
+            }
+        if raw_text_for_native_mode.strip():
+            return {
+                "action": "block",
+                "reason": "planner_native_mode_non_json_output",
+                "final_answer": (
+                    "Planner native tool mode received planner text, but the text was neither "
+                    "message.tool_calls nor one strict terminal JSON object. The controller did "
+                    "not reinterpret prose as a tool call or terminal block."
+                ),
+                "raw_planner_text": raw_text_for_native_mode[:12000],
+                "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
+                "native_tool_calls_seen": 0,
+                "controller_synthesized_protocol_block": True,
                 **({"planner_stream_meta": stream_meta} if stream_meta else {}),
             }
         return {

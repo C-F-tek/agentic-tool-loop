@@ -22,6 +22,7 @@ from aicarmine_broker.code_edit_proposal_contract import (  # noqa: E402
     validate_unified_diff_text,
 )
 from aicarmine_broker.application.code_product.history import latest_code_product_build_state  # noqa: E402
+from aicarmine_broker.application.controller import rag_preseed  # noqa: E402
 from aicarmine_broker.tool_contract import TOOLS_SCHEMA  # noqa: E402
 from vulkan_bridge import app as bridge_app  # noqa: E402
 
@@ -318,6 +319,49 @@ def main() -> int:
                 ),
                 f"apply preloop candidates still exposed discovery: {apply_docs_contract.get('candidate_next_actions')}",
             )
+            patch_security_goal = (
+                "GENERAZIONE CODICE PATCH EFFETTIVO PER GLI UPGRADE VULKAN_HELPER "
+                "applicare patch security hardening a vulkan_helper/core/cache_manager.py"
+            )
+            require(
+                rag_preseed._preplanner_goal_class(patch_security_goal) == "apply_write",
+                "preplanner classified explicit patch/apply goal as analysis",
+            )
+            _, missing_db_ranking, _ = rag_preseed._ranked_paths_from_codex_rag(
+                db=repo_root / "missing-rag.sqlite3",
+                repo_root=repo_root,
+                goal=patch_security_goal,
+                query_plan={
+                    "queries": [
+                        {
+                            "query": "vulkan_helper/core/cache_manager.py LRUCache TTL",
+                            "purpose": "target patch file",
+                        }
+                    ]
+                },
+                safe_rel_path=lambda value: value,
+                named_read_priority={},
+                generic_readable_suffixes=(".py", ".md", ".json", ".toml"),
+                candidate_limit=4,
+            )
+            query_specs = missing_db_ranking.get("query_specs") or []
+            planner_query_specs = [
+                item for item in query_specs
+                if isinstance(item, dict) and item.get("source") == "planner_query_plan"
+            ]
+            require(planner_query_specs, f"preplanner RAG query specs missing: {missing_db_ranking}")
+            planner_query_terms = planner_query_specs[0].get("query_terms") or []
+            require(
+                "vulkan_helper" in planner_query_terms and "generazione" not in planner_query_terms,
+                f"planner query terms were contaminated by full goal terms: {planner_query_terms}",
+            )
+            require(
+                not any(
+                    isinstance(item, dict) and item.get("source") == "deterministic_goal_terms"
+                    for item in query_specs
+                ),
+                f"apply_write preseed still added broad deterministic goal query: {query_specs}",
+            )
 
             tool_manifest = [
                 {
@@ -361,6 +405,21 @@ def main() -> int:
             require(
                 "planner_native_tool_call_required" in native_empty_tool_call_gate.get("violations", []),
                 f"native no-tool-call block was accepted as terminal: {native_empty_tool_call_gate}",
+            )
+            native_plain_text_gate = planner.validate_planner_decision_against_evidence(
+                "Native plain text smoke",
+                {
+                    "action": "block",
+                    "reason": "planner_native_mode_non_json_output",
+                    "controller_synthesized_protocol_block": True,
+                    "native_tool_calls_seen": 0,
+                    "raw_planner_text": "Devo restituire un typed block ma non emetto JSON.",
+                },
+                [],
+            )
+            require(
+                "planner_native_mode_non_json_output" in native_plain_text_gate.get("violations", []),
+                f"native plain-text planner output was accepted as terminal: {native_plain_text_gate}",
             )
             native_tool_gate = planner.validate_planner_decision_against_evidence(
                 "Native tool gate smoke",

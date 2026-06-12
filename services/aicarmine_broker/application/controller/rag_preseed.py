@@ -90,13 +90,13 @@ def _code_security_analysis_goal(goal: str) -> bool:
 
 def _preplanner_goal_class(goal: str) -> str:
     low = str(goal or "").lower()
-    if _code_security_analysis_goal(goal):
-        return "code_security_analysis"
     if any(term in low for term in (
         "applica", "applicare", "apply", "patch", "modifica", "modificare",
         "edit", "write", "scrivi", "correggi", "fix",
     )):
         return "apply_write"
+    if _code_security_analysis_goal(goal):
+        return "code_security_analysis"
     if any(term in low for term in (
         "analizza", "analisi", "analysis", "review", "audit", "critic",
         "ricerca", "cerca", "trova", "find", "search",
@@ -550,6 +550,7 @@ def _ranked_paths_from_codex_rag(
 ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     terms = _query_terms(goal)
     sanitized_query_plan = _sanitize_preplanner_query_plan(query_plan, goal=goal)
+    goal_class = str(sanitized_query_plan.get("goal_class") or _preplanner_goal_class(goal))
     raw_queries = sanitized_query_plan.get("queries")
     query_items = raw_queries if isinstance(raw_queries, list) else []
     planner_queries: list[str] = []
@@ -561,7 +562,7 @@ def _ranked_paths_from_codex_rag(
             planner_queries.append(query)
     query_specs: list[dict[str, Any]] = []
     for index, planner_query in enumerate(planner_queries, start=1):
-        query_terms = _query_terms(f"{goal} {planner_query}", limit=24)
+        query_terms = _query_terms(planner_query, limit=24)
         fts_query = _fts_query(query_terms)
         if fts_query:
             query_specs.append({
@@ -572,7 +573,7 @@ def _ranked_paths_from_codex_rag(
                 "fts_query": fts_query,
             })
     deterministic_query = _fts_query(terms)
-    if deterministic_query:
+    if deterministic_query and (goal_class != "apply_write" or not query_specs):
         query_specs.append({
             "source": "deterministic_goal_terms",
             "query_index": 0,
@@ -584,6 +585,7 @@ def _ranked_paths_from_codex_rag(
         "schema": "agentic_loop_preplanner_rag_ranking.v1",
         "db": str(db),
         "query_terms": terms,
+        "goal_class": goal_class,
         "query_plan": {
             key: sanitized_query_plan.get(key)
             for key in ("schema", "ok", "status", "source", "goal_class", "queries", "reason")
@@ -807,7 +809,9 @@ def controller_preplanner_rag_preseed_plan(
         return None, report, [{"stage": "preplanner_rag_reindex", "reason": "reindex_failed", "error": str(exc)}]
 
     read_path_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_PATH_LIMIT", 8, minimum=1, maximum=24)
-    anchor_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_ANCHOR_LIMIT", 2, minimum=0, maximum=5)
+    goal_class = _preplanner_goal_class(goal)
+    default_anchor_limit = 0 if goal_class == "apply_write" else 2
+    anchor_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_ANCHOR_LIMIT", default_anchor_limit, minimum=0, maximum=5)
     ranked_limit = max(1, read_path_limit - anchor_limit)
     ranked_items, ranking, ranking_skipped = _ranked_paths_from_codex_rag(
         db=db,

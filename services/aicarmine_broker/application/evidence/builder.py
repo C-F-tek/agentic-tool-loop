@@ -444,12 +444,6 @@ class EvidenceBuilder:
                 goal_mentions_agents_alias = basename == "agents.md" and "agenti" in goal_low
                 if goal_mentions_path or goal_mentions_agents_alias:
                     add_apply_target(path)
-            if not apply_target_files:
-                for path in apply_preloop_candidate_paths:
-                    if _repo_doc_or_config(path):
-                        add_apply_target(path)
-                    if len(apply_target_files) >= 2:
-                        break
         apply_patch_done = history_has_tool(history, "repo_apply_patch")
         apply_verified_target_reads = [
             p for p in apply_target_files

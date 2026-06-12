@@ -294,6 +294,14 @@ def validate_planner_decision_against_evidence(
                 "final/block JSON only if the evidence contract allows it."
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+        if reason == "planner_native_mode_non_json_output":
+            violations.append("planner_native_mode_non_json_output")
+            contract["required_next_progress"] = (
+                "Native tool mode is active and the planner emitted plain text. Retry with "
+                "one native tool_call from candidate_next_actions, or return one strict JSON "
+                "final/block object when the evidence contract allows a terminal decision."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
         raw_planner_text = str(
             decision.get("raw_planner_text")
             or decision.get("raw_planner_text_preview")
