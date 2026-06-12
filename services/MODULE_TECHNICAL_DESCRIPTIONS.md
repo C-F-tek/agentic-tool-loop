@@ -162,15 +162,18 @@ creates job IDs/state, starts background worker execution and calls
 - Risk: should not short-circuit planner/controller finalization.
 - Verify: new job transitions from queued to running to terminal status.
 
-### `aicarmine_broker/config.py`
+### `aicarmine_broker/config/`
 
-Central runtime configuration. It parses booleans, integers, floats, multiple
-env aliases, planner/tool lists and Ollama options.
+Central runtime configuration package. `models.py` parses booleans, integers,
+floats, multiple env aliases, planner/tool lists and Ollama options into
+`BrokerConfig`; `compatibility.py` exposes the legacy constants imported as
+`aicarmine_broker.config`.
 
 - Reads: `AICARMINE_*` env and model/runtime env values.
 - Exposes: constants and helper functions used by planner, dispatcher and
   launcher-facing services, including planner `num_ctx`, intrinsic-context
-  budgets, prompt compaction ratio and optional `AICARMINE_PLANNER_RAG_DB`.
+  budgets, prompt compaction ratio, optional `AICARMINE_PLANNER_RAG_DB` and
+  external RAG reranker settings.
 - Writes: none.
 - Risk: env defaults affect live behavior only after process restart unless
   code reads env dynamically.
@@ -298,14 +301,18 @@ injects only small real windows that the planner can read recursively.
 
 Internal pre-turn context builder for the 11434 planner payload. It consumes the
 controller-injected memory surface and optional `rag.sqlite`/FTS5 chunks, can
-rerank those chunks through the configured external RAG reranker, then returns
-bounded `schema=planner_intrinsic_context.v1` context with goal classification,
+rerank those chunks through the configured external RAG reranker using the same
+bounded parser/payload shape as the Codex RAG MCP path, then returns bounded
+`schema=planner_intrinsic_context.v1` context with goal classification,
 retrieved memory, retrieved RAG chunks, repo-map summary, failure patterns, tool
 purpose manifest and budget report.
 
 - Reads: planner memory surface and optional `AICARMINE_PLANNER_RAG_DB`
   (`rag_chunks` plus `rag_chunks_fts`) in SQLite read-only mode; optional
   `RAG_EXTERNAL_RERANKER_URL` when `RAG_RERANKING_ENGINE=external`.
+- Rerank bounds: FTS candidate pool default `80`, reranker input default `12`,
+  document cap `2500` chars and default timeout `30.0` seconds. Metadata
+  separates `candidate_count` from reranker `input_count`.
 - Writes: none.
 - Risk: must not become a planner-selectable tool, must not import lab runtime
   modules and must not hide missing DB/schema or unavailable reranker with
@@ -522,15 +529,128 @@ Package marker for Codex bridge implementations.
 
 ### `codex_bridge/mcp_server.py`
 
-Codex MCP JSON-RPC server. It handles framing, broker HTTP calls, MCP tool call
-dispatch, memory reports and health/self-test behavior.
+Codex MCP JSON-RPC server. It handles framing, direct MCP tool call dispatch,
+memory reports and health/self-test behavior for the host-side Codex
+integration.
 
-- Reads: stdio frames, env URLs/paths, broker HTTP responses, optional memory
-  DBs.
-- Writes: stdio frames; may call broker tools that write elsewhere.
-- Risk: handshake must stay lightweight. Do not import heavy broker/repo code
-  before initialization.
+- Reads: stdio frames, env paths, repository files through allowlisted tool
+  handlers and optional memory DBs.
+- Writes: stdio frames; write-capable MCP tools write only through their
+  explicit tool handlers, not by calling the 3572 agentic loop.
+- Risk: handshake must stay lightweight. Do not call 3571, `/vulkan/agent`,
+  or an HTTP broker tool loop, and do not import heavy broker/repo code before
+  a tool call actually needs it. When a broker tool import is required, resolve
+  the Codex-selected root first and rewrite only this MCP process'
+  `AICARMINE_LAB_REPO`; do not require the OpenWebUI/3572 lab shadow to match.
 - Verify: MCP initialize/list/call flows with exact JSON-RPC framing.
+
+### `codex_bridge/repo_mcp_common.py`
+
+Shared helper module for deterministic Codex repo MCP servers. It owns stdio
+JSON-RPC framing, schema validation, self-test helpers, health payloads and
+Codex-root selection.
+
+- Reads: env, cwd and Git root markers for root resolution.
+- Writes: stdio frames and this MCP process' env values
+  `AICARMINE_CODEX_MCP_REPO_ROOT` and `AICARMINE_LAB_REPO` before broker-tool
+  imports.
+- Risk: an inherited broker/OpenWebUI lab shadow must not override the Codex
+  selected repo root.
+- Verify: health payload reports `repo_root`, `codex_mcp_repo_root` and the
+  effective `aicarmine_lab_repo` as the same Codex root.
+
+### `codex_bridge/repo_state_mcp_server.py`
+
+Deterministic Codex MCP server for repo state, status and capability tools.
+
+- Reads: MCP stdio frames and broker repo-status helper modules after
+  `repo_mcp_common` root synchronization.
+- Writes: MCP stdio frames only.
+- Risk: must remain read-only, no HTTP broker, no agentic loop.
+- Verify: `aicarmine_repo_state_health` and `aicarmine_repo_state_status`.
+
+### `codex_bridge/repo_search_det_mcp_server.py`
+
+Deterministic Codex MCP server for local repo search helpers.
+
+- Reads: MCP stdio frames and broker deterministic search helper modules after
+  `repo_mcp_common` root synchronization.
+- Writes: MCP stdio frames only.
+- Risk: do not add write/composite/agentic-loop behavior.
+- Verify: `aicarmine_repo_search_det_health` and a bounded
+  `aicarmine_repo_search_rg` call.
+
+### `codex_bridge/repo_validate_mcp_server.py`
+
+Deterministic Codex MCP server for validation tools.
+
+- Reads: MCP stdio frames and broker validation helper modules after
+  `repo_mcp_common` root synchronization.
+- Writes: MCP stdio frames; validation commands may write their own tool
+  artifacts but must not edit project source.
+- Risk: validation-only; no broker HTTP, no 3571, no 3572 agentic loop.
+- Verify: `aicarmine_repo_validate_health` and targeted validation tools.
+
+### `codex_bridge/repo_code_mcp_server.py`
+
+Incubating Codex MCP server for candidate code edit tools before they are
+promoted into a semantic stable MCP surface.
+
+- Reads: MCP stdio frames and broker code-proposal/deterministic patch helper
+  modules after `repo_mcp_common` root synchronization.
+- Writes: MCP stdio frames; `aicarmine_repo_code_apply_patch` may edit source
+  only for exact `old_text` to `new_text` replacement when
+  `allow_source_write=true` is supplied, and writes broker backup/tool-result
+  artifacts for that operation.
+- Risk: must remain isolated from the stable state/search/validation MCPs; do
+  not add generic command execution or whole-file write tools here.
+- Verify: `aicarmine_repo_code_health`, server `--self-test`, report-only
+  write flags and the explicit source-write opt-in test.
+
+### `codex_bridge/ops_mcp_server.py`
+
+Incubating Codex MCP server for operational checks that should stay outside
+the OpenWebUI/3571/3572 agentic path.
+
+- Reads: MCP stdio frames, static local MCP target metadata, Windows TCP
+  listener/process state and bounded tails from repo-local log files.
+- Writes: MCP stdio frames only; child MCP smoke checks are read-only
+  initialize/list/health calls against allowlisted local scripts.
+- Risk: must not become a generic command runner, must not call HTTP health
+  routes, 3571, 3572, `vulkan_helper` or the agentic loop, and must redact
+  command-line secrets before returning process rows.
+- Verify: `aicarmine_codex_ops_health`, `aicarmine_mcp_smoke_run` on a local
+  MCP health tool, `aicarmine_service_state_snapshot`, and
+  `services/test_codex_ops_mcp_server.py`.
+
+### `codex_bridge/rag_index_repo.py`
+
+Standalone index builder for the Codex RAG MCP path. It scans the Git candidate
+surface and writes SQLite/FTS5 chunks that `rag_mcp_server.py` can read.
+
+- Reads: `git ls-files --cached --others --exclude-standard`, file contents
+  under the selected repo and `.gitignore` exclusions through Git.
+- Writes: `state/codex_rag/code_rag.sqlite3` and related SQLite files.
+- Risk: keep it independent from OpenWebUI/Chroma, broker job state and the
+  3572 planner loop.
+- Verify: `aicarmine_rag_index_status` reports the expected repo root, tables
+  and Git candidate surface after full or delta indexing.
+
+### `codex_bridge/rag_mcp_server.py`
+
+Dedicated Codex RAG MCP stdio server. It exposes `aicarmine_rag_context`,
+`aicarmine_rag_index_status` and `aicarmine_rag_reindex`; search reads the
+Codex SQLite/FTS5 index and can rerank through the local OVMS `/v3/rerank`
+endpoint.
+
+- Reads: MCP stdio frames, `state/codex_rag/code_rag.sqlite3`, Git candidate
+  metadata for status, and optional OVMS reranker readiness/results.
+- Writes: MCP stdio frames and, for reindex only, the Codex RAG SQLite index.
+- Risk: must not import broker dispatchers, edit/validate tools, OpenWebUI,
+  3571 or 3572 agentic-loop paths. It is a Codex-host retrieval tool, not a
+  planner-native tool.
+- Verify: RAG search shows `candidate_count=80`, rerank `input_count=12`,
+  `doc_chars=2500`, timeout `30.0` and `rerank.status=ready` when OVMS is up.
 
 ### `codex_bridge/jsonrpc.py`
 

@@ -2,6 +2,8 @@
 
 `services/codex_bridge/` contains optional Codex-facing bridge helpers. It is
 not the public OpenWebUI 3571 bridge and not the 3572 planner runtime.
+MCP tools exposed here are host-side Codex tools; they do not become
+planner-native tools in the 3572 agentic loop.
 
 ## Initial Reading Index
 
@@ -60,7 +62,33 @@ Core code entry points:
 ## Current Folder Structure
 
 - [mcp_server.py](mcp_server.py)
-  - JSON-RPC/MCP server implementation for Codex integration.
+  - JSON-RPC/MCP server implementation for Codex integration. It exposes the
+    direct `aicarmine_tools` surface without calling 3571, `/vulkan/agent` or
+    the HTTP broker tool loop. If it imports broker tools, it first maps this
+    process' `AICARMINE_LAB_REPO` to the Codex-selected repo root; this does
+    not require the OpenWebUI/3572 lab shadow to use the same path.
+- [repo_mcp_common.py](repo_mcp_common.py),
+  [repo_state_mcp_server.py](repo_state_mcp_server.py),
+  [repo_search_det_mcp_server.py](repo_search_det_mcp_server.py),
+  [repo_validate_mcp_server.py](repo_validate_mcp_server.py)
+  - Deterministic repo-state/search/validation MCP servers for Codex. They
+    share the same process-local root normalization before importing broker
+    repo helper modules.
+- [repo_code_mcp_server.py](repo_code_mcp_server.py)
+  - Incubating repo-code MCP server for candidate code edit tooling. It is
+    separate from the stable state/search/validation MCPs, exposes proposal and
+    diff-check helpers as report-only tools, and exposes exact `old_text` to
+    `new_text` patching only with explicit `allow_source_write=true`.
+- [ops_mcp_server.py](ops_mcp_server.py)
+  - Incubating Codex ops MCP server for local MCP smoke checks and read-only
+    service-state inspection. It uses static MCP target allowlists, reads
+    process/port/log state without HTTP health probes, and does not call 3571,
+    3572, `vulkan_helper` or the agentic loop.
+- [rag_mcp_server.py](rag_mcp_server.py)
+  - Dedicated Codex RAG MCP server backed by `state/codex_rag/` SQLite/FTS5 and
+    the local OVMS reranker.
+- [rag_index_repo.py](rag_index_repo.py)
+  - Git-surface index builder for the Codex RAG SQLite index.
 - [ollama_responses_bridge.py](ollama_responses_bridge.py)
   - OpenAI Responses-compatible adapter around Ollama.
 - [jsonrpc.py](jsonrpc.py), [responses_proxy.py](responses_proxy.py), [storage.py](storage.py)

@@ -41,7 +41,7 @@ Critical runtime module size:
 | `services/aicarmine_broker/planner_intrinsic_context.py` | 536 | 21955 |
 | `services/aicarmine_broker/job_store.py` | 541 | 22894 |
 | `services/aicarmine_broker/code_edit_proposal_contract.py` | 366 | 13765 |
-| `services/aicarmine_broker/config.py` | 304 | 12095 |
+| `services/aicarmine_broker/config/` baseline config module before package split | 304 | 12095 |
 | `services/aicarmine_broker/app.py` | 198 | 8301 |
 | `services/aicarmine_broker/tool_dispatch.py` | 117 | 4260 |
 | `services/vulkan_bridge/agentic_v9.py` | 11 | 314 |

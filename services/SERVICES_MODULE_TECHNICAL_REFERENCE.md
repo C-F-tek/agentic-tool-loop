@@ -38,11 +38,11 @@ Detailed local references:
 | OpenWebUI public UI | `launch/openwebui_runtime.ps1`, `aicarmine-openwebui-serve.py` | OpenWebUI foreground, usually `127.0.0.1:8080` | `venvs/openwebui` | Starts OpenWebUI with AI-Carmine env, WebSocket keepalive env and tool OpenAPI registration. |
 | Public tool bridge | `vulkan_bridge/app.py`, `aicarmine_vulkan_bridge_server.py` | `127.0.0.1:3571` | `venvs/labtools` | Exposes the OpenWebUI-facing `vulkan_helper` surface and forwards agent jobs to 3572. |
 | Agent broker/runtime | `aicarmine_broker/app.py`, `aicarmine_vulkan_tool_broker.py` | `127.0.0.1:3572` | `venvs/labtools` | Owns job lifecycle, planner loop, internal tool dispatch and job dashboards. |
-| Planner model API | external Ollama via env in `config.py` and launcher | `127.0.0.1:11434` | external Ollama | Main controlled planner endpoint. The controller validates decisions; Ollama `done_reason` is turn metadata, not the job finalizer. |
+| Planner model API | external Ollama via env in `aicarmine_broker/config/*` and launcher | `127.0.0.1:11434` | external Ollama | Main controlled planner endpoint. The controller validates decisions; Ollama `done_reason` is turn metadata, not the job finalizer. |
 | Task/repair model API | `ollama-task-vulkan.ps1` plus env | `127.0.0.1:11435` | external Ollama task instance | Secondary Ollama/Vulkan endpoint for the GPU0 Intel task lane, used for selector/repair/normalization flows, not the public 3571 tool. |
 | Safe command executor | `aicarmine-executor-server.py`, `aicarmine-executor-server.ps1`, `aicarmine-run-safe-command.ps1` | `127.0.0.1:3560` when launched | `venvs/labtools` unless overridden | Executes approved shell commands through the guarded PowerShell runner. |
 | NPU Phi diagnostic sidecar | `npu_phi_service/*`, `npu-phi-service.ps1` | `127.0.0.1:3551` when explicitly enabled | `venvs/openvino` | Best-effort diagnostic scene/spec generation with singleton OpenVINO GenAI pipeline. It must not replace the 3550 reranker or block the planner loop. |
-| Codex MCP/Responses bridges | `codex_bridge/*`, top-level compatibility wrappers | MCP stdio or HTTP proxy | service-dependent | Optional integration layer for Codex and Ollama/OpenAI-compatible response flows. |
+| Codex MCP/Responses bridges | `codex_bridge/*`, top-level compatibility wrappers | MCP stdio or HTTP proxy | service-dependent | Optional host-side Codex integration layer. It is not the 3571 public tool bridge and not the 3572 planner/native tool surface. |
 | Model export tooling | `model_export/*`, `export_model.py` | CLI | export/OpenVINO env | Converts or exports supported model families and updates serving config. |
 
 ## End-To-End Agentic Chain
@@ -78,6 +78,16 @@ Critical protocol notes:
 - 3571 is a public helper facade. It must not expose 3572 internal routes as
   OpenWebUI tools.
 - 3572 owns the internal agentic loop and validator/finalization contract.
+- Codex MCP servers under `codex_bridge/` are outside the OpenWebUI ->
+  3571 -> 3572 chain. They expose host-side Codex tools over MCP stdio and
+  must not be described as planner-selectable tools or as a shortcut into the
+  3572 agentic loop.
+- Codex MCP root selection is process-local. `AICARMINE_CODEX_MCP_REPO_ROOT`,
+  Codex workspace env and the MCP cwd take precedence over inherited broker
+  `AICARMINE_LAB_REPO`; before broker-backed imports, the MCP process rewrites
+  its own `AICARMINE_LAB_REPO` to that Codex root. This prevents accidental
+  import-time broker config capture without forcing OpenWebUI's lab shadow to
+  equal the Codex repo root.
 - In OpenWebUI output, `artifact` means the real result produced by a successful
   tool, not a local JSON path.
 - OpenWebUI cannot read `C:\Users\...` paths. Tool results needed by the 30B
@@ -193,6 +203,7 @@ Several roots are active at the same time. They are not interchangeable.
 | Root/env | Runtime role | Consumers |
 | --- | --- | --- |
 | `AICARMINE_LAB_REPO` | Active tool-loop repository/worktree. All `repo_*` paths and code-product targets are relative to this root. | 3572 planner/evidence, validator, repo tools, patch/report-only tools, command tools. |
+| `AICARMINE_CODEX_MCP_REPO_ROOT` | Preferred Codex MCP repository root. Codex MCP processes map their local `AICARMINE_LAB_REPO` to this before broker-tool imports. | Codex MCP direct/repo helper processes only. |
 | `AICARMINE_REAL_REPO` | Canonical/index repository used by memory/RAG and long-lived project indexes. | intrinsic context, planner memory/RAG surfaces. |
 | `AICARMINE_VULKAN_WORKSPACE` | Broker workspace for job artifacts and dashboard storage. | job store, dashboard, SQLite/job files. |
 | `AICARMINE_AGENT_JOB_ROOT` | Concrete agent jobs directory. | job state/event/final persistence. |
@@ -233,7 +244,7 @@ planner history, validation, finalization and job dashboards.
 | `aicarmine_broker/__init__.py` | Package marker and app import compatibility. | Imports `.app`. | Keep import side effects minimal. |
 | `aicarmine_broker/app.py` | FastAPI app factory and routes for health, dashboards, job JSON, job events and `/vulkan/agent`. | Uses `agent_entry`, `job_store`, `job_html`. | Route shape is consumed by 3571 and browser dashboards. |
 | `aicarmine_broker/agent_entry.py` | Public agent entrypoint and background job lifecycle. | Creates queued jobs, starts worker threads, calls planner, selects public/internal tools. | Do not make this decide final answers; finalization belongs in planner/controller flow. |
-| `aicarmine_broker/config.py` | Central env parsing and runtime options. | Reads `AICARMINE_*`, Ollama URLs/models, timeouts, max steps, result limits. | Env changes affect both 3571/3572 behavior; prove active process env before changing defaults. |
+| `aicarmine_broker/config/` | Central env parsing and compatibility constants. `models.py` builds `BrokerConfig`; `compatibility.py` exposes legacy constants through `aicarmine_broker.config`. | Reads `AICARMINE_*`, Ollama URLs/models, timeouts, max steps, result limits and RAG/rerank settings. | Env changes affect both 3571/3572 behavior; prove active process env before changing defaults. |
 | `aicarmine_broker/helper.py` | Composite `vulkan_helper` implementation and evidence assembly helpers. | Calls repo tools, derives useful next calls, builds helper summaries. | Must not replace internal planner evidence with local artifact paths. |
 | `aicarmine_broker/job_html.py` | HTML renderer for job dashboard pages and the 3572-only IA Live Control View. | Reads job state/events, planner prompt captures, stream files and same-job tool artifacts for display. | Display-only; avoid changing job semantics here. |
 | `aicarmine_broker/job_store.py` | Job persistence: filesystem JSON state and NDJSON events are primary; SQLite metadata/events are secondary dashboard indexes. It also writes final result files and compact terminal responses. | Writes under agent job workspace and broker DB. If SQLite fails, it records typed filesystem warnings and list fallback markers instead of hiding jobs. | State schema and compact responses are consumed by 3571, dashboards and tests. Do not make SQLite the only source of truth. |
@@ -275,7 +286,15 @@ to the model.
 | Module | Responsibility | State and dependencies | Change risk |
 | --- | --- | --- | --- |
 | `codex_bridge/__init__.py` | Package marker for Codex bridge implementations. | No runtime behavior expected. | Keep import-light. |
-| `codex_bridge/mcp_server.py` | JSON-RPC/MCP server for Codex integration; lazy broker startup and broker tool calls. | Uses stdio JSON-RPC and HTTP calls to broker when tools are invoked. | Handshake must stay lightweight; do not import heavy broker/repo modules before initialization. |
+| `codex_bridge/mcp_server.py` | JSON-RPC/MCP server for Codex integration. It exposes direct `aicarmine_tools` over stdio and must not call 3571, `/vulkan/agent`, or an HTTP broker tool loop. | Uses stdio JSON-RPC and lazy in-process dispatch for allowlisted tools. | Handshake must stay lightweight; do not import heavy broker/repo modules before a tool call actually needs them. |
+| `codex_bridge/repo_mcp_common.py` | Shared stdio/JSON-RPC, argument validation, health, self-test and root-selection helpers for deterministic Codex repo MCP servers. | Resolves `AICARMINE_CODEX_MCP_REPO_ROOT`/Codex env/cwd, then rewrites only the MCP process' `AICARMINE_LAB_REPO` before broker-tool imports. | Do not let an inherited OpenWebUI lab shadow override the Codex-selected root. |
+| `codex_bridge/repo_state_mcp_server.py` | Deterministic Codex repo-state MCP server. | Imports broker repo-status helpers after common root sync. | Must remain read-only and no-loop. |
+| `codex_bridge/repo_search_det_mcp_server.py` | Deterministic Codex repo-search MCP server. | Imports broker deterministic search helpers after common root sync. | Must remain read-only and no-loop. |
+| `codex_bridge/repo_validate_mcp_server.py` | Deterministic Codex repo-validation MCP server. | Imports broker validation helpers after common root sync. | Must remain validation-only and no-loop. |
+| `codex_bridge/repo_code_mcp_server.py` | Incubating Codex repo-code MCP server for candidate code edit tools. | Imports broker code-proposal, deterministic diff-check and exact patch helpers after common root sync. | Must stay isolated from stable MCPs; source writes require explicit `allow_source_write=true`. |
+| `codex_bridge/ops_mcp_server.py` | Incubating Codex ops MCP server for MCP smoke checks and read-only service-state inspection. | Spawns only static allowlisted local MCP scripts for stdio smoke tests; reads process, TCP listener and repo-local log state. | Must not become a command runner, must not call HTTP health routes and must redact command-line secrets. |
+| `codex_bridge/rag_index_repo.py` | Git-surface SQLite/FTS5 index builder for Codex RAG. | Reads `git ls-files --cached --others --exclude-standard` and writes `state/codex_rag/`. | Keep independent from OpenWebUI/Chroma and broker runtime state. |
+| `codex_bridge/rag_mcp_server.py` | Dedicated Codex RAG MCP server exposing context, index status and reindex tools. | Reads the Codex RAG SQLite index and optionally calls the local OVMS `/v3/rerank` endpoint. | Must not import broker dispatchers, edit/validate tools, 3571 or 3572 agentic-loop paths. |
 | `codex_bridge/jsonrpc.py` | Compatibility exports from `mcp_server`. | Import facade. | Keep stable for old import paths. |
 | `codex_bridge/ollama_responses_bridge.py` | OpenAI Responses-compatible HTTP adapter around Ollama/chat flows. | Stores/reloads response state and can inject previous context. | Protocol-sensitive; preserve native Ollama pass-through behavior. |
 | `codex_bridge/responses_proxy.py` | Compatibility exports from `ollama_responses_bridge`. | Import facade. | Keep stable for old import paths. |

@@ -66,7 +66,9 @@ Core code entry points:
 - [vulkan_bridge/](vulkan_bridge/)
   - Public 3571 OpenWebUI bridge and terminal payload wrapper.
 - [codex_bridge/](codex_bridge/)
-  - Optional Codex-facing MCP and Responses-compatible bridge helpers.
+  - Optional Codex-facing MCP and Responses-compatible bridge helpers. These
+    are host-side Codex integrations, not 3571 OpenWebUI tools and not 3572
+    planner-native tools.
 - [launch/](launch/)
   - PowerShell launcher modules and runtime process/env helpers.
 - [model_export/](model_export/)
@@ -99,3 +101,21 @@ Do not use local paths, SQLite ids, planner message windows or
 terminal OpenWebUI results, successful `repo_read` content and successful
 `repo_propose_code_edit` diffs/operations must be present as concrete inline
 artifacts in `tool_context_for_30b`.
+
+## Codex MCP Boundary
+
+Codex MCP servers under `codex_bridge/` are outside the OpenWebUI -> 3571 ->
+3572 agentic chain. `mcp_server.py` exposes host-side Codex tools over stdio
+without calling 3571, `/vulkan/agent` or the HTTP broker tool loop.
+For broker-backed tool imports, the MCP process resolves its own Codex root
+from `AICARMINE_CODEX_MCP_REPO_ROOT`, Codex workspace env or cwd, then rewrites
+only that process' `AICARMINE_LAB_REPO` before import-time broker config is
+read. The OpenWebUI/3572 lab shadow does not need to match the Codex repo root.
+`rag_mcp_server.py` is a separate retrieval server backed by the Codex RAG
+SQLite index and the local OVMS reranker. `repo_code_mcp_server.py` is a
+separate incubator for candidate code-edit tools; it keeps proposal/diff-check
+tools report-only and requires `allow_source_write=true` before exact source
+patching. `ops_mcp_server.py` is a separate incubator for Codex-side MCP smoke
+checks and read-only service-state inspection; it does not probe HTTP health
+routes or call 3571/3572. None of these servers adds planner-native tool names
+to the 3572 turn surface.

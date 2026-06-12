@@ -20,7 +20,10 @@ the runtime boundaries below remain authoritative.
 ## Environment Sources
 
 The broker/bridge Python services use values parsed in
-`services/aicarmine_broker/config.py` and `services/vulkan_bridge/app.py`.
+`services/aicarmine_broker/config/` and `services/vulkan_bridge/app.py`.
+`services/aicarmine_broker/config/models.py` owns `BrokerConfig`, while
+`services/aicarmine_broker/config/compatibility.py` exposes legacy constants
+through the import surface `aicarmine_broker.config`.
 Launcher scripts may set process/user env before startup, but live behavior is
 determined by the environment inherited by the running process.
 
@@ -60,6 +63,21 @@ Hard invariant:
 - Never validate planner candidate paths against `C:\Users\carmi\AI`, the job
   workspace, or `AICARMINE_REAL_REPO` unless that is the configured
   `AICARMINE_LAB_REPO` for the active process.
+
+## Codex MCP Isolation
+
+Codex MCP servers under `services/codex_bridge/` are host-side Codex
+integrations. They are not the public 3571 OpenWebUI bridge, not the 3572
+planner runtime and not planner-native tool names. MCP tools must not be used
+as a documented shortcut into `/vulkan/agent` or as evidence that the 3572
+planner tool surface changed.
+
+If a Codex MCP process imports broker repo tools, it must resolve its own Codex
+root from `AICARMINE_CODEX_MCP_REPO_ROOT`, Codex workspace env or cwd before
+those imports. The process may then rewrite its local `AICARMINE_LAB_REPO` so
+import-time `aicarmine_broker.config.LAB_REPO` is coherent for Codex. This is
+not a requirement that the OpenWebUI/3572 lab shadow equals the Codex repo
+root.
 
 Diagnostic rule:
 

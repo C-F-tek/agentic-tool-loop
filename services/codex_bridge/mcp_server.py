@@ -57,8 +57,11 @@ No agentic loop:
   - no HTTP broker dependency for repo tools
 
 Root behavior:
-  - AICARMINE_LAB_REPO is authoritative when present, matching the historical TOML.
-  - Otherwise, runtime cwd / Codex workspace env is resolved to the nearest git root.
+  - Codex-specific root env and cwd win over inherited broker lab-shadow env.
+  - AICARMINE_LAB_REPO is accepted only as a legacy fallback.
+  - Before broker-tool imports, this MCP process rewrites AICARMINE_LAB_REPO to
+    the selected Codex root so import-time aicarmine_broker.config.LAB_REPO is
+    coherent for Codex without constraining the OpenWebUI/3572 lab shadow.
   - Server/support paths are derived from __file__.
 
 Transport:
@@ -86,6 +89,7 @@ MAX_TEXT = int(os.environ.get("AICARMINE_MCP_MAX_TEXT_CHARS", "24000"))
 RESOURCE_MAX_CHARS = int(os.environ.get("AICARMINE_MCP_RESOURCE_MAX_CHARS", "120000"))
 DEBUG = os.environ.get("AICARMINE_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 STDIO_TRANSPORT = os.environ.get("AICARMINE_MCP_STDIO_TRANSPORT", "").strip().lower()
+_INITIAL_AICARMINE_LAB_REPO = os.environ.get("AICARMINE_LAB_REPO", "")
 
 _DIRECT_DISPATCHER: Any | None = None
 _DISPATCH_REQUEST_CLASS: Any | None = None
@@ -154,6 +158,18 @@ def _safe_float(value: Any, default: float) -> float:
 # Root resolution
 # ---------------------------------------------------------------------------
 
+_CODEX_ROOT_ENV_NAMES = (
+    "AICARMINE_CODEX_MCP_REPO_ROOT",
+    "CODEX_WORKSPACE_ROOT",
+    "CODEX_PROJECT_ROOT",
+    "CODEX_CWD",
+    "WORKSPACE_ROOT",
+    "PROJECT_ROOT",
+    "INIT_CWD",
+    "PWD",
+)
+
+
 def _services_root() -> Path:
     # .../services/codex_bridge/mcp_server.py -> .../services
     return Path(__file__).resolve().parents[1]
@@ -198,32 +214,40 @@ def _path_git_root(candidate: Path) -> Path | None:
     return None
 
 
+def _env_existing_root(name: str) -> Path | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    candidate = Path(value).expanduser()
+    if not candidate.exists():
+        return None
+    return _path_git_root(candidate) or candidate.resolve()
+
+
 def _codex_selected_project_root() -> Path:
     """
     Resolve the active project root.
 
-    AICARMINE_LAB_REPO is deliberately accepted because it existed in the
-    historical working TOML. If absent, use Codex/runtime env or cwd git root.
+    Codex/root-specific env and cwd are authoritative for this MCP process.
+    AICARMINE_LAB_REPO is accepted only as a legacy fallback so a broker
+    lab-shadow inherited from the user environment cannot override the root
+    selected by Codex.
     """
-    for name in (
-        "AICARMINE_LAB_REPO",
-        "CODEX_WORKSPACE_ROOT",
-        "CODEX_PROJECT_ROOT",
-        "CODEX_CWD",
-        "WORKSPACE_ROOT",
-        "PROJECT_ROOT",
-        "INIT_CWD",
-        "PWD",
-    ):
-        value = os.environ.get(name, "").strip()
-        if not value:
-            continue
-        candidate = Path(value)
-        if candidate.exists():
-            return _path_git_root(candidate) or candidate.resolve()
-
     cwd = Path.cwd()
-    return _path_git_root(cwd) or cwd.resolve()
+    for name in _CODEX_ROOT_ENV_NAMES:
+        root = _env_existing_root(name)
+        if root is not None:
+            return root
+
+    cwd_git_root = _path_git_root(cwd)
+    if cwd_git_root is not None:
+        return cwd_git_root
+
+    legacy_lab_root = _env_existing_root("AICARMINE_LAB_REPO")
+    if legacy_lab_root is not None:
+        return legacy_lab_root
+
+    return cwd.resolve()
 
 
 def _repo_root() -> Path:
@@ -233,6 +257,14 @@ def _repo_root() -> Path:
 
 def _canonical_lab_root() -> Path:
     return _repo_root()
+
+
+def _sync_broker_import_root() -> Path:
+    root = _repo_root()
+    root_text = str(root)
+    os.environ["AICARMINE_CODEX_MCP_REPO_ROOT"] = root_text
+    os.environ["AICARMINE_LAB_REPO"] = root_text
+    return root
 
 
 def _useful_tools_root() -> Path:
@@ -282,6 +314,7 @@ def _allowed_resource_roots() -> list[tuple[str, Path]]:
 
 
 def _ensure_import_paths() -> None:
+    _sync_broker_import_root()
     for path in (_repo_root(), _server_home_root(), _server_services_root(), _useful_tools_root()):
         value = str(path)
         if path.exists() and value not in sys.path:
@@ -394,7 +427,10 @@ def _direct_dispatch(internal_tool: str, args: dict[str, Any]) -> Any:
     No HTTP call. No 3571. No 3572/vulkan/agent. No agentic loop.
     """
     dispatcher = _load_dispatcher()
-    request = _DISPATCH_REQUEST_CLASS(
+    request_class = _DISPATCH_REQUEST_CLASS
+    if request_class is None:
+        raise RuntimeError("dispatcher request class not loaded")
+    request = request_class(
         name=internal_tool,
         args=dict(args or {}),
         root=_repo_root(),
@@ -987,6 +1023,9 @@ def _health() -> dict[str, Any]:
         "server_script": str(Path(__file__).resolve()),
         "python_executable": sys.executable,
         "transport": STDIO_TRANSPORT or "auto",
+        "initial_aicarmine_lab_repo": _INITIAL_AICARMINE_LAB_REPO,
+        "effective_broker_import_lab_repo": os.environ.get("AICARMINE_LAB_REPO"),
+        "codex_mcp_repo_root": os.environ.get("AICARMINE_CODEX_MCP_REPO_ROOT"),
         "registry_loaded": bool(registry),
         "registry": registry,
         "tools_count": len(TOOL_SCHEMAS),
@@ -1050,7 +1089,8 @@ INSTRUCTIONS = (
 def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
     msg_id = message.get("id")
     method = str(message.get("method") or "")
-    params = message.get("params") if isinstance(message.get("params"), dict) else {}
+    raw_params = message.get("params")
+    params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
 
     if msg_id is None and method.startswith("notifications/"):
         return None
@@ -1081,7 +1121,8 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 
         if method == "tools/call":
             name = str(params.get("name") or "")
-            arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+            raw_arguments = params.get("arguments")
+            arguments: dict[str, Any] = raw_arguments if isinstance(raw_arguments, dict) else {}
             return _ok(msg_id, _handle_tools_call(name, arguments))
 
         if method == "resources/list":
@@ -1123,7 +1164,8 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 def serve() -> int:
-    _log(f"starting pid={os.getpid()} cwd={Path.cwd()} repo_root={_repo_root()}")
+    root = _sync_broker_import_root()
+    _log(f"starting pid={os.getpid()} cwd={Path.cwd()} repo_root={root}")
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
 

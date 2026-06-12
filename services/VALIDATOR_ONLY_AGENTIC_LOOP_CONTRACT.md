@@ -336,6 +336,9 @@ Regole:
   chunk gia' recuperati; endpoint giu' produce
   `retrieved_rag_chunks.rerank.status=unavailable`, non una surface tool e non
   un risultato finto;
+- il percorso RAG/rerank intrinseco usa il pool FTS default `80`, input
+  reranker default `12`, document cap `2500` caratteri e timeout default
+  `30.0` secondi; `candidate_count` e `input_count` non sono sinonimi;
 - memoria/RAG/chunk non diventano nuove surface tool;
 - solo dopo questo contesto il planner puo' chiamare
   `runtime_sqlite_memory_search/write` o `planner_scratchpad_*`, e solo per un

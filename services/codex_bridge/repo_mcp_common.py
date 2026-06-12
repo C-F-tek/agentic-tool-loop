@@ -21,6 +21,18 @@ if str(SERVICES_ROOT) not in sys.path:
 MAX_TEXT = int(os.environ.get("AICARMINE_REPO_MCP_MAX_TEXT_CHARS", "24000"))
 STDIO_TRANSPORT = os.environ.get("AICARMINE_REPO_MCP_STDIO_TRANSPORT", "").strip().lower()
 DEBUG = os.environ.get("AICARMINE_REPO_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
+INITIAL_AICARMINE_LAB_REPO = os.environ.get("AICARMINE_LAB_REPO", "")
+
+CODEX_ROOT_ENV_NAMES = (
+    "AICARMINE_CODEX_MCP_REPO_ROOT",
+    "CODEX_WORKSPACE_ROOT",
+    "CODEX_PROJECT_ROOT",
+    "CODEX_CWD",
+    "WORKSPACE_ROOT",
+    "PROJECT_ROOT",
+    "INIT_CWD",
+    "PWD",
+)
 
 Handler = Callable[[dict[str, Any], Path], dict[str, Any]]
 
@@ -67,14 +79,56 @@ def err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any
     return {"jsonrpc": "2.0", "id": msg_id, "error": error}
 
 
+def path_git_root(candidate: Path) -> Path | None:
+    try:
+        current = candidate.expanduser().resolve()
+    except Exception:
+        return None
+    if current.is_file():
+        current = current.parent
+    for item in [current, *current.parents]:
+        if (item / ".git").exists():
+            return item
+    return None
+
+
+def env_existing_root(name: str) -> Path | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    candidate = Path(value).expanduser()
+    if not candidate.exists():
+        return None
+    return path_git_root(candidate) or candidate.resolve()
+
+
 def selected_repo_root() -> Path:
-    value = (
-        os.environ.get("AICARMINE_LAB_REPO", "").strip()
-        or os.environ.get("CODEX_WORKSPACE_ROOT", "").strip()
-        or os.environ.get("CODEX_PROJECT_ROOT", "").strip()
-        or os.getcwd()
-    )
-    return Path(value).expanduser().resolve()
+    for name in CODEX_ROOT_ENV_NAMES:
+        root = env_existing_root(name)
+        if root is not None:
+            return root
+
+    cwd = Path(os.getcwd())
+    cwd_git_root = path_git_root(cwd)
+    if cwd_git_root is not None:
+        return cwd_git_root
+
+    legacy_lab_root = env_existing_root("AICARMINE_LAB_REPO")
+    if legacy_lab_root is not None:
+        return legacy_lab_root
+
+    return cwd.resolve()
+
+
+def sync_broker_import_root() -> Path:
+    root = selected_repo_root()
+    root_text = str(root)
+    os.environ["AICARMINE_CODEX_MCP_REPO_ROOT"] = root_text
+    os.environ["AICARMINE_LAB_REPO"] = root_text
+    return root
+
+
+sync_broker_import_root()
 
 
 def run_git(root: Path, *args: str) -> tuple[int, str, str]:
@@ -118,6 +172,8 @@ def health_payload(server_name: str, tool_names: list[str]) -> dict[str, Any]:
         "repo_root": str(root),
         "cwd": str(Path.cwd()),
         "aicarmine_lab_repo": os.environ.get("AICARMINE_LAB_REPO", ""),
+        "initial_aicarmine_lab_repo": INITIAL_AICARMINE_LAB_REPO,
+        "codex_mcp_repo_root": os.environ.get("AICARMINE_CODEX_MCP_REPO_ROOT", ""),
         "git_root_ok": git.get("git_root_ok"),
         "branch": git.get("branch"),
         "commit": git.get("commit"),

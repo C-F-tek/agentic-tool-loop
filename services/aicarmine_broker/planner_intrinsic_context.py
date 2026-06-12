@@ -20,6 +20,10 @@ from typing import Any
 
 
 SCHEMA = "planner_intrinsic_context.v1"
+DEFAULT_FTS_CANDIDATE_LIMIT = 80
+DEFAULT_RERANK_CANDIDATE_LIMIT = 12
+DEFAULT_RERANK_DOC_CHARS = 2500
+DEFAULT_RERANK_RESPONSE_BYTES = 2_000_000
 
 TOOL_PURPOSE_MANIFEST: tuple[dict[str, Any], ...] = (
     {
@@ -155,14 +159,40 @@ def _sqlite_tables(conn: sqlite3.Connection) -> set[str]:
     return {str(row[0]) for row in rows}
 
 
-def _rerank_payload_documents(items: list[dict[str, Any]]) -> list[str]:
-    return [str(item.get("text") or "") for item in items]
+def _http_json(method: str, url: str, payload: Any | None = None, timeout: float = 20.0) -> Any:
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        headers["Content-Type"] = "application/json; charset=utf-8"
+
+    request = urllib.request.Request(str(url), data=data, method=method.upper(), headers=headers)
+    with urllib.request.urlopen(request, timeout=max(0.1, float(timeout or 0.1))) as response:
+        raw = response.read(DEFAULT_RERANK_RESPONSE_BYTES)
+        text = raw.decode("utf-8", errors="replace")
+        if not text.strip():
+            return {"status": getattr(response, "status", None)}
+        content_type = (response.headers.get("Content-Type") or "").lower()
+        if "application/json" in content_type or text.strip().startswith(("{", "[")):
+            return json.loads(text)
+        return {"status": getattr(response, "status", None), "text": text[:2000]}
 
 
-def _rerank_order_from_response(response: dict[str, Any], item_count: int) -> list[tuple[int, float]]:
-    candidates = response.get("results")
-    if not isinstance(candidates, list):
-        candidates = response.get("data")
+def _rerank_payload_documents(items: list[dict[str, Any]], doc_chars: int) -> list[str]:
+    limit = max(1, int(doc_chars or DEFAULT_RERANK_DOC_CHARS))
+    return [str(item.get("text") or "")[:limit] for item in items]
+
+
+def _rerank_order_from_response(response: Any, item_count: int) -> list[tuple[int, float]]:
+    if isinstance(response, dict):
+        candidates = response.get("results")
+        if not isinstance(candidates, list):
+            candidates = response.get("data")
+    elif isinstance(response, list):
+        candidates = response
+    else:
+        candidates = None
+
     order: list[tuple[int, float]] = []
     if isinstance(candidates, list):
         for fallback_index, item in enumerate(candidates):
@@ -172,15 +202,16 @@ def _rerank_order_from_response(response: dict[str, Any], item_count: int) -> li
             try:
                 index = int(raw_index)
             except Exception:
-                continue
-            score = item.get("relevance_score", item.get("score", item.get("rerank_score", 0.0)))
+                index = fallback_index
+            score = item.get("relevance_score", item.get("score", item.get("logit", item.get("rerank_score", 0.0))))
             try:
                 score_float = float(score)
             except Exception:
                 score_float = 0.0
             if 0 <= index < item_count:
                 order.append((index, score_float))
-    scores = response.get("scores")
+
+    scores = response.get("scores") if isinstance(response, dict) else None
     if not order and isinstance(scores, list):
         for index, score in enumerate(scores[:item_count]):
             try:
@@ -188,6 +219,15 @@ def _rerank_order_from_response(response: dict[str, Any], item_count: int) -> li
             except Exception:
                 order.append((index, 0.0))
     return order
+
+
+def _items_with_missing_rerank_scores(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in items:
+        merged = dict(item)
+        merged.setdefault("rerank_score", None)
+        out.append(merged)
+    return out
 
 
 def _external_rerank_items(
@@ -198,71 +238,86 @@ def _external_rerank_items(
     url: str,
     model: str,
     timeout_seconds: float,
+    candidate_limit: int = DEFAULT_RERANK_CANDIDATE_LIMIT,
+    doc_chars: int = DEFAULT_RERANK_DOC_CHARS,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    enabled = str(engine or "").lower() == "external"
+    limit = max(1, int(candidate_limit or DEFAULT_RERANK_CANDIDATE_LIMIT))
+    document_chars = max(1, int(doc_chars or DEFAULT_RERANK_DOC_CHARS))
     rerank: dict[str, Any] = {
+        "enabled": enabled,
         "engine": str(engine or ""),
         "url": str(url or ""),
         "model": str(model or ""),
-        "status": "disabled",
+        "candidate_limit": limit,
+        "doc_chars": document_chars,
+        "timeout_seconds": float(timeout_seconds or 0.0),
+        "candidate_count": len(items),
+        "input_count": 0,
+        "status": "not_started",
     }
     if not items:
         rerank["status"] = "skipped_no_items"
         return items, rerank
-    if str(engine or "").lower() != "external":
+    if not enabled:
+        rerank["status"] = "skipped_disabled"
         return items, rerank
     if not str(url or "").strip():
         rerank.update({"status": "unavailable", "error": "external_reranker_url_missing"})
-        return items, rerank
+        return _items_with_missing_rerank_scores(items), rerank
 
-    documents = _rerank_payload_documents(items)
+    rerank_candidates = items[:limit]
+    documents = _rerank_payload_documents(rerank_candidates, document_chars)
+    rerank["input_count"] = len(documents)
     body = {
         "model": str(model or "BAAI/bge-reranker-v2-m3"),
         "query": str(goal or ""),
         "documents": documents,
-        "top_n": len(documents),
     }
-    request = urllib.request.Request(
-        str(url),
-        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=max(0.1, float(timeout_seconds or 0.1))) as response:
-            raw = response.read(2_000_000)
-        decoded = json.loads(raw.decode("utf-8", errors="replace"))
-    except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        decoded = _http_json("POST", str(url), body, timeout=float(timeout_seconds or 0.1))
+    except (TimeoutError, urllib.error.URLError, OSError, ValueError) as exc:
         rerank.update({"status": "unavailable", "error": "external_reranker_unavailable", "details": type(exc).__name__})
-        return items, rerank
+        return _items_with_missing_rerank_scores(items), rerank
     except Exception as exc:
         rerank.update({"status": "error", "error": "external_reranker_response_error", "details": type(exc).__name__})
-        return items, rerank
+        return _items_with_missing_rerank_scores(items), rerank
 
-    if not isinstance(decoded, dict):
-        rerank.update({"status": "error", "error": "external_reranker_response_not_object"})
-        return items, rerank
-    order = _rerank_order_from_response(decoded, len(items))
+    order = _rerank_order_from_response(decoded, len(rerank_candidates))
     if not order:
         rerank.update({"status": "error", "error": "external_reranker_no_scores"})
-        return items, rerank
+        return _items_with_missing_rerank_scores(items), rerank
 
-    ordered_indices = [index for index, _score in sorted(order, key=lambda pair: -pair[1])]
     seen: set[int] = set()
     ranked: list[dict[str, Any]] = []
-    for rank, index in enumerate(ordered_indices, start=1):
+    for index, score in order:
         if index in seen:
             continue
         seen.add(index)
-        item = dict(items[index])
-        score = next((score for idx, score in order if idx == index), None)
+        item = dict(rerank_candidates[index])
         item["rerank_score"] = score
-        item["rerank_rank"] = rank
+        item["rerank_rank"] = len(ranked) + 1
         item["reason"] = "external_rerank_after_fts_match"
         ranked.append(item)
-    for index, item in enumerate(items):
+
+    for index, item in enumerate(rerank_candidates):
         if index not in seen:
-            ranked.append(item)
-    rerank.update({"status": "ready", "returned_scores": len(order), "ranking_source": "external_rerank"})
+            merged = dict(item)
+            merged["rerank_score"] = None
+            ranked.append(merged)
+    for item in items[limit:]:
+        merged = dict(item)
+        merged["rerank_score"] = None
+        ranked.append(merged)
+
+    rerank.update(
+        {
+            "status": "ready",
+            "returned_scores": len(order),
+            "ranked_count": len(ranked),
+            "ranking_source": "external_rerank",
+        }
+    )
     return ranked, rerank
 
 
@@ -301,6 +356,9 @@ def _rag_sqlite_chunks(
         base.update({"status": "empty_query", "gap": "rag_query_empty"})
         return base
 
+    output_limit = max(1, min(int(top_k or 1), 30))
+    candidate_limit = max(output_limit, DEFAULT_FTS_CANDIDATE_LIMIT)
+
     try:
         conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -329,7 +387,7 @@ def _rag_sqlite_chunks(
             ORDER BY bm25(rag_chunks_fts)
             LIMIT ?
             """,
-            (query, max(1, min(int(top_k or 1), 30))),
+            (query, candidate_limit),
         ).fetchall()
     except sqlite3.Error as exc:
         base.update(
@@ -344,8 +402,7 @@ def _rag_sqlite_chunks(
     finally:
         conn.close()
 
-    remaining = max(0, int(char_budget or 0))
-    items: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
     for row in rows:
         row_dict = dict(row)
@@ -354,12 +411,8 @@ def _rag_sqlite_chunks(
             continue
         if chunk_id:
             seen.add(chunk_id)
-        if remaining <= 0:
-            break
-        per_item_limit = max(300, min(1600, remaining))
-        text, truncated = _compact_text(row_dict.get("text"), per_item_limit)
-        remaining -= len(text)
-        items.append(
+        text, truncated = _compact_text(row_dict.get("text"), DEFAULT_RERANK_DOC_CHARS)
+        candidates.append(
             {
                 "path": str(row_dict.get("source_path") or ""),
                 "source": "rag.sqlite",
@@ -376,17 +429,35 @@ def _rag_sqlite_chunks(
             }
         )
 
-    items, rerank = _external_rerank_items(
+    ranked_candidates, rerank = _external_rerank_items(
         goal=goal,
-        items=items,
+        items=candidates,
         engine=rerank_engine,
         url=rerank_url,
         model=rerank_model,
         timeout_seconds=rerank_timeout_seconds,
+        candidate_limit=DEFAULT_RERANK_CANDIDATE_LIMIT,
+        doc_chars=DEFAULT_RERANK_DOC_CHARS,
     )
     ranking_source = "external_rerank" if rerank.get("status") == "ready" else "fts_only"
     if rerank.get("status") == "unavailable":
         ranking_source = "fts_only_rerank_unavailable"
+
+    remaining = max(0, int(char_budget or 0))
+    items: list[dict[str, Any]] = []
+    for item in ranked_candidates:
+        if len(items) >= output_limit:
+            break
+        if remaining <= 0:
+            break
+        per_item_limit = max(300, min(1600, remaining))
+        text, truncated = _compact_text(item.get("text"), per_item_limit)
+        remaining -= len(text)
+        bounded_item = dict(item)
+        bounded_item["chars"] = len(text)
+        bounded_item["text"] = text
+        bounded_item["truncated"] = bool(item.get("truncated") or truncated)
+        items.append(bounded_item)
 
     base.update(
         {
@@ -395,6 +466,7 @@ def _rag_sqlite_chunks(
             "count": len(items),
             "items": items,
             "char_budget": int(char_budget or 0),
+            "candidate_count": len(candidates),
             "ranking_source": ranking_source,
             "rerank": rerank,
         }
@@ -406,7 +478,8 @@ def _rag_sqlite_chunks(
 
 def _memory_items(planner_memory: dict[str, Any], limit: int = 8) -> dict[str, Any]:
     surface = planner_memory if isinstance(planner_memory, dict) else {}
-    raw_items = surface.get("records") if isinstance(surface.get("records"), list) else []
+    raw_records = surface.get("records")
+    raw_items: list[Any] = raw_records if isinstance(raw_records, list) else []
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in raw_items:
@@ -461,8 +534,10 @@ def _repo_map_summary(evidence_contract: dict[str, Any]) -> dict[str, Any]:
 def _failure_patterns(evidence_contract: dict[str, Any]) -> list[dict[str, Any]]:
     contract = evidence_contract if isinstance(evidence_contract, dict) else {}
     patterns: list[dict[str, Any]] = []
-    code_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
-    violations = code_contract.get("latest_violations") if isinstance(code_contract.get("latest_violations"), list) else []
+    raw_code_contract = contract.get("code_product_contract")
+    code_contract: dict[str, Any] = raw_code_contract if isinstance(raw_code_contract, dict) else {}
+    raw_violations = code_contract.get("latest_violations")
+    violations: list[Any] = raw_violations if isinstance(raw_violations, list) else []
     if code_contract.get("required") and "missing_code_product_candidate" in violations:
         patterns.append(
             {
@@ -472,7 +547,9 @@ def _failure_patterns(evidence_contract: dict[str, Any]) -> list[dict[str, Any]]
                 "required_next_action": "repo_propose_code_edit",
             }
         )
-    for row in contract.get("validation_rejections_tail") or []:
+    raw_validation_rows = contract.get("validation_rejections_tail")
+    validation_rows: list[Any] = raw_validation_rows if isinstance(raw_validation_rows, list) else []
+    for row in validation_rows:
         if not isinstance(row, dict):
             continue
         row_violations = row.get("violations") if isinstance(row.get("violations"), list) else []
@@ -495,19 +572,25 @@ def _enforce_budget(context: dict[str, Any], max_chars: int) -> None:
     if max_chars <= 0 or _json_chars(context) <= max_chars:
         return
     for section_name in ("retrieved_rag_chunks", "retrieved_memory"):
-        section = context.get(section_name) if isinstance(context.get(section_name), dict) else {}
-        for item in section.get("items") or []:
+        section_value = context.get(section_name)
+        section: dict[str, Any] = section_value if isinstance(section_value, dict) else {}
+        raw_items = section.get("items")
+        section_items: list[Any] = raw_items if isinstance(raw_items, list) else []
+        for item in section_items:
             if not isinstance(item, dict) or "text" not in item:
                 continue
             item["text"], item["truncated"] = _compact_text(item.get("text"), 500)
             item["chars"] = len(str(item.get("text") or ""))
     if _json_chars(context) <= max_chars:
         return
-    rag = context.get("retrieved_rag_chunks") if isinstance(context.get("retrieved_rag_chunks"), dict) else {}
-    if isinstance(rag.get("items"), list):
-        rag["items"] = rag["items"][:3]
+    rag_value = context.get("retrieved_rag_chunks")
+    rag: dict[str, Any] = rag_value if isinstance(rag_value, dict) else {}
+    rag_items = rag.get("items")
+    if isinstance(rag_items, list):
+        trimmed_items = rag_items[:3]
+        rag["items"] = trimmed_items
         rag["budget_trimmed"] = True
-        rag["count"] = len(rag["items"])
+        rag["count"] = len(trimmed_items)
 
 
 def build_planner_intrinsic_context(

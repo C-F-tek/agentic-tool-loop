@@ -69,6 +69,14 @@ sequenceDiagram
     B3571-->>OWUI: payload_index_for_30b + priority_evidence_for_30b + pretty JSON tool_context_for_30b
 ```
 
+Codex MCP servers under `services/codex_bridge/` are outside this chain. They
+expose host-side Codex tools over MCP stdio and must not be modeled as 3571
+public tools, planner-native 3572 tools, or a shortcut into `/vulkan/agent`.
+If those MCP servers import broker repo tools, they first resolve the
+Codex-selected repo root and rewrite only their own process'
+`AICARMINE_LAB_REPO`; this prevents import-time broker config drift without
+requiring the OpenWebUI/3572 lab shadow to equal the Codex root.
+
 ## Owner Matrix
 
 | Runtime edge | Owning code | Verified behavior |
@@ -76,8 +84,8 @@ sequenceDiagram
 | OpenWebUI -> 3571 | `services/vulkan_bridge/app.py` | Generated OpenAPI exposes only `/vulkan_helper` through `OPENWEBUI_VISIBLE_TOOL_ALIASES`. |
 | 3571 -> 3572 | `services/vulkan_bridge/app.py` | `_handle_helper()` posts the normalized agent payload to `AGENT_URL`, default `http://127.0.0.1:3572/vulkan/agent`. |
 | 3572 route -> job worker | `services/aicarmine_broker/app.py`, `services/aicarmine_broker/agent_entry.py` | `/vulkan/agent` delegates to `agent()`, `vulkan_helper` starts a job, and `agent_job_worker()` calls `run_agentic_planner_job()`. |
-| 3572 -> 11434 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/turn.py`, `services/aicarmine_broker/application/prompt/pack_builder.py`, `services/aicarmine_broker/planner_intrinsic_context.py`, `services/aicarmine_broker/memory_tools.py`, `services/aicarmine_broker/config.py` | `planner_decision()` is still the compatibility entrypoint, but the measured prompt pack and one-turn 11434 call are owned by the application planner/prompt modules. Above the prompt compaction threshold it stores large sections in job-local SQLite and injects `planner_prompt_context_window.v1` windows that can be read recursively with `planner_scratchpad_read`; default `PLANNER_URL` is `http://127.0.0.1:11434/api/chat`. |
-| 3572 -> 11435 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_selection.py`, `services/aicarmine_broker/config.py` | Repair/selector paths use `OLLAMA_TASK_URL`; default is `http://127.0.0.1:11435/api/chat`. |
+| 3572 -> 11434 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/turn.py`, `services/aicarmine_broker/application/prompt/pack_builder.py`, `services/aicarmine_broker/planner_intrinsic_context.py`, `services/aicarmine_broker/memory_tools.py`, `services/aicarmine_broker/config/` | `planner_decision()` is still the compatibility entrypoint, but the measured prompt pack and one-turn 11434 call are owned by the application planner/prompt modules. Above the prompt compaction threshold it stores large sections in job-local SQLite and injects `planner_prompt_context_window.v1` windows that can be read recursively with `planner_scratchpad_read`; default `PLANNER_URL` is `http://127.0.0.1:11434/api/chat`. |
+| 3572 -> 11435 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_selection.py`, `services/aicarmine_broker/config/` | Repair/selector paths use `OLLAMA_TASK_URL`; default is `http://127.0.0.1:11435/api/chat`. |
 | 3572 -> internal tools | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/validator.py`, `services/aicarmine_broker/tool_dispatch.py`, `services/aicarmine_broker/application/tool_surface/dispatcher.py`, `services/aicarmine_broker/tools/*` | Validated tool decisions call `dispatch_tool()`, which is a compatibility facade over the registry dispatcher. Concrete repo, terminal, memory and helper behavior lives in the owning tool modules. |
 | 3572 -> terminal compact result | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/loop.py`, `services/aicarmine_broker/job_store.py`, `services/aicarmine_broker/application/job/terminal_response.py` | `finalize_agentic_job()` writes final state; `wait_for_agent_terminal()` returns `compact_agent_terminal_response()`, whose terminal payload shaping is delegated to the job/public payload application modules. |
 | 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns the stable public surface for both ok and non-ok terminal jobs: primary metadata, `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and pretty JSON `tool_context_for_30b`. It does not promote blocked/prose narrative fields as the primary answer. |
@@ -211,7 +219,7 @@ planner loop owner.
 
 Code owners:
 
-- `services/aicarmine_broker/config.py`
+- `services/aicarmine_broker/config/compatibility.py`
 - `services/aicarmine_broker/app.py`
 - `services/aicarmine_broker/agent_entry.py`
 
@@ -233,14 +241,16 @@ inside 3571.
 
 Code owners:
 
-- `services/aicarmine_broker/config.py`
+- `services/aicarmine_broker/config/compatibility.py`
 - `services/aicarmine_broker/planner.py`
 - `services/aicarmine_broker/planner_core/json_io.py`
 
 Verified behavior:
 
 - `PLANNER_URL` defaults to `http://127.0.0.1:11434/api/chat`.
-- `PLANNER_MODEL` is read from planner env variables or defaults in `config.py`.
+- `PLANNER_MODEL` is read from planner env variables or defaults in
+  `services/aicarmine_broker/config/models.py` and exposed through
+  `services/aicarmine_broker/config/compatibility.py`.
 - `planner_decision()` builds a payload with `history`,
   `turn_memory`, `evidence_contract`, tool schemas and response protocol
   instructions.
@@ -366,7 +376,7 @@ Code owner:
 
 - `services/aicarmine_broker/planner.py`
 - `services/aicarmine_broker/planner_intrinsic_context.py`
-- `services/aicarmine_broker/config.py`
+- `services/aicarmine_broker/config/compatibility.py`
 
 Verified behavior:
 
@@ -381,6 +391,10 @@ Verified behavior:
   reorder already retrieved chunks inside the builder. If it is down, the
   context reports `rerank.status=unavailable` and keeps the ranking source
   explicit.
+- Current code-backed rerank bounds are: FTS candidate pool `80`, reranker
+  input `12`, per-document cap `2500` chars and timeout `30.0` seconds.
+  `candidate_count` records the FTS pool; reranker `input_count` records only
+  the posted `/v3/rerank` documents.
 - RAG/chunk/intrinsic context names are not added to `PLANNER_INTERNAL_TOOLS`.
 - `runtime_sqlite_memory_search/write` and `planner_scratchpad_*` remain
   selective follow-up tools only after intrinsic context leaves a concrete gap.
@@ -394,7 +408,7 @@ Verified behavior:
 
 Code owners:
 
-- `services/aicarmine_broker/config.py`
+- `services/aicarmine_broker/config/compatibility.py`
 - `services/aicarmine_broker/planner.py`
 - `services/aicarmine_broker/tool_selection.py`
 
