@@ -175,6 +175,10 @@ from .application.controller.preseed import (
     root_surface_entries as _root_surface_entries_impl,
     root_surface_file_paths as _root_surface_file_paths_impl,
 )
+from .application.controller.rag_preseed import (
+    controller_preplanner_rag_query_plan as _controller_preplanner_rag_query_plan_impl,
+    controller_preplanner_rag_preseed_plan as _controller_preplanner_rag_preseed_plan_impl,
+)
 from .application.evidence.core_discovery import (
     add_core_discovery_candidate as _add_core_discovery_candidate_impl,
     core_discovery_candidates_from_intrinsic as _core_discovery_candidates_from_intrinsic_impl,
@@ -2012,8 +2016,6 @@ def _goal_target_file(goal: str) -> str:
 
 
 def _goal_target_scope(goal: str) -> str:
-    if _goal_target_file(goal):
-        return ""
     return _agentic_v2_goal_scope(goal, {}) or goal_requested_repo_scope(goal)
 
 
@@ -2087,6 +2089,33 @@ def _controller_preseed_plan(goal: str, original_args: dict[str, Any]) -> dict[s
             "dynamic_initial_orientation": True,
         }
     return None
+
+
+def _controller_preplanner_rag_query_plan(goal: str) -> dict[str, Any]:
+    return _controller_preplanner_rag_query_plan_impl(
+        goal,
+        post_json=post_json,
+        planner_url=PLANNER_URL,
+        planner_model=PLANNER_MODEL,
+        keep_alive=OLLAMA_KEEP_ALIVE,
+        num_ctx=AGENTIC_PLANNER_NUM_CTX,
+        timeout=AGENTIC_PLANNER_STEP_TIMEOUT,
+    )
+
+
+def _controller_preplanner_rag_preseed_plan(
+    goal: str,
+    original_args: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any], list[dict[str, Any]]]:
+    return _controller_preplanner_rag_preseed_plan_impl(
+        goal,
+        original_args,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
+        multi_file_prompt_read_chars=_multi_file_prompt_read_chars(),
+    )
 
 
 def _controller_file_code_product_orientation_preseed_plan(goal: str) -> dict[str, Any] | None:
@@ -4361,6 +4390,8 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "controller_initial_area_read_plan": _controller_initial_area_read_plan,
             "controller_initial_doc_preseed_plan": _controller_initial_doc_preseed_plan,
             "controller_memory_target_key": _controller_memory_target_key,
+            "controller_preplanner_rag_query_plan": _controller_preplanner_rag_query_plan,
+            "controller_preplanner_rag_preseed_plan": _controller_preplanner_rag_preseed_plan,
             "controller_preseed_plan": _controller_preseed_plan,
             "decision_memory_claim_text": _decision_memory_claim_text,
             "decision_raw_planner_text": _decision_raw_planner_text,

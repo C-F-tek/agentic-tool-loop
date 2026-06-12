@@ -105,6 +105,7 @@ OPENWEBUI_FINAL_UNLOAD_PLANNER = BRIDGE_CONFIG.final_unload_planner
 OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = BRIDGE_CONFIG.final_unload_timeout_seconds
 PLANNER_URL = BRIDGE_CONFIG.planner_url
 PLANNER_MODEL = BRIDGE_CONFIG.planner_model
+OPENWEBUI_RETURN_MODEL = BRIDGE_CONFIG.openwebui_return_model
 DEFAULT_INTERNAL_TOOLS = list(PLANNER_INTERNAL_TOOLS)
 PUBLIC_TOOL_ALIASES = list(OPENWEBUI_PUBLIC_TOOLS)
 OPENWEBUI_VISIBLE_TOOL_ALIASES = ("vulkan_helper",)
@@ -190,10 +191,15 @@ class VulkanHelperRequest(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     request: str = Field(
-        "",
+        ...,
+        min_length=1,
         description=(
-            "User task for the local agentic loop. Send the full user request once; the helper "
-            "runs the controlled backend loop and returns the completed answer plus inline evidence. "
+            "CALL THIS TOOL whenever the user asks to analyze the local repo, find real code/security/"
+            "semantic issues, inspect/search/read files, check dependencies/config, run validation, "
+            "apply an approved patch, or perform any multi-step local task. Do not ask which repository, "
+            "language or framework to use: the configured local repo is already known. Put the complete "
+            "user request in this field. The helper forwards the task to the controlled backend loop "
+            "and returns the completed answer plus inline evidence. "
             "If OpenWebUI exposes a previous tool result as _file://.../agent-tool-context.txt "
             "or an open-webui/uploads path, pass that reference here to browse the cached prior "
             "payload tree and concrete full diff/file-content fields; it is not a repository path."
@@ -374,8 +380,25 @@ def _effective_wait_seconds(payload: dict[str, Any]) -> int:
     return raw_wait
 
 
+def _normalized_ollama_model_name(value: str) -> str:
+    model = str(value or "").strip().lower()
+    if model.endswith(":latest"):
+        return model[: -len(":latest")]
+    return model
+
+
+def _final_unload_required_by_models() -> bool:
+    planner_model = _normalized_ollama_model_name(PLANNER_MODEL)
+    openwebui_model = _normalized_ollama_model_name(OPENWEBUI_RETURN_MODEL)
+    return bool(planner_model and openwebui_model and planner_model != openwebui_model)
+
+
 def _final_handoff_timeout_budget_seconds() -> int:
-    unload_budget = OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS if OPENWEBUI_FINAL_UNLOAD_PLANNER else 0
+    unload_budget = (
+        OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS
+        if OPENWEBUI_FINAL_UNLOAD_PLANNER and _final_unload_required_by_models()
+        else 0
+    )
     return unload_budget + OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS
 
 
@@ -892,6 +915,23 @@ def _unload_planner_model_for_openwebui() -> dict[str, Any]:
     model = str(PLANNER_MODEL or "").strip()
     if not model:
         return {"attempted": False, "reason": "missing_planner_model"}
+    openwebui_model = str(OPENWEBUI_RETURN_MODEL or "").strip()
+    if not openwebui_model:
+        return {
+            "attempted": False,
+            "reason": "missing_openwebui_return_model",
+            "planner_model": model,
+            "openwebui_return_model": openwebui_model,
+            "unload_required": False,
+        }
+    if _normalized_ollama_model_name(model) == _normalized_ollama_model_name(openwebui_model):
+        return {
+            "attempted": False,
+            "reason": "same_model_no_unload",
+            "planner_model": model,
+            "openwebui_return_model": openwebui_model,
+            "unload_required": False,
+        }
     base_url = _ollama_base_url_from_chat_url(PLANNER_URL)
     endpoint = base_url.rstrip("/") + "/api/generate"
     payload = {
@@ -916,6 +956,8 @@ def _unload_planner_model_for_openwebui() -> dict[str, Any]:
             "ok": 200 <= int(status) < 300,
             "http_status": status,
             "planner_model": model,
+            "openwebui_return_model": openwebui_model,
+            "unload_required": True,
             "planner_url": PLANNER_URL,
             "unload_endpoint": endpoint,
             "elapsed_seconds": round(time.time() - started, 3),
@@ -926,6 +968,8 @@ def _unload_planner_model_for_openwebui() -> dict[str, Any]:
             "attempted": True,
             "ok": False,
             "planner_model": model,
+            "openwebui_return_model": openwebui_model,
+            "unload_required": True,
             "planner_url": PLANNER_URL,
             "unload_endpoint": endpoint,
             "elapsed_seconds": round(time.time() - started, 3),
@@ -951,7 +995,7 @@ def _apply_openwebui_final_handoff(decoded: dict[str, Any]) -> None:
         "planner_unload_attempted": bool(unload_result.get("attempted")),
         "planner_unload_ok": unload_result.get("ok") if unload_result.get("attempted") else None,
         "settle_seconds": settle_seconds,
-        "reason": "free_planner_vram_before_returning_vulkan_helper_result_to_openwebui",
+        "reason": unload_result.get("reason") or "terminal_result_returned_to_openwebui",
     }
 
 

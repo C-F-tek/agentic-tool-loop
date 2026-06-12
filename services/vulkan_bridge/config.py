@@ -53,9 +53,28 @@ class BridgeConfig:
     final_unload_timeout_seconds: int
     planner_url: str
     planner_model: str
+    openwebui_return_model: str
 
 
 def load_bridge_config_from_env(env: EnvMapping | None = None) -> BridgeConfig:
+    planner_model = first_env(
+        (
+            "AICARMINE_AGENT_PLANNER_MODEL",
+            "AICARMINE_PLANNER_MODEL",
+            "AICARMINE_OLLAMA_PLANNER_MODEL",
+        ),
+        "qwen3.5:9b-coding",
+        env,
+    )
+    openwebui_return_model = first_env(
+        (
+            "AICARMINE_OPENWEBUI_RETURN_MODEL",
+            "AICARMINE_OPENWEBUI_MODEL",
+            "AICARMINE_OPENWEBUI_CHAT_MODEL",
+        ),
+        planner_model,
+        env,
+    )
     return BridgeConfig(
         agent_url=first_env(
             ("AICARMINE_VULKAN_AGENT_URL",),
@@ -76,13 +95,6 @@ def load_bridge_config_from_env(env: EnvMapping | None = None) -> BridgeConfig:
             "http://127.0.0.1:11434/api/chat",
             env,
         ),
-        planner_model=first_env(
-            (
-                "AICARMINE_AGENT_PLANNER_MODEL",
-                "AICARMINE_PLANNER_MODEL",
-                "AICARMINE_OLLAMA_PLANNER_MODEL",
-            ),
-            "qwen3.5:9b-coding",
-            env,
-        ),
+        planner_model=planner_model,
+        openwebui_return_model=openwebui_return_model,
     )

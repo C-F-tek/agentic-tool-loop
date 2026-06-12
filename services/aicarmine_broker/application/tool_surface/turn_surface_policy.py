@@ -33,6 +33,7 @@ class ToolSurfacePolicy:
         "repo_list_files",
         "repo_tree",
         "repo_search",
+        "repo_semantic_search",
         "repo_fd_files",
         "repo_rg_search",
     }
@@ -124,6 +125,56 @@ class ToolSurfacePolicy:
             if isinstance(contract.get("code_product_contract"), dict)
             else {}
         )
+        apply_contract = (
+            contract.get("apply_write_contract")
+            if isinstance(contract.get("apply_write_contract"), dict)
+            else {}
+        )
+        apply_required = bool(contract.get("goal_requests_apply")) or bool(apply_contract.get("required"))
+        if apply_required and not bool(apply_contract.get("patch_applied")):
+            if "apply_write_target_not_resolved" in progress or "no resolved concrete existing target file" in progress:
+                self._set_actions(contract, policy, [], "apply_write_target_not_resolved")
+            elif "target acquisition mode" in progress or "unread apply target" in progress:
+                read_actions = [
+                    item for item in actions
+                    if candidate_action_tool(item) == "repo_read"
+                ]
+                if read_actions:
+                    self._set_actions(contract, policy, read_actions, "apply_write_target_read_required")
+                else:
+                    self._set_surface_only(
+                        contract,
+                        policy,
+                        {"repo_read"},
+                        "apply_write_target_read_required",
+                    )
+            elif "repo_apply_patch" in progress:
+                patch_actions = [
+                    item for item in actions
+                    if candidate_action_tool(item) == "repo_apply_patch"
+                ]
+                if patch_actions:
+                    self._set_actions(contract, policy, patch_actions, "apply_write_patch_required")
+                    self._add_allowed_tools(contract, policy, {"repo_apply_patch", "repo_read"})
+                else:
+                    self._set_surface_only(
+                        contract,
+                        policy,
+                        {"repo_apply_patch", "repo_read"},
+                        "apply_write_patch_required_model_generated_payload",
+                    )
+            else:
+                self._set_surface_only(
+                    contract,
+                    policy,
+                    {"repo_apply_patch", "repo_read"},
+                    "apply_write_patch_required_by_contract",
+                )
+            if not policy.get("allowed_tool_names"):
+                policy["locked_empty_tool_surface"] = True
+                contract["turn_tool_surface_policy"] = policy
+            return contract
+
         if not code_contract.get("required"):
             return contract
 

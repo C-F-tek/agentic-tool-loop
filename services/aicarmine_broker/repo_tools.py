@@ -46,6 +46,7 @@ from .tools.repo_list_files import repo_list_files
 from .tools.repo_patch import repo_apply_patch, repo_write_file
 from .tools.repo_read import repo_read
 from .tools.repo_search import repo_search
+from .tools.repo_semantic_search import repo_semantic_search
 from .tools.repo_status import detect_stack, repo_capabilities, repo_status
 from .tools.repo_tree import repo_tree
 from .tools.repo_validate import repo_validate
@@ -84,6 +85,7 @@ __all__ = (
     "repo_rg_search",
     "repo_ruff_check",
     "repo_search",
+    "repo_semantic_search",
     "repo_semgrep_scan",
     "repo_shellcheck",
     "repo_status",

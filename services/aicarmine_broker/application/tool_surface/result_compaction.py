@@ -95,6 +95,13 @@ def summary_from_result(result: dict[str, Any]) -> str:
             f"repo_search query={result.get('query')} matches={len(matches)} "
             f"returncode={result.get('returncode')} artifact={result.get('artifact')}"
         )
+    if tool == "repo_semantic_search":
+        matches = result.get("matches") if isinstance(result.get("matches"), list) else []
+        paths = result.get("paths") if isinstance(result.get("paths"), list) else []
+        return (
+            f"repo_semantic_search query={result.get('query')} matches={len(matches)} "
+            f"paths={paths[:8]} artifact={result.get('artifact')}"
+        )
     if tool == "repo_read":
         items = result.get("items") if isinstance(result.get("items"), list) else []
         paths = [str(x.get("path")) for x in items[:8] if isinstance(x, dict) and x.get("path")]
@@ -159,9 +166,11 @@ def compact_tool_result_for_planner(
         "truncated", "returncode", "stderr_tail", "stdout_tail", "artifact",
         "changed", "replacements", "line_count_before", "line_count_after",
         "command", "query", "mode", "success_count", "failed_count", "all_ok",
-        "max_paths", "requested_limit", "db", "record_id", "expires_at",
+        "max_paths", "requested_limit", "candidate_limit", "suggested_next_tool",
+        "suggested_repo_read", "db", "record_id", "expires_at",
         "dry_run", "written", "deleted_count", "schema", "document_id",
         "section", "target_file", "status", "complete_payload_ready", "sha256",
+        "warnings", "error", "error_type",
     )
     for key in scalar_keys:
         if key not in result:

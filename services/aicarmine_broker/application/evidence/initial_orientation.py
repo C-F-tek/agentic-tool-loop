@@ -29,6 +29,10 @@ def initial_orientation_surface_from_history(
         "files_read": [],
         "skipped_candidates": list(skipped or []),
         "preseed_steps": [],
+        "preplanner_rag": {},
+        "ranked_preplanner_paths": [],
+        "selected_paths": [],
+        "anchor_paths": [],
     }
 
     docs_read: list[str] = []
@@ -38,8 +42,10 @@ def initial_orientation_surface_from_history(
     for row in history if isinstance(history, list) else []:
         if not isinstance(row, dict):
             continue
-        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-        result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+        raw_decision = row.get("decision")
+        decision: dict[str, Any] = raw_decision if isinstance(raw_decision, dict) else {}
+        raw_result = row.get("tool_result")
+        result: dict[str, Any] = raw_result if isinstance(raw_result, dict) else {}
         if not result.get("controller_preseed") and decision.get("action") != "controller_preseed":
             continue
         tool = str(result.get("tool") or decision.get("tool") or "")
@@ -53,6 +59,34 @@ def initial_orientation_surface_from_history(
             "artifact": result.get("artifact"),
         }
         surface["preseed_steps"].append({k: v for k, v in step_info.items() if v not in (None, "", [], {})})
+
+        preplanner_rag = result.get("preplanner_rag")
+        if isinstance(preplanner_rag, dict) and preplanner_rag:
+            surface["preplanner_rag"] = preplanner_rag
+            selected_paths = preplanner_rag.get("selected_paths")
+            if isinstance(selected_paths, list):
+                for raw_path in selected_paths:
+                    path = repo_rel_token(raw_path)
+                    if path and path not in surface["selected_paths"]:
+                        surface["selected_paths"].append(path)
+            anchor_paths = preplanner_rag.get("anchor_paths")
+            if isinstance(anchor_paths, list):
+                for raw_path in anchor_paths:
+                    path = repo_rel_token(raw_path)
+                    if path and path not in surface["anchor_paths"]:
+                        surface["anchor_paths"].append(path)
+        ranked_paths = result.get("ranked_preplanner_paths")
+        if isinstance(ranked_paths, list):
+            for raw_path in ranked_paths:
+                path = repo_rel_token(raw_path)
+                if path and path not in surface["ranked_preplanner_paths"]:
+                    surface["ranked_preplanner_paths"].append(path)
+        selected_paths = result.get("selected_paths")
+        if isinstance(selected_paths, list):
+            for raw_path in selected_paths:
+                path = repo_rel_token(raw_path)
+                if path and path not in surface["selected_paths"]:
+                    surface["selected_paths"].append(path)
 
         if tool == "repo_tree" and str(result.get("path") or ".") in {"", "."}:
             surface["root_tree"] = {
@@ -86,8 +120,25 @@ def initial_orientation_surface_from_history(
         path for path in areas_listed
         if path not in {"", "."} and not low_signal_top_dir(path)
     ])
-    surface["concrete_useful_file_read_count"] = len([
+    ranked_preplanner_paths = {
+        repo_rel_token(path)
+        for path in surface["ranked_preplanner_paths"]
+        if repo_rel_token(path)
+    }
+    area_scoped_useful_reads = [
         path for path in files_read
         if any(path_under_scope(path, area) and not low_signal_top_dir(area) for area in areas_listed)
-    ])
+    ]
+    ranked_useful_reads = [
+        path for path in files_read
+        if path in ranked_preplanner_paths
+        and not repo_doc_or_config(path)
+        and not low_signal_top_dir(path)
+    ]
+    concrete_useful_reads: list[str] = []
+    for path in [*area_scoped_useful_reads, *ranked_useful_reads]:
+        if path not in concrete_useful_reads:
+            concrete_useful_reads.append(path)
+    surface["ranked_preplanner_useful_file_read_count"] = len(ranked_useful_reads)
+    surface["concrete_useful_file_read_count"] = len(concrete_useful_reads)
     return surface

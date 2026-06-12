@@ -82,8 +82,9 @@ class EvidenceBuilder:
         known_paths = _paths_from_result(latest_list) if latest_list else []
         requested_limit = requested_file_limit_from_goal(goal, 0)
         target_file = _goal_target_file(goal)
-        target_scope = "" if target_file else (_agentic_v2_goal_scope(goal, {}) or goal_requested_repo_scope(goal))
+        target_scope = _agentic_v2_goal_scope(goal, {}) or goal_requested_repo_scope(goal)
         target_kind = _goal_target_kind(goal)
+        goal_requests_apply_value = goal_requests_apply(goal)
         read_ok = successful_repo_read_paths(history)
         verified_read_rows = _verified_repo_read_content_rows(history)
         verified_read_paths = [str(row.get("path")) for row in verified_read_rows if row.get("path")]
@@ -96,8 +97,54 @@ class EvidenceBuilder:
         list_failed = failed_repo_list_files_paths(history)
         list_rows = _repo_list_evidence(history)
         all_listed_paths = _paths_from_list_rows(list_rows)
+        semantic_search_paths: list[str] = []
+        for row in history if isinstance(history, list) else []:
+            if not isinstance(row, dict):
+                continue
+            result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+            if str(result.get("tool") or "") != "repo_semantic_search" or not result.get("ok"):
+                continue
+            for path in _paths_from_result(result):
+                p = _repo_rel_token(path)
+                if (
+                    p
+                    and p not in semantic_search_paths
+                    and _path_exists_repo_relative(p)
+                    and _repo_readable_evidence_file(p)
+                ):
+                    semantic_search_paths.append(p)
         file_memory = _file_memory_from_history(history)
+        initial_orientation_surface = _initial_orientation_surface_from_history(history)
+        preplanner_rag = (
+            initial_orientation_surface.get("preplanner_rag")
+            if isinstance(initial_orientation_surface.get("preplanner_rag"), dict)
+            else {}
+        )
+        ranked_preplanner_paths = [
+            _repo_rel_token(path)
+            for path in (
+                initial_orientation_surface.get("ranked_preplanner_paths")
+                if isinstance(initial_orientation_surface.get("ranked_preplanner_paths"), list)
+                else []
+            )
+            if _repo_rel_token(path)
+        ]
+        selected_preplanner_paths = [
+            _repo_rel_token(path)
+            for path in (
+                initial_orientation_surface.get("selected_paths")
+                if isinstance(initial_orientation_surface.get("selected_paths"), list)
+                else []
+            )
+            if _repo_rel_token(path)
+        ]
+        ranked_orientation_done = bool(
+            str(preplanner_rag.get("schema") or "") == "agentic_loop_preplanner_rag_preseed.v1"
+            and preplanner_rag.get("selected_paths") not in (None, "", [], {})
+            and ranked_preplanner_paths
+        )
         doc_reads = [p for p in verified_read_paths if _repo_doc_or_config(p)]
+        doc_baseline_sufficient = bool(len(doc_reads) >= 3 or (ranked_orientation_done and len(doc_reads) >= 2))
         code_reads = [p for p in verified_read_paths if _repo_code_file(p)]
         root_surface_done = any(
             row.get("path") in ("", ".") for row in list_rows
@@ -107,15 +154,28 @@ class EvidenceBuilder:
             and (item.get("tool_result") or {}).get("ok")
             for item in history if isinstance(item, dict)
         )
+        orientation_surface_done = bool(root_surface_done or ranked_orientation_done)
         meaningful_lists = [
             row.get("path") for row in list_rows
             if row.get("path") not in (None, "", ".") and not _low_signal_top_dir(str(row.get("path")))
         ]
-        meaningful_content_reads = [
+        area_scoped_meaningful_content_reads = [
             p for p in verified_read_paths
             if any(_path_under_scope(p, str(area)) for area in meaningful_lists)
             and _repo_readable_evidence_file(p)
         ]
+        ranked_meaningful_content_reads = [
+            p for p in verified_read_paths
+            if p in ranked_preplanner_paths
+            and not _repo_doc_or_config(p)
+            and not _low_signal_top_dir(p)
+            and _repo_readable_evidence_file(p)
+        ]
+        meaningful_content_reads: list[str] = []
+        for p in [*area_scoped_meaningful_content_reads, *ranked_meaningful_content_reads]:
+            if p not in meaningful_content_reads:
+                meaningful_content_reads.append(p)
+        meaningful_evidence_available = bool(meaningful_lists or ranked_meaningful_content_reads)
         repo_available_read_candidates = _meaningful_read_candidates_from_evidence(list_rows)
         code_available_read_candidates = [
             p for p in repo_available_read_candidates
@@ -142,7 +202,7 @@ class EvidenceBuilder:
             repo_goal
             and repo_goal_class in {"analysis_only", "action_plan_only"}
             and not bool(semantic_classification.get("must_produce_code_product"))
-            and not goal_requests_apply(goal)
+            and not goal_requests_apply_value
         )
         repo_final_required_read_count = (
             min(repo_required_read_count, 10)
@@ -174,6 +234,7 @@ class EvidenceBuilder:
             + all_listed_paths
             + repo_available_read_candidates
             + scope_available_read_candidates
+            + semantic_search_paths
             + [
                 str(item.get("path") or "")
                 for item in core_discovery_candidates
@@ -208,36 +269,37 @@ class EvidenceBuilder:
             )
         elif repo_goal:
             strict_repo_evidence_sufficient = bool(
-                root_surface_done
-                and len(doc_reads) >= 3
-                and len(meaningful_lists) >= 1
+                orientation_surface_done
+                and doc_baseline_sufficient
+                and meaningful_evidence_available
                 and len(meaningful_content_reads) >= repo_required_read_count
             )
             analysis_repo_evidence_sufficient = bool(
                 orientative_repo_final_goal
-                and root_surface_done
-                and len(doc_reads) >= 3
-                and len(meaningful_lists) >= 1
+                and orientation_surface_done
+                and doc_baseline_sufficient
+                and meaningful_evidence_available
                 and len(meaningful_content_reads) >= 1
                 and len(verified_read_rows) >= repo_final_required_read_count
             )
             final_allowed = bool(strict_repo_evidence_sufficient or analysis_repo_evidence_sufficient)
             final_reason = (
                 (
-                    "Analysis/action-plan repository evidence exists: root surface, multiple docs/config reads, "
-                    f"one meaningful non-infra/code area, {len(meaningful_content_reads)} verified reads "
+                    "Analysis/action-plan repository evidence exists: root/ranked orientation, baseline docs/config reads, "
+                    f"one meaningful non-infra/code area/read set, "
+                    f"{len(meaningful_content_reads)} verified reads "
                     f"inside meaningful areas, and {len(verified_read_rows)}/{repo_final_required_read_count} "
                     "total verified content reads. The 20-read target remains orientative, not a hard final gate."
                 )
                 if analysis_repo_evidence_sufficient and not strict_repo_evidence_sufficient else
                 (
-                    "Codex-quality repository evidence exists: root surface, multiple docs/config reads, "
-                    f"one meaningful non-infra/code area, and {len(meaningful_content_reads)}/"
+                    "Codex-quality repository evidence exists: root/ranked orientation, baseline docs/config reads, "
+                    f"one meaningful non-infra/code area/read set, and {len(meaningful_content_reads)}/"
                     f"{repo_required_read_count} verified concrete readable reads inside meaningful areas."
                 )
                 if final_allowed else
                 (
-                    "Need root surface + at least 3 markdown/config reads + one meaningful non-infra/code area "
+                    "Need root/ranked orientation + baseline markdown/config reads + one meaningful non-infra/code area/read set "
                     f"+ {len(meaningful_content_reads)}/{repo_final_required_read_count} verified concrete readable reads "
                     "for analysis/action-plan finalization "
                     f"(target {REPO_CONCRETE_READ_TARGET} remains orientative and bounded by discovered candidates)."
@@ -251,7 +313,7 @@ class EvidenceBuilder:
                 "Non-repository goal has some executed evidence." if final_allowed
                 else "Need at least one relevant tool result; no generic final fallback."
             )
-        if goal_requests_apply(goal) and not history_has_tool(history, "repo_apply_patch"):
+        if goal_requests_apply_value and not history_has_tool(history, "repo_apply_patch"):
             final_allowed = False
             final_reason = "Apply/edit/write goal requires repo_apply_patch after verified repo_read old_text evidence."
         if code_security_coverage_required and not code_security_coverage_sufficient:
@@ -354,6 +416,93 @@ class EvidenceBuilder:
                 for item in candidates
             ):
                 candidates.insert(0, action)
+        apply_preloop_candidate_paths: list[str] = []
+        for raw_path in [*ranked_preplanner_paths, *selected_preplanner_paths]:
+            p = _repo_rel_token(raw_path)
+            if p and p != "." and p not in apply_preloop_candidate_paths:
+                apply_preloop_candidate_paths.append(p)
+        apply_target_files: list[str] = []
+        goal_low = str(goal or "").lower().replace("\\", "/")
+
+        def add_apply_target(path: str) -> None:
+            p = _repo_rel_token(path)
+            if (
+                p
+                and p != "."
+                and p not in apply_target_files
+                and _path_exists_repo_relative(p)
+                and _repo_readable_evidence_file(p)
+            ):
+                apply_target_files.append(p)
+
+        if goal_requests_apply_value:
+            add_apply_target(target_file)
+            for path in apply_preloop_candidate_paths:
+                low_path = path.lower()
+                basename = low_path.rsplit("/", 1)[-1]
+                goal_mentions_path = low_path in goal_low or basename in goal_low
+                goal_mentions_agents_alias = basename == "agents.md" and "agenti" in goal_low
+                if goal_mentions_path or goal_mentions_agents_alias:
+                    add_apply_target(path)
+            if not apply_target_files:
+                for path in apply_preloop_candidate_paths:
+                    if _repo_doc_or_config(path):
+                        add_apply_target(path)
+                    if len(apply_target_files) >= 2:
+                        break
+        apply_patch_done = history_has_tool(history, "repo_apply_patch")
+        apply_verified_target_reads = [
+            p for p in apply_target_files
+            if p in verified_read_path_set
+        ]
+        apply_unread_target_files = [
+            p for p in apply_target_files
+            if p not in verified_read_path_set
+        ]
+        apply_write_contract = {
+            "schema": "apply_write_contract.v1",
+            "required": bool(goal_requests_apply_value),
+            "required_tool": "repo_apply_patch" if goal_requests_apply_value else None,
+            "patch_applied": bool(apply_patch_done),
+            "target_files": apply_target_files[:8],
+            "verified_target_reads": apply_verified_target_reads[:8],
+            "unread_target_files": apply_unread_target_files[:8],
+            "preloop_target_candidate_paths": apply_preloop_candidate_paths[:16],
+            "target_source": "resolved_goal_file_and_preloop_rag_target_candidates",
+            "generic_discovery_allowed": False if goal_requests_apply_value and not apply_patch_done else None,
+        }
+        if goal_requests_apply_value and not apply_patch_done:
+            final_allowed = False
+            if not apply_target_files:
+                candidates = []
+                final_reason = (
+                    "Apply/edit/write goal did not resolve a concrete existing target file. "
+                    "Planner must return a typed block instead of generic repository discovery."
+                )
+            elif apply_unread_target_files:
+                candidates = [{
+                    "tool": "repo_read",
+                    "arguments": {"paths": apply_unread_target_files[:6], "max_chars": 50000},
+                    "reason": "apply_write_preloop_target_read_required",
+                    "source": "apply_write_contract",
+                }]
+                final_reason = (
+                    "Apply/edit/write goal requires repo_read of every concrete apply target before repo_apply_patch."
+                )
+            else:
+                candidates = [
+                    item for item in candidates
+                    if isinstance(item, dict)
+                    and str(item.get("tool") or "") in {
+                        "repo_apply_patch",
+                        "repo_validate",
+                        "repo_git_apply_check",
+                    }
+                ]
+                final_reason = (
+                    "Apply/edit/write target files are read. Planner must call repo_apply_patch with old_text "
+                    "verified from required_working_set.repo_reads, or return a typed block."
+                )
         candidate_repo_read_paths: list[str] = []
         for action in candidates:
             if not isinstance(action, dict) or action.get("tool") != "repo_read":
@@ -381,7 +530,7 @@ class EvidenceBuilder:
             if p not in validator_admissible_read_paths:
                 validator_admissible_read_paths.append(p)
         goal_requests_code_product_value = goal_requests_code_product(goal)
-        code_product_required = bool(semantic_classification.get("must_produce_code_product")) and not goal_requests_apply(goal)
+        code_product_required = bool(semantic_classification.get("must_produce_code_product")) and not goal_requests_apply_value
         code_product_history_required = bool(code_product_required or goal_requests_code_product_value)
         if code_product_history_required:
             successful_code_edit_proposals = deps["successful_code_edit_proposals"]
@@ -532,7 +681,8 @@ class EvidenceBuilder:
             "goal_requests_python_file_review": goal_requests_python_file_review(goal),
             "goal_requests_code_product": goal_requests_code_product_value,
             "goal_requires_code_product_report": code_product_required,
-            "goal_requests_apply": goal_requests_apply(goal),
+            "goal_requests_apply": goal_requests_apply_value,
+            "apply_write_contract": apply_write_contract,
             "action_plan_candidate": action_plan_candidate or None,
             "requested_file_limit": requested_limit or None,
             "target_kind": target_kind,
@@ -662,8 +812,9 @@ class EvidenceBuilder:
                     f"{SCOPED_CONCRETE_READ_TARGET} verified concrete readable files discovered under it; "
                     "if fewer are discovered, read all discovered candidates."
                     if target_kind == "directory" else
-                    "For generic repository structure/content analysis: root surface, at least 3 markdown/config reads, "
-                    "one evidence-derived meaningful non-infra/code area, and enough verified content reads for the "
+                    "For generic repository structure/content analysis: root surface or ranked preplanner orientation, "
+                    "baseline markdown/config reads, one evidence-derived meaningful non-infra/code area/read set, "
+                    "and enough verified content reads for the "
                     f"current goal. For analysis/action-plan goals the {REPO_CONCRETE_READ_TARGET}-read target is orientative; "
                     f"{repo_final_required_read_count} verified reads can satisfy finalization when concrete evidence is present."
                 ),
@@ -676,14 +827,20 @@ class EvidenceBuilder:
                 "target_file": target_file or None,
                 "target_scope": target_scope or None,
                 "root_surface_done": root_surface_done,
+                "ranked_orientation_done": ranked_orientation_done,
+                "orientation_surface_done": orientation_surface_done,
+                "ranked_preplanner_paths": ranked_preplanner_paths[:40],
+                "selected_preplanner_paths": selected_preplanner_paths[:40],
                 "doc_read_count": len(doc_reads),
                 "doc_reads": doc_reads[:80],
+                "doc_baseline_sufficient": doc_baseline_sufficient,
                 "code_read_count": len(code_reads),
                 "code_reads": code_reads[:80],
                 "code_security_coverage_required": code_security_coverage_required,
                 "code_security_verdict_allowed": code_security_coverage_sufficient,
                 "meaningful_non_root_list_count": len(meaningful_lists),
                 "meaningful_non_root_lists": meaningful_lists[:20],
+                "ranked_meaningful_content_reads": ranked_meaningful_content_reads[:40],
                 "meaningful_content_read_count": len(meaningful_content_reads),
                 "meaningful_content_reads": meaningful_content_reads[:40],
                 "verified_content_read_count": len(verified_read_rows),
@@ -697,12 +854,12 @@ class EvidenceBuilder:
                     if target_kind == "file" else
                     f"in-scope list/tree + {scope_required_read_count} in-scope verified concrete readable reads"
                     if target_kind == "directory" else
-                    f"root_surface + >=3 docs/config reads + one evidence-derived non-infra/code area "
+                    "root_or_ranked_orientation + baseline docs/config reads + one evidence-derived non-infra/code area/read set "
                     f"+ {repo_final_required_read_count} verified concrete readable reads"
                 ),
                 "hardcoded_core_path": False,
             },
-            "initial_orientation_surface": _initial_orientation_surface_from_history(history),
+            "initial_orientation_surface": initial_orientation_surface,
         }
         contract = _agentic_v2_enrich_evidence_contract(contract, goal, history)
         contract["operational_notes"] = _build_operational_notebook(goal, contract)
@@ -1005,6 +1162,28 @@ class EvidenceBuilder:
                     "read the target with repo_read, then call repo_propose_code_edit with a complete inline code product. "
                     "Do not final with prose-only output."
                 )
+        elif goal_requests_apply_value and not apply_patch_done:
+            if not apply_target_files:
+                contract["candidate_next_actions"] = []
+                contract["required_next_progress"] = (
+                    "Apply/write goal has no resolved concrete existing target file. Return action=block with "
+                    "final_answer starting with apply_write_target_not_resolved; do not call repo_tree, "
+                    "repo_list_files, repo_search, or repo_semantic_search."
+                )
+            elif apply_unread_target_files:
+                contract["required_next_progress"] = (
+                    "Apply/write goal is in target acquisition mode. Call repo_read only for unread apply target "
+                    "paths from apply_write_contract.unread_target_files; do not call repo_tree, repo_list_files, "
+                    "repo_search, repo_semantic_search, or unrelated repo_read."
+                )
+            else:
+                contract["required_next_progress"] = (
+                    "Apply/write goal target files are already read. Call repo_apply_patch with old_text that is an "
+                    "exact substring of required_working_set.repo_reads for apply_write_contract.target_files. "
+                    "If more exact text is needed, call repo_read only for apply_write_contract.target_files. "
+                    "Do not call repo_tree, repo_list_files, repo_search, repo_semantic_search, or unrelated repo_read; "
+                    "return a typed block only if a valid patch cannot be built from the verified target reads."
+                )
         elif explicit_request_target_pending:
             contract["required_next_progress"] = (
                 "Structured explicit_request_context target is pending. Planner must call "
@@ -1077,6 +1256,7 @@ class EvidenceBuilder:
                     "candidate_next_actions_count": len(contract.get("candidate_next_actions") or []),
                     "forbidden_next_actions_count": len(contract.get("forbidden_next_actions") or []),
                     "goal_requests_code_product": bool(contract.get("goal_requests_code_product")),
+                    "goal_requests_apply": bool(contract.get("goal_requests_apply")),
                 },
             ).to_contract()
         contract = _apply_turn_surface_policy(contract)

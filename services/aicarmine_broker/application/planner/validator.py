@@ -320,6 +320,8 @@ def validate_planner_decision_against_evidence(
 
     if tool == "repo_search" and not _any_argument_group_present(args, [["query"], ["pattern"], ["symbol"]]):
         violations.append("repo_search_missing_query_pattern_or_symbol")
+    elif tool == "repo_semantic_search" and not _argument_value_present(args, "query"):
+        violations.append("repo_semantic_search_missing_query")
     elif tool == "repo_rg_search" and not _any_argument_group_present(args, [["query"], ["pattern"]]):
         violations.append("repo_rg_search_missing_pattern")
     elif tool == "repo_jq_query" and not _any_argument_group_present(args, [["query"], ["filter"]]):
@@ -400,6 +402,7 @@ def validate_planner_decision_against_evidence(
         "repo_pytest_run",
         "repo_read",
         "repo_search",
+        "repo_semantic_search",
         "repo_write_file",
         "repo_apply_patch",
         "repo_propose_code_edit",

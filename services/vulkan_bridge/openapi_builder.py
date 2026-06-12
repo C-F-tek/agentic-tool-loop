@@ -155,6 +155,12 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
     if not isinstance(operation, dict):
         return
     operation["description"] = (
+        "CALL THIS TOOL whenever the user asks to analyze the local repo, find real code/security/"
+        "semantic issues, inspect/search/read files, check dependencies/config, run validation, "
+        "apply an approved patch, or perform any multi-step local task. Do not answer by asking "
+        "which repository, language or framework to use: the configured local repo is already known. "
+        "Send the complete user request in the required `request` field; 3571 forwards it to the "
+        "controlled 3572 agentic loop and waits for the terminal result. "
         "Single OpenWebUI public tool for the local agent. Completed response schema: "
         "read `evidence_guide` as the guide, then `payload_index`. "
         "`evidence_guide` is the single top-level narrative guide; "
@@ -170,6 +176,21 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
         "`answer`, `message`, `summary`, `next_action` "
         "and `full_result_hint` are not primary top-level result fields."
     )
+    request_body = operation.setdefault("requestBody", {})
+    request_body["required"] = True
+    request_content = request_body.setdefault("content", {})
+    json_content = request_content.setdefault("application/json", {})
+    json_content["examples"] = {
+        "repo_analysis": {
+            "summary": "Analyze current local repo",
+            "value": {
+                "request": (
+                    "Analizza la repository corrente e trova criticita di codice, sicurezza "
+                    "e semantica con file e righe."
+                ),
+            },
+        },
+    }
     operation.setdefault("responses", {})
     operation["responses"]["200"] = {
         "description": (
@@ -182,6 +203,29 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
             },
         },
     }
+
+
+def require_vulkan_helper_request_field(schema: dict[str, Any]) -> None:
+    components = schema.get("components", {}).get("schemas", {})
+    request_schema = components.get("VulkanHelperRequest")
+    if not isinstance(request_schema, dict):
+        return
+    request_schema["required"] = ["request"]
+    request_schema["description"] = (
+        "Request body for the only OpenWebUI-visible tool. The request field is mandatory "
+        "and must contain the complete user task for the configured local repo."
+    )
+    properties = request_schema.setdefault("properties", {})
+    request_property = properties.get("request")
+    if not isinstance(request_property, dict):
+        return
+    request_property.pop("default", None)
+    request_property["minLength"] = 1
+    request_property["description"] = (
+        "Required complete user task. Use this for local repo analysis, file/code inspection, "
+        "security or semantic review, validation, and approved patch work. Do not ask for the "
+        "repo path, language or framework: the backend already knows the configured local repo."
+    )
 
 
 def build_native_helper_openapi(
@@ -222,5 +266,6 @@ def build_native_helper_openapi(
         "payload_index as an expected result field plus inline successful tool evidence."
     )
     schema["x-aicarmine-register_this_in_openwebui"] = "http://127.0.0.1:3571/openapi.json"
+    require_vulkan_helper_request_field(schema)
     annotate_vulkan_helper_openapi_response(schema)
     return schema

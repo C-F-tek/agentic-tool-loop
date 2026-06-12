@@ -272,6 +272,7 @@ $null = Set-UserEnvValue "AICARMINE_AGENT_MAX_STEPS" "100"
 
 $env:AICARMINE_AGENT_DEFAULT_MAX_STEPS = "40"
 $env:AICARMINE_AGENT_MAX_STEPS = "100"
+$PlannerModel = "qwen3.5:9b-coding"
 $PlannerNumCtx = "262144"
 $PlannerPromptCharBudget = $PlannerNumCtx
 $AICarminePersistentConfig = @{
@@ -279,7 +280,8 @@ $AICarminePersistentConfig = @{
     AICARMINE_VULKAN_TOOL_BROKER_URL = "http://$($config.HOSTNAME):$($config.VULKAN_BRIDGE_PORT)"
     AICARMINE_VULKAN_AGENT_URL = "http://$($config.HOSTNAME):$($config.VULKAN_AGENT_PORT)/vulkan/agent"
     AICARMINE_AGENT_PLANNER_URL = "http://$($config.HOSTNAME):$($config.OLLAMA_MAIN_PORT)/api/chat"
-    AICARMINE_AGENT_PLANNER_MODEL = "qwen3.5:9b-coding"
+    AICARMINE_AGENT_PLANNER_MODEL = $PlannerModel
+    AICARMINE_OPENWEBUI_RETURN_MODEL = $PlannerModel
     #AICARMINE_AGENT_PLANNER_MODEL = "qwen2.5-coder:14b"
     #AICARMINE_AGENT_PLANNER_MODEL = "ia-carmine-gpu1-qwen3-coder-30b-a3b-q2-tools-4k:latest"
     AICARMINE_AGENTIC_PLANNER_ENABLED = "1"

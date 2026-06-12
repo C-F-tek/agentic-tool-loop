@@ -9,6 +9,44 @@ from typing import Any, Callable
 ResultTextBuilder = Callable[[dict[str, Any]], str]
 
 
+def _has_successful_inline_evidence(result: dict[str, Any]) -> bool:
+    if result.get("partial_products_for_30b") not in (None, "", [], {}):
+        return True
+    if result.get("best_partial_product_for_30b") not in (None, "", [], {}):
+        return True
+    history = result.get("history") if isinstance(result.get("history"), list) else []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        tool_result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+        tool = str(tool_result.get("tool") or "")
+        if tool and tool != "controller_guard" and tool_result.get("ok") is True:
+            return True
+    return False
+
+
+def _terminal_evidence_first_text(
+    status_text: str,
+    summary: str,
+    result: dict[str, Any],
+    *,
+    execution_evidence_digest_text: ResultTextBuilder,
+) -> str:
+    evidence = execution_evidence_digest_text(result)
+    if not evidence:
+        return ""
+    blocked_by = str(result.get("blocked_by") or "none")
+    return (
+        "Il loop agentico interno non ha prodotto un final validato dal controller, "
+        "ma ha restituito evidenza concreta inline. Rispondi dalla evidenza qui sotto "
+        "con limiti espliciti; non trattare lo stato terminale come assenza di contenuto.\n\n"
+        + evidence
+        + f"\n\nStato terminale: status={status_text}; blocker={blocked_by}.\n\n"
+        + "Sintesi terminale:\n"
+        + summary
+    )
+
+
 def answer_for_openwebui(
     status: str,
     final_summary: str,
@@ -35,6 +73,12 @@ def answer_for_openwebui(
         partial_answer = partial_product_answer_text(result)
         if partial_answer:
             extra.append(partial_answer)
+        evidence_first = _terminal_evidence_first_text(
+            status_text,
+            summary,
+            result,
+            execution_evidence_digest_text=execution_evidence_digest_text,
+        )
         raw_text = str(result.get("raw_planner_text") or "")
         if raw_text:
             extra.append("Raw planner output preview:\n" + raw_text[:3000])
@@ -51,12 +95,22 @@ def answer_for_openwebui(
         if repair:
             extra.append("Vulkan/GPU0 repair result:\n" + json.dumps(repair, ensure_ascii=False, default=str)[:3000])
         suffix = ("\n\n" + "\n\n".join(extra)) if extra else ""
+        if evidence_first:
+            return evidence_first + suffix
         return (
             "Il loop agentico interno si è fermato prima del final del planner. "
             f"Stato={status_text}; blocker={blocked_by}.\n\n{summary}{suffix}"
         )
     if status_text == "max_steps_reached":
         partial_answer = partial_product_answer_text(result)
+        evidence_first = _terminal_evidence_first_text(
+            status_text,
+            summary,
+            result,
+            execution_evidence_digest_text=execution_evidence_digest_text,
+        )
+        if evidence_first:
+            return (partial_answer + "\n\n" if partial_answer else "") + evidence_first
         if partial_answer:
             return (
                 "Il loop agentico interno ha raggiunto il limite di step senza un final valido del planner.\n\n"
@@ -84,11 +138,17 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
     status_text = str(status or "unknown")
     action = "answer_user_from_evidence_guide_for_30b"
     if status_text == "blocked_needs_attention":
-        action = "report_blocker_and_use_structured_context_for_diagnosis"
+        if _has_successful_inline_evidence(result):
+            action = "answer_user_from_inline_evidence_with_explicit_limits"
+        else:
+            action = "report_blocker_and_use_structured_context_for_diagnosis"
     elif status_text == "completed":
         action = "answer_user_with_final_result"
     elif status_text == "max_steps_reached":
-        action = "report_incomplete_loop_and_relevant_last_evidence"
+        if _has_successful_inline_evidence(result):
+            action = "answer_user_from_inline_evidence_with_explicit_limits"
+        else:
+            action = "report_incomplete_loop_and_relevant_last_evidence"
     return {
         "action": action,
         "status": status_text,

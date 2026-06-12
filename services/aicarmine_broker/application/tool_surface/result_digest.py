@@ -13,6 +13,9 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
         "tool": result.get("tool"), "ok": result.get("ok"),
         "path": result.get("path"), "count": result.get("count"),
         "total_matches": result.get("total_matches"), "limit": result.get("limit"),
+        "candidate_limit": result.get("candidate_limit"),
+        "suggested_next_tool": result.get("suggested_next_tool"),
+        "suggested_repo_read": result.get("suggested_repo_read"),
         "suffix": result.get("suffix"), "returncode": result.get("returncode"),
         "artifact": result.get("artifact"),
         "guard_type": result.get("guard_type"),
@@ -23,6 +26,9 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
         "repair_cache_hit": result.get("repair_cache_hit"),
         "repair_cache_key": result.get("repair_cache_key"),
         "violations": result.get("violations"),
+        "warnings": result.get("warnings"),
+        "error": result.get("error"),
+        "error_type": result.get("error_type"),
         "stderr_tail": str(result.get("stderr_tail") or "")[:1200],
         "stdout_tail": str(result.get("stdout_tail") or "")[:1200],
     }
@@ -40,6 +46,9 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
     for key in ("paths_preview", "files_preview", "entries_preview", "matches_preview"):
         if isinstance(result.get(key), list):
             digest[key] = result.get(key)[:120]
+    if isinstance(result.get("paths"), list) and "paths_preview" not in digest:
+        digest["paths_preview"] = result.get("paths")[:120]
+        digest["paths_total"] = len(result.get("paths") or [])
     for key in ("paths_total", "files_total", "entries_total", "matches_total", "items_total"):
         if result.get(key) not in (None, "", [], {}):
             digest[key] = result.get(key)

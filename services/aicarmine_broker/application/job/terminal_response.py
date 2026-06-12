@@ -220,11 +220,29 @@ def _build_evidence_guide_for_30b(
         f"status={status}; artifacts={len(artifacts)}; history_rows={len(history)}",
         f"richiesta_utente={str(goal or '').strip()}",
     ]
-    if answer:
+    terminal_has_evidence = status in {"blocked_needs_attention", "max_steps_reached"} and bool(evidence_digest)
+    if terminal_has_evidence:
+        lines.extend([
+            "",
+            "Risultato parziale da usare per rispondere:",
+            (
+                "Il job non e' completed, ma contiene evidenza concreta inline. "
+                "Rispondi usando questa evidenza con limiti espliciti; non chiedere "
+                "genericamente il repository o i file."
+            ),
+            "",
+            "Evidenza eseguita inline:",
+            evidence_digest,
+        ])
+        if answer:
+            lines.extend(["", "Dettaglio stato/risposta del planner:", str(answer).strip()])
+        elif summary:
+            lines.extend(["", "Dettaglio stato terminale:", str(summary).strip()])
+    elif answer:
         lines.extend(["", "Sommario/risposta del planner da usare come guida:", str(answer).strip()])
     elif summary:
         lines.extend(["", "Sommario terminale da usare come guida:", str(summary).strip()])
-    if evidence_digest:
+    if evidence_digest and not terminal_has_evidence:
         lines.extend(["", "Evidenza eseguita inline:", evidence_digest])
     return public_terminal_sanitize_text(compact_text("\n".join(lines), limit))
 

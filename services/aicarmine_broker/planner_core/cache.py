@@ -54,6 +54,7 @@ CACHEABLE_READ_TOOLS = frozenset({
     "repo_tree",
     "repo_list_files",
     "repo_search",
+    "repo_semantic_search",
     "repo_read",
     "terminal_list_files",
     "terminal_search_files",
@@ -155,6 +156,36 @@ def _cache_effective_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
         effective["path"] = _cache_normalized_path(effective.get("path") or ".")
         effective["mode"] = str(effective.get("mode") or "rg")
         effective["max_results"] = _cache_int(effective.get("max_results") or 80, 80)
+    elif tool == "repo_semantic_search":
+        effective["query"] = str(effective.get("query") or "")
+        effective["path"] = _cache_normalized_path(effective.get("path") or ".")
+        effective["limit"] = _cache_int(
+            effective.get("limit") or effective.get("top_k") or effective.get("max_results") or 8,
+            8,
+        )
+        default_candidate_limit = max(40, int(effective["limit"]) * 8)
+        effective["candidate_limit"] = _cache_int(
+            effective.get("candidate_limit") or default_candidate_limit,
+            default_candidate_limit,
+        )
+        effective["max_chunk_chars"] = _cache_int(
+            effective.get("max_chunk_chars") or effective.get("max_chars") or 1200,
+            1200,
+        )
+        effective["rerank"] = bool(effective.get("rerank", True))
+        effective["rerank_candidate_limit"] = _cache_int(
+            effective.get("rerank_candidate_limit") or min(default_candidate_limit, 12),
+            min(default_candidate_limit, 12),
+        )
+        effective["rerank_doc_chars"] = _cache_int(effective.get("rerank_doc_chars") or 2500, 2500)
+        effective["rerank_timeout_seconds"] = _cache_int(
+            effective.get("rerank_timeout_seconds") or 30,
+            30,
+        )
+        effective["reindex"] = bool(effective.get("reindex", True))
+        effective.pop("top_k", None)
+        effective.pop("max_results", None)
+        effective.pop("max_chars", None)
     elif tool == "repo_read":
         paths = _decision_paths(effective)
         if len(paths) == 1:

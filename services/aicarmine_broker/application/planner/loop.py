@@ -44,6 +44,8 @@ def run_agentic_planner_job(
     _controller_initial_area_read_plan = deps["controller_initial_area_read_plan"]
     _controller_initial_doc_preseed_plan = deps["controller_initial_doc_preseed_plan"]
     _controller_memory_target_key = deps["controller_memory_target_key"]
+    _controller_preplanner_rag_query_plan = deps["controller_preplanner_rag_query_plan"]
+    _controller_preplanner_rag_preseed_plan = deps["controller_preplanner_rag_preseed_plan"]
     _controller_preseed_plan = deps["controller_preseed_plan"]
     _decision_memory_claim_text = deps["decision_memory_claim_text"]
     _decision_raw_planner_text = deps["decision_raw_planner_text"]
@@ -456,6 +458,9 @@ def run_agentic_planner_job(
             "preseed_index": preseed_index,
             "dynamic_initial_orientation": bool(preseed_plan.get("dynamic_initial_orientation")),
         })
+        for metadata_key in ("preplanner_rag", "ranked_preplanner_paths"):
+            if preseed_plan.get(metadata_key) not in (None, "", [], {}):
+                compact_preseed[metadata_key] = preseed_plan[metadata_key]
         if preseed_cache_key:
             compact_preseed["cache_key"] = preseed_cache_key
         append_agent_event(
@@ -502,21 +507,119 @@ def run_agentic_planner_job(
                 preseed_index += 1
         return preseed_index
 
+    preseed_index = 1
+    preplanner_args = dict(original_args)
+    preplanner_query_plan: dict[str, Any] = {}
+    try:
+        preplanner_query_plan = _controller_preplanner_rag_query_plan(str(state.get("goal") or ""))
+    except Exception as exc:  # pragma: no cover - query planning must not block deterministic RAG
+        preplanner_query_plan = {
+            "schema": "agentic_loop_preplanner_rag_query_plan.v1",
+            "ok": False,
+            "status": "failed",
+            "source": "planner",
+            "reason": "query_plan_unhandled_exception",
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }
+    if preplanner_query_plan:
+        state["controller_preplanner_rag_query_plan"] = preplanner_query_plan
+        preplanner_args["controller_rag_query_plan"] = preplanner_query_plan
+        write_agent_job_state(state)
+        append_agent_event(
+            job_id,
+            "controller_preplanner_rag_query_plan_result",
+            f"Controller pre-planner RAG query plan status={preplanner_query_plan.get('status')}.",
+            preplanner_query_plan,
+            step=0,
+        )
+
+    preplanner_plan: dict[str, Any] | None = None
+    preplanner_report: dict[str, Any] = {}
+    preplanner_skipped: list[dict[str, Any]] = []
+    try:
+        preplanner_plan, preplanner_report, preplanner_skipped = _controller_preplanner_rag_preseed_plan(
+            str(state.get("goal") or ""),
+            preplanner_args,
+        )
+    except Exception as exc:  # pragma: no cover - loop must fall back to legacy preseed
+        preplanner_report = {
+            "schema": "agentic_loop_preplanner_rag.v1",
+            "ok": False,
+            "status": "failed",
+            "reason": "preplanner_rag_unhandled_exception",
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }
+        preplanner_skipped = [{
+            "stage": "preplanner_rag_reindex",
+            "reason": "preplanner_rag_unhandled_exception",
+            "error": str(exc),
+        }]
+    state["controller_preplanner_rag"] = preplanner_report
+    write_agent_job_state(state)
+    append_agent_event(
+        job_id,
+        "controller_preplanner_rag_reindex_result",
+        f"Controller pre-planner RAG reindex status={preplanner_report.get('status')}.",
+        preplanner_report,
+        step=0,
+    )
+    add_initial_orientation_skipped(preplanner_skipped)
+
+    ranked_preseed_success = False
+    ranked_paths: list[str] = []
+    if preplanner_plan:
+        _preplanner_result, preplanner_compact = execute_controller_preseed(preplanner_plan, preseed_index)
+        preseed_index += 1
+        raw_ranked_paths = preplanner_compact.get("ranked_preplanner_paths")
+        ranked_path_items = raw_ranked_paths if isinstance(raw_ranked_paths, list) else []
+        ranked_paths = [
+            str(path) for path in ranked_path_items
+            if str(path).strip()
+        ]
+        ranked_preseed_success = bool(
+            preplanner_compact.get("ok")
+            and len(ranked_paths) >= 2
+        )
+
     preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)
     if preseed_plan:
-        preseed_index = 1
-        root_preseed_result, _root_compact = execute_controller_preseed(preseed_plan, preseed_index)
-        preseed_index += 1
-        if preseed_plan.get("dynamic_initial_orientation") and root_preseed_result.get("ok"):
-            preseed_index = execute_dynamic_initial_orientation(root_preseed_result, preseed_index)
-        orientation_plan = _controller_file_code_product_orientation_preseed_plan(str(state.get("goal") or ""))
-        if orientation_plan and not preseed_plan.get("dynamic_initial_orientation"):
-            orientation_result, _orientation_compact = execute_controller_preseed(
-                orientation_plan,
-                preseed_index,
+        skip_generic_root_surface = (
+            ranked_preseed_success
+            and str(preseed_plan.get("tool") or "") == "repo_tree"
+            and str(preseed_plan.get("reason") or "") == "generic_repo_request_needs_root_surface"
+        )
+        if skip_generic_root_surface:
+            add_initial_orientation_skipped([{
+                "candidate": "repo_tree:.",
+                "reason": "preplanner_rag_ranked_read_replaced_generic_root_surface",
+                "stage": "initial_root_surface",
+            }])
+            append_agent_event(
+                job_id,
+                "controller_preseed_root_surface_skipped",
+                "Generic root repo_tree preseed skipped after ranked RAG read preseed.",
+                {
+                    "replacement": "controller_preseed_preplanner_rag_ranked_read",
+                    "preseed_reason": preseed_plan.get("reason"),
+                    "ranked_path_count": len(ranked_paths),
+                },
+                step=0,
             )
+        else:
+            root_preseed_result, _root_compact = execute_controller_preseed(preseed_plan, preseed_index)
             preseed_index += 1
-            preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
+            if preseed_plan.get("dynamic_initial_orientation") and root_preseed_result.get("ok"):
+                preseed_index = execute_dynamic_initial_orientation(root_preseed_result, preseed_index)
+            orientation_plan = _controller_file_code_product_orientation_preseed_plan(str(state.get("goal") or ""))
+            if orientation_plan and not preseed_plan.get("dynamic_initial_orientation"):
+                orientation_result, _orientation_compact = execute_controller_preseed(
+                    orientation_plan,
+                    preseed_index,
+                )
+                preseed_index += 1
+                preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
 
     for step in range(1, max_steps + 1):
         state = load_agent_job_state(job_id) or state

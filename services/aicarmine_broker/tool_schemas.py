@@ -95,6 +95,29 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "violation": "repo_search_missing_query_pattern_or_symbol",
         },
     ),
+    "repo_semantic_search": _tool_schema(
+        "repo_semantic_search",
+        (
+            "Semantic repo search over the delta RAG index. Use before targeted repo_read "
+            "when lexical search or repo_tree is too broad. Requires query."
+        ),
+        {
+            "query": {"type": "string"},
+            "path": {"type": "string", "default": "."},
+            "limit": {"type": "integer", "default": 8},
+            "top_k": {"type": "integer", "default": 8},
+            "max_results": {"type": "integer", "default": 8},
+            "candidate_limit": {"type": "integer", "default": 64},
+            "max_chunk_chars": {"type": "integer", "default": 1200},
+            "reindex": {"type": "boolean", "default": True},
+            "rerank": {"type": "boolean", "default": True},
+            "rerank_candidate_limit": {"type": "integer", "default": 12},
+            "rerank_doc_chars": {"type": "integer", "default": 2500},
+            "rerank_timeout_seconds": {"type": "number", "default": 30.0},
+        },
+        ["query"],
+        argument_contract={"required": ["query"]},
+    ),
     "repo_fd_files": _tool_schema(
         "repo_fd_files",
         "Deterministic fd file discovery. Use for fast repo file lists before targeted reads.",
@@ -606,6 +629,7 @@ PLANNER_INTERNAL_TOOLS: tuple[str, ...] = (
     "repo_status",
     "repo_tree",
     "repo_search",
+    "repo_semantic_search",
     "repo_fd_files",
     "repo_rg_search",
     "repo_jq_query",
@@ -705,6 +729,9 @@ TOOL_ALIASES: dict[str, str] = {
     "grep": "repo_search",
     "rg": "repo_search",
     "search_code": "repo_search",
+    "semantic_search": "repo_semantic_search",
+    "rag_search": "repo_semantic_search",
+    "repo_rag_search": "repo_semantic_search",
     "fd": "repo_fd_files",
     "find_files_fd": "repo_fd_files",
     "ripgrep": "repo_rg_search",

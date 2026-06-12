@@ -115,6 +115,8 @@ def main() -> int:
         source.write_text(old_text, encoding="utf-8")
         (repo_root / "pkg/bad.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
         (repo_root / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+        (repo_root / "AGENTS.md").write_text("Original agent contract line\n", encoding="utf-8")
+        (repo_root / "README.md").write_text("Original readme line\n", encoding="utf-8")
         shared_target = "ia_carmine/_shared/core_runtime.py"
         shared_old = "\n".join(
             [
@@ -225,6 +227,65 @@ def main() -> int:
                     result=read_result,
                 )
             ]
+            docs_read_args = {"paths": ["AGENTS.md", "README.md"], "max_chars": 20000}
+            docs_read_result = repo_tools.repo_read(docs_read_args, job_root)
+            require(docs_read_result.get("ok") is True, "repo_read docs preseed failed in smoke fixture")
+            preseed_docs_row = compact_history_row(
+                root=job_root,
+                step=0,
+                tool="repo_read",
+                arguments=docs_read_args,
+                result=docs_read_result,
+            )
+            preseed_docs_row["decision"] = {
+                "action": "controller_preseed",
+                "tool": "repo_read",
+                "arguments": docs_read_args,
+                "reason": "loop_start_delta_rag_reindex_ranked_preplanner_context",
+            }
+            preseed_docs_row["tool_result"]["controller_preseed"] = True
+            preseed_docs_row["tool_result"]["preseed_reason"] = "loop_start_delta_rag_reindex_ranked_preplanner_context"
+            preseed_docs_row["tool_result"]["preplanner_rag"] = {
+                "schema": "agentic_loop_preplanner_rag_preseed.v1",
+                "selected_paths": ["AGENTS.md", "README.md"],
+                "anchor_paths": [],
+                "ranked_preplanner_paths": ["AGENTS.md", "README.md"],
+            }
+            preseed_docs_row["tool_result"]["selected_paths"] = ["AGENTS.md", "README.md"]
+            preseed_docs_row["tool_result"]["ranked_preplanner_paths"] = ["AGENTS.md", "README.md"]
+            apply_docs_contract = planner.planner_evidence_contract(
+                "Applica patch a AGENTI.md e README.md",
+                [preseed_docs_row],
+            )
+            apply_docs_write_contract = apply_docs_contract.get("apply_write_contract") or {}
+            require(
+                set(apply_docs_write_contract.get("target_files") or []) == {"AGENTS.md", "README.md"},
+                f"apply preloop targets did not resolve AGENTS/README: {apply_docs_write_contract}",
+            )
+            require(
+                set(apply_docs_write_contract.get("verified_target_reads") or []) == {"AGENTS.md", "README.md"},
+                f"apply preloop targets were not treated as verified reads: {apply_docs_write_contract}",
+            )
+            apply_docs_progress = str(apply_docs_contract.get("required_next_progress") or "")
+            require(
+                "repo_apply_patch" in apply_docs_progress
+                and "repo_tree" in apply_docs_progress
+                and "do not call" in apply_docs_progress.lower(),
+                f"apply preloop progress did not require patch while forbidding discovery: {apply_docs_progress}",
+            )
+            apply_docs_policy = apply_docs_contract.get("turn_tool_surface_policy") or {}
+            require(
+                set(apply_docs_policy.get("allowed_tool_names") or []) == {"repo_apply_patch", "repo_read"},
+                f"apply preloop surface did not expose patch plus bounded reads: {apply_docs_policy}",
+            )
+            forbidden_apply_tools = {"repo_tree", "repo_list_files", "repo_search", "repo_semantic_search"}
+            require(
+                not any(
+                    isinstance(item, dict) and item.get("tool") in forbidden_apply_tools
+                    for item in apply_docs_contract.get("candidate_next_actions") or []
+                ),
+                f"apply preloop candidates still exposed discovery: {apply_docs_contract.get('candidate_next_actions')}",
+            )
 
             tool_manifest = [
                 {

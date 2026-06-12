@@ -109,11 +109,17 @@ def required_working_set_for_prompt(
 ) -> dict[str, Any]:
     target_paths: set[str] = set()
     target_file = repo_rel_token(contract.get("resolved_goal_file") or goal_target_file(goal) or "")
-    if target_file:
+    if target_file and target_file != ".":
         target_paths.add(target_file)
+    apply_contract = contract.get("apply_write_contract") if isinstance(contract.get("apply_write_contract"), dict) else {}
+    apply_targets = apply_contract.get("target_files") if isinstance(apply_contract.get("target_files"), list) else []
+    for raw_target in apply_targets:
+        apply_target = repo_rel_token(raw_target)
+        if apply_target and apply_target != ".":
+            target_paths.add(apply_target)
     code_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
     latest_target = repo_rel_token(code_contract.get("latest_target_file") or "")
-    if latest_target:
+    if latest_target and latest_target != ".":
         target_paths.add(latest_target)
     candidate_target = repo_rel_token(code_contract.get("candidate_target_file") or "")
     if candidate_target and candidate_target != ".":
