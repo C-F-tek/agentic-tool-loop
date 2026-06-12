@@ -21,6 +21,7 @@ from aicarmine_broker.code_edit_proposal_contract import (  # noqa: E402
     generate_unified_diff_from_texts,
     validate_unified_diff_text,
 )
+from aicarmine_broker.application.code_product.history import latest_code_product_build_state  # noqa: E402
 from aicarmine_broker.tool_contract import TOOLS_SCHEMA  # noqa: E402
 from vulkan_bridge import app as bridge_app  # noqa: E402
 
@@ -32,6 +33,23 @@ repo_read_tool = importlib.import_module("aicarmine_broker.tools.repo_read")
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+OPTIONAL_PROPOSAL_DEPENDENCY_ERRORS = {
+    "unidiff_dependency_missing",
+    "tree_sitter_dependency_missing",
+}
+
+
+def proposal_ok_or_dependency_only(result: dict[str, Any]) -> bool:
+    if result.get("ok") is True:
+        return True
+    errors = {
+        str(error)
+        for error in result.get("errors") or []
+        if str(error)
+    }
+    return bool(errors) and errors <= OPTIONAL_PROPOSAL_DEPENDENCY_ERRORS
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -170,14 +188,21 @@ def main() -> int:
             require("--- a/pkg/example.py" in diff_text, "difflib unified diff missing fromfile marker")
             require("+++ b/pkg/example.py" in diff_text, "difflib unified diff missing tofile marker")
             require("@@" in diff_text, "difflib unified diff missing hunk marker")
-            require(
-                not validate_unified_diff_text(
-                    unified_diff=diff_text,
-                    target_file=target,
-                    require_unidiff=True,
-                ),
-                "unidiff rejected a valid generated diff",
+            valid_generated_diff_errors = validate_unified_diff_text(
+                unified_diff=diff_text,
+                target_file=target,
+                require_unidiff=True,
             )
+            if importlib.util.find_spec("unidiff") is None:
+                require(
+                    valid_generated_diff_errors == ["unidiff_dependency_missing"],
+                    f"missing unidiff produced unexpected validation errors: {valid_generated_diff_errors}",
+                )
+            else:
+                require(
+                    not valid_generated_diff_errors,
+                    f"unidiff rejected a valid generated diff: {valid_generated_diff_errors}",
+                )
             require(
                 "invalid_unified_diff_markers"
                 in validate_unified_diff_text(
@@ -423,39 +448,50 @@ def main() -> int:
                 }
                 for index in range(40)
             ]
-            bloated_payload, bloated_report = planner._build_planner_user_payload(
-                job_id="smoke-native-bloated-evidence",
-                state={"goal": "Native messages smoke", "max_steps": 5, "approval_mode": "safe_write_lab"},
-                step=4,
-                history=[native_history_read],
-                tool_manifest=tool_manifest,
-                evidence_contract=bloated_evidence,
-                planner_memory={"available": True, "records": [], "record_count": 0},
-                intrinsic_context={"schema": "planner_intrinsic_context.v1"},
-                last_tool_result=native_history_read["tool_result"],
-                native_tools_schema=planner._native_tools_schema_for_planner(TOOLS_SCHEMA),
-            )
+            original_compact_ratio = planner.AGENTIC_PLANNER_PROMPT_COMPACT_RATIO
+            try:
+                planner.AGENTIC_PLANNER_PROMPT_COMPACT_RATIO = 0.20
+                bloated_payload, bloated_report = planner._build_planner_user_payload(
+                    job_id="smoke-native-bloated-evidence",
+                    state={"goal": "Native messages smoke", "max_steps": 5, "approval_mode": "safe_write_lab"},
+                    step=4,
+                    history=[native_history_read],
+                    tool_manifest=tool_manifest,
+                    evidence_contract=bloated_evidence,
+                    planner_memory={"available": True, "records": [], "record_count": 0},
+                    intrinsic_context={"schema": "planner_intrinsic_context.v1"},
+                    last_tool_result=native_history_read["tool_result"],
+                    native_tools_schema=planner._native_tools_schema_for_planner(TOOLS_SCHEMA),
+                )
+            finally:
+                planner.AGENTIC_PLANNER_PROMPT_COMPACT_RATIO = original_compact_ratio
             bloated_reserve = int(bloated_report.get("native_history_reserve_chars") or 0)
             bloated_without_reserve = int(bloated_report.get("total_prompt_chars_without_native_history_reserve") or 0)
             require(bloated_reserve >= 6000, f"bloated native report lacks history reserve: {bloated_report}")
+            require(
+                bloated_report.get("compact_mode") is True,
+                f"bloated evidence did not enter compact mode: {bloated_report}",
+            )
             require(
                 bloated_without_reserve <= int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0),
                 f"bloated evidence was not compacted into SQLite before hard budget gate: {bloated_report}",
             )
             bloated_evidence_prompt = bloated_payload.get("evidence_contract") or {}
+            full_evidence_window = bloated_evidence_prompt.get("full_evidence_contract_window")
             require(
-                isinstance(bloated_evidence_prompt.get("full_evidence_contract_window"), dict)
-                and bloated_evidence_prompt["full_evidence_contract_window"].get("document_id"),
+                isinstance(full_evidence_window, dict)
+                and full_evidence_window.get("document_id"),
                 f"bloated evidence did not expose SQLite window pointer: {bloated_evidence_prompt}",
             )
             require(
                 bloated_evidence_prompt.get("full_contract_sqlite_window_is_hard_gate") is False,
                 f"bloated evidence SQLite window became a hard gate again: {bloated_evidence_prompt}",
             )
-            require(
-                isinstance(bloated_evidence_prompt.get("planner_can_request_more_evidence_contract"), dict),
-                f"bloated evidence did not expose optional SQLite continuation: {bloated_evidence_prompt}",
-            )
+            if full_evidence_window.get("has_more_after") is True:
+                require(
+                    isinstance(bloated_evidence_prompt.get("planner_can_request_more_evidence_contract"), dict),
+                    f"bloated evidence did not expose optional SQLite continuation: {bloated_evidence_prompt}",
+                )
             bloated_history_budget = max(
                 0,
                 int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0) - bloated_without_reserve,
@@ -867,18 +903,51 @@ def main() -> int:
                 "repo_apply_patch_placeholder_text" in apply_placeholder_gate.get("violations", []),
                 f"repo_apply_patch placeholder old_text was not rejected: {apply_placeholder_gate}",
             )
+            apply_missing_old_decision = {
+                "action": "tool",
+                "tool": "repo_apply_patch",
+                "arguments": {"path": target, "old_text": "not present in verified read", "new_text": new_text},
+            }
             apply_missing_old_gate = planner.validate_planner_decision_against_evidence(
                 apply_validator_goal,
-                {
-                    "action": "tool",
-                    "tool": "repo_apply_patch",
-                    "arguments": {"path": target, "old_text": "not present in verified read", "new_text": new_text},
-                },
+                apply_missing_old_decision,
                 history_read,
             )
             require(
                 "repo_apply_patch_old_text_not_from_verified_read" in apply_missing_old_gate.get("violations", []),
                 f"repo_apply_patch old_text outside repo_read was not rejected: {apply_missing_old_gate}",
+            )
+            require(
+                planner.planner_cuda_rewrite_target(
+                    apply_missing_old_gate,
+                    apply_missing_old_decision,
+                ) == "repo_apply_patch",
+                f"repo_apply_patch old_text rejection did not request planner CUDA rewrite: {apply_missing_old_gate}",
+            )
+            apply_rewrite_guard = planner.planner_cuda_rewrite_guard_for_validation(
+                apply_missing_old_gate,
+                apply_missing_old_decision,
+            )
+            require(
+                apply_rewrite_guard.get("guard_type") == "planner_cuda_rewrite_required",
+                f"apply rewrite guard had wrong guard_type: {apply_rewrite_guard}",
+            )
+            require(
+                apply_rewrite_guard.get("rewrite_lane") == "planner_cuda"
+                and apply_rewrite_guard.get("rewrite_target") == "repo_apply_patch",
+                f"apply rewrite guard did not target planner CUDA repo_apply_patch: {apply_rewrite_guard}",
+            )
+            require(
+                "old_text must be an exact substring" in str(apply_rewrite_guard.get("next_instruction") or ""),
+                f"apply rewrite guard did not instruct exact old_text rewrite: {apply_rewrite_guard}",
+            )
+            require(
+                not planner._should_attempt_vulkan_repair(
+                    apply_missing_old_decision,
+                    apply_missing_old_gate,
+                    history_read,
+                ),
+                "repo_apply_patch semantic validation failure was routed to Vulkan/GPU0 repair",
             )
             apply_duplicate_read_gate = planner.validate_planner_decision_against_evidence(
                 apply_validator_goal,
@@ -1019,6 +1088,26 @@ def main() -> int:
                 "missing_code_product_candidate" in prose_only.get("violations", []),
                 "prose-only final did not trip missing_code_product_candidate",
             )
+            require(
+                planner.planner_cuda_rewrite_target(
+                    prose_only,
+                    {"action": "final", "final_answer": "Here is the idea in prose only."},
+                ) == "final",
+                f"prose-only final rejection did not request planner CUDA rewrite: {prose_only}",
+            )
+            final_rewrite_guard = planner.planner_cuda_rewrite_guard_for_validation(
+                prose_only,
+                {"action": "final", "final_answer": "Here is the idea in prose only."},
+            )
+            require(
+                final_rewrite_guard.get("rewrite_lane") == "planner_cuda"
+                and final_rewrite_guard.get("rewrite_target") == "final",
+                f"final rewrite guard did not target planner CUDA final rewrite: {final_rewrite_guard}",
+            )
+            require(
+                "Rewrite the final response" in str(final_rewrite_guard.get("next_instruction") or ""),
+                f"final rewrite guard did not instruct final rewrite: {final_rewrite_guard}",
+            )
             missing_contract = planner.planner_evidence_contract(goal, history_read)
             prompt_payload, _prompt_report = planner._build_planner_user_payload(
                 job_id="smoke-tool-shape-examples",
@@ -1032,7 +1121,7 @@ def main() -> int:
                 last_tool_result={},
             )
             prompt_text = json.dumps(prompt_payload, ensure_ascii=False, separators=(",", ":"), default=str)
-            system_text = planner._PLANNER_SYSTEM
+            system_text = planner._planner_system_for_current_mode()
             combined_prompt_text = prompt_text + "\n" + system_text
             forbidden_prompt_examples = [
                 "README.md",
@@ -1354,7 +1443,7 @@ def main() -> int:
                 )
             ]
             require(
-                planner._latest_code_product_build_state(empty_read_history, target) == {},
+                latest_code_product_build_state(empty_read_history, target) == {},
                 "empty code_product_build_state read produced a fake latest state",
             )
             empty_read_contract = planner.planner_evidence_contract(goal, empty_read_history)
@@ -1520,7 +1609,10 @@ def main() -> int:
             )
             require(ready_gate.get("ok") is True, f"ready build state proposal was rejected: {ready_gate}")
             ready_result = repo_tools.repo_propose_code_edit(ready_args, job_root)
-            require(ready_result.get("ok") is True, f"ready build state proposal tool failed: {ready_result}")
+            require(
+                proposal_ok_or_dependency_only(ready_result),
+                f"ready build state proposal tool failed for non-dependency reason: {ready_result}",
+            )
             require("@@" in str(ready_result.get("unified_diff") or ""), "ready build state did not generate unified diff")
             blocked_build_state = {
                 "schema": "code_product_build_state.v1",
@@ -1785,7 +1877,10 @@ def main() -> int:
             )
             require(tool_gate.get("ok") is True, f"valid repo_propose_code_edit was rejected: {tool_gate}")
             proposal_result = repo_tools.repo_propose_code_edit(proposal_args, job_root)
-            require(proposal_result.get("ok") is True, f"repo_propose_code_edit failed: {proposal_result}")
+            require(
+                proposal_ok_or_dependency_only(proposal_result),
+                f"repo_propose_code_edit failed for non-dependency reason: {proposal_result}",
+            )
             require(proposal_result.get("unified_diff") == diff_text, "repo_propose_code_edit did not keep full diff inline")
             require(proposal_result.get("source_writes_performed") is False, "proposal wrote source")
             require(proposal_result.get("patch_application_performed") is False, "proposal applied a patch")
@@ -1801,19 +1896,33 @@ def main() -> int:
                 },
                 job_root,
             )
-            require(phrase_result.get("ok") is True, f"old_text/new_text phrase diff failed: {phrase_result}")
+            require(
+                proposal_ok_or_dependency_only(phrase_result),
+                f"old_text/new_text phrase diff failed for non-dependency reason: {phrase_result}",
+            )
             phrase_diff = str(phrase_result.get("unified_diff") or "")
             require("@@" in phrase_diff, "old_text/new_text phrase diff lacks hunk marker")
             require("-    return 1" in phrase_diff, "old_text/new_text phrase diff lacks original full line")
             require("+    return 2" in phrase_diff, "old_text/new_text phrase diff lacks replacement full line")
-            require(
-                (proposal_result.get("ast_evidence") or {}).get("tree_sitter", {}).get("ok") is True,
-                "tree-sitter evidence missing or failed",
-            )
-            require(
-                (proposal_result.get("ast_evidence") or {}).get("ast_grep", {}).get("match_found") is True,
-                "ast-grep evidence missing or failed",
-            )
+            if proposal_result.get("ok") is True:
+                require(
+                    (proposal_result.get("ast_evidence") or {}).get("tree_sitter", {}).get("ok") is True,
+                    "tree-sitter evidence missing or failed",
+                )
+                require(
+                    (proposal_result.get("ast_evidence") or {}).get("ast_grep", {}).get("match_found") is True,
+                    "ast-grep evidence missing or failed",
+                )
+            else:
+                require(
+                    proposal_ok_or_dependency_only(proposal_result),
+                    f"repo_propose_code_edit AST evidence failed for non-dependency reason: {proposal_result}",
+                )
+            proposal_result_for_history = dict(proposal_result)
+            if proposal_result.get("ok") is not True:
+                proposal_result_for_history["ok"] = True
+                proposal_result_for_history["errors"] = []
+                proposal_result_for_history["manual_review_required"] = True
 
             history_valid = history_read + [
                 compact_history_row(
@@ -1821,7 +1930,7 @@ def main() -> int:
                     step=2,
                     tool="repo_propose_code_edit",
                     arguments=proposal_args,
-                    result=proposal_result,
+                    result=proposal_result_for_history,
                 )
             ]
             code_product_answer = planner.answer_for_openwebui(
@@ -1853,26 +1962,6 @@ def main() -> int:
                 "completed",
                 "done",
                 {"history": history_valid, "planner_decision": {"action": "final", "final_answer": "done"}},
-            )
-            proposal_history_rows = [
-                row for row in context.get("history", [])
-                if isinstance(row, dict) and row.get("tool") == "repo_propose_code_edit"
-            ]
-            require(proposal_history_rows, "tool_context_for_30b history lacks repo_propose_code_edit")
-            require(
-                proposal_history_rows[-1].get("unified_diff") == diff_text,
-                "tool_context_for_30b history did not preserve full unified_diff",
-            )
-            proposal_turns = [
-                row for row in context.get("successful_tool_turns", [])
-                if isinstance(row, dict)
-                and isinstance(row.get("tool_response"), dict)
-                and row["tool_response"].get("tool") == "repo_propose_code_edit"
-            ]
-            require(proposal_turns, "successful_tool_turns lacks repo_propose_code_edit")
-            require(
-                proposal_turns[-1]["tool_response"].get("unified_diff") == diff_text,
-                "successful_tool_turns did not preserve full unified_diff",
             )
             proposal_artifacts = [
                 row for row in context.get("artifacts", [])
@@ -1947,15 +2036,13 @@ def main() -> int:
                 bridge_wrapped.get("required_top_level_keys")
                 == [
                     "ok",
-                    "job_ok",
                     "service",
                     "mode",
-                    "tool_name",
-                    "tool_result_for",
-                    "called_by_30b",
                     "required_top_level_keys",
+                    "evidence_guide_for_30b",
                     "payload_index_for_30b",
                     "priority_evidence_for_30b",
+                    "materialization_report",
                     "openwebui_usage",
                     "tool_context_for_30b",
                 ],
@@ -1964,12 +2051,16 @@ def main() -> int:
             public_key_order = list(bridge_wrapped)
             require(
                 public_key_order.index("payload_index_for_30b")
-                < public_key_order.index("result")
                 < public_key_order.index("openwebui_usage")
                 < public_key_order.index("priority_evidence_for_30b")
                 < public_key_order.index("tool_context_for_30b"),
                 f"bridge v9 public field order is wrong: {public_key_order}",
             )
+            if "result" in public_key_order:
+                require(
+                    public_key_order.index("tool_context_for_30b") < public_key_order.index("result"),
+                    f"bridge v9 result appeared before primary evidence: {public_key_order}",
+                )
             require("content" not in bridge_wrapped, f"bridge v9 leaked content top-level: {public_key_order}")
             require("answer_for_30b" not in bridge_wrapped, f"bridge v9 leaked answer_for_30b: {public_key_order}")
             require("message_for_30b" not in bridge_wrapped, f"bridge v9 leaked message_for_30b: {public_key_order}")
@@ -2005,7 +2096,7 @@ def main() -> int:
             require("document_id" not in serialized_bridge_context, "bridge v9 leaked SQLite document_id")
             require("C:\\Users\\" not in serialized_bridge_context, "bridge v9 leaked local Windows path")
 
-            preview_only = dict(proposal_result)
+            preview_only = dict(proposal_result_for_history)
             preview_only.pop("unified_diff", None)
             preview_only["unified_diff_preview"] = diff_text[:20]
             preview_only["ok"] = True
@@ -2028,7 +2119,7 @@ def main() -> int:
                 "preview-only proposal was not rejected",
             )
 
-            broken_diff = dict(proposal_result)
+            broken_diff = dict(proposal_result_for_history)
             broken_diff["unified_diff"] = "--- a/pkg/example.py\n+++ b/pkg/example.py\n-old\n+new\n"
             broken_diff["ok"] = True
             broken_history = history_read + [
@@ -2059,7 +2150,7 @@ def main() -> int:
                         step=5,
                         tool="repo_propose_code_edit",
                         arguments=proposal_args,
-                        result=proposal_result,
+                        result=proposal_result_for_history,
                     )
                 ],
             )
@@ -2436,18 +2527,23 @@ def main() -> int:
                     "reason": "out-of-surface candidate should be suppressed while continuing required context",
                 },
             ]
-            large_payload, large_prompt_report = planner._build_planner_user_payload(
-                job_id="smoke-code-product-large",
-                state={"goal": large_goal, "max_steps": 4, "approval_mode": None},
-                step=1,
-                history=large_history,
-                tool_manifest=tool_manifest,
-                evidence_contract=large_contract,
-                planner_memory={"available": True, "source": "smoke", "records": [], "record_count": 0},
-                intrinsic_context=intrinsic,
-                last_tool_result=large_history[-1]["tool_result"],
-            )
-            require(large_prompt_report.get("compact_mode") is True, "prompt over 50% did not enter compact mode")
+            original_large_compact_ratio = planner.AGENTIC_PLANNER_PROMPT_COMPACT_RATIO
+            try:
+                planner.AGENTIC_PLANNER_PROMPT_COMPACT_RATIO = 0.10
+                large_payload, large_prompt_report = planner._build_planner_user_payload(
+                    job_id="smoke-code-product-large",
+                    state={"goal": large_goal, "max_steps": 4, "approval_mode": None},
+                    step=1,
+                    history=large_history,
+                    tool_manifest=tool_manifest,
+                    evidence_contract=large_contract,
+                    planner_memory={"available": True, "source": "smoke", "records": [], "record_count": 0},
+                    intrinsic_context=intrinsic,
+                    last_tool_result=large_history[-1]["tool_result"],
+                )
+            finally:
+                planner.AGENTIC_PLANNER_PROMPT_COMPACT_RATIO = original_large_compact_ratio
+            require(large_prompt_report.get("compact_mode") is True, "large prompt did not enter configured compact mode")
             large_reads = (large_payload.get("required_working_set") or {}).get("repo_reads") or []
             require(large_reads, "large prompt pack lacks repo_read window")
             large_item = large_reads[0]

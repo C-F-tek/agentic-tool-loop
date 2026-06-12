@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# pyright: reportMissingImports=false
+# ruff: noqa: E402
+
 import json
 import sys
 from pathlib import Path

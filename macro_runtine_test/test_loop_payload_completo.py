@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# pyright: reportMissingImports=false, reportOptionalMemberAccess=false
+# ruff: noqa: E402
+
 import json
 import os
 import re

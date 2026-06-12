@@ -51,6 +51,8 @@ def run_agentic_planner_job(
     _is_unrecoverable_plain_text_planner_output = deps["is_unrecoverable_plain_text_planner_output"]
     _native_required_repaired_tool_decision_disallowed = deps["native_required_repaired_tool_decision_disallowed"]
     _normalize_terminal_planner_decision = deps["normalize_terminal_planner_decision"]
+    planner_cuda_rewrite_guard_for_validation = deps["planner_cuda_rewrite_guard_for_validation"]
+    planner_cuda_rewrite_target = deps["planner_cuda_rewrite_target"]
     _planner_incomprehensible_retry_count = deps["planner_incomprehensible_retry_count"]
     _planner_memory_false_unavailable_claim = deps["planner_memory_false_unavailable_claim"]
     _raw_planner_text_classification = deps["raw_planner_text_classification"]
@@ -1237,6 +1239,48 @@ def run_agentic_planner_job(
                         ),
                     },
                 )
+
+            rewrite_target = str(planner_cuda_rewrite_target(validation, decision) or "")
+            if (
+                rewrite_target
+                and int(retry_limit or 0) > 0
+                and repeated_rejection_count == 0
+            ):
+                guard_result = planner_cuda_rewrite_guard_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
+                guard_result["invalid_decision_signature"] = rejection_signature
+                guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
+                guard_result["retry_count"] = repeated_rejection_count
+                guard_result["retry_limit"] = 1
+                append_agent_event(
+                    job_id,
+                    "planner_decision_rejected",
+                    guard_result["summary"],
+                    guard_result,
+                    step=step,
+                )
+                row = {
+                    "step": step,
+                    "decision": {
+                        "action": "continue_required",
+                        "reason": f"planner CUDA rewrite required for rejected {rewrite_target} proposal",
+                        "rejected_decision": {
+                            k: decision.get(k)
+                            for k in ("action", "tool", "arguments", "reason", "final_answer", "raw_planner_text")
+                            if decision.get(k) not in (None, "", [], {})
+                        },
+                    },
+                    "tool_result": guard_result,
+                }
+                loop_state.append_history_row(row)
+                persist_loop_turn_memory(row)
+                write_agent_job_state(state)
+                continue
 
             if _is_unrecoverable_plain_text_planner_output(decision, history, retry_limit):
                 final_answer = str(decision.get("final_answer") or decision.get("reason") or "")

@@ -300,11 +300,7 @@ from .application.planner.status import (
     summarize_history_artifacts as _summarize_history_artifacts_impl,
 )
 from .application.prompt.budget import (
-    planner_token_generation_reserve as _planner_token_generation_reserve,
-    prompt_budget_report as _prompt_budget_report_impl,
-    prompt_compaction_threshold as _prompt_compaction_threshold,
-    prompt_generation_headroom_char_budget as _prompt_generation_headroom_char_budget,
-    prompt_window_chars as _prompt_window_chars,
+    PROMPT_CHARS_PER_TOKEN as _PROMPT_CHARS_PER_TOKEN,
     report_exceeds_generation_headroom as _report_exceeds_generation_headroom_impl,
 )
 from .application.prompt.values import (
@@ -908,17 +904,97 @@ def _optional_context_for_prompt(
     }
 
 
+def _planner_token_generation_reserve(num_ctx: int | None = None) -> int:
+    try:
+        ctx = int(num_ctx if num_ctx is not None else AGENTIC_PLANNER_NUM_CTX)
+    except Exception:
+        ctx = 0
+    if ctx <= 0:
+        return 0
+    return max(512, min(32768, ctx // 16))
+
+
+def _prompt_compaction_threshold() -> int:
+    if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET <= 0:
+        return 0
+    ratio = float(AGENTIC_PLANNER_PROMPT_COMPACT_RATIO or 0.5)
+    ratio = max(0.1, min(ratio, 0.95))
+    return max(1000, int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET * ratio))
+
+
+def _prompt_generation_headroom_char_budget() -> int:
+    budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
+    if budget <= 0:
+        return 0
+    generation_reserve = int(_planner_token_generation_reserve() * _PROMPT_CHARS_PER_TOKEN)
+    generation_reserve = max(12000, min(max(12000, budget // 3), generation_reserve))
+    char_budget_limit = budget - generation_reserve
+    token_budget_limit = int(
+        max(1, AGENTIC_PLANNER_NUM_CTX - _planner_token_generation_reserve()) * _PROMPT_CHARS_PER_TOKEN
+    )
+    return max(1000, min(char_budget_limit, token_budget_limit))
+
+
+def _prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
+    budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
+    if compact_mode:
+        base = max(4000, min(64000, budget // 16 if budget > 0 else 4000))
+        sequence = (
+            base,
+            int(base * 0.75),
+            int(base * 0.60),
+            int(base * 0.45),
+            int(base * 0.30),
+            int(base * 0.20),
+            int(base * 0.15),
+            int(base * 0.10),
+        )
+        return sequence[min(max(0, attempt), len(sequence) - 1)]
+    return max(1000, min(96000, budget // 8 if budget > 0 else 6000))
+
+
 def _prompt_budget_report(
     user_payload: dict[str, Any],
     *,
     system_prompt: str = "",
     extra_prompt_sections: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    return _prompt_budget_report_impl(
-        user_payload,
-        system_prompt=system_prompt,
-        extra_prompt_sections=extra_prompt_sections,
-    )
+    sections = {
+        key: _json_char_len(value)
+        for key, value in user_payload.items()
+        if key not in {"available_tools"}
+    }
+    sections["available_tools"] = _json_char_len(user_payload.get("available_tools"))
+    extra_sections = {
+        str(key): int(value)
+        for key, value in (extra_prompt_sections or {}).items()
+        if int(value or 0) > 0
+    }
+    sections.update(extra_sections)
+    total_user = _json_char_len(user_payload)
+    system_chars = len(str(system_prompt or ""))
+    extra_chars = sum(extra_sections.values())
+    total = total_user + system_chars + extra_chars
+    headroom_budget = _prompt_generation_headroom_char_budget()
+    generation_reserve = max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - headroom_budget)
+    return {
+        "schema": "planner_prompt_budget.v1",
+        "char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
+        "generation_headroom_char_budget": headroom_budget,
+        "generation_headroom_reserve_chars": generation_reserve,
+        "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
+        "generation_token_reserve": _planner_token_generation_reserve(),
+        "system_prompt_chars": system_chars,
+        "total_user_payload_chars": total_user,
+        "extra_prompt_chars": extra_chars,
+        "total_prompt_chars": total,
+        "over_budget": bool(
+            AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            and total > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+        ),
+        "over_generation_headroom_budget": bool(headroom_budget > 0 and total > headroom_budget),
+        "sections": sections,
+    }
 
 
 def _read_json_file(path: str) -> dict[str, Any]:
@@ -3396,6 +3472,167 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
     return _prompt_clip_value(compact, text_limit=500, list_limit=16)
 
 
+_PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS = {
+    "repo_apply_patch_missing_path_or_paths",
+    "repo_apply_patch_old_text_not_from_verified_read",
+    "repo_apply_patch_placeholder_text",
+    "repo_propose_code_edit_invalid_edit_kind",
+    "repo_propose_code_edit_missing_rationale",
+    "repo_propose_code_edit_missing_structured_operations",
+    "repo_propose_code_edit_missing_unified_diff",
+    "repo_propose_code_edit_no_op_has_patch_payload",
+    "repo_propose_code_edit_old_text_not_from_verified_read",
+    "repo_propose_code_edit_placeholder_text",
+    "code_product_target_not_read",
+    "final_action_plan_without_code_product",
+    "final_empty_answer",
+    "invalid_code_product_candidate",
+    "missing_code_product_candidate",
+    "planner_final_required_empty_output",
+}
+
+_PLANNER_CUDA_REWRITE_PATCH_PREFIXES = (
+    "repo_apply_patch_",
+    "repo_propose_code_edit_",
+    "code_product_",
+)
+
+_PLANNER_CUDA_REWRITE_FINAL_PREFIXES = (
+    "final_not_allowed_by_evidence_contract:",
+    "final_without_",
+    "repo_analysis_final_",
+)
+
+
+def _planner_cuda_rewrite_violations(validation: dict[str, Any]) -> list[str]:
+    return [str(violation) for violation in _list_or_empty(validation.get("violations"))]
+
+
+def _planner_cuda_rewrite_violation_matches(
+    violations: list[str],
+    *,
+    exact: set[str],
+    prefixes: tuple[str, ...],
+) -> bool:
+    return any(violation in exact or violation.startswith(prefixes) for violation in violations)
+
+
+def planner_cuda_rewrite_target(validation: dict[str, Any], decision: dict[str, Any]) -> str:
+    violations = _planner_cuda_rewrite_violations(validation)
+    if not violations or "planner_repeated_invalid_code_product_decision" in violations:
+        return ""
+    action = str(decision.get("action") or "").strip().lower()
+    tool = _normalize_tool_name(str(decision.get("tool") or ""))
+    if (
+        action == "tool"
+        and tool in {"repo_apply_patch", "repo_propose_code_edit"}
+        and _planner_cuda_rewrite_violation_matches(
+            violations,
+            exact=_PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS,
+            prefixes=_PLANNER_CUDA_REWRITE_PATCH_PREFIXES,
+        )
+    ):
+        return tool
+    if (
+        action in {"final", "done", "complete", "completed"}
+        and _planner_cuda_rewrite_violation_matches(
+            violations,
+            exact=_PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS,
+            prefixes=_PLANNER_CUDA_REWRITE_FINAL_PREFIXES,
+        )
+    ):
+        return "final"
+    if (
+        action in {"block", "blocked", "need_user", "needs_user"}
+        and "planner_final_required_empty_output" in violations
+    ):
+        return "final"
+    return ""
+
+
+def _planner_cuda_rewrite_instruction(
+    *,
+    rewrite_target: str,
+    existing_instruction: str,
+) -> str:
+    common = (
+        "Retry on the planner CUDA lane only; do not ask Vulkan/GPU0 to repair this semantic "
+        "proposal. Return one strict JSON decision. The controller did not synthesize a patch, "
+        "tool call, or final answer."
+    )
+    if rewrite_target in {"repo_apply_patch", "repo_propose_code_edit"}:
+        target_instruction = (
+            "Rewrite the rejected patch/code-product proposal from evidence_contract and "
+            "candidate_next_actions. If old_text was rejected, old_text must be an exact substring "
+            "from verified repo_read content for the same path; remove unrelated final prose "
+            "or protocol text from old_text/new_text. If the current evidence is insufficient, "
+            "choose the validator-provided read/scratchpad candidate or return a typed block."
+        )
+    elif rewrite_target == "final":
+        target_instruction = (
+            "Rewrite the final response only when the evidence_contract allows finalization. "
+            "Satisfy the finalization/code-product contract, remove unrelated patch/protocol "
+            "text, and if evidence is insufficient choose candidate_next_actions or return a typed block."
+        )
+    else:
+        target_instruction = "Rewrite the rejected decision using the validator evidence, or return a typed block."
+    if existing_instruction:
+        return f"{common} {target_instruction} Validator next_instruction: {existing_instruction}"
+    return f"{common} {target_instruction}"
+
+
+def planner_cuda_rewrite_guard_for_validation(
+    validation: dict[str, Any],
+    decision: dict[str, Any],
+    *,
+    job_id: str = "",
+    step: int = 0,
+    goal: str = "",
+) -> dict[str, Any]:
+    guard = controller_guard_result_for_validation(
+        validation,
+        decision,
+        job_id=job_id,
+        step=step,
+        goal=goal,
+    )
+    rewrite_target = planner_cuda_rewrite_target(validation, decision)
+    guard["guard_type"] = "planner_cuda_rewrite_required"
+    guard["summary"] = (
+        f"planner_cuda_rewrite_required:{rewrite_target}"
+        if rewrite_target else "planner_cuda_rewrite_required"
+    )
+    guard["rewrite_lane"] = "planner_cuda"
+    guard["rewrite_target"] = rewrite_target or "decision"
+    guard["controller_synthesized_repair"] = False
+    guard["vulkan_repair"] = {
+        "attempted": False,
+        "reason": "semantic_rewrite_retry_goes_back_to_planner_cuda",
+    }
+    guard["next_instruction"] = _prompt_clip_text(
+        _planner_cuda_rewrite_instruction(
+            rewrite_target=rewrite_target,
+            existing_instruction=str(guard.get("next_instruction") or "").strip(),
+        ),
+        4000,
+    )
+    guard["runtime_debug_packet"] = _build_runtime_debug_packet(
+        job_id=job_id,
+        step=step,
+        phase="CONTROLLER_GUARD",
+        goal=goal,
+        decision=decision,
+        validator_result=validation,
+        evidence_contract=_dict_or_empty(validation.get("evidence_contract")),
+        extra={
+            "guard_type": "planner_cuda_rewrite_required",
+            "rewrite_lane": "planner_cuda",
+            "rewrite_target": rewrite_target or "decision",
+        },
+    )
+    return guard
+
+
 def _should_attempt_vulkan_repair(
     decision: dict[str, Any],
     validation: dict[str, Any],
@@ -3437,7 +3674,7 @@ def _should_attempt_vulkan_repair(
     if action == "tool":
         tool = _normalize_tool_name(str(decision.get("tool") or ""))
         violations = _list_or_empty(validation.get("violations"))
-        if tool == "repo_propose_code_edit":
+        if tool in {"repo_apply_patch", "repo_propose_code_edit"}:
             return False
         if any(
             str(violation).startswith((
@@ -4131,6 +4368,8 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
             "native_required_repaired_tool_decision_disallowed": _native_required_repaired_tool_decision_disallowed,
             "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
+            "planner_cuda_rewrite_guard_for_validation": planner_cuda_rewrite_guard_for_validation,
+            "planner_cuda_rewrite_target": planner_cuda_rewrite_target,
             "planner_incomprehensible_retry_count": _planner_incomprehensible_retry_count,
             "planner_memory_false_unavailable_claim": _planner_memory_false_unavailable_claim,
             "raw_planner_text_classification": _raw_planner_text_classification,
