@@ -530,10 +530,16 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
 
     for rank, item in enumerate(ranked[:top_k], start=1):
         content = str(item.get("content") or "")
-        if len(content) > max_chunk_chars:
-            content = content[:max_chunk_chars].rstrip() + "\n...[chunk truncated]"
-        if used_chars + len(content) > max_total_chars:
+        remaining_chars = max_total_chars - used_chars
+        if remaining_chars <= 0:
             break
+        chunk_limit = min(max_chunk_chars, remaining_chars)
+        if len(content) > chunk_limit:
+            suffix = "\n...[chunk truncated]"
+            if chunk_limit > len(suffix):
+                content = content[: chunk_limit - len(suffix)].rstrip() + suffix
+            else:
+                content = content[:chunk_limit]
         used_chars += len(content)
 
         chunks.append(
