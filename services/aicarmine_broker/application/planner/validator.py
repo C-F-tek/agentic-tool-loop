@@ -171,6 +171,22 @@ def validate_planner_decision_against_evidence(
     known_paths = [str(x) for x in contract.get("known_paths_from_latest_repo_list_files") or []]
     admissible_reads = set(str(x) for x in (contract.get("validator_admissible_repo_read_paths") or []))
     read_ok = [str(x) for x in contract.get("successful_repo_read_paths") or []]
+    apply_contract = (
+        contract.get("apply_write_contract")
+        if isinstance(contract.get("apply_write_contract"), dict)
+        else {}
+    )
+    apply_required = bool(contract.get("goal_requests_apply")) or bool(apply_contract.get("required"))
+    apply_patch_applied = bool(apply_contract.get("patch_applied"))
+    apply_read_targets = {
+        _repo_rel_token(path)
+        for path in [
+            *(apply_contract.get("target_files") if isinstance(apply_contract.get("target_files"), list) else []),
+            *(apply_contract.get("unread_target_files") if isinstance(apply_contract.get("unread_target_files"), list) else []),
+            *(apply_contract.get("verified_target_reads") if isinstance(apply_contract.get("verified_target_reads"), list) else []),
+        ]
+        if _repo_rel_token(path)
+    }
     user_scope_claims = contract.get("user_scope_claims") if isinstance(contract.get("user_scope_claims"), list) else []
 
     if action in {"final", "done", "complete", "completed"}:
@@ -490,6 +506,11 @@ def validate_planner_decision_against_evidence(
             path = _repo_rel_token(path)
             if target_scope and tool == "repo_read" and not _path_under_scope(path, target_scope):
                 violations.append(f"repo_read_path_outside_requested_scope:{path}:expected_under={target_scope}")
+            if tool == "repo_read" and apply_required and not apply_patch_applied:
+                if not apply_read_targets:
+                    violations.append(f"repo_read_not_allowed_without_apply_targets:{path}")
+                elif path not in apply_read_targets:
+                    violations.append(f"repo_read_outside_apply_write_targets:{path}")
             if tool == "repo_read" and known_paths and path not in known_paths and path not in admissible_reads:
                 # Existing files are valid only if they have been discovered in tree/list evidence.
                 violations.append(f"repo_read_path_not_from_prior_file_evidence:{path}")

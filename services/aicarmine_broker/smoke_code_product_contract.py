@@ -278,6 +278,38 @@ def main() -> int:
                 set(apply_docs_policy.get("allowed_tool_names") or []) == {"repo_apply_patch", "repo_read"},
                 f"apply preloop surface did not expose patch plus bounded reads: {apply_docs_policy}",
             )
+            apply_docs_surface = set(planner._tool_surface_names_for_turn(
+                goal="Applica patch a AGENTI.md e README.md",
+                evidence_contract=apply_docs_contract,
+                intrinsic_context={},
+            ))
+            require(
+                {
+                    "repo_apply_patch",
+                    "repo_read",
+                    "planner_scratchpad_read",
+                    "planner_scratchpad_write",
+                    "runtime_sqlite_memory_search",
+                    "runtime_sqlite_memory_write",
+                }.issubset(apply_docs_surface),
+                f"apply turn surface is missing essential support tools: {sorted(apply_docs_surface)}",
+            )
+            unrelated_apply_read_gate = planner.validate_planner_decision_against_evidence(
+                "Applica patch a AGENTI.md e README.md",
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": {"path": target, "max_chars": 20000},
+                    "native_tool_call": True,
+                    "raw_native_tool_call": {"function": {"name": "repo_read", "arguments": {"path": target, "max_chars": 20000}}},
+                    "allowed_tool_names": sorted(apply_docs_surface),
+                },
+                [preseed_docs_row],
+            )
+            require(
+                "repo_read_outside_apply_write_targets:pkg/example.py" in unrelated_apply_read_gate.get("violations", []),
+                f"apply branch accepted unrelated repo_read: {unrelated_apply_read_gate}",
+            )
             forbidden_apply_tools = {"repo_tree", "repo_list_files", "repo_search", "repo_semantic_search"}
             require(
                 not any(

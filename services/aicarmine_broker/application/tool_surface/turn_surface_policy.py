@@ -50,6 +50,13 @@ class ToolSurfacePolicy:
         "repo_pyright_check",
         "repo_pytest_run",
     }
+    _NON_TERMINAL_SUPPORT_TOOLS = {
+        "repo_read",
+        "planner_scratchpad_read",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_search",
+        "runtime_sqlite_memory_write",
+    }
 
     def __init__(self, *, order_tool_names: OrderToolNames) -> None:
         self._order_tool_names = order_tool_names
@@ -368,7 +375,10 @@ class ToolSurfacePolicy:
         if not isinstance(policy_allowed, list):
             return None
         if policy_allowed or surface_policy.get("locked_empty_tool_surface") or self._contract_final_required_now(contract):
-            return self._ordered({str(name) for name in policy_allowed})
+            names = {str(name) for name in policy_allowed}
+            if not self._contract_final_required_now(contract):
+                names.update(self._NON_TERMINAL_SUPPORT_TOOLS)
+            return self._ordered(names)
         return None
 
     def _base_tools_for_goal_class(
