@@ -96,6 +96,7 @@ def main() -> int:
         new_text = "def answer():\n    return 2\n"
         source.write_text(old_text, encoding="utf-8")
         (repo_root / "pkg/bad.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+        (repo_root / ".gitignore").write_text(".venv/\n", encoding="utf-8")
         shared_target = "ia_carmine/_shared/core_runtime.py"
         shared_old = "\n".join(
             [
@@ -152,6 +153,15 @@ def main() -> int:
             planner.AGENTIC_PLANNER_NATIVE_TOOLS = True
             if has_require_native_tools:
                 setattr(planner, planner_require_native_tools_attr, True)
+            gitignore_goal = "Applica questa patch al file .gitignore"
+            require(
+                planner._goal_existing_file_candidates(gitignore_goal) == [".gitignore"],
+                f"dotfile target resolver missed .gitignore: {planner._goal_existing_file_candidates(gitignore_goal)}",
+            )
+            require(
+                planner._goal_target_file(gitignore_goal) == ".gitignore",
+                f"dotfile target resolver did not select .gitignore: {planner._goal_target_file(gitignore_goal)}",
+            )
             diff_text = generate_unified_diff_from_texts(
                 target_file=target,
                 old_text=old_text,
@@ -869,6 +879,37 @@ def main() -> int:
             require(
                 "repo_apply_patch_old_text_not_from_verified_read" in apply_missing_old_gate.get("violations", []),
                 f"repo_apply_patch old_text outside repo_read was not rejected: {apply_missing_old_gate}",
+            )
+            apply_duplicate_read_gate = planner.validate_planner_decision_against_evidence(
+                apply_validator_goal,
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": read_args,
+                    "native_tool_call": True,
+                    "raw_native_tool_call": {"function": {"name": "repo_read", "arguments": read_args}},
+                },
+                history_read,
+            )
+            require(
+                "repo_read_window_already_successful_without_progress" in apply_duplicate_read_gate.get("violations", []),
+                f"duplicate repo_read was not rejected for apply goal: {apply_duplicate_read_gate}",
+            )
+            apply_duplicate_contract = apply_duplicate_read_gate.get("evidence_contract") or {}
+            apply_duplicate_progress = str(apply_duplicate_contract.get("required_next_progress") or "")
+            require(
+                "repo_apply_patch" in apply_duplicate_progress
+                and "repo_propose_code_edit" not in apply_duplicate_progress
+                and "code_product_build_state" not in apply_duplicate_progress,
+                f"apply duplicate-read replan routed to code-product wording: {apply_duplicate_progress}",
+            )
+            apply_duplicate_candidates = apply_duplicate_contract.get("candidate_next_actions") or []
+            require(
+                not any(
+                    isinstance(item, dict) and item.get("tool") == "planner_scratchpad_write"
+                    for item in apply_duplicate_candidates
+                ),
+                f"apply duplicate-read replan exposed build-state scratchpad write: {apply_duplicate_candidates}",
             )
             repeat_placeholder_gate = planner.validate_planner_decision_against_evidence(
                 code_product_validator_goal,
@@ -2381,6 +2422,20 @@ def main() -> int:
             )
             large_goal = "Analyze pkg/large.py around needle_anchor with recursive context windows"
             large_contract = planner.planner_evidence_contract(large_goal, large_history)
+            large_contract["candidate_next_actions"] = [
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": {"path": "pkg/stale_candidate.py"},
+                    "reason": "stale candidate should be suppressed while continuing required context",
+                },
+                {
+                    "action": "tool",
+                    "tool": "planner_scratchpad_write",
+                    "arguments": {"kind": "code_product_build_state", "text": "{}"},
+                    "reason": "out-of-surface candidate should be suppressed while continuing required context",
+                },
+            ]
             large_payload, large_prompt_report = planner._build_planner_user_payload(
                 job_id="smoke-code-product-large",
                 state={"goal": large_goal, "max_steps": 4, "approval_mode": None},
@@ -2413,6 +2468,11 @@ def main() -> int:
             require(large_window.get("complete") is False, "large window unexpectedly complete")
             require(large_window.get("has_more_after") is True, "large window should advertise following context")
             require("needle_anchor" in large_window.get("text", ""), "large window did not center on goal anchor")
+            large_prompt_actions = (large_payload.get("evidence_contract") or {}).get("candidate_next_actions") or []
+            require(
+                len(large_prompt_actions) == 1 and large_prompt_actions[0].get("tool") == "planner_scratchpad_read",
+                f"required context continuation did not isolate candidate_next_actions: {large_prompt_actions}",
+            )
             next_window = memory_tools.planner_scratchpad_read(
                 {
                     "kind": "prompt_context_window",

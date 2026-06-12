@@ -5,11 +5,51 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from .goal_classifier import semantic_goal_low
+from .goal_classifier import semantic_goal_low, semantic_goal_text
 from ..shared.path_tokens import repo_rel_token
 
 
 SafeRelPath = Callable[[str], str]
+
+_GOAL_PATH_PATTERN = re.compile(
+    r"([A-Za-z0-9_./\\-]+?\.(?:py|ps1|md|json|toml|yml|yaml|txt))"
+)
+_KNOWN_DOTFILE_NAMES = (
+    ".gitignore",
+    ".gitattributes",
+    ".dockerignore",
+    ".editorconfig",
+    ".env",
+    ".env.example",
+    ".prettierrc",
+    ".eslintrc",
+    ".npmrc",
+    ".python-version",
+)
+
+
+def _existing_repo_file(candidate: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> str:
+    normalized = repo_rel_token(candidate)
+    if not normalized:
+        return ""
+    try:
+        rel = safe_rel_path(normalized)
+        full = (repo_root / rel).resolve(strict=False)
+        full.relative_to(repo_root)
+    except Exception:
+        return ""
+    if full.exists() and full.is_file():
+        return rel
+    return ""
+
+
+def _goal_path_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    for dotfile in _KNOWN_DOTFILE_NAMES:
+        if re.search(rf"(?<![A-Za-z0-9_/\\.-]){re.escape(dotfile)}(?![A-Za-z0-9_/\\.-])", text):
+            candidates.append(dotfile)
+    candidates.extend(match.group(1) for match in _GOAL_PATH_PATTERN.finditer(text))
+    return candidates
 
 
 def extract_existing_goal_path(
@@ -18,20 +58,29 @@ def extract_existing_goal_path(
     repo_root: Path,
     safe_rel_path: SafeRelPath,
 ) -> str:
-    for candidate in re.findall(
-        r"([A-Za-z0-9_./\\-]+?\.(?:py|ps1|md|json|toml|yml|yaml|txt))",
-        str(goal or ""),
-    ):
-        normalized = repo_rel_token(candidate)
-        try:
-            rel = safe_rel_path(normalized)
-            full = (repo_root / rel).resolve(strict=False)
-            full.relative_to(repo_root)
-        except Exception:
-            continue
-        if full.exists() and full.is_file():
-            return rel
+    semantic = semantic_goal_text(goal)
+    raw = str(goal or "")
+    for text in (semantic, raw):
+        for candidate in _goal_path_candidates(text):
+            rel = _existing_repo_file(candidate, repo_root=repo_root, safe_rel_path=safe_rel_path)
+            if rel:
+                return rel
     return ""
+
+
+def extract_existing_goal_paths(
+    goal: str,
+    *,
+    repo_root: Path,
+    safe_rel_path: SafeRelPath,
+) -> list[str]:
+    out: list[str] = []
+    for text in (semantic_goal_text(goal), str(goal or "")):
+        for candidate in _goal_path_candidates(text):
+            rel = _existing_repo_file(candidate, repo_root=repo_root, safe_rel_path=safe_rel_path)
+            if rel and rel not in out:
+                out.append(rel)
+    return out
 
 
 def requested_file_limit_from_goal(goal: str, default: int = 0) -> int:

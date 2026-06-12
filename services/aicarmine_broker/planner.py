@@ -74,12 +74,6 @@ from .memory_tools import (
 from .code_edit_proposal_contract import validate_unified_diff_text
 from .planner_intrinsic_context import build_planner_intrinsic_context
 from .repo_tools import safe_rel_path
-
-
-# ---------------------------------------------------------------------------
-# Planner JSON/HTTP helpers
-# ---------------------------------------------------------------------------
-
 from .planner_core.json_io import (
     _parse_strict_json_object,
     post_json,
@@ -235,6 +229,7 @@ from .application.evidence.goal_classifier import (
     semantic_goal_low as _semantic_goal_low,
 )
 from .application.evidence.goal_scope import (
+    extract_existing_goal_paths as _extract_existing_goal_paths_impl,
     extract_existing_goal_path as _extract_existing_goal_path_impl,
     goal_requested_repo_scope as _goal_requested_repo_scope_impl,
     requested_file_limit_from_goal as _requested_file_limit_from_goal_impl,
@@ -393,6 +388,14 @@ from .application.prompt.window_signatures import (
     repo_read_window_signature as _repo_read_window_signature,
 )
 from .infrastructure.json_files import same_tool_artifact_payload as _same_tool_artifact_payload_impl
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 # ---------------------------------------------------------------------------
@@ -967,7 +970,7 @@ def _repo_read_file_content_from_repo(item: dict[str, Any], known_prefix: str = 
 
 
 def _repo_read_item_full_content(item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    meta = {"source": "tool_result_inline"}
+    meta: dict[str, Any] = {"source": "tool_result_inline"}
     artifact = str(item.get("artifact") or "")
     content = item.get("content")
     loaded = _read_json_file(artifact)
@@ -1751,7 +1754,7 @@ def _paths_from_result(result: dict[str, Any]) -> list[str]:
                 paths.append(str(item.get("path")))
             elif isinstance(item, str) and item.strip():
                 paths.append(item)
-    items = result.get("items") if isinstance(result.get("items"), list) else []
+    items = _list_or_empty(result.get("items"))
     for item in items:
         if isinstance(item, dict) and item.get("path"):
             paths.append(str(item.get("path")))
@@ -1805,7 +1808,7 @@ def _verified_repo_read_content_rows(history: list[dict[str, Any]]) -> list[dict
         if result.get("tool") != "repo_read" or result.get("ok") is not True:
             continue
         source = _same_tool_artifact_payload(result)
-        raw_items = source.get("items") if isinstance(source.get("items"), list) else []
+        raw_items = _list_or_empty(source.get("items"))
         if not raw_items and source.get("path"):
             raw_items = [source]
         for sub in raw_items:
@@ -1914,21 +1917,11 @@ def _should_preseed_root_surface(goal: str, original_args: dict[str, Any]) -> bo
 
 
 def _goal_existing_file_candidates(goal: str) -> list[str]:
-    out: list[str] = []
-    for candidate in re.findall(
-        r"([A-Za-z0-9_./\\-]+?\.(?:py|ps1|md|json|toml|yml|yaml|txt))",
-        str(goal or ""),
-    ):
-        normalized = _repo_rel_token(candidate)
-        try:
-            rel = safe_rel_path(normalized)
-            full = (LAB_REPO / rel).resolve(strict=False)
-            full.relative_to(LAB_REPO)
-        except Exception:
-            continue
-        if full.exists() and full.is_file() and rel not in out:
-            out.append(rel)
-    return out
+    return _extract_existing_goal_paths_impl(
+        goal,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+    )
 
 
 def _goal_target_file(goal: str) -> str:
@@ -2415,10 +2408,12 @@ def _candidate_actions_from_evidence(
 
 
 def _build_operational_notebook(goal: str, contract: dict[str, Any]) -> dict[str, Any]:
-    memory = contract.get("file_memory") if isinstance(contract, dict) else []
-    list_rows = contract.get("repo_list_files_evidence") if isinstance(contract, dict) else []
-    core = contract.get("ranked_core_candidate_dirs") or []
-    final_allowed = bool((contract.get("finalization_contract") or {}).get("final_allowed")) if isinstance(contract, dict) else False
+    memory = _list_or_empty(contract.get("file_memory"))
+    list_rows = _list_or_empty(contract.get("repo_list_files_evidence"))
+    core = _list_or_empty(contract.get("ranked_core_candidate_dirs"))
+    final_contract = _dict_or_empty(contract.get("finalization_contract"))
+    final_allowed = bool(final_contract.get("final_allowed"))
+    validation_rejections_tail = _list_or_empty(contract.get("validation_rejections_tail"))
     return {
         "schema": "agentic_loop_operational_notes.v1",
         "goal": goal,
@@ -2437,12 +2432,13 @@ def _build_operational_notebook(goal: str, contract: dict[str, Any]) -> dict[str
                 "mentioned_paths": (item.get("mentioned_paths") or [])[:14],
                 "excerpt": str(item.get("content_excerpt") or "")[:700],
             }
-            for item in memory[:18] if isinstance(item, dict)
+            for item in memory[:18]
+            if isinstance(item, dict)
         ],
-        "list_notes": list_rows[-8:] if isinstance(list_rows, list) else [],
-        "core_candidates": core[:8] if isinstance(core, list) else [],
+        "list_notes": list_rows[-8:],
+        "core_candidates": core[:8],
         "candidate_next_actions": contract.get("candidate_next_actions") or [],
-        "recent_rejections": (contract.get("validation_rejections_tail") or [])[-8:] if isinstance(contract.get("validation_rejections_tail"), list) else [],
+        "recent_rejections": validation_rejections_tail[-8:],
         "known_problem": (
             "Do not reduce this job to path counters or directory names. Use read_notes as the working scratchpad "
             "and cite concrete evidence from them."
@@ -2845,7 +2841,7 @@ def _verified_repo_read_contents_for_path(history: list[dict[str, Any]], target_
         if result.get("tool") != "repo_read" or result.get("ok") is not True:
             continue
         source = _same_tool_artifact_payload(result)
-        raw_items = source.get("items") if isinstance(source.get("items"), list) else []
+        raw_items = _list_or_empty(source.get("items"))
         if not raw_items and source.get("path"):
             raw_items = [source]
         for sub in raw_items:
@@ -2885,7 +2881,7 @@ def _apply_unverified_old_text_replan_contract(
         if not isinstance(item, dict):
             return False
         tool_name = str(item.get("tool") or "")
-        arguments = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+        arguments = _dict_or_empty(item.get("arguments"))
         if tool_name == "planner_scratchpad_read":
             return True
         if tool_name == "repo_read":
@@ -3047,7 +3043,7 @@ def _vulkan_repair_seen(history: list[dict[str, Any]]) -> int:
     for item in history if isinstance(history, list) else []:
         if not isinstance(item, dict):
             continue
-        result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+        result = _dict_or_empty(item.get("tool_result"))
         if result.get("guard_type") == "vulkan_decision_repair":
             count += 1
         elif isinstance(result.get("vulkan_repair"), dict):
@@ -3067,7 +3063,7 @@ def _planner_incomprehensible_retry_count(history: list[dict[str, Any]]) -> int:
     for item in reversed(history if isinstance(history, list) else []):
         if not isinstance(item, dict):
             break
-        result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+        result = _dict_or_empty(item.get("tool_result"))
         if result.get("tool") == "controller_guard" and result.get("guard_type") in {
             "planner_retry_required",
             "planner_memory_false_unavailable_claim",
@@ -3326,8 +3322,8 @@ def _compact_repair_history(history: list[dict[str, Any]], limit: int = 8) -> li
     for item in (history or [])[-limit:]:
         if not isinstance(item, dict):
             continue
-        decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
-        result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+        decision = _dict_or_empty(item.get("decision"))
+        result = _dict_or_empty(item.get("tool_result"))
         rows.append({
             "step": item.get("step"),
             "decision": {
@@ -3417,8 +3413,8 @@ def _should_attempt_vulkan_repair(
     decision = decision if isinstance(decision, dict) else {}
     action = str(decision.get("action") or "").strip().lower()
     reason = str(decision.get("reason") or "")
-    contract = validation.get("evidence_contract") if isinstance(validation.get("evidence_contract"), dict) else {}
-    semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
+    contract = _dict_or_empty(validation.get("evidence_contract"))
+    semantic = _dict_or_empty(contract.get("semantic_goal_classification"))
     if (
         contract.get("goal_requests_code_product")
         or contract.get("goal_requires_code_product_report")
@@ -3440,7 +3436,7 @@ def _should_attempt_vulkan_repair(
         return False
     if action == "tool":
         tool = _normalize_tool_name(str(decision.get("tool") or ""))
-        violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
+        violations = _list_or_empty(validation.get("violations"))
         if tool == "repo_propose_code_edit":
             return False
         if any(
@@ -3531,7 +3527,7 @@ def vulkan_repair_invalid_planner_decision(
                     "raw_planner_text": raw_planner_text[:20000],
                     "validator_violations": validation.get("violations"),
                     "evidence_contract": _compact_vulkan_repair_evidence_contract(
-                        validation.get("evidence_contract")
+                        _dict_or_empty(validation.get("evidence_contract"))
                     ),
                     "evidence_contract_bounded_for_repair": True,
                     "history_tail": _compact_repair_history(history),
@@ -3560,7 +3556,7 @@ def vulkan_repair_invalid_planner_decision(
             "repaired_decision": None,
         }
 
-    message = response.get("message") if isinstance(response.get("message"), dict) else {}
+    message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or "")
     repaired = _parse_strict_json_object(raw_text)
     if not isinstance(repaired, dict) or not repaired:
@@ -3598,8 +3594,8 @@ def controller_guard_result_for_validation(
     step: int = 0,
     goal: str = "",
 ) -> dict[str, Any]:
-    violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
-    contract = validation.get("evidence_contract") if isinstance(validation.get("evidence_contract"), dict) else {}
+    violations = _list_or_empty(validation.get("violations"))
+    contract = _dict_or_empty(validation.get("evidence_contract"))
     guard = {
         "tool": "controller_guard",
         "ok": True,
@@ -3632,11 +3628,7 @@ def controller_guard_result_for_validation(
     required_next_progress = str(contract.get("required_next_progress") or "").strip()
     if required_next_progress:
         guard["next_instruction"] = required_next_progress
-    candidate_next_actions = (
-        contract.get("candidate_next_actions")
-        if isinstance(contract.get("candidate_next_actions"), list)
-        else []
-    )
+    candidate_next_actions = _list_or_empty(contract.get("candidate_next_actions"))
     if candidate_next_actions:
         guard["candidate_next_actions"] = candidate_next_actions[:6]
     if validation.get("action_plan_candidate") not in (None, "", [], {}):
@@ -4054,7 +4046,7 @@ def finalize_agentic_job(
     )
     public_final_summary = (
         answer
-        if status == "completed" and _latest_code_product_payload(result.get("history") if isinstance(result.get("history"), list) else [])
+        if status == "completed" and _latest_code_product_payload(_list_or_empty(result.get("history")))
         else final_summary_with_turns
     )
     next_action = tool_context.get("next_action_for_30b") or {}

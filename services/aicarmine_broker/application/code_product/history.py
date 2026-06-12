@@ -37,6 +37,14 @@ CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = {
 }
 
 
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def code_product_build_state_duplicate_write(
     history: list[dict[str, Any]],
     *,
@@ -79,15 +87,16 @@ def code_product_build_state_from_result(result: dict[str, Any]) -> dict[str, An
         "payload_loaded": False,
     }
     if tool == "planner_scratchpad_read":
-        items = result.get("items") if isinstance(result.get("items"), list) else []
+        items = _list_or_empty(result.get("items"))
         if not items:
             return {}
         for item in reversed(items):
             if not isinstance(item, dict):
                 continue
-            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-            state = code_product_build_state_parse(str(item.get("text") or ""))
-            if state:
+            metadata = _dict_or_empty(item.get("metadata"))
+            parsed_state = code_product_build_state_parse(str(item.get("text") or ""))
+            if parsed_state:
+                state = parsed_state
                 base.update({
                     "document_id": item.get("document_id") or base.get("document_id"),
                     "section": item.get("section") or base.get("section"),
@@ -246,7 +255,7 @@ def code_product_source_windows_from_reads(
         if result.get("tool") != "repo_read" or result.get("ok") is not True:
             continue
         source = same_tool_artifact_payload(result)
-        raw_items = source.get("items") if isinstance(source.get("items"), list) else []
+        raw_items = _list_or_empty(source.get("items"))
         if not raw_items and source.get("path"):
             raw_items = [source]
         for sub in raw_items:
@@ -340,7 +349,7 @@ def code_product_build_state_propose_action(
 ) -> dict[str, Any]:
     args = state.get("ready_arguments") if isinstance(state.get("ready_arguments"), dict) else {}
     if not args:
-        loaded_state = state.get("state") if isinstance(state.get("state"), dict) else {}
+        loaded_state = _dict_or_empty(state.get("state"))
         args = code_product_build_state_ready_payload(loaded_state)
     if not args:
         return {}
@@ -395,8 +404,8 @@ def successful_window_signatures(history: list[dict[str, Any]], tool: str) -> se
         result = history_tool_result(row)
         if normalize_tool_name(str(result.get("tool") or "")) != wanted_tool or result.get("ok") is not True:
             continue
-        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-        args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+        decision = _dict_or_empty(row.get("decision"))
+        args = _dict_or_empty(decision.get("arguments"))
         if wanted_tool == "repo_read":
             signature = repo_read_window_signature(args)
         elif wanted_tool == "planner_scratchpad_read":
@@ -416,8 +425,8 @@ def successful_repo_read_window_ranges(history: list[dict[str, Any]], target_fil
         result = history_tool_result(row)
         if result.get("tool") != "repo_read" or result.get("ok") is not True:
             continue
-        decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-        args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+        decision = _dict_or_empty(row.get("decision"))
+        args = _dict_or_empty(decision.get("arguments"))
         item_range = repo_read_window_range_for_target(args, target_file)
         if item_range and item_range not in ranges:
             ranges.append(item_range)
@@ -436,10 +445,10 @@ def code_product_payload_rejection_count(
         violations = {str(v) for v in (item.get("violations") or [])}
         if not violations.intersection(CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS):
             continue
-        rejected = item.get("rejected_decision") if isinstance(item.get("rejected_decision"), dict) else {}
+        rejected = _dict_or_empty(item.get("rejected_decision"))
         if str(rejected.get("tool") or "") != "repo_propose_code_edit":
             continue
-        args = rejected.get("arguments") if isinstance(rejected.get("arguments"), dict) else {}
+        args = _dict_or_empty(rejected.get("arguments"))
         rejected_target = repo_rel_token(args.get("target_file") or args.get("path") or "")
         if target and target != "." and rejected_target != target:
             continue
@@ -502,7 +511,7 @@ def strip_duplicate_window_candidate(
         if not isinstance(item, dict) or normalize_tool_name(str(item.get("tool") or "")) != wanted_tool:
             out.append(item)
             continue
-        args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+        args = _dict_or_empty(item.get("arguments"))
         if wanted_tool == "repo_read":
             item_signature = repo_read_window_signature(args)
         elif wanted_tool == "planner_scratchpad_read":
@@ -535,8 +544,10 @@ def apply_duplicate_window_replan_contract(
         if tool == "planner_scratchpad_read"
         else ""
     )
+    raw_existing_actions = _list_or_empty(contract.get("candidate_next_actions"))
+    existing_actions = [item for item in raw_existing_actions if isinstance(item, dict)]
     existing = strip_duplicate_window_candidate(
-        contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else [],
+        existing_actions,
         tool=tool,
         signature=signature,
     )
@@ -555,38 +566,51 @@ def apply_duplicate_window_replan_contract(
     elif tool == "repo_read":
         target_paths = decision_paths(args)
         target = repo_rel_token(target_paths[0]) if target_paths else ""
-        line_count = 0
-        for row in contract.get("verified_content_reads") or []:
-            if isinstance(row, dict) and repo_rel_token(row.get("path") or "") == target:
-                try:
-                    line_count = int(row.get("line_count") or 0)
-                except (TypeError, ValueError):
-                    line_count = 0
-                break
-        route_candidate = code_product_source_window_candidate(
-            target,
-            line_count=line_count,
-            history=history,
-            single_file_prompt_read_chars=single_file_prompt_read_chars,
-        )
-        if route_candidate:
-            next_actions.append(route_candidate)
-        if target:
-            build_state_action = code_product_build_state_write_action(
-                target,
-                history,
-                same_tool_artifact_payload=same_tool_artifact_payload,
-                repo_read_item_full_content=repo_read_item_full_content,
+        if contract.get("goal_requests_apply"):
+            existing = [
+                item for item in existing
+                if normalize_tool_name(str(item.get("tool") or "")) != "planner_scratchpad_write"
+            ]
+            contract["required_next_progress"] = (
+                "The requested repo_read window already succeeded and a cache hit would not be progress. "
+                "This is an apply/edit goal: do not call repo_read for that target again. Use "
+                "verified_content_reads/required_working_set for the target and call repo_apply_patch "
+                "only with old_text exactly equal to verified repo_read content, or return a typed block "
+                "if a valid patch cannot be built."
             )
-            if build_state_action:
-                next_actions.append(build_state_action)
-        contract["required_next_progress"] = (
-            "The requested repo_read window already succeeded and a cache hit would not be progress. "
-            "Replan now: read a different unconsumed source window if candidate_next_actions provides "
-            "one; otherwise use verified_content_reads/required_working_set for the target and call "
-            "repo_propose_code_edit only with a complete unified_diff or old_text/new_text, write "
-            "code_product_build_state with real progress, or return a typed block."
-        )
+        else:
+            line_count = 0
+            for row in contract.get("verified_content_reads") or []:
+                if isinstance(row, dict) and repo_rel_token(row.get("path") or "") == target:
+                    try:
+                        line_count = int(row.get("line_count") or 0)
+                    except (TypeError, ValueError):
+                        line_count = 0
+                    break
+            route_candidate = code_product_source_window_candidate(
+                target,
+                line_count=line_count,
+                history=history,
+                single_file_prompt_read_chars=single_file_prompt_read_chars,
+            )
+            if route_candidate:
+                next_actions.append(route_candidate)
+            if target:
+                build_state_action = code_product_build_state_write_action(
+                    target,
+                    history,
+                    same_tool_artifact_payload=same_tool_artifact_payload,
+                    repo_read_item_full_content=repo_read_item_full_content,
+                )
+                if build_state_action:
+                    next_actions.append(build_state_action)
+            contract["required_next_progress"] = (
+                "The requested repo_read window already succeeded and a cache hit would not be progress. "
+                "Replan now: read a different unconsumed source window if candidate_next_actions provides "
+                "one; otherwise use verified_content_reads/required_working_set for the target and call "
+                "repo_propose_code_edit only with a complete unified_diff or old_text/new_text, write "
+                "code_product_build_state with real progress, or return a typed block."
+            )
     merged: list[dict[str, Any]] = []
     for item in [*next_actions, *existing]:
         if not isinstance(item, dict):
@@ -596,7 +620,7 @@ def apply_duplicate_window_replan_contract(
             continue
         merged.append(item)
     contract["candidate_next_actions"] = merged[:16]
-    code_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
+    code_contract = _dict_or_empty(contract.get("code_product_contract"))
     code_contract["duplicate_window_replan_required"] = True
     code_contract["duplicate_window_violation"] = violation
     contract["code_product_contract"] = code_contract
@@ -607,7 +631,7 @@ def code_product_low_signal_target(path: str, contract: dict[str, Any]) -> bool:
     target = repo_rel_token(path)
     if target.endswith("__init__.py") or target.endswith("__main__.py"):
         return True
-    rows = contract.get("verified_content_reads") if isinstance(contract.get("verified_content_reads"), list) else []
+    rows = _list_or_empty(contract.get("verified_content_reads"))
     for row in rows:
         if not isinstance(row, dict) or repo_rel_token(row.get("path") or "") != target:
             continue
