@@ -81,10 +81,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "limit": integer_prop(80, 1, 1000),
                 "context": integer_prop(0, 0, 5),
                 "timeout_seconds": integer_prop(120, 1, 600),
-            },
-            any_of=[["pattern"], ["query"]],
+            }
         ),
         handler=repo_rg_search,
+        required_one_of=[["pattern"], ["query"]],
     )
     tools["aicarmine_repo_search_jq"] = ToolSpec(
         name="aicarmine_repo_search_jq",
@@ -96,10 +96,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "json_text": string_prop(),
                 "path": string_prop(),
                 "timeout_seconds": integer_prop(60, 1, 600),
-            },
-            any_of=[["query"], ["filter"]],
+            }
         ),
         handler=repo_jq_query,
+        required_one_of=[["query"], ["filter"]],
     )
     tools["aicarmine_repo_search_ast_grep"] = ToolSpec(
         name="aicarmine_repo_search_ast_grep",
@@ -113,10 +113,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "language": string_prop(),
                 "path": string_prop("."),
                 "timeout_seconds": integer_prop(120, 1, 600),
-            },
-            any_of=[["pattern"], ["kind"]],
+            }
         ),
         handler=repo_ast_grep_search,
+        required_one_of=[["pattern"], ["kind"]],
     )
     tools["aicarmine_repo_search_ast_grep_dry_run"] = ToolSpec(
         name="aicarmine_repo_search_ast_grep_dry_run",

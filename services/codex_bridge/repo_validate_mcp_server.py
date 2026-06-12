@@ -113,10 +113,10 @@ def _tools() -> dict[str, ToolSpec]:
             {
                 **paths_schema(),
                 "timeout_seconds": integer_prop(120, 1, 600),
-            },
-            any_of=[["path"], ["paths"]],
+            }
         ),
         handler=repo_shellcheck,
+        required_one_of=[["path"], ["paths"]],
     )
     tools["aicarmine_repo_validate_semgrep"] = ToolSpec(
         name="aicarmine_repo_validate_semgrep",
@@ -129,10 +129,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "language": string_prop(),
                 **paths_schema(default_path="."),
                 "timeout_seconds": integer_prop(240, 1, 1200),
-            },
-            any_of=[["pattern"], ["config"]],
+            }
         ),
         handler=repo_semgrep_scan,
+        required_one_of=[["pattern"], ["config"]],
     )
     return tools
 

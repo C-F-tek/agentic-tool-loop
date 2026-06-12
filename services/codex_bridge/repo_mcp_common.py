@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -31,6 +31,7 @@ class ToolSpec:
     description: str
     input_schema: dict[str, Any]
     handler: Handler
+    required_one_of: list[list[str]] = field(default_factory=list)
 
 
 def log(server_name: str, message: str) -> None:
@@ -288,12 +289,9 @@ def validate_arguments(spec: ToolSpec, arguments: Any) -> dict[str, Any] | None:
     missing = [str(name) for name in required if not _has_value(arguments.get(str(name)))]
     if missing:
         return {"ok": False, "error": "missing_required_arguments", "tool": spec.name, "missing": missing}
-    raw_any_of = schema.get("anyOf")
-    any_of = raw_any_of if isinstance(raw_any_of, list) else []
     required_groups = [
-        [str(name) for name in item.get("required", [])]
-        for item in any_of
-        if isinstance(item, dict) and isinstance(item.get("required"), list)
+        [str(name) for name in group]
+        for group in spec.required_one_of
     ]
     if required_groups and not any(all(_has_value(arguments.get(name)) for name in group) for group in required_groups):
         return {
@@ -476,11 +474,7 @@ def self_test(
     }
 
 
-def object_schema(
-    properties: dict[str, Any] | None = None,
-    required: list[str] | None = None,
-    any_of: list[list[str]] | None = None,
-) -> dict[str, Any]:
+def object_schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {
         "type": "object",
         "properties": properties or {},
@@ -488,6 +482,4 @@ def object_schema(
     }
     if required:
         schema["required"] = required
-    if any_of:
-        schema["anyOf"] = [{"required": group} for group in any_of]
     return schema
