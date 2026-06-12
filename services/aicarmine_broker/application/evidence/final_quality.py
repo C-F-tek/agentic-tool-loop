@@ -50,6 +50,22 @@ def _concept_present(text_low: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, text_low) for pattern in patterns)
 
 
+def _absolute_no_issue_claim(text_low: str) -> bool:
+    patterns = (
+        r"\bno\s+(?:critical\s+)?(?:security\s+)?(?:issues|vulnerabilities|flaws)\b",
+        r"\bno\s+critical\s+(?:issues|flaws)\s+identified\b",
+        r"\bno\s+security\s+(?:flaws|issues)\s+detected\b",
+        r"\bno\s+critic",
+        r"\bnessun[ae]?\s+criticit",
+        r"\bnessun[ae]?\s+vulnerabil",
+        r"\bnon\s+(?:sono\s+state?|ho)\s+(?:trovat[ei]|rilevat[ei])\s+(?:critic|vulnerabil)",
+        r"\brepository\s+(?:is\s+)?secure\b",
+        r"\bintrinsecamente\s+sicur",
+        r"\bassenza\s+di\s+(?:critic|vulnerabil)",
+    )
+    return _concept_present(text_low, patterns)
+
+
 def repo_analysis_final_answer_quality(
     final_answer: str,
     contract: dict[str, Any],
@@ -125,6 +141,18 @@ def repo_analysis_final_answer_quality(
     )
     if any(phrase in text_low for phrase in generic_phrases) and len(stripped) < 3200:
         violations.append("repo_analysis_final_generic_template_language")
+
+    code_security_coverage = (
+        contract.get("code_security_coverage")
+        if isinstance(contract, dict) and isinstance(contract.get("code_security_coverage"), dict)
+        else {}
+    )
+    if (
+        code_security_coverage.get("required") is True
+        and code_security_coverage.get("verdict_allowed") is not True
+        and _absolute_no_issue_claim(text_low)
+    ):
+        violations.append("repo_analysis_final_absolute_security_verdict_without_code_coverage")
 
     return {
         "ok": not violations,

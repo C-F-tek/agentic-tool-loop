@@ -163,6 +163,10 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
         "for file content, prefer `priority_evidence.items[0].content`; "
         "only after that inspect `tool_context.artifacts[*].artifact`; "
         "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
+        "If OpenWebUI later exposes this same tool result as `_file://.../agent-tool-context.txt` "
+        "or an `open-webui/uploads` path, pass that reference back to this same tool: 3571 resolves "
+        "it as the cached prior payload and returns a payload browser tree plus the concrete full "
+        "diffs/file contents. Do not treat that upload path as a repository path. "
         "`answer`, `message`, `summary`, `next_action` "
         "and `full_result_hint` are not primary top-level result fields."
     )

@@ -75,6 +75,7 @@ class EvidenceBuilder:
         successful_repo_read_paths = deps["successful_repo_read_paths"]
         failed_repo_read_paths = deps["failed_repo_read_paths"]
         failed_repo_list_files_paths = deps["failed_repo_list_files_paths"]
+        goal_requires_code_security_coverage = deps["goal_requires_code_security_coverage"]
 
         semantic_classification = semantic_goal_classification(goal)
         latest_list = latest_file_list_result(history)
@@ -94,6 +95,7 @@ class EvidenceBuilder:
         read_failed = failed_repo_read_paths(history)
         list_failed = failed_repo_list_files_paths(history)
         list_rows = _repo_list_evidence(history)
+        all_listed_paths = _paths_from_list_rows(list_rows)
         file_memory = _file_memory_from_history(history)
         doc_reads = [p for p in verified_read_paths if _repo_doc_or_config(p)]
         code_reads = [p for p in verified_read_paths if _repo_code_file(p)]
@@ -115,15 +117,27 @@ class EvidenceBuilder:
             and _repo_readable_evidence_file(p)
         ]
         repo_available_read_candidates = _meaningful_read_candidates_from_evidence(list_rows)
+        code_available_read_candidates = [
+            p for p in repo_available_read_candidates
+            if _repo_code_file(p)
+        ]
+        for path in [*all_listed_paths, *known_paths]:
+            p = _repo_rel_token(path)
+            if p and _repo_code_file(p) and p not in code_available_read_candidates:
+                code_available_read_candidates.append(p)
         repo_required_read_count = _repo_required_read_count(repo_available_read_candidates)
         repo_goal = _repo_analysis_goal(goal)
-        repo_goal_class = str(semantic_classification.get("class") or "")
-        analysis_only_repo_goal = (
-            repo_goal
-            and repo_goal_class == "analysis_only"
-            and not bool(semantic_classification.get("must_produce_code_product"))
-            and not goal_requests_apply(goal)
+        code_security_coverage_required = bool(repo_goal and goal_requires_code_security_coverage(goal))
+        code_security_read_required = (
+            min(5, len(code_available_read_candidates))
+            if code_available_read_candidates
+            else 3
         )
+        code_security_coverage_sufficient = bool(
+            not code_security_coverage_required
+            or len(code_reads) >= code_security_read_required
+        )
+        repo_goal_class = str(semantic_classification.get("class") or "")
         orientative_repo_final_goal = (
             repo_goal
             and repo_goal_class in {"analysis_only", "action_plan_only"}
@@ -154,7 +168,6 @@ class EvidenceBuilder:
             target_scope=target_scope,
             user_scope_claims=user_scope_claims,
         )
-        all_listed_paths = _paths_from_list_rows(list_rows)
         validator_admissible_read_paths: list[str] = []
         for path in (
             known_paths
@@ -241,6 +254,13 @@ class EvidenceBuilder:
         if goal_requests_apply(goal) and not history_has_tool(history, "repo_apply_patch"):
             final_allowed = False
             final_reason = "Apply/edit/write goal requires repo_apply_patch after verified repo_read old_text evidence."
+        if code_security_coverage_required and not code_security_coverage_sufficient:
+            final_allowed = False
+            final_reason = (
+                "Code/security/semantic critique goal requires verified source-code reads before finalization: "
+                f"{len(code_reads)}/{code_security_read_required} code reads available. "
+                "Do not claim absence of issues; continue with repo_list_files/repo_read over code paths."
+            )
 
         core_candidates = _rank_core_candidates(file_memory, list_rows)
         candidates = _candidate_actions_from_evidence(
@@ -547,6 +567,28 @@ class EvidenceBuilder:
             "repo_available_read_candidates": repo_available_read_candidates[:160] if repo_goal else [],
             "repo_concrete_read_count": len(meaningful_content_reads) if repo_goal else None,
             "repo_goal_final_target_is_orientative": bool(orientative_repo_final_goal) if repo_goal else None,
+            "code_security_coverage": {
+                "schema": "code_security_coverage_gate.v1",
+                "required": code_security_coverage_required,
+                "source_code_read_required": code_security_read_required if code_security_coverage_required else 0,
+                "source_code_read_count": len(code_reads),
+                "source_code_reads": code_reads[:80],
+                "source_code_candidates": code_available_read_candidates[:120],
+                "verdict_allowed": code_security_coverage_sufficient,
+                "allowed_conclusion": (
+                    "code_security_verdict_allowed"
+                    if code_security_coverage_sufficient else
+                    "partial_findings_only"
+                ),
+                "forbidden_claims_when_not_allowed": [
+                    "no security issues",
+                    "no critical issues identified",
+                    "nessuna criticita",
+                    "nessuna criticità",
+                    "repository is secure",
+                    "intrinsecamente sicura",
+                ],
+            },
             "failed_repo_read_paths": read_failed[:120],
             "failed_repo_list_files_paths": list_failed[:120],
             "repo_list_files_evidence": list_rows[-10:],
@@ -638,6 +680,8 @@ class EvidenceBuilder:
                 "doc_reads": doc_reads[:80],
                 "code_read_count": len(code_reads),
                 "code_reads": code_reads[:80],
+                "code_security_coverage_required": code_security_coverage_required,
+                "code_security_verdict_allowed": code_security_coverage_sufficient,
                 "meaningful_non_root_list_count": len(meaningful_lists),
                 "meaningful_non_root_lists": meaningful_lists[:20],
                 "meaningful_content_read_count": len(meaningful_content_reads),

@@ -7,6 +7,7 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO, parse_bool
 from aicarmine_broker.infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.tools.git_surface import git_candidate_files
 
 
 _EXCLUDE_DIRS_DEFAULT = frozenset(
@@ -37,8 +38,9 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if core and not suffix:
         suffix = ".py"
 
-    exclude_dirs = set(str(d) for d in (args.get("exclude_dirs") or []))
-    exclude_dirs |= _EXCLUDE_DIRS_DEFAULT
+    user_exclude_dirs = set(str(d) for d in (args.get("exclude_dirs") or []))
+    fallback_exclude_dirs = set(user_exclude_dirs)
+    fallback_exclude_dirs |= _EXCLUDE_DIRS_DEFAULT
 
     try:
         rel = "." if path in {"", "."} else safe_rel_path(path)
@@ -60,22 +62,43 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return not suffix or fp.suffix.lower() == suffix
 
     files: list[dict[str, Any]] = []
+    source = "filesystem_walk"
     if base.is_file():
-        if _accept(base):
+        git_files = git_candidate_files(LAB_REPO, base)
+        if git_files == []:
+            source = "git_ls_files_exclude_standard"
+        elif _accept(base):
             files.append({"path": repo_rel(base, LAB_REPO), "size_bytes": base.stat().st_size})
+            if git_files is not None:
+                source = "git_ls_files_exclude_standard"
     else:
-        base_depth = len(base.relative_to(LAB_REPO).parts)
-        for current, dirs, filenames in os.walk(base):
-            cp = Path(current)
-            depth = len(cp.relative_to(LAB_REPO).parts) - base_depth
-            dirs[:] = [d for d in dirs if d not in exclude_dirs]
-            if depth > max_depth:
-                dirs[:] = []
-                continue
-            for fn in filenames:
-                fp = cp / fn
+        git_files = git_candidate_files(LAB_REPO, base)
+        if git_files is not None:
+            source = "git_ls_files_exclude_standard"
+            for fp in git_files:
+                try:
+                    local_parts = fp.relative_to(base).parts
+                except ValueError:
+                    continue
+                if len(local_parts[:-1]) > max_depth:
+                    continue
+                if any(part in user_exclude_dirs for part in local_parts[:-1]):
+                    continue
                 if _accept(fp):
                     files.append({"path": repo_rel(fp, LAB_REPO), "size_bytes": fp.stat().st_size})
+        else:
+            base_depth = len(base.relative_to(LAB_REPO).parts)
+            for current, dirs, filenames in os.walk(base):
+                cp = Path(current)
+                depth = len(cp.relative_to(LAB_REPO).parts) - base_depth
+                dirs[:] = [d for d in dirs if d not in fallback_exclude_dirs]
+                if depth > max_depth:
+                    dirs[:] = []
+                    continue
+                for fn in filenames:
+                    fp = cp / fn
+                    if _accept(fp):
+                        files.append({"path": repo_rel(fp, LAB_REPO), "size_bytes": fp.stat().st_size})
 
     files = sorted(files, key=lambda x: str(x.get("path") or "").lower())
     selected = files[:limit]
@@ -91,6 +114,8 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "files": selected,
         "paths": [str(x["path"]) for x in selected],
         "truncated": len(files) > limit,
+        "source": source,
+        "gitignore_respected": source == "git_ls_files_exclude_standard",
     }
     artifact = root / "tool-results" / f"{now()}-repo_list_files.json"
     write_json(artifact, payload)

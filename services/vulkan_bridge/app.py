@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -7,6 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -24,9 +26,16 @@ from .application.response_values import (
     compact_text,
     json_size,
 )
+from .application.materialization_report import build_materialization_report
 from .application.public_field_names import normalize_public_payload_field_names
 from .application.public_payload_linter import lint_public_payload
 from .openapi_builder import build_native_helper_openapi
+
+_agentic_v9_hashlib = hashlib
+_agentic_v9_json = json
+_agentic_v9_os = os
+_agentic_v9_time = time
+_agentic_v9_Path = Path
 
 OPENWEBUI_PUBLIC_TOOLS = (
     "helper_for_all",
@@ -87,6 +96,10 @@ BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = BRIDGE_CONFIG.max_openwebui_summary_chars
 BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = BRIDGE_CONFIG.max_openwebui_answer_chars
 BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = BRIDGE_CONFIG.openwebui_inline_file_chars
 BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = BRIDGE_CONFIG.openwebui_inline_evidence_chars
+OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR = Path(
+    os.environ.get("AICARMINE_OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR")
+    or (Path(__file__).resolve().parents[2] / "state" / "openwebui_tool_payloads")
+)
 OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = BRIDGE_CONFIG.final_tool_settle_seconds
 OPENWEBUI_FINAL_UNLOAD_PLANNER = BRIDGE_CONFIG.final_unload_planner
 OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = BRIDGE_CONFIG.final_unload_timeout_seconds
@@ -180,7 +193,10 @@ class VulkanHelperRequest(BaseModel):
         "",
         description=(
             "User task for the local agentic loop. Send the full user request once; the helper "
-            "runs the controlled backend loop and returns the completed answer plus inline evidence."
+            "runs the controlled backend loop and returns the completed answer plus inline evidence. "
+            "If OpenWebUI exposes a previous tool result as _file://.../agent-tool-context.txt "
+            "or an open-webui/uploads path, pass that reference here to browse the cached prior "
+            "payload tree and concrete full diff/file-content fields; it is not a repository path."
         ),
     )
 
@@ -399,6 +415,363 @@ def _semantic_request_from_tool_envelope(raw_payload: dict[str, Any], requested_
         f"public_tool={public_tool_x}; requested_function={function or '<none>'}; "
         f"raw_arguments={json.dumps(raw_payload, ensure_ascii=False, sort_keys=True)[:3000]}"
     )
+
+
+_OPENWEBUI_UPLOAD_REFERENCE_MARKERS = (
+    "_file://",
+    "agent-tool-context.txt",
+    "agent-tool-context",
+    "open-webui/uploads",
+    ".config/open-webui/uploads",
+)
+
+_OPENWEBUI_PAYLOAD_BROWSER_PATH_RE = re.compile(
+    r"\b(?P<path>"
+    r"(?:payload_index|payload_index_for_30b|priority_evidence|priority_evidence_for_30b|"
+    r"tool_context|tool_context_for_30b|primary_payload|openwebui_usage|"
+    r"materialization_report|result)"
+    r"(?:\.[A-Za-z0-9_]+(?:\[(?:\d+|\*)\])?)*"
+    r")"
+)
+
+_OPENWEBUI_PAYLOAD_BROWSER_TOKEN_RE = re.compile(r"^(?P<name>[^\[\]]+)(?:\[(?P<index>\d+|\*)\])?$")
+
+
+def _openwebui_upload_reference_text(raw_payload: dict[str, Any]) -> str:
+    values: list[str] = []
+    for key in (
+        "request",
+        "task",
+        "query",
+        "prompt",
+        "instruction",
+        "command",
+        "path",
+        "context",
+    ):
+        value = raw_payload.get(key)
+        if isinstance(value, str) and value.strip():
+            values.append(value)
+    for key in ("parameters", "arguments", "args", "input", "payload"):
+        value = raw_payload.get(key)
+        if isinstance(value, dict):
+            for nested_key in ("request", "task", "query", "prompt", "instruction", "path"):
+                nested = value.get(nested_key)
+                if isinstance(nested, str) and nested.strip():
+                    values.append(nested)
+    return "\n".join(values)
+
+
+def _is_openwebui_upload_reference(raw_payload: dict[str, Any]) -> bool:
+    text = _openwebui_upload_reference_text(raw_payload).lower().replace("\\", "/")
+    if not text:
+        return False
+    return any(marker in text for marker in _OPENWEBUI_UPLOAD_REFERENCE_MARKERS)
+
+
+def _openwebui_payload_cache_file() -> Path:
+    return OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR / "vulkan_helper-last-public-payload.json"
+
+
+def _jsonable_for_cache(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def _remember_openwebui_tool_payload(payload: dict[str, Any], *, alias_called: str) -> None:
+    if alias_called != "vulkan_helper" or not isinstance(payload, dict):
+        return
+    if payload.get("mode") == "openwebui_upload_payload_browser":
+        return
+    if payload.get("resolved_openwebui_upload_reference") is True:
+        return
+    try:
+        public_payload = normalize_public_payload_field_names(_jsonable_for_cache(payload))
+        raw = json.dumps(public_payload, ensure_ascii=False, sort_keys=True, default=str)
+        record = {
+            "schema": "openwebui.vulkan_helper.public_payload_cache.v1",
+            "saved_unix": time.time(),
+            "public_tool": alias_called,
+            "job_id": public_payload.get("job_id"),
+            "status": public_payload.get("status"),
+            "payload_chars": len(raw),
+            "payload_sha256": hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest(),
+            "payload": public_payload,
+        }
+        cache_file = _openwebui_payload_cache_file()
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file = cache_file.with_suffix(".tmp")
+        tmp_file.write_text(json.dumps(record, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        tmp_file.replace(cache_file)
+    except BaseException:
+        return
+
+
+def _load_openwebui_tool_payload_cache() -> dict[str, Any]:
+    cache_file = _openwebui_payload_cache_file()
+    try:
+        if not cache_file.exists() or not cache_file.is_file():
+            return {}
+        record = json.loads(cache_file.read_text(encoding="utf-8", errors="replace"))
+        if not isinstance(record, dict) or not isinstance(record.get("payload"), dict):
+            return {}
+        return record
+    except BaseException:
+        return {}
+
+
+def _payload_browser_public_payload(record: dict[str, Any]) -> dict[str, Any]:
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return {}
+    payload = normalize_public_payload_field_names(_jsonable_for_cache(payload))
+    tool_context = payload.get("tool_context")
+    if isinstance(tool_context, str):
+        try:
+            parsed = json.loads(tool_context)
+        except BaseException:
+            parsed = None
+        if isinstance(parsed, dict):
+            payload["tool_context"] = parsed
+    return payload
+
+
+def _payload_browser_normalize_path(path: str) -> str:
+    text = str(path or "").strip()
+    if text.startswith("$."):
+        text = text[2:]
+    elif text.startswith("$"):
+        text = text[1:].lstrip(".")
+    for old, new in (
+        ("payload_index_for_30b", "payload_index"),
+        ("priority_evidence_for_30b", "priority_evidence"),
+        ("tool_context_for_30b", "tool_context"),
+    ):
+        if text == old or text.startswith(old + "."):
+            return new + text[len(old):]
+    return text
+
+
+def _payload_browser_tokenize(path: str) -> list[tuple[str, str | None]]:
+    tokens: list[tuple[str, str | None]] = []
+    for raw in _payload_browser_normalize_path(path).split("."):
+        raw = raw.strip()
+        if not raw:
+            continue
+        match = _OPENWEBUI_PAYLOAD_BROWSER_TOKEN_RE.match(raw)
+        if match:
+            tokens.append((match.group("name"), match.group("index")))
+        else:
+            tokens.append((raw, None))
+    return tokens
+
+
+def _payload_browser_resolve_tokens(current: Any, tokens: list[tuple[str, str | None]]) -> list[Any]:
+    if not tokens:
+        return [current]
+    name, index = tokens[0]
+    rest = tokens[1:]
+    if not isinstance(current, dict) or name not in current:
+        return []
+    value = current.get(name)
+    if index is None:
+        return _payload_browser_resolve_tokens(value, rest)
+    if not isinstance(value, list):
+        return []
+    if index == "*":
+        out: list[Any] = []
+        for item in value:
+            out.extend(_payload_browser_resolve_tokens(item, rest))
+        return out
+    try:
+        item_index = int(index)
+    except ValueError:
+        return []
+    if item_index < 0 or item_index >= len(value):
+        return []
+    return _payload_browser_resolve_tokens(value[item_index], rest)
+
+
+def _payload_browser_resolve_path(payload: dict[str, Any], path: str) -> dict[str, Any]:
+    normalized = _payload_browser_normalize_path(path)
+    values = _payload_browser_resolve_tokens(payload, _payload_browser_tokenize(normalized))
+    return {
+        "path": normalized,
+        "exists": bool(values),
+        "match_count": len(values),
+        "value": values[0] if len(values) == 1 else values,
+    }
+
+
+def _payload_browser_extract_requested_path(raw_payload: dict[str, Any]) -> str:
+    text = _openwebui_upload_reference_text(raw_payload)
+    for match in _OPENWEBUI_PAYLOAD_BROWSER_PATH_RE.finditer(text):
+        path = _payload_browser_normalize_path(match.group("path"))
+        if path not in {"result"}:
+            return path
+    return ""
+
+
+def _payload_browser_node_kind(value: Any) -> str:
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
+
+def _payload_browser_tree_rows(value: Any, *, path: str = "$", depth: int = 0, max_depth: int = 4, max_children: int = 80) -> list[dict[str, Any]]:
+    kind = _payload_browser_node_kind(value)
+    row: dict[str, Any] = {"path": path, "type": kind}
+    if isinstance(value, dict):
+        row["keys"] = list(value.keys())[:max_children]
+        row["children"] = len(value)
+    elif isinstance(value, list):
+        row["items"] = len(value)
+    elif isinstance(value, str):
+        row["chars"] = len(value)
+        if path.rsplit(".", 1)[-1] in {"content", "unified_diff", "structured_operations", "stdout", "stderr"}:
+            row["payload_text"] = True
+    rows = [row]
+    if depth >= max_depth:
+        return rows
+    if isinstance(value, dict):
+        for key, child in list(value.items())[:max_children]:
+            rows.extend(
+                _payload_browser_tree_rows(
+                    child,
+                    path=f"{path}.{key}" if path != "$" else str(key),
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_children=max_children,
+                )
+            )
+    elif isinstance(value, list):
+        for index, child in enumerate(value[:max_children]):
+            rows.extend(
+                _payload_browser_tree_rows(
+                    child,
+                    path=f"{path}[{index}]",
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_children=max_children,
+                )
+            )
+    return rows
+
+
+def _payload_browser_index_locations(payload: dict[str, Any]) -> list[str]:
+    payload_index = payload.get("payload_index")
+    if not isinstance(payload_index, dict):
+        return []
+    out: list[str] = []
+    for section in ("concrete_results", "partial_results"):
+        rows = payload_index.get(section)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for key in ("primary_location", "full_context_location", "field"):
+                value = row.get(key)
+                if isinstance(value, str):
+                    out.append(_payload_browser_normalize_path(value))
+                elif isinstance(value, dict):
+                    for child in value.values():
+                        if isinstance(child, str):
+                            out.append(_payload_browser_normalize_path(child))
+    unique: list[str] = []
+    for path in out:
+        if path and path not in unique:
+            unique.append(path)
+    return unique
+
+
+def _payload_browser_concrete_payloads(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for path in _payload_browser_index_locations(payload):
+        resolved = _payload_browser_resolve_path(payload, path)
+        if not resolved.get("exists"):
+            continue
+        value = resolved.get("value")
+        out.append({
+            "path": resolved["path"],
+            "type": _payload_browser_node_kind(value),
+            "chars": len(value) if isinstance(value, str) else None,
+            "value": value,
+        })
+    return out
+
+
+def _openwebui_upload_reference_response(raw_payload: dict[str, Any], *, alias_called: str) -> dict[str, Any] | None:
+    if alias_called != "vulkan_helper" or not _is_openwebui_upload_reference(raw_payload):
+        return None
+    record = _load_openwebui_tool_payload_cache()
+    payload = _payload_browser_public_payload(record)
+    if not payload:
+        return {
+            "ok": False,
+            "service": "vulkan_bridge",
+            "mode": "openwebui_upload_payload_browser",
+            "bridge_status": "OPENWEBUI_UPLOAD_REFERENCE_CACHE_MISS",
+            "resolved_openwebui_upload_reference": False,
+            "evidence_guide": (
+                "OpenWebUI passed an upload/file reference for a previous tool result, "
+                "but 3571 has no cached public payload to resolve it."
+            ),
+            "openwebui_upload_reference": _openwebui_upload_reference_text(raw_payload)[:2000],
+        }
+    requested_path = _payload_browser_extract_requested_path(raw_payload)
+    selected = _payload_browser_resolve_path(payload, requested_path) if requested_path else {}
+    concrete_payloads = _payload_browser_concrete_payloads(payload)
+    browser = {
+        "schema": "openwebui.vulkan_helper.payload_browser.v1",
+        "source": "3571_cached_last_vulkan_helper_public_payload",
+        "source_job_id": record.get("job_id") or payload.get("job_id"),
+        "source_status": record.get("status") or payload.get("status"),
+        "source_payload_sha256": record.get("payload_sha256"),
+        "requested_path": requested_path,
+        "tree": _payload_browser_tree_rows(payload),
+        "concrete_payload_locations": [item["path"] for item in concrete_payloads],
+        "read_protocol": {
+            "tool": "vulkan_helper",
+            "request_examples": [
+                "read OpenWebUI tool payload path priority_evidence.items[0].content",
+                "read OpenWebUI tool payload path tool_context.artifacts[0].artifact.unified_diff",
+                "read OpenWebUI tool payload path payload_index.concrete_results",
+            ],
+        },
+    }
+    response = {
+        "ok": True,
+        "service": "vulkan_bridge",
+        "mode": "openwebui_upload_payload_browser",
+        "bridge_status": "OPENWEBUI_UPLOAD_REFERENCE_RESOLVED",
+        "resolved_openwebui_upload_reference": True,
+        "evidence_guide": (
+            "The _file/open-webui upload path is a reference to the previous vulkan_helper tool result. "
+            "3571 resolved it from its cached public payload. Use payload_browser.tree to navigate; "
+            "use payload_browser.concrete_payload_locations and concrete_payloads for full diffs/file contents."
+        ),
+        "openwebui_upload_reference": _openwebui_upload_reference_text(raw_payload)[:2000],
+        "payload_browser": browser,
+        "concrete_payloads": concrete_payloads,
+    }
+    if selected:
+        response["selected_path"] = selected.get("path")
+        response["selected_value"] = selected.get("value")
+        response["selected_exists"] = selected.get("exists")
+        response["selected_match_count"] = selected.get("match_count")
+    else:
+        response["payload"] = payload
+    return response
 
 
 def _build_agent_payload(raw_payload: dict[str, Any], public_tool_x: str = "helper_for_all") -> dict[str, Any]:
@@ -693,6 +1066,10 @@ def _handle_helper(req: HelperForAllRequest, alias_called: str) -> dict[str, Any
         raw_payload.setdefault("function", public_tool_x)
         raw_payload.setdefault("tool_name", public_tool_x)
         raw_payload.setdefault("operation_id", public_tool_x)
+
+    upload_reference_response = _openwebui_upload_reference_response(raw_payload, alias_called=public_tool_x)
+    if upload_reference_response is not None:
+        return upload_reference_response
     
     agent_payload = _build_agent_payload(raw_payload, public_tool_x=public_tool_x)
     if not agent_payload.get("bridge_timeout_configuration_ok", True):
@@ -718,6 +1095,7 @@ def _handle_helper(req: HelperForAllRequest, alias_called: str) -> dict[str, Any
     timeout = int(agent_payload["timeout_seconds"])
     result = _post_json(AGENT_URL, agent_payload, timeout=timeout)
     result.setdefault("service", "vulkan_bridge")
+    _remember_openwebui_tool_payload(result, alias_called=public_tool_x)
     if result.get("status") == "completed" or result.get("job_ok") is True:
         return result
     return result
@@ -873,13 +1251,6 @@ app.openapi = _native_helper_openapi
 #   Native tools pass the method return value as model-visible content, so the
 #   return value must explicitly say: this is a tool observation, do not echo,
 #   synthesize an answer from the evidence, call the tool again only if needed.
-
-import hashlib as _agentic_v9_hashlib
-import json as _agentic_v9_json
-import os as _agentic_v9_os
-import time as _agentic_v9_time
-from pathlib import Path as _agentic_v9_Path
-
 
 def _agentic_v9_enabled():
     return str(_agentic_v9_os.environ.get("AGENTIC_OPENWEBUI_PROTOCOL_OBSERVATION", "1")).strip().lower() not in {"0", "false", "no", "off"}
@@ -2834,6 +3205,7 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
         priority_items.append(analysis_item)
     return _agentic_v9_clean({
         "schema": "openwebui.priority_evidence_for_30b.v1",
+        "purpose": (
             "High-priority evidence for the 30B model. Complete payloads here "
             "are real inline payloads selected from successful tool artifacts. "
             "Partial products are explicitly marked validator_accepted=false and "
@@ -2842,7 +3214,7 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
             "mirror in tool_context_for_30b.artifacts[*].artifact. When the internal job did not complete, useful status or "
             "partial products are intentionally first; do not stop at the "
             "terminal warning."
-        
+        ),
         "items": priority_items,
         "limits": tool_context.get("limits"),
     })
@@ -2936,6 +3308,126 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "primary_location": primary_location,
         })
     return {}
+
+
+def _agentic_v9_iter_location_strings(value):
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _agentic_v9_iter_location_strings(child)
+
+
+def _agentic_v9_first_location_value(row):
+    row = _agentic_v9_as_dict(row)
+    for key in ("primary_location", "field", "full_context_location"):
+        for location in _agentic_v9_iter_location_strings(row.get(key)):
+            if location:
+                return location
+    return ""
+
+
+def _agentic_v9_append_unique(values, value):
+    value = str(value or "").strip()
+    if value and value not in values:
+        values.append(value)
+
+
+def _agentic_v9_payload_search_order(concrete_results, partial_results, descriptive_only):
+    order = []
+    _agentic_v9_append_unique(order, "evidence_guide_for_30b")
+    _agentic_v9_append_unique(order, "primary_payload_for_30b.primary_location")
+    if concrete_results:
+        _agentic_v9_append_unique(order, "payload_index_for_30b.concrete_results")
+        for row in concrete_results:
+            _agentic_v9_append_unique(order, _agentic_v9_first_location_value(row))
+    if partial_results:
+        _agentic_v9_append_unique(order, "payload_index_for_30b.partial_results")
+        for row in partial_results:
+            _agentic_v9_append_unique(order, _agentic_v9_first_location_value(row))
+    for row in descriptive_only:
+        _agentic_v9_append_unique(order, _agentic_v9_first_location_value(row))
+    if not concrete_results and not partial_results:
+        _agentic_v9_append_unique(order, "tool_context_for_30b.artifacts[*].artifact")
+    return order
+
+
+def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, completed=True):
+    priority_evidence = _agentic_v9_as_dict(priority_evidence)
+    tool_context = _agentic_v9_as_dict(tool_context)
+    concrete_results = []
+    partial_results = []
+    descriptive_only = []
+    suggestions_only = []
+    for index, item in enumerate(_agentic_v9_as_list(priority_evidence.get("items"))):
+        item = _agentic_v9_as_dict(item)
+        location = _agentic_v9_payload_index_item_location(item, index, tool_context)
+        if location:
+            context_location = _agentic_v9_payload_index_context_location(tool_context, item)
+            if context_location and not location.get("full_context_location"):
+                location["full_context_location"] = context_location
+            is_partial = (
+                str(location.get("kind") or "").startswith("partial_")
+                or location.get("validator_accepted") is False
+                or (
+                    str(location.get("payload_type") or "").startswith("partial_")
+                    and location.get("payload_is_complete") is not True
+                )
+            )
+            if is_partial:
+                partial_results.append(location)
+            else:
+                concrete_results.append(location)
+            if item.get("kind") == "code_edit_proposal":
+                base = f"priority_evidence_for_30b.items[{index}]"
+                suggestions_only.extend([
+                    {"field": f"{base}.manual_review_required"},
+                    {"field": f"{base}.validation_commands"},
+                ])
+            continue
+        if item.get("kind") == "repo_analysis_summary":
+            descriptive_only.append({"field": f"priority_evidence_for_30b.items[{index}].summary"})
+
+    descriptive_rows = descriptive_only + [{"field": "priority_evidence_for_30b.items[*].summary"}]
+    has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
+    return _agentic_v9_clean({
+        "index_kind": "openwebui_payload_index.v1",
+        "job_completed": bool(completed),
+        "same_request_rule": (
+            "Rispondi usando i campi indicizzati qui quando esistono concrete_results, "
+            "partial_results o descriptive_only. Non richiamare vulkan_helper per la "
+            "stessa richiesta solo perche' job_completed=false; quello e' uno stato "
+            "del job interno, non assenza di payload."
+            if has_indexed_payload else
+            "Nessun payload indicizzato disponibile; solo in questo caso una nuova "
+            "chiamata puo' essere necessaria per la stessa richiesta."
+        ),
+        "concrete_results": concrete_results,
+        "partial_results": partial_results,
+        "descriptive_only": descriptive_rows,
+        "suggestions_or_review_metadata_only": suggestions_only + [
+            {"field": "priority_evidence_for_30b.limits"},
+            {"field": "openwebui_usage"},
+        ],
+        "search_order": _agentic_v9_payload_search_order(
+            concrete_results,
+            partial_results,
+            descriptive_rows,
+        ),
+    })
+
+
+def _agentic_v9_build_external_tool_context_for_30b(tool_context):
+    tool_context = _agentic_v9_as_dict(tool_context)
+    if not tool_context:
+        return {}
+    external = _agentic_v9_strip_tool_context_narrative_duplicates(dict(tool_context))
+    external = _agentic_v9_public_sanitize_value(external) or {}
+    external.setdefault("type", "agentic_loop_public_evidence_context")
+    external.setdefault("top_level_evidence_guide_field", "evidence_guide_for_30b")
+    external.setdefault("artifact_mirror_field", "tool_context_for_30b.artifacts[*].artifact")
+    return _agentic_v9_clean(external)
 
 
 def _agentic_v9_partial_products_from_decoded(decoded):

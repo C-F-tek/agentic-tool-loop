@@ -17,6 +17,7 @@ Un final valido per analisi repository deve usare evidence_contract.operational_
 - core candidates con path concreti;
 - limiti della copertura;
 - path concreti presenti nell'evidenza.
+Se evidence_contract.code_security_coverage.required=true e verdict_allowed=false, puoi rispondere solo con analisi parziale e limiti di copertura: non dire "nessuna criticita", "no security issues", "repository secure" o equivalenti.
 Non usare il template ripetuto "core directories are ... well-structured repository ... clear separation of concerns" se non aggiungi evidenza concreta file-per-file.
 Nel final cita almeno 5 path letti o listati e spiega il ruolo di almeno 3 file concreti; se non hai letto file nell'area core, scegli repo_read o terminal_run_command_wait invece di final.
 Non ripetere repo_tree/repo_list_files/repo_read già respinti o già utili.

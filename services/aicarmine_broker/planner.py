@@ -16,18 +16,14 @@ from __future__ import annotations
 
 import json
 import re
-import time
-import traceback
 from pathlib import Path
 from typing import Any
 
 from .config import (
-    AGENTIC_PLANNER_FORCED_DECISION_TIMEOUT,
     WRITE_GUARDED_TOOLS,
     AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,
     AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY,
     AGENTIC_PLANNER_NATIVE_TOOLS,
-    AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS,
     AGENTIC_PLANNER_HISTORY_PROMPT_TAIL,
     AGENTIC_PLANNER_NUM_CTX,
     AGENTIC_PLANNER_NUM_CTX_CAP,
@@ -77,7 +73,7 @@ from .memory_tools import (
 )
 from .code_edit_proposal_contract import validate_unified_diff_text
 from .planner_intrinsic_context import build_planner_intrinsic_context
-from .repo_tools import safe_rel_path, terminal_environment_contract
+from .repo_tools import safe_rel_path
 
 
 # ---------------------------------------------------------------------------
@@ -89,13 +85,17 @@ from .planner_core.json_io import (
     post_json,
     post_json_stream_to_file,
 )
+from .planner_core.cache import (
+    _cached_tool_result,
+    _tool_cache_hit,
+    _tool_cache_key,
+    _cached_vulkan_repair_result,
+    _repair_cache_key,
+    repeated_tool_call_count,
+)
 from .application.planner.decision_normalizer import (
-    _final_answer_from_content_field,
     _native_tool_calls_decision,
-    _normalize_final_answer_from_content,
-    _normalize_final_answer_lines,
     _normalize_terminal_planner_decision,
-    _single_embedded_json_decision,
     normalize_planner_decision,
 )
 from .application.prompt.available_tools import (
@@ -188,12 +188,10 @@ from .application.evidence.core_discovery import (
 )
 from .application.code_product.state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
-    CODE_PRODUCT_BUILD_STATE_SCHEMA,
     code_product_action_has_complete_payload as _code_product_action_has_complete_payload,
     code_product_build_state_has_collecting_progress as _code_product_build_state_has_collecting_progress,
     code_product_build_state_parse as _code_product_build_state_parse,
     code_product_build_state_ready_payload as _code_product_build_state_ready_payload,
-    code_product_build_state_section as _code_product_build_state_section,
     code_product_payload_violations as _code_product_payload_violations,
     copyable_example_text as _copyable_example_text,
     goal_exact_text_block as _goal_exact_text_block,
@@ -227,16 +225,14 @@ from .application.code_product.history import (
     successful_window_signatures as _successful_window_signatures_impl,
 )
 from .application.evidence.goal_classifier import (
-    final_answer_has_inline_code_product as _final_answer_has_inline_code_product,
     final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
-    goal_is_tool_envelope as _goal_is_tool_envelope,
+    goal_requires_code_security_coverage,
     goal_requests_apply,
     goal_requests_code_product,
     has_any as _has_any,
     input_error_goal as _input_error_goal,
     semantic_goal_classification as _classify_goal_deliverable,
     semantic_goal_low as _semantic_goal_low,
-    semantic_goal_text as _semantic_goal_text,
 )
 from .application.evidence.goal_scope import (
     extract_existing_goal_path as _extract_existing_goal_path_impl,
@@ -359,13 +355,12 @@ from .application.prompt.context_windows import (
     PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS as _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL,
     compact_prompt_context_window_item as _compact_prompt_context_window_item_impl,
 )
-from .application.prompt.text_windows import diff_chunks as _diff_chunks, window_text as _window_text
+from .application.prompt.text_windows import window_text as _window_text
 from .application.tool_surface.manifest_builder import (
     compact_tool_manifest_for_prompt as _compact_tool_manifest_for_prompt,
     filter_tool_manifest_for_names as _filter_tool_manifest_for_names,
     json_char_len as _json_char_len,
     native_tools_schema_for_planner as _native_tools_schema_for_planner,
-    tool_schema_name as _tool_schema_name,
 )
 from .application.prompt.tool_contract import (
     available_tools_for_user_payload as _available_tools_for_user_payload_impl,
@@ -395,7 +390,6 @@ from .application.planner.validation_rejections import (
 from .application.prompt.window_signatures import (
     decision_paths as _decision_paths,
     planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
-    repo_read_window_range_for_target as _repo_read_window_range_for_target,
     repo_read_window_signature as _repo_read_window_signature,
 )
 from .infrastructure.json_files import same_tool_artifact_payload as _same_tool_artifact_payload_impl
@@ -1501,16 +1495,6 @@ def _normalize_tool_name(value: str) -> str:
     return normalize_tool_name(value)
 
 
-from .planner_core.cache import (
-    _cached_tool_result,
-    _tool_cache_hit,
-    _tool_cache_key,
-    _cached_vulkan_repair_result,
-    _repair_cache_key,
-    repeated_tool_call_count,
-)
-
-
 def controller_guard_count(history: list[dict[str, Any]], kind: str) -> int:
     return _controller_guard_count_impl(history, kind)
 
@@ -2535,6 +2519,7 @@ def planner_evidence_contract(
             "user_scope_claims": _user_scope_claims,
             "verified_repo_read_content_rows": _verified_repo_read_content_rows,
             "goal_requested_repo_scope": goal_requested_repo_scope,
+            "goal_requires_code_security_coverage": goal_requires_code_security_coverage,
             "goal_requests_apply": goal_requests_apply,
             "goal_requests_code_product": goal_requests_code_product,
             "goal_requests_python_file_review": goal_requests_python_file_review,

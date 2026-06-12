@@ -157,6 +157,29 @@ def goal_requests_code_product(goal: str) -> bool:
     return goal_report_only_code_product_marker(goal) or any(re.search(pattern, low) for pattern in patterns)
 
 
+def goal_requires_code_security_coverage(goal: str) -> bool:
+    low = semantic_goal_low(goal)
+    code_markers = (
+        "codice", "code", "sorgente", "source", "semantiche", "semantic",
+        "anti-pattern", "antipattern", "code smell", "refactoring",
+    )
+    critical_markers = (
+        "criticità", "criticita", "vulnerabil", "sicurezza", "security",
+        "xss", "sql injection", "authentication", "auth", "race condition",
+        "resource leak", "memory leak", "input validation", "hardcoded",
+        "segreti", "secrets", "cve", "gdpr",
+    )
+    review_markers = (
+        "cerca", "ricerca", "trova", "analizza", "analisi", "scan",
+        "review", "audit", "ispeziona", "inspect",
+    )
+    return (
+        any(marker in low for marker in critical_markers)
+        and any(marker in low for marker in review_markers)
+        and (any(marker in low for marker in code_markers) or "repo" in low or "repository" in low)
+    )
+
+
 def goal_requests_apply(goal: str) -> bool:
     low = str(goal or "").lower()
     if goal_report_only_code_product_marker(goal) or goal_diff_output_not_apply_marker(goal):
@@ -322,6 +345,7 @@ def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> d
         "reason": reason,
         "requested_deliverable": requested,
         "must_produce_code_product": bool(must_code_product),
+        "requires_code_security_coverage": goal_requires_code_security_coverage(goal),
         "regex_code_product_override": bool(explicit_code_product),
         "regex_apply_override": bool(explicit_apply),
     }
