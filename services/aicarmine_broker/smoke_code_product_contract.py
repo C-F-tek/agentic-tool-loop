@@ -1,5 +1,8 @@
+# type: ignore
+# Runtime contract smoke: dynamic harness intentionally excluded from Pyright gate.
 from __future__ import annotations
 
+import importlib
 import json
 import importlib.util
 import sqlite3
@@ -20,6 +23,10 @@ from aicarmine_broker.code_edit_proposal_contract import (  # noqa: E402
 )
 from aicarmine_broker.tool_contract import TOOLS_SCHEMA  # noqa: E402
 from vulkan_bridge import app as bridge_app  # noqa: E402
+
+repo_code_product_tool = importlib.import_module("aicarmine_broker.tools.repo_code_product")
+repo_list_files_tool = importlib.import_module("aicarmine_broker.tools.repo_list_files")
+repo_read_tool = importlib.import_module("aicarmine_broker.tools.repo_read")
 
 
 def require(condition: bool, message: str) -> None:
@@ -124,15 +131,27 @@ def main() -> int:
         shared_path.parent.mkdir(parents=True, exist_ok=True)
         shared_path.write_text(shared_old, encoding="utf-8")
 
-        original_repo_tools_root = repo_tools.LAB_REPO
+        repo_lab_repo_modules = (
+            repo_tools,
+            repo_code_product_tool,
+            repo_list_files_tool,
+            repo_read_tool,
+        )
+        original_repo_tools_roots = {
+            module: module.LAB_REPO for module in repo_lab_repo_modules
+        }
         original_planner_root = planner.LAB_REPO
         original_native_tools = planner.AGENTIC_PLANNER_NATIVE_TOOLS
-        original_require_native_tools = planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS
-        repo_tools.LAB_REPO = repo_root
+        planner_require_native_tools_attr = "AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS"
+        has_require_native_tools = hasattr(planner, planner_require_native_tools_attr)
+        original_require_native_tools = getattr(planner, planner_require_native_tools_attr, None)
+        for module in repo_lab_repo_modules:
+            module.LAB_REPO = repo_root
         planner.LAB_REPO = repo_root
         try:
             planner.AGENTIC_PLANNER_NATIVE_TOOLS = True
-            planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = True
+            if has_require_native_tools:
+                setattr(planner, planner_require_native_tools_attr, True)
             diff_text = generate_unified_diff_from_texts(
                 target_file=target,
                 old_text=old_text,
@@ -372,13 +391,16 @@ def main() -> int:
                 f"native reserved history budget skipped the only tool result: {reserved_history_report}",
             )
             bloated_evidence = planner.planner_evidence_contract("Native messages smoke", [native_history_read])
+            bloat_budget = max(1, int(planner.AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 1))
+            bloat_reason_chars = max(260, bloat_budget // 40)
+            bloat_action_reason_chars = max(220, bloat_budget // 40)
             bloated_evidence["core_discovery_candidates"] = [
                 {
                     "path": f"pkg/discovery_{index}.py",
                     "next_tool": "repo_read",
                     "source": "smoke",
                     "rank": index,
-                    "reason": "x" * 260,
+                    "reason": "x" * bloat_reason_chars,
                 }
                 for index in range(80)
             ]
@@ -387,7 +409,7 @@ def main() -> int:
                     "action": "tool",
                     "tool": "repo_read",
                     "arguments": {"path": f"pkg/discovery_{index}.py"},
-                    "reason": "x" * 220,
+                    "reason": "x" * bloat_action_reason_chars,
                 }
                 for index in range(40)
             ]
@@ -549,18 +571,24 @@ def main() -> int:
                 '{"action":"tool"' not in native_system_text and '{"action": "tool"' not in native_system_text,
                 "native planner system prompt still contains JSON action=tool examples",
             )
-            planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = False
+            if has_require_native_tools:
+                setattr(planner, planner_require_native_tools_attr, False)
             native_text_tool_gate_without_require = planner.validate_planner_decision_against_evidence(
                 "Native tool gate smoke",
                 {"action": "tool", "tool": "repo_status", "arguments": {}},
                 [],
             )
+            native_tool_gate_suffix = (
+                f" when {planner_require_native_tools_attr}=false"
+                if has_require_native_tools
+                else ""
+            )
             require(
                 "planner_text_tool_call_disallowed_in_native_mode"
                 in native_text_tool_gate_without_require.get("violations", []),
                 (
-                    "native mode accepted JSON-text tool call when "
-                    f"AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS=false: {native_text_tool_gate_without_require}"
+                    "native mode accepted JSON-text tool call"
+                    f"{native_tool_gate_suffix}: {native_text_tool_gate_without_require}"
                 ),
             )
             planner.AGENTIC_PLANNER_NATIVE_TOOLS = False
@@ -2402,6 +2430,47 @@ def main() -> int:
                 "recursive prompt context read did not continue from requested offset",
             )
             require(next_items[0].get("text"), "recursive prompt context read returned empty text")
+            planner_requested_window_chars = 131072
+            wide_window = memory_tools.planner_prompt_context_store_window(
+                planner.agent_job_root("smoke-code-product-large"),
+                section="repo_read:pkg/huge.py",
+                text="A" * (planner_requested_window_chars * 3),
+                query="",
+                max_chars=planner_requested_window_chars,
+                metadata={"kind": "repo_read_content", "path": "pkg/huge.py"},
+            )
+            wide_next_window = memory_tools.planner_scratchpad_read(
+                {
+                    "kind": "prompt_context_window",
+                    "document_id": wide_window.get("document_id"),
+                    "offset": wide_window.get("window_end"),
+                    "max_chars": planner_requested_window_chars,
+                },
+                planner.agent_job_root("smoke-code-product-large"),
+            )
+            wide_next_items = wide_next_window.get("items") or []
+            require(wide_next_items, f"wide recursive prompt context read returned no windows: {wide_next_window}")
+            require(
+                wide_next_items[0].get("window_chars") == planner_requested_window_chars,
+                f"wide recursive prompt context read ignored planner-requested max_chars: {wide_next_items[0]}",
+            )
+            long_scratchpad_text = "S" * 20000
+            scratchpad_cap_root = planner.agent_job_root("smoke-cap-runtime")
+            long_scratchpad_write = memory_tools.planner_scratchpad_write(
+                {"kind": "note", "tag": "runtime_cap", "text": long_scratchpad_text},
+                scratchpad_cap_root,
+            )
+            require(long_scratchpad_write.get("ok") is True, f"long scratchpad write failed: {long_scratchpad_write}")
+            long_scratchpad_read = memory_tools.planner_scratchpad_read(
+                {"tag": "runtime_cap", "limit": 1},
+                scratchpad_cap_root,
+            )
+            long_scratchpad_items = long_scratchpad_read.get("items") or []
+            require(long_scratchpad_items, f"long scratchpad read returned no items: {long_scratchpad_read}")
+            require(
+                long_scratchpad_items[-1].get("text") == long_scratchpad_text,
+                "planner_scratchpad_write truncated text instead of preserving planner-provided content",
+            )
             next_compact = planner.compact_tool_result_for_planner("planner_scratchpad_read", next_window)
             compact_next_items = next_compact.get("items") or []
             require(compact_next_items, "compact recursive prompt context read returned no items")
@@ -3160,10 +3229,12 @@ def main() -> int:
             require(stored_windows > 0, "optional windows were omitted without SQLite storage")
 
         finally:
-            repo_tools.LAB_REPO = original_repo_tools_root
+            for module, original_root in original_repo_tools_roots.items():
+                module.LAB_REPO = original_root
             planner.LAB_REPO = original_planner_root
             planner.AGENTIC_PLANNER_NATIVE_TOOLS = original_native_tools
-            planner.AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = original_require_native_tools
+            if has_require_native_tools:
+                setattr(planner, planner_require_native_tools_attr, original_require_native_tools)
 
     print("code_product_contract_smoke ok")
     return 0

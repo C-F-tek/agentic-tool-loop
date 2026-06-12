@@ -19,6 +19,17 @@ SERVER_NAME = "aicarmine-repo-search-det-mcp"
 SERVER_VERSION = "1.0.0"
 
 
+def string_prop(default: str | None = None) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "string"}
+    if default is not None:
+        schema["default"] = default
+    return schema
+
+
+def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
+    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
+
+
 def _tools() -> dict[str, ToolSpec]:
     from aicarmine_broker.tools.repo_deterministic import (
         repo_ast_grep_dry_run,
@@ -44,43 +55,105 @@ def _tools() -> dict[str, ToolSpec]:
     tools["aicarmine_repo_search_fd"] = ToolSpec(
         name="aicarmine_repo_search_fd",
         description="Find files with fd inside the configured repo root.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "pattern": string_prop(),
+                "query": string_prop(),
+                "path": string_prop("."),
+                "extension": string_prop(),
+                "suffix": string_prop(),
+                "limit": integer_prop(200, 1, 5000),
+                "max_results": integer_prop(200, 1, 5000),
+                "timeout_seconds": integer_prop(60, 1, 600),
+            }
+        ),
         handler=repo_fd_files,
     )
     tools["aicarmine_repo_search_rg"] = ToolSpec(
         name="aicarmine_repo_search_rg",
         description="Search file contents with ripgrep JSON output inside the configured repo root.",
-        input_schema=object_schema({"pattern": {"type": "string"}, "path": {"type": "string"}}),
+        input_schema=object_schema(
+            {
+                "pattern": string_prop(),
+                "query": string_prop(),
+                "path": string_prop("."),
+                "max_results": integer_prop(80, 1, 1000),
+                "limit": integer_prop(80, 1, 1000),
+                "context": integer_prop(0, 0, 5),
+                "timeout_seconds": integer_prop(120, 1, 600),
+            },
+            any_of=[["pattern"], ["query"]],
+        ),
         handler=repo_rg_search,
     )
     tools["aicarmine_repo_search_jq"] = ToolSpec(
         name="aicarmine_repo_search_jq",
         description="Run jq against json_text or a repo JSON file.",
-        input_schema=object_schema({"query": {"type": "string"}, "json_text": {"type": "string"}}),
+        input_schema=object_schema(
+            {
+                "query": string_prop(),
+                "filter": string_prop(),
+                "json_text": string_prop(),
+                "path": string_prop(),
+                "timeout_seconds": integer_prop(60, 1, 600),
+            },
+            any_of=[["query"], ["filter"]],
+        ),
         handler=repo_jq_query,
     )
     tools["aicarmine_repo_search_ast_grep"] = ToolSpec(
         name="aicarmine_repo_search_ast_grep",
         description="Run ast-grep search inside the configured repo root.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "pattern": string_prop(),
+                "kind": string_prop(),
+                "rewrite": string_prop(),
+                "lang": string_prop("python"),
+                "language": string_prop(),
+                "path": string_prop("."),
+                "timeout_seconds": integer_prop(120, 1, 600),
+            },
+            any_of=[["pattern"], ["kind"]],
+        ),
         handler=repo_ast_grep_search,
     )
     tools["aicarmine_repo_search_ast_grep_dry_run"] = ToolSpec(
         name="aicarmine_repo_search_ast_grep_dry_run",
         description="Run ast-grep rewrite dry-run without writing source files.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "pattern": string_prop(),
+                "rewrite": string_prop(),
+                "lang": string_prop("python"),
+                "language": string_prop(),
+                "path": string_prop("."),
+                "timeout_seconds": integer_prop(120, 1, 600),
+            },
+            required=["pattern", "rewrite"],
+        ),
         handler=repo_ast_grep_dry_run,
     )
     tools["aicarmine_repo_search_tree_sitter_parse"] = ToolSpec(
         name="aicarmine_repo_search_tree_sitter_parse",
         description="Parse a Python file with tree-sitter and return syntax anchors.",
-        input_schema=object_schema({"path": {"type": "string"}}),
+        input_schema=object_schema(
+            {"path": string_prop(), "language": string_prop("python"), "lang": string_prop()},
+            required=["path"],
+        ),
         handler=repo_tree_sitter_parse,
     )
     tools["aicarmine_repo_search_ctags"] = ToolSpec(
         name="aicarmine_repo_search_ctags",
         description="List symbols with universal-ctags JSON output.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "path": string_prop("."),
+                "paths": {"type": "array", "items": {"type": "string"}},
+                "limit": integer_prop(500, 1, 5000),
+                "timeout_seconds": integer_prop(120, 1, 600),
+            }
+        ),
         handler=repo_ctags_symbols,
     )
     return tools

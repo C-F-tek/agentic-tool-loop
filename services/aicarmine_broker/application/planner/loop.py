@@ -8,6 +8,16 @@ from typing import Any, Mapping
 from .state import PlannerLoopState
 
 
+def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
+    value = mapping.get(key)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _list_field(mapping: Mapping[str, Any], key: str) -> list[Any]:
+    value = mapping.get(key)
+    return list(value) if isinstance(value, list) else []
+
+
 def run_agentic_planner_job(
     job_id: str,
     *,
@@ -89,6 +99,33 @@ def run_agentic_planner_job(
         _evidence_builder=lambda rows: planner_evidence_contract(str(state.get("goal") or ""), rows),
     )
 
+    def planner_step_budget_guidance(step_number: int) -> dict[str, Any]:
+        remaining_steps = max(0, max_steps - int(step_number) + 1)
+        if remaining_steps <= 0:
+            return {}
+        if remaining_steps == 1:
+            mode = "force_terminal_decision"
+        elif remaining_steps == 2:
+            mode = "prepare_terminal_decision"
+        else:
+            return {}
+        return {
+            "schema": "planner_step_budget_guidance.v1",
+            "mode": mode,
+            "current_step": int(step_number),
+            "max_steps": int(max_steps),
+            "remaining_steps": int(remaining_steps),
+            "source": "AICARMINE_AGENT_MAX_STEPS",
+            "controller_does_not_auto_final": True,
+        }
+
+    def force_terminal_decision_active() -> bool:
+        guidance = state.get("planner_step_budget_guidance")
+        return (
+            isinstance(guidance, dict)
+            and str(guidance.get("mode") or "") == "force_terminal_decision"
+        )
+
     def runtime_debug_packet(
         *,
         step_number: int,
@@ -123,7 +160,7 @@ def run_agentic_planner_job(
         )
 
     def append_cached_tool_result(step_number: int, planner_decision: dict[str, Any], cached: dict[str, Any]) -> None:
-        cached_result = cached.get("result") if isinstance(cached.get("result"), dict) else {}
+        cached_result = _dict_field(cached, "result")
         append_agent_event(
             job_id,
             "tool_cache_hit",
@@ -157,12 +194,12 @@ def run_agentic_planner_job(
         for item in history:
             if not isinstance(item, dict):
                 continue
-            result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
-            decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+            result = _dict_field(item, "tool_result")
+            decision = _dict_field(item, "decision")
             result_tool = normalize_tool_name(str(result.get("tool") or decision.get("tool") or ""))
             if result_tool != wanted_tool or result.get("ok") is False:
                 continue
-            decision_args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+            decision_args = _dict_field(decision, "arguments")
             try:
                 comparable_args = sanitize_tool_args(
                     wanted_tool,
@@ -197,13 +234,13 @@ def run_agentic_planner_job(
         planner_decision: dict[str, Any],
         validation: dict[str, Any],
     ) -> None:
-        violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
+        violations = _list_field(validation, "violations")
         if "repeated_same_tool_arguments_without_progress" not in {str(item) for item in violations}:
             return
         tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
         if not tool:
             return
-        raw_args = planner_decision.get("arguments") if isinstance(planner_decision.get("arguments"), dict) else {}
+        raw_args = _dict_field(planner_decision, "arguments")
         internal_args = sanitize_tool_args(tool, dict(raw_args), original_args, public_tool_name)
         prior_results = successful_prior_tool_results_for_feedback(tool, internal_args)
         next_instruction = (
@@ -264,7 +301,7 @@ def run_agentic_planner_job(
 
     def execute_validated_tool_decision(step_number: int, planner_decision: dict[str, Any], substep: int | None = None) -> dict[str, Any] | None:
         tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
-        args = planner_decision.get("arguments") if isinstance(planner_decision.get("arguments"), dict) else {}
+        args = _dict_field(planner_decision, "arguments")
         internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
         if repeated_tool_call_count(history, tool, internal_args) >= 2:
             append_repeat_guard_result(step_number, planner_decision, tool, internal_args)
@@ -485,6 +522,11 @@ def run_agentic_planner_job(
             return finalize_agentic_job(job_id, state, "cancelled", "Job cancelled.", {"history": history})
 
         goal_text = str(state.get("goal") or "")
+        step_budget_guidance = planner_step_budget_guidance(step)
+        if step_budget_guidance:
+            state["planner_step_budget_guidance"] = step_budget_guidance
+        else:
+            state.pop("planner_step_budget_guidance", None)
         contract_snapshot = planner_evidence_contract(goal_text, history)
         memory_snapshot = planner_memory_surface({
             "goal": goal_text,
@@ -509,6 +551,7 @@ def run_agentic_planner_job(
                 "finalization_contract": contract_snapshot.get("finalization_contract", {}),
                 "codex_quality": contract_snapshot.get("agentic_codex_quality", {}),
                 "rejections_tail": contract_snapshot.get("validation_rejections_tail", []),
+                "planner_step_budget_guidance": step_budget_guidance,
             },
         })
         write_agent_job_state(state)
@@ -614,10 +657,13 @@ def run_agentic_planner_job(
                 },
             )
 
-        if str(decision.get("action") or "").strip().lower() == "tool_batch":
-            calls = decision.get("tool_calls") if isinstance(decision.get("tool_calls"), list) else []
+        if (
+            str(decision.get("action") or "").strip().lower() == "tool_batch"
+            and not force_terminal_decision_active()
+        ):
+            calls = _list_field(decision, "tool_calls")
             batch_decisions: list[dict[str, Any]] = []
-            batch_guard: dict[str, Any] | None = None
+            batch_guard: dict[str, Any] = {}
             if not calls:
                 batch_guard = {
                     "tool": "controller_guard",
@@ -802,6 +848,68 @@ def run_agentic_planner_job(
             str(state.get("goal") or ""), decision, history
         )
         if not validation.get("ok"):
+            if force_terminal_decision_active():
+                planner_memory_snapshot = (
+                    state.get("planner_memory_surface")
+                    if isinstance(state.get("planner_memory_surface"), dict)
+                    else {}
+                )
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
+                guard_result["guard_type"] = "guided_terminal_decision_validation_failed"
+                guard_result["summary"] = "guided_terminal_decision_validation_failed"
+                guard_result["planner_step_budget_guidance"] = state.get("planner_step_budget_guidance")
+                append_agent_event(
+                    job_id,
+                    "planner_decision_rejected",
+                    guard_result["summary"],
+                    guard_result,
+                    step=step,
+                )
+                row = {
+                    "step": step,
+                    "decision": {
+                        "action": "continue_required",
+                        "reason": (
+                            "guided terminal turn rejected invalid planner decision; "
+                            "no further tool step was consumed"
+                        ),
+                        "rejected_decision": guard_result.get("rejected_decision"),
+                    },
+                    "tool_result": guard_result,
+                }
+                loop_state.append_history_row(row)
+                persist_loop_turn_memory(row)
+                write_agent_job_state(state)
+                return finalize_agentic_job(
+                    job_id,
+                    state,
+                    "blocked_needs_attention",
+                    (
+                        "guided_terminal_decision_validation_failed: "
+                        "AICARMINE_AGENT_MAX_STEPS reached the guided terminal turn before "
+                        "max_steps_reached, but the planner did not produce a validator-accepted "
+                        "final/block decision. The controller preserved the available evidence "
+                        "and validation details instead of consuming another tool step."
+                    ),
+                    {
+                        "history": history,
+                        "blocked_by": "guided_terminal_decision_validation_failed",
+                        "planner_decision": decision,
+                        "validation": validation,
+                        "planner_step_budget_guidance": state.get("planner_step_budget_guidance"),
+                        "agent_flow_diagnostics": _agent_flow_diagnostics(
+                            str(state.get("goal") or ""),
+                            history,
+                            planner_memory_snapshot,
+                        ),
+                    },
+                )
             raw_planner_text = _decision_raw_planner_text(decision)
             retry_limit = (
                 AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES

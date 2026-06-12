@@ -19,6 +19,36 @@ TOOL_RESULT_TEXT_LIMIT = 120_000
 TOOL_RESULT_ITEMS_LIMIT = 500
 
 
+class DeterministicToolInputError(ValueError):
+    def __init__(
+        self,
+        error: str,
+        *,
+        argument: str | None = None,
+        value: Any = None,
+        path: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        super().__init__(error)
+        self.error = error
+        self.argument = argument
+        self.value = value
+        self.path = path
+        self.detail = detail
+
+    def payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"error": self.error}
+        if self.argument:
+            payload["argument"] = self.argument
+        if self.value is not None:
+            payload["value"] = self.value
+        if self.path:
+            payload["path"] = self.path
+        if self.detail:
+            payload["detail"] = self.detail
+        return payload
+
+
 def active_venv_script(name: str) -> Path:
     suffix = ".exe" if os.name == "nt" and not name.lower().endswith(".exe") else ""
     return Path(sys.executable).resolve(strict=False).parent / f"{name}{suffix}"
@@ -91,9 +121,54 @@ def deterministic_tool_missing(tool: str, executable: str) -> dict[str, Any]:
     }
 
 
+def deterministic_input_error(tool: str, exc: Exception) -> dict[str, Any]:
+    payload: dict[str, Any] = {"ok": False, "tool": tool}
+    if isinstance(exc, DeterministicToolInputError):
+        payload.update(exc.payload())
+        payload["error_type"] = type(exc).__name__
+        return payload
+    payload.update({"error": str(exc), "error_type": type(exc).__name__})
+    return payload
+
+
+def bounded_int_arg(
+    args: dict[str, Any],
+    names: str | tuple[str, ...],
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    keys = (names,) if isinstance(names, str) else names
+    label = "/".join(keys)
+    selected: Any = None
+    for key in keys:
+        value = args.get(key)
+        if value is not None and str(value).strip() != "":
+            selected = value
+            break
+    if selected is None:
+        selected = default
+    try:
+        parsed = int(selected)
+    except (TypeError, ValueError) as exc:
+        raise DeterministicToolInputError(
+            "invalid_integer_argument",
+            argument=label,
+            value=selected,
+        ) from exc
+    return max(minimum, min(parsed, maximum))
+
+
 def bounded_text(value: Any, limit: int = TOOL_RESULT_TEXT_LIMIT) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
     return text[:limit] + ("\n... <truncated>" if len(text) > limit else "")
+
+
+def subprocess_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
 
 
 def run_argv(
@@ -125,8 +200,8 @@ def run_argv(
             "timed_out": False,
         }
     except subprocess.TimeoutExpired as exc:
-        stdout = strip_terminal_ansi(exc.stdout or "")
-        stderr = strip_terminal_ansi(exc.stderr or "")
+        stdout = strip_terminal_ansi(subprocess_text(exc.stdout))
+        stderr = strip_terminal_ansi(subprocess_text(exc.stderr))
         return {
             "returncode": None,
             "stdout": bounded_text(stdout),
@@ -151,11 +226,22 @@ def run_argv(
 
 def repo_existing_path(value: str | None, *, default: str = ".") -> tuple[str, Path]:
     raw = str(value or default).strip() or default
-    rel = "." if raw in {"", "."} else safe_rel_path(raw)
+    try:
+        rel = "." if raw in {"", "."} else safe_rel_path(raw)
+    except ValueError as exc:
+        raise DeterministicToolInputError(
+            "invalid_repo_path",
+            argument="path",
+            value=raw,
+            detail=str(exc),
+        ) from exc
     full = (LAB_REPO / rel).resolve(strict=False)
-    full.relative_to(LAB_REPO)
+    try:
+        full.relative_to(LAB_REPO)
+    except ValueError as exc:
+        raise DeterministicToolInputError("path_escapes_repo", argument="path", path=rel) from exc
     if not full.exists():
-        raise FileNotFoundError(rel)
+        raise DeterministicToolInputError("path_not_found", argument="path", path=rel)
     return rel, full
 
 

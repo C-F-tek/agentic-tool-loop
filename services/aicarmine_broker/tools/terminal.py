@@ -206,7 +206,7 @@ def terminal_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     base = terminal_preferred_cwd()
     path_details = normalize_terminal_path_details(directory_arg, base=base)
     directory = path_details["resolved_path_obj"]
-    limit = max(1, min(int(args.get("limit") or args.get("max_files") or 200), 5000))
+    limit = max(1, int(args.get("limit") or args.get("max_files") or 200))
     recurse = parse_bool(args.get("recurse", args.get("recursive", False)), False)
     pattern = str(args.get("pattern") or args.get("glob") or "*").strip() or "*"
 
@@ -266,7 +266,7 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     base = terminal_preferred_cwd()
     path_details = normalize_terminal_path_details(directory_arg, base=base)
     directory = path_details["resolved_path_obj"]
-    limit = max(1, min(int(args.get("limit") or args.get("max_results") or 200), 5000))
+    limit = max(1, int(args.get("limit") or args.get("max_results") or 200))
     content = parse_bool(args.get("content", False), False)
 
     if not query:
@@ -372,7 +372,7 @@ def terminal_run_command_wait(
             return repair
         command = str(repair.get("repaired_command") or command)
 
-    timeout = max(1, min(int(args.get("timeout_seconds") or args.get("timeout") or COMMAND_TIMEOUT_SECONDS), 900))
+    timeout = max(1, int(args.get("timeout_seconds") or args.get("timeout") or COMMAND_TIMEOUT_SECONDS))
     cwd_details = normalize_terminal_path_details(args.get("cwd") or args.get("directory") or args.get("path"), base=terminal_preferred_cwd())
     cwd = cwd_details["resolved_path_obj"]
     if not cwd.exists() or not cwd.is_dir():

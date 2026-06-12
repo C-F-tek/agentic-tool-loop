@@ -16,6 +16,7 @@ from typing import Any
 
 from .config import (
     COMMAND_TIMEOUT_SECONDS,
+    LAB_REPO,
     MAX_TOOL_RESULT_CHARS,
 )
 from .infrastructure.result_compaction import compact as _compact
@@ -55,6 +56,49 @@ from .tools.terminal import (
     terminal_preferred_cwd,
     terminal_run_command_wait,
     terminal_search_files,
+)
+
+__all__ = (
+    "COMMAND_TIMEOUT_SECONDS",
+    "LAB_REPO",
+    "MAX_TOOL_RESULT_CHARS",
+    "compact",
+    "dangerous_command",
+    "detect_stack",
+    "normalize_terminal_path",
+    "repo_apply_patch",
+    "repo_ast_grep_dry_run",
+    "repo_ast_grep_search",
+    "repo_capabilities",
+    "repo_command",
+    "repo_ctags_symbols",
+    "repo_fd_files",
+    "repo_git_apply_check",
+    "repo_hyperfine_benchmark",
+    "repo_jq_query",
+    "repo_list_files",
+    "repo_propose_code_edit",
+    "repo_pyright_check",
+    "repo_pytest_run",
+    "repo_read",
+    "repo_rg_search",
+    "repo_ruff_check",
+    "repo_search",
+    "repo_semgrep_scan",
+    "repo_shellcheck",
+    "repo_status",
+    "repo_tree",
+    "repo_tree_sitter_parse",
+    "repo_unidiff_validate",
+    "repo_validate",
+    "repo_write_file",
+    "run_ps",
+    "safe_rel_path",
+    "terminal_environment_contract",
+    "terminal_list_files",
+    "terminal_preferred_cwd",
+    "terminal_run_command_wait",
+    "terminal_search_files",
 )
 
 

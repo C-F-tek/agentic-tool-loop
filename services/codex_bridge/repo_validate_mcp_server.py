@@ -19,6 +19,25 @@ SERVER_NAME = "aicarmine-repo-validate-mcp"
 SERVER_VERSION = "1.0.0"
 
 
+def string_prop(default: str | None = None) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "string"}
+    if default is not None:
+        schema["default"] = default
+    return schema
+
+
+def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
+    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
+
+
+def paths_schema(*, default_path: str | None = None) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        "path": string_prop(default_path),
+        "paths": {"type": "array", "items": {"type": "string"}},
+    }
+    return properties
+
+
 def _tools() -> dict[str, ToolSpec]:
     from aicarmine_broker.tools.repo_deterministic import (
         repo_pyright_check,
@@ -43,37 +62,76 @@ def _tools() -> dict[str, ToolSpec]:
     tools["aicarmine_repo_validate_diffcheck"] = ToolSpec(
         name="aicarmine_repo_validate_diffcheck",
         description="Run repo_validate default git diff --check validation.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "commands": {"type": "array", "items": {"type": "string"}},
+                "timeout_seconds": integer_prop(300, 1, 1800),
+                "continue_on_failure": {"type": "boolean", "default": False},
+            }
+        ),
         handler=repo_validate,
     )
     tools["aicarmine_repo_validate_ruff"] = ToolSpec(
         name="aicarmine_repo_validate_ruff",
         description="Run ruff check with JSON diagnostics.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                **paths_schema(default_path="."),
+                "timeout_seconds": integer_prop(180, 1, 1200),
+            }
+        ),
         handler=repo_ruff_check,
     )
     tools["aicarmine_repo_validate_pyright"] = ToolSpec(
         name="aicarmine_repo_validate_pyright",
         description="Run pyright with JSON diagnostics.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                **paths_schema(default_path="."),
+                "timeout_seconds": integer_prop(240, 1, 1200),
+            }
+        ),
         handler=repo_pyright_check,
     )
     tools["aicarmine_repo_validate_pytest"] = ToolSpec(
         name="aicarmine_repo_validate_pytest",
         description="Run pytest on selected paths.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                **paths_schema(default_path="."),
+                "marker": string_prop(),
+                "maxfail": integer_prop(1, 1, 20),
+                "timeout_seconds": integer_prop(300, 1, 1800),
+            }
+        ),
         handler=repo_pytest_run,
     )
     tools["aicarmine_repo_validate_shellcheck"] = ToolSpec(
         name="aicarmine_repo_validate_shellcheck",
         description="Run shellcheck JSON diagnostics on selected files.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                **paths_schema(),
+                "timeout_seconds": integer_prop(120, 1, 600),
+            },
+            any_of=[["path"], ["paths"]],
+        ),
         handler=repo_shellcheck,
     )
     tools["aicarmine_repo_validate_semgrep"] = ToolSpec(
         name="aicarmine_repo_validate_semgrep",
         description="Run semgrep JSON diagnostics with a pattern or config.",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "pattern": string_prop(),
+                "config": string_prop(),
+                "lang": string_prop("python"),
+                "language": string_prop(),
+                **paths_schema(default_path="."),
+                "timeout_seconds": integer_prop(240, 1, 1200),
+            },
+            any_of=[["pattern"], ["config"]],
+        ),
         handler=repo_semgrep_scan,
     )
     return tools

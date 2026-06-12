@@ -12,8 +12,8 @@ from aicarmine_broker.tools.git_surface import git_candidate_files
 
 def repo_tree(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or ".").strip()
-    max_files = max(1, min(int(args.get("max_files") or 200), 1000))
-    max_depth = max(0, min(int(args.get("max_depth") or 3), 20))
+    max_files = max(1, int(args.get("max_files") or 200))
+    max_depth = max(0, int(args.get("max_depth") or 3))
     excluded_dirs = {
         ".git",
         "__pycache__",

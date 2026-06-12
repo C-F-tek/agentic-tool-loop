@@ -197,14 +197,135 @@ def tool_list_payload(tools: dict[str, ToolSpec]) -> dict[str, Any]:
     }
 
 
-def call_tool(tools: dict[str, ToolSpec], name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, dict, set)):
+        return bool(value)
+    return True
+
+
+def _matches_json_type(value: Any, expected_type: str) -> bool:
+    if expected_type == "string":
+        return isinstance(value, str)
+    if expected_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected_type == "boolean":
+        return isinstance(value, bool)
+    if expected_type == "array":
+        return isinstance(value, list)
+    if expected_type == "object":
+        return isinstance(value, dict)
+    if expected_type == "null":
+        return value is None
+    return True
+
+
+def _type_names(schema_type: Any) -> list[str]:
+    if isinstance(schema_type, str):
+        return [schema_type]
+    if isinstance(schema_type, list):
+        return [str(item) for item in schema_type if isinstance(item, str)]
+    return []
+
+
+def _validate_property(tool: str, name: str, value: Any, schema: dict[str, Any]) -> dict[str, Any] | None:
+    type_names = _type_names(schema.get("type"))
+    if type_names and not any(_matches_json_type(value, type_name) for type_name in type_names):
+        return {
+            "ok": False,
+            "error": "invalid_argument_type",
+            "tool": tool,
+            "argument": name,
+            "expected": type_names[0] if len(type_names) == 1 else type_names,
+            "actual": type(value).__name__,
+        }
+    if schema.get("type") == "array" and isinstance(value, list):
+        raw_item_schema = schema.get("items")
+        item_schema = raw_item_schema if isinstance(raw_item_schema, dict) else {}
+        item_types = _type_names(item_schema.get("type"))
+        if item_types:
+            for idx, item in enumerate(value):
+                if not any(_matches_json_type(item, type_name) for type_name in item_types):
+                    return {
+                        "ok": False,
+                        "error": "invalid_argument_item_type",
+                        "tool": tool,
+                        "argument": name,
+                        "index": idx,
+                        "expected": item_types[0] if len(item_types) == 1 else item_types,
+                        "actual": type(item).__name__,
+                    }
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            return {"ok": False, "error": "argument_below_minimum", "tool": tool, "argument": name, "minimum": schema["minimum"], "actual": value}
+        if "maximum" in schema and value > schema["maximum"]:
+            return {"ok": False, "error": "argument_above_maximum", "tool": tool, "argument": name, "maximum": schema["maximum"], "actual": value}
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values and value not in enum_values:
+        return {"ok": False, "error": "invalid_argument_value", "tool": tool, "argument": name, "allowed": enum_values, "actual": value}
+    return None
+
+
+def validate_arguments(spec: ToolSpec, arguments: Any) -> dict[str, Any] | None:
+    if not isinstance(arguments, dict):
+        return {
+            "ok": False,
+            "error": "invalid_arguments",
+            "tool": spec.name,
+            "expected": "object",
+            "actual": type(arguments).__name__,
+        }
+    schema = spec.input_schema if isinstance(spec.input_schema, dict) else {}
+    raw_properties = schema.get("properties")
+    properties = raw_properties if isinstance(raw_properties, dict) else {}
+    raw_required = schema.get("required")
+    required = raw_required if isinstance(raw_required, list) else []
+    missing = [str(name) for name in required if not _has_value(arguments.get(str(name)))]
+    if missing:
+        return {"ok": False, "error": "missing_required_arguments", "tool": spec.name, "missing": missing}
+    raw_any_of = schema.get("anyOf")
+    any_of = raw_any_of if isinstance(raw_any_of, list) else []
+    required_groups = [
+        [str(name) for name in item.get("required", [])]
+        for item in any_of
+        if isinstance(item, dict) and isinstance(item.get("required"), list)
+    ]
+    if required_groups and not any(all(_has_value(arguments.get(name)) for name in group) for group in required_groups):
+        return {
+            "ok": False,
+            "error": "missing_required_argument_group",
+            "tool": spec.name,
+            "requires_one_of": required_groups,
+        }
+    for name, value in arguments.items():
+        prop = properties.get(name)
+        if isinstance(prop, dict):
+            problem = _validate_property(spec.name, str(name), value, prop)
+            if problem is not None:
+                return problem
+    return None
+
+
+def result_is_error(result: Any) -> bool:
+    return bool(isinstance(result, dict) and (result.get("is_error") or result.get("ok") is False))
+
+
+def call_tool(tools: dict[str, ToolSpec], name: str, arguments: Any) -> dict[str, Any]:
     spec = tools.get(name)
     if spec is None:
         return tool_content({"ok": False, "error": "unknown_tool", "tool": name}, is_error=True)
+    argument_error = validate_arguments(spec, arguments)
+    if argument_error is not None:
+        return tool_content(argument_error, is_error=True)
     try:
         root = selected_repo_root()
-        result = spec.handler(arguments if isinstance(arguments, dict) else {}, root)
-        return tool_content(result, is_error=bool(isinstance(result, dict) and result.get("is_error")))
+        result = spec.handler(arguments, root)
+        return tool_content(result, is_error=result_is_error(result))
     except Exception as exc:
         return tool_content(
             {
@@ -228,7 +349,8 @@ def handle_request(
 ) -> dict[str, Any] | None:
     method = str(request.get("method") or "")
     msg_id = request.get("id")
-    params = request.get("params") if isinstance(request.get("params"), dict) else {}
+    raw_params = request.get("params")
+    params = raw_params if isinstance(raw_params, dict) else {}
 
     if method == "initialize":
         return ok(
@@ -245,7 +367,7 @@ def handle_request(
         return ok(msg_id, tool_list_payload(tools))
     if method == "tools/call":
         name = str(params.get("name") or "")
-        arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+        arguments = params.get("arguments", {})
         return ok(msg_id, call_tool(tools, name, arguments))
     if method == "ping":
         return ok(msg_id, {})
@@ -270,8 +392,10 @@ def serve(server_name: str, server_version: str, tools: dict[str, ToolSpec]) -> 
 
 
 def mcp_text_result(response: dict[str, Any]) -> dict[str, Any]:
-    result = response.get("result") if isinstance(response.get("result"), dict) else {}
-    content = result.get("content") if isinstance(result.get("content"), list) else []
+    raw_result = response.get("result")
+    result = raw_result if isinstance(raw_result, dict) else {}
+    raw_content = result.get("content")
+    content = raw_content if isinstance(raw_content, list) else []
     first = content[0] if content and isinstance(content[0], dict) else {}
     text = first.get("text")
     if not isinstance(text, str):
@@ -316,7 +440,8 @@ def self_test(
         server_version=server_version,
         tools=tools,
     )
-    list_result = listed.get("result") if isinstance(listed, dict) and isinstance(listed.get("result"), dict) else {}
+    raw_list_result = listed.get("result") if isinstance(listed, dict) else {}
+    list_result = raw_list_result if isinstance(raw_list_result, dict) else {}
     listed_names = [
         item.get("name")
         for item in list_result.get("tools", [])
@@ -332,6 +457,7 @@ def self_test(
         and real_tool in listed_names
         and isinstance(real_payload_value, dict)
         and real_payload_value.get("tool")
+        and real_payload_value.get("ok") is True
     )
     return {
         "ok": ok_value,
@@ -350,7 +476,11 @@ def self_test(
     }
 
 
-def object_schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
+def object_schema(
+    properties: dict[str, Any] | None = None,
+    required: list[str] | None = None,
+    any_of: list[list[str]] | None = None,
+) -> dict[str, Any]:
     schema: dict[str, Any] = {
         "type": "object",
         "properties": properties or {},
@@ -358,4 +488,6 @@ def object_schema(properties: dict[str, Any] | None = None, required: list[str] 
     }
     if required:
         schema["required"] = required
+    if any_of:
+        schema["anyOf"] = [{"required": group} for group in any_of]
     return schema

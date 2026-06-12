@@ -13,7 +13,7 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or "").strip()
     old_text = args.get("old_text")
     new_text = args.get("new_text")
-    max_replacements = max(1, min(int(args.get("max_replacements") or 1), 20))
+    max_replacements = max(1, int(args.get("max_replacements") or 1))
 
     if not path:
         return {"ok": False, "tool": "repo_apply_patch", "error": "missing path"}

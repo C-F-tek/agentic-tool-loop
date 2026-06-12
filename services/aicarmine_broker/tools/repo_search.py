@@ -33,7 +33,7 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     mode = str(args.get("mode") or "rg").strip()
     path = str(args.get("path") or ".").strip()
-    max_results = max(1, min(int(args.get("max_results") or 80), 200))
+    max_results = max(1, int(args.get("max_results") or 80))
 
     q = json.dumps(query)
     target = json.dumps(path)

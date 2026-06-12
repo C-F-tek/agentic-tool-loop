@@ -217,6 +217,29 @@ def original_text(original_args: dict[str, Any]) -> str:
     return ''
 
 
+def _paths_from_items(value: object) -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        return paths
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            paths.append(item.strip())
+            continue
+        if not isinstance(item, dict):
+            continue
+        for key in ('path', 'file', 'filename', 'name'):
+            candidate = item.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                paths.append(candidate.strip())
+                break
+        nested = item.get('paths') or item.get('files')
+        if isinstance(nested, list):
+            paths.extend(str(path).strip() for path in nested if str(path).strip())
+    return paths
+
+
 def sanitize_tool_args(tool_name: str, call_args: dict[str, Any], original_args: dict[str, Any], public_tool_name: str) -> dict[str, Any]:
     args = dict(call_args or {})
 
@@ -248,7 +271,7 @@ def sanitize_tool_args(tool_name: str, call_args: dict[str, Any], original_args:
         args['mode'] = str(args.get('mode') or 'rg')
         if bad_path(args.get('path')):
             args['path'] = '.'
-        args['max_results'] = max(1, min(int(args.get('max_results') or 80), 120))
+        args['max_results'] = max(1, int(args.get('max_results') or 80))
     elif tool_name == 'repo_read':
         if not args.get('paths') and not args.get('path'):
             item_paths = _paths_from_items(args.get('items') or args.get('item'))

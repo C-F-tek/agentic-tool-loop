@@ -29,8 +29,8 @@ _EXCLUDE_DIRS_DEFAULT = frozenset(
 def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or ".").strip()
     suffix = str(args.get("suffix") or args.get("extension") or "").strip().lower()
-    limit = max(1, min(int(args.get("limit") or args.get("max_files") or 20), 1000))
-    max_depth = max(0, min(int(args.get("max_depth") or 50), 100))
+    limit = max(1, int(args.get("limit") or args.get("max_files") or 20))
+    max_depth = max(0, int(args.get("max_depth") or 50))
     core = parse_bool(args.get("core", False), False)
 
     if core and path in {"", "."}:

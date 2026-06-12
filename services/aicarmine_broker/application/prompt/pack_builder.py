@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
+def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
+    value = mapping.get(key)
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]:
     """Return structured user/operator context saved with a job request.
 
@@ -15,7 +20,7 @@ def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]
     request context is planner-visible evidence and must not cause deterministic
     controller reads before the planner turn.
     """
-    original_args = state.get("original_args") if isinstance(state.get("original_args"), dict) else {}
+    original_args = _dict_field(state, "original_args")
     raw = original_args.get("context")
     if isinstance(raw, dict):
         parsed = raw
@@ -34,6 +39,16 @@ def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]
         for key, value in parsed.items()
         if key not in {"raw_events", "history", "planner_stream"}
     }
+
+
+def step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    guidance = state.get("planner_step_budget_guidance")
+    if not isinstance(guidance, dict):
+        return {}
+    mode = str(guidance.get("mode") or "").strip()
+    if mode not in {"prepare_terminal_decision", "force_terminal_decision"}:
+        return {}
+    return dict(guidance)
 
 
 @dataclass(frozen=True)
@@ -110,6 +125,10 @@ class PromptPackBuilder:
             extra_prompt_sections["native_history_messages_reserve"] = native_history_reserve_chars
         root = agent_job_root(job_id)
         headroom_char_budget = _prompt_generation_headroom_char_budget()
+        step_budget_guidance = step_budget_guidance_from_state(state)
+        force_terminal_decision = (
+            str(step_budget_guidance.get("mode") or "") == "force_terminal_decision"
+        )
 
         def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
             required_working_set = _required_working_set_for_prompt(
@@ -133,10 +152,14 @@ class PromptPackBuilder:
                 if compact_mode
                 else _compact_evidence_contract_for_prompt(evidence_contract)
             )
-            continuation_action = _required_working_set_continuation_action(
-                required_working_set,
-                history=history,
-                window_chars=window_chars,
+            continuation_action = (
+                None
+                if force_terminal_decision
+                else _required_working_set_continuation_action(
+                    required_working_set,
+                    history=history,
+                    window_chars=window_chars,
+                )
             )
             if continuation_action:
                 required_next_tool_call = _required_next_tool_call_from_action(continuation_action)
@@ -188,6 +211,10 @@ class PromptPackBuilder:
                     "required_working_set_not_truncated": True,
                     "required_working_set_uses_real_sqlite_windows_when_compacted": True,
                     "optional_context_may_be_omitted_not_used_as_required_payload": True,
+                    "step_budget_terminal_guidance_active": bool(step_budget_guidance),
+                    "required_window_continuation_suppressed_by_step_budget": bool(
+                        force_terminal_decision
+                    ),
                 },
                 "terminal_environment_contract": {
                     "platform": "windows",
@@ -250,6 +277,8 @@ class PromptPackBuilder:
                     }
                 ),
             }
+            if step_budget_guidance:
+                payload_local["planner_step_budget_guidance"] = step_budget_guidance
             if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict):
                 payload_local["required_next_tool_call"] = evidence_for_prompt["required_next_tool_call"]
             if isinstance(evidence_for_prompt.get("forbidden_repeated_tool_calls"), list):
@@ -286,17 +315,9 @@ class PromptPackBuilder:
                 if total_for_compaction <= threshold:
                     break
         if _report_exceeds_generation_headroom(report, headroom_char_budget):
-            optional_for_window = (
-                payload.get("optional_context")
-                if isinstance(payload.get("optional_context"), dict)
-                else {}
-            )
+            optional_for_window = _dict_field(payload, "optional_context")
             for hard_window_chars in (1000, 700, 500):
-                evidence_before_hard_budget = (
-                    dict(payload.get("evidence_contract"))
-                    if isinstance(payload.get("evidence_contract"), dict)
-                    else {}
-                )
+                evidence_before_hard_budget = _dict_field(payload, "evidence_contract")
                 payload["optional_context"] = _optional_context_window_pack(
                     root,
                     goal=goal,
@@ -304,7 +325,7 @@ class PromptPackBuilder:
                     window_chars=hard_window_chars,
                     reason="planner_prompt_pack_over_budget_after_compact_mode",
                 )
-                prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+                prompt_contract = _dict_field(payload, "prompt_pack_contract")
                 prompt_contract["compact_mode"] = True
                 prompt_contract["hard_budget_optional_context_windowed"] = True
                 prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
@@ -319,12 +340,13 @@ class PromptPackBuilder:
                 )
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
                 payload["tool_shape_examples"] = _tool_shape_examples_for_prompt()
-                if isinstance(payload["evidence_contract"].get("required_next_tool_call"), dict):
-                    payload["required_next_tool_call"] = payload["evidence_contract"]["required_next_tool_call"]
+                payload_evidence = _dict_field(payload, "evidence_contract")
+                if isinstance(payload_evidence.get("required_next_tool_call"), dict):
+                    payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
                 elif "required_next_tool_call" in payload:
                     payload.pop("required_next_tool_call", None)
-                if isinstance(payload["evidence_contract"].get("forbidden_repeated_tool_calls"), list):
-                    payload["forbidden_repeated_tool_calls"] = payload["evidence_contract"]["forbidden_repeated_tool_calls"]
+                if isinstance(payload_evidence.get("forbidden_repeated_tool_calls"), list):
+                    payload["forbidden_repeated_tool_calls"] = payload_evidence["forbidden_repeated_tool_calls"]
                 elif "forbidden_repeated_tool_calls" in payload:
                     payload.pop("forbidden_repeated_tool_calls", None)
                 report = _prompt_budget_report(
@@ -342,10 +364,7 @@ class PromptPackBuilder:
         if (
             _report_exceeds_generation_headroom(report, headroom_char_budget)
             and int((report.get("sections") or {}).get("available_tools") or 0) > 2500
-            and not (
-                isinstance(payload.get("available_tools"), dict)
-                and payload["available_tools"].get("schema") == "planner_available_tools_window.v1"
-            )
+            and _dict_field(payload, "available_tools").get("schema") != "planner_available_tools_window.v1"
         ):
             for hard_window_chars in (700, 500):
                 payload["available_tools"] = _available_tools_window_pack(
@@ -355,7 +374,7 @@ class PromptPackBuilder:
                     window_chars=hard_window_chars,
                     reason="planner_prompt_pack_over_budget_available_tools_windowed",
                 )
-                prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+                prompt_contract = _dict_field(payload, "prompt_pack_contract")
                 prompt_contract["compact_mode"] = True
                 prompt_contract["available_tools_windowed"] = True
                 prompt_contract["available_tools_window_chars"] = hard_window_chars
@@ -395,8 +414,9 @@ class PromptPackBuilder:
             )
             report["required_working_set_chars"] = required_chars
             report["required_working_set_errors"] = required_errors
-            report["compact_mode"] = (payload.get("prompt_pack_contract") or {}).get("compact_mode")
-            report["window_chars"] = (payload.get("prompt_pack_contract") or {}).get("window_chars")
+            prompt_contract = _dict_field(payload, "prompt_pack_contract")
+            report["compact_mode"] = prompt_contract.get("compact_mode")
+            report["window_chars"] = prompt_contract.get("window_chars")
             report["native_history_reserve_chars"] = native_history_reserve_chars
             payload["prompt_budget_report"] = {
                 "schema": report.get("schema"),
@@ -425,13 +445,9 @@ class PromptPackBuilder:
             and isinstance(payload.get("optional_context"), dict)
             and payload["optional_context"].get("schema") != "planner_optional_context_window_pack.v1"
         ):
-            optional_for_window = payload["optional_context"]
+            optional_for_window = _dict_field(payload, "optional_context")
             for hard_window_chars in (700, 500):
-                evidence_before_hard_budget = (
-                    dict(payload.get("evidence_contract"))
-                    if isinstance(payload.get("evidence_contract"), dict)
-                    else {}
-                )
+                evidence_before_hard_budget = _dict_field(payload, "evidence_contract")
                 payload["optional_context"] = _optional_context_window_pack(
                     root,
                     goal=goal,
@@ -439,7 +455,7 @@ class PromptPackBuilder:
                     window_chars=hard_window_chars,
                     reason="planner_prompt_pack_over_budget_after_budget_report",
                 )
-                prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+                prompt_contract = _dict_field(payload, "prompt_pack_contract")
                 prompt_contract["compact_mode"] = True
                 prompt_contract["hard_budget_optional_context_windowed"] = True
                 prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
@@ -454,12 +470,13 @@ class PromptPackBuilder:
                 )
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
                 payload["tool_shape_examples"] = _tool_shape_examples_for_prompt()
-                if isinstance(payload["evidence_contract"].get("required_next_tool_call"), dict):
-                    payload["required_next_tool_call"] = payload["evidence_contract"]["required_next_tool_call"]
+                payload_evidence = _dict_field(payload, "evidence_contract")
+                if isinstance(payload_evidence.get("required_next_tool_call"), dict):
+                    payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
                 elif "required_next_tool_call" in payload:
                     payload.pop("required_next_tool_call", None)
-                if isinstance(payload["evidence_contract"].get("forbidden_repeated_tool_calls"), list):
-                    payload["forbidden_repeated_tool_calls"] = payload["evidence_contract"]["forbidden_repeated_tool_calls"]
+                if isinstance(payload_evidence.get("forbidden_repeated_tool_calls"), list):
+                    payload["forbidden_repeated_tool_calls"] = payload_evidence["forbidden_repeated_tool_calls"]
                 elif "forbidden_repeated_tool_calls" in payload:
                     payload.pop("forbidden_repeated_tool_calls", None)
                 for _ in range(6):
@@ -518,7 +535,7 @@ class PromptPackBuilder:
                 and total_without_native_history_reserve > headroom_char_budget
             )
             report["history_message_char_budget"] = history_message_char_budget
-            payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
+            payload_report = _dict_field(payload, "prompt_budget_report")
             payload_report["native_history_reserve_is_synthetic"] = True
             payload_report["total_prompt_chars_without_native_history_reserve"] = total_without_native_history_reserve
             payload_report["over_budget_without_native_history_reserve"] = report["over_budget_without_native_history_reserve"]
@@ -527,15 +544,14 @@ class PromptPackBuilder:
             payload["prompt_budget_report"] = payload_report
             if (
                 history_message_char_budget < 2500
-                and isinstance(payload.get("optional_context"), dict)
-                and payload["optional_context"].get("schema") == "planner_optional_context_window_pack.v1"
-                and isinstance(payload["optional_context"].get("successful_tool_payload_windows"), list)
-                and payload["optional_context"].get("successful_tool_payload_windows")
+                and _dict_field(payload, "optional_context").get("schema") == "planner_optional_context_window_pack.v1"
+                and isinstance(_dict_field(payload, "optional_context").get("successful_tool_payload_windows"), list)
+                and _dict_field(payload, "optional_context").get("successful_tool_payload_windows")
             ):
-                optional_context_copy = dict(payload["optional_context"])
+                optional_context_copy = _dict_field(payload, "optional_context")
                 optional_context_copy.pop("successful_tool_payload_windows", None)
                 payload["optional_context"] = optional_context_copy
-                prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+                prompt_contract = _dict_field(payload, "prompt_pack_contract")
                 prompt_contract["compact_mode"] = True
                 prompt_contract["native_history_headroom_successful_payload_windows_omitted"] = True
                 prompt_contract["native_history_headroom_successful_payload_windows_reason"] = (
@@ -573,7 +589,7 @@ class PromptPackBuilder:
                     and total_without_native_history_reserve > headroom_char_budget
                 )
                 report["history_message_char_budget"] = history_message_char_budget
-                payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
+                payload_report = _dict_field(payload, "prompt_budget_report")
                 payload_report["schema"] = report.get("schema")
                 payload_report["char_budget"] = report.get("char_budget")
                 payload_report["generation_headroom_char_budget"] = report.get("generation_headroom_char_budget")
@@ -595,10 +611,9 @@ class PromptPackBuilder:
                 payload["prompt_budget_report"] = payload_report
             if (
                 history_message_char_budget < 2500
-                and isinstance(payload.get("optional_context"), dict)
-                and payload["optional_context"].get("schema") != "planner_optional_context_window_pack.v1"
+                and _dict_field(payload, "optional_context").get("schema") != "planner_optional_context_window_pack.v1"
             ):
-                optional_for_window = payload["optional_context"]
+                optional_for_window = _dict_field(payload, "optional_context")
                 for hard_window_chars in (500,):
                     payload["optional_context"] = _optional_context_window_pack(
                         root,
@@ -607,7 +622,7 @@ class PromptPackBuilder:
                         window_chars=hard_window_chars,
                         reason="planner_native_history_message_budget_low",
                     )
-                    prompt_contract = payload.get("prompt_pack_contract") if isinstance(payload.get("prompt_pack_contract"), dict) else {}
+                    prompt_contract = _dict_field(payload, "prompt_pack_contract")
                     prompt_contract["compact_mode"] = True
                     prompt_contract["native_history_headroom_optional_context_windowed"] = True
                     prompt_contract["native_history_headroom_optional_context_window_chars"] = hard_window_chars
@@ -642,7 +657,7 @@ class PromptPackBuilder:
                         and total_without_native_history_reserve > headroom_char_budget
                     )
                     report["history_message_char_budget"] = history_message_char_budget
-                    payload_report = payload.get("prompt_budget_report") if isinstance(payload.get("prompt_budget_report"), dict) else {}
+                    payload_report = _dict_field(payload, "prompt_budget_report")
                     payload_report["schema"] = report.get("schema")
                     payload_report["char_budget"] = report.get("char_budget")
                     payload_report["generation_headroom_char_budget"] = report.get("generation_headroom_char_budget")

@@ -45,7 +45,7 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
     paths = deduped
 
     max_chars = int(args.get("max_chars") or 80000)
-    max_paths = max(1, min(int(args.get("max_paths") or args.get("limit") or 200), 500))
+    max_paths = max(1, int(args.get("max_paths") or args.get("limit") or 200))
     line = args.get("line")
     before = int(args.get("before") or 40)
     after = int(args.get("after") or 120)

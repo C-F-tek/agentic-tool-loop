@@ -9,6 +9,117 @@ from ...tool_contract import TOOLS_SCHEMA
 from ..prompt.pack_builder import explicit_request_context_from_state
 
 
+def _dict_from_mapping(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items()}
+
+
+def _planner_step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    guidance = state.get("planner_step_budget_guidance")
+    if not isinstance(guidance, dict):
+        return {}
+    mode = str(guidance.get("mode") or "").strip()
+    if mode not in {"prepare_terminal_decision", "force_terminal_decision"}:
+        return {}
+    return _dict_from_mapping(guidance)
+
+
+def _apply_step_budget_guidance_to_contract(
+    contract: dict[str, Any],
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    guidance = _planner_step_budget_guidance_from_state(state)
+    if not guidance:
+        return contract
+
+    out = _dict_from_mapping(contract)
+    final_contract = _dict_from_mapping(out.get("finalization_contract"))
+    final_allowed = final_contract.get("final_allowed") is True
+    mode = str(guidance.get("mode") or "")
+    guidance_payload = {
+        "schema": "planner_step_budget_guidance.v1",
+        "mode": mode,
+        "current_step": guidance.get("current_step"),
+        "max_steps": guidance.get("max_steps"),
+        "remaining_steps": guidance.get("remaining_steps"),
+        "final_allowed_by_evidence_contract": final_allowed,
+        "controller_does_not_auto_final": True,
+    }
+    out["planner_step_budget_guidance"] = guidance_payload
+
+    if mode == "prepare_terminal_decision":
+        operational = _dict_from_mapping(out.get("operational_notes"))
+        operational["step_budget_hint"] = {
+            "mode": mode,
+            "remaining_steps": guidance_payload["remaining_steps"],
+            "instruction": (
+                "The configured step budget is almost exhausted. Prefer a validator-accepted "
+                "final when the evidence contract allows it; otherwise use at most one targeted "
+                "tool call needed to make the final robust."
+            ),
+        }
+        out["operational_notes"] = operational
+        return out
+
+    final_contract["terminal_decision_required_by_step_budget"] = True
+    final_contract["tool_calls_disallowed_by_step_budget"] = True
+    final_contract["planner_may_choose_final"] = final_allowed
+    final_contract["planner_may_choose_block"] = True
+    out["finalization_contract"] = final_contract
+    out["planner_may_choose_block"] = True
+    out["planner_may_choose_final"] = final_allowed
+    out["candidate_next_actions"] = []
+    out.pop("required_next_tool_call", None)
+    out.pop("forbidden_repeated_tool_calls", None)
+
+    if final_allowed:
+        required_next_progress = (
+            "Step budget is exhausted before max_steps_reached. Produce action=final now "
+            "using only verified evidence already present in history, with explicit limits. "
+            "If a robust conclusion is impossible from the available evidence, produce "
+            "action=block with final_answer explaining the evidence gaps and the exact next "
+            "proof needed. Do not call another tool."
+        )
+    else:
+        required_next_progress = (
+            "Step budget is exhausted before max_steps_reached and final_allowed=false. "
+            "Produce action=block with final_answer explaining why a robust conclusion "
+            "cannot be reached from current evidence, cite the blocking evidence gaps, and "
+            "name the exact next proof/tool that would be required. Do not call another tool."
+        )
+    out["required_next_progress"] = required_next_progress
+    out["terminal_decision_guidance"] = {
+        "schema": "planner_terminal_decision_guidance.v1",
+        "terminal_decision_required": True,
+        "allowed_actions": ["final", "block"] if final_allowed else ["block"],
+        "tool_calls_allowed": False,
+        "reason": "configured_step_budget_exhausted_before_max_steps_reached",
+    }
+    out["allowed_actions"] = ["final", "block"] if final_allowed else ["block"]
+
+    surface_policy = _dict_from_mapping(out.get("turn_tool_surface_policy"))
+    surface_policy.update(
+        {
+            "schema": "planner_turn_tool_surface_policy.v1",
+            "reason": "step_budget_force_terminal_decision",
+            "locked": True,
+            "available_tools": [],
+            "allowed_tool_names": [],
+            "candidate_actions_filtered": True,
+            "locked_empty_tool_surface": True,
+            "step_budget_terminal_turn": True,
+        }
+    )
+    out["turn_tool_surface_policy"] = surface_policy
+
+    operational = _dict_from_mapping(out.get("operational_notes"))
+    operational["final_allowed"] = final_allowed
+    operational["next_instruction"] = required_next_progress
+    out["operational_notes"] = operational
+    return out
+
+
 def planner_decision(
     job_id: str,
     state: dict[str, Any],
@@ -125,6 +236,7 @@ def planner_decision(
     if explicit_request_context:
         intrinsic_context["explicit_request_context"] = explicit_request_context
     evidence_contract = planner_evidence_contract(goal, history, intrinsic_context=intrinsic_context)
+    evidence_contract = _apply_step_budget_guidance_to_contract(evidence_contract, state)
 
     native_tool_names = _tool_surface_names_for_turn(
         goal=goal,

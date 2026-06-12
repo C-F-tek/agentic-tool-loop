@@ -12,6 +12,17 @@ from typing import Any
 from .config import PLANNER_MEMORY_DB, PLANNER_MEMORY_RETENTION_DAYS
 
 
+def _dict_from_value(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _dict_items_field(mapping: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    value = mapping.get(key)
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
 def _scratchpad_path(root: Path) -> Path:
     return root / "planner_scratchpad.json"
 
@@ -226,7 +237,7 @@ def _write_code_product_build_state(args: dict[str, Any], root: Path) -> dict[st
         section=section,
         text=text,
         query=target_file,
-        max_chars=max(500, min(int(args.get("max_chars") or 3000), 8000)),
+        max_chars=max(500, int(args.get("max_chars") or 3000)),
         metadata={
             "kind": CODE_PRODUCT_BUILD_STATE_KIND,
             "schema": CODE_PRODUCT_BUILD_STATE_SCHEMA,
@@ -279,6 +290,7 @@ def planner_composed_answer(root: Path) -> dict[str, Any]:
     db_path = _composer_db_path(root)
     if not db_path.exists():
         return {"ok": False, "reason": "planner_composer_missing", "artifact": str(db_path), "count": 0}
+    conn: sqlite3.Connection | None = None
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
@@ -298,10 +310,8 @@ def planner_composed_answer(root: Path) -> dict[str, Any]:
             "count": 0,
         }
     finally:
-        try:
+        if conn is not None:
             conn.close()
-        except Exception:
-            pass
     chunks = [dict(row) for row in rows if str(dict(row).get("text") or "").strip()]
     if not chunks:
         return {"ok": False, "reason": "planner_composer_empty", "artifact": str(db_path), "count": 0}
@@ -327,7 +337,7 @@ def planner_scratchpad_write(args: dict[str, Any], root: Path) -> dict[str, Any]
         "ts": now,
         "kind": str(args.get("kind") or "note"),
         "tag": str(args.get("tag") or ""),
-        "text": str(args.get("text") or args.get("content") or "")[:12000],
+        "text": str(args.get("text") or args.get("content") or ""),
     }
     if not row["text"].strip():
         return {"ok": False, "tool": "planner_scratchpad_write", "error": "missing_text"}
@@ -362,8 +372,8 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
     document_id = str(args.get("document_id") or args.get("id") or "").strip()
     section = str(args.get("section") or args.get("tag") or "").strip()
     query = str(args.get("query") or "").strip()
-    limit = max(1, min(int(args.get("limit") or 3), 20))
-    max_chars = max(500, min(int(args.get("max_chars") or 3000), 8000))
+    limit = max(1, int(args.get("limit") or 3))
+    max_chars = max(500, int(args.get("max_chars") or 3000))
     offset_arg = args.get("offset")
     offset = None
     if offset_arg not in (None, ""):
@@ -384,6 +394,7 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
     if section and not document_id:
         where.append("section = ?")
         params.append(section)
+    conn: sqlite3.Connection | None = None
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
@@ -403,10 +414,8 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
             "details": str(exc)[:1000],
         }
     finally:
-        try:
+        if conn is not None:
             conn.close()
-        except Exception:
-            pass
     items: list[dict[str, Any]] = []
     for row in rows:
         raw = dict(row)
@@ -463,10 +472,10 @@ def _read_code_product_build_state(args: dict[str, Any], root: Path) -> dict[str
     result["mode"] = CODE_PRODUCT_BUILD_STATE_KIND
     result["schema"] = "code_product_build_state_window.v1"
     result["kind"] = CODE_PRODUCT_BUILD_STATE_KIND
-    items = result.get("items") if isinstance(result.get("items"), list) else []
+    items = _dict_items_field(result, "items")
     if items:
-        first = items[0] if isinstance(items[0], dict) else {}
-        metadata = first.get("metadata") if isinstance(first.get("metadata"), dict) else {}
+        first = items[0]
+        metadata = _dict_from_value(first.get("metadata"))
         state, error = _load_code_product_build_state_text(str(first.get("text") or ""))
         result["target_file"] = metadata.get("target_file") or state.get("target_file") or target_file
         result["status"] = metadata.get("status") or state.get("status")
@@ -492,7 +501,7 @@ def planner_scratchpad_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
     rows = _read_scratchpad(root)
     query = str(args.get("query") or "").lower()
     tag = str(args.get("tag") or "")
-    limit = max(1, min(int(args.get("limit") or 50), 200))
+    limit = max(1, int(args.get("limit") or 50))
     selected: list[dict[str, Any]] = []
     for row in reversed(rows):
         text = str(row.get("text") or "")
@@ -592,6 +601,8 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
                 1 if bool(args.get("pinned")) else 0,
             ),
         )
+        if cur.lastrowid is None:
+            raise RuntimeError("sqlite_insert_missing_lastrowid")
         record_id = int(cur.lastrowid)
         conn.commit()
     finally:
@@ -608,7 +619,7 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
 def runtime_sqlite_memory_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     db_path = _memory_db(args)
     query = str(args.get("query") or "").strip()
-    limit = max(1, min(int(args.get("limit") or 50), 200))
+    limit = max(1, int(args.get("limit") or 50))
     kind = str(args.get("kind") or "")
     tag = str(args.get("tag") or "")
     if not db_path.exists():
@@ -673,7 +684,7 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
     merely because it has not called a memory tool yet.
     """
     goal = str(args.get("goal") or "")
-    limit = max(1, min(int(args.get("limit") or 12), 50))
+    limit = max(1, int(args.get("limit") or 12))
     target_key = str(args.get("target_key") or args.get("tag") or "").strip()
     db_path = _memory_db(args)
     scratchpad = planner_scratchpad_read({"limit": limit}, root)
@@ -710,11 +721,11 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "kind": "controller_loop_turn",
         "limit": min(limit * 2, 50),
     }, root)
-    scratch_items = scratchpad.get("items") if isinstance(scratchpad.get("items"), list) else []
-    target_items = target_memory.get("items") if isinstance(target_memory.get("items"), list) else []
-    query_items = persistent.get("items") if isinstance(persistent.get("items"), list) else []
-    target_loop_items = target_loop_memory.get("items") if isinstance(target_loop_memory.get("items"), list) else []
-    query_loop_items = loop_persistent.get("items") if isinstance(loop_persistent.get("items"), list) else []
+    scratch_items = _dict_items_field(scratchpad, "items")
+    target_items = _dict_items_field(target_memory, "items")
+    query_items = _dict_items_field(persistent, "items")
+    target_loop_items = _dict_items_field(target_loop_memory, "items")
+    query_loop_items = _dict_items_field(loop_persistent, "items")
     persistent_items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for row in [*target_items, *query_items]:

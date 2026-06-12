@@ -11,6 +11,10 @@ from aicarmine_broker.tools.repo_command import (
     _compile_command_for_targets,
     resolve_compile_targets,
 )
+from aicarmine_broker.tools.deterministic_common import (
+    bounded_int_arg as _bounded_int_arg,
+    deterministic_input_error as _deterministic_input_error,
+)
 
 
 def repo_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -26,7 +30,10 @@ def repo_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
         if isinstance(args.get("commands"), list) and args["commands"]
         else default_cmds
     )
-    timeout = int(args.get("timeout_seconds") or 300)
+    try:
+        timeout = _bounded_int_arg(args, "timeout_seconds", default=300, minimum=1, maximum=1800)
+    except Exception as exc:
+        return _deterministic_input_error("repo_validate", exc)
     continue_on_failure = parse_bool(args.get("continue_on_failure", False), False)
 
     results = []
