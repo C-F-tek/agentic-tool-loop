@@ -84,6 +84,12 @@ def test_project_memory_upsert_requires_confirmation_and_verified_source(tmp_pat
     assert found["count"] == 1
     assert found["records"][0]["key"] == "contract.runtime"
 
+    found_by_terms = project_memory_mcp_server._search({"query": "AGENTS critical edits"}, tmp_path)
+    assert found_by_terms["ok"] is True
+    assert found_by_terms["count"] == 1
+    assert found_by_terms["records"][0]["key"] == "contract.runtime"
+    assert found_by_terms["records"][0]["search_score"] >= 3
+
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git executable not available")
 def test_project_memory_conflict_stale_supersede_and_audit(tmp_path) -> None:

@@ -335,10 +335,10 @@ def _rag_context(args: dict[str, Any], root: Path) -> dict[str, Any]:
     forwarded = {
         "query": query,
         "repo": str(root),
-        "top_k": _safe_int(args.get("top_k"), 5, 1, 20),
-        "candidate_limit": _safe_int(args.get("candidate_limit"), 80, 1, 200),
-        "max_total_chars": _safe_int(args.get("max_total_chars"), 12000, 1000, 80000),
-        "max_chunk_chars": _safe_int(args.get("max_chunk_chars"), 4000, 500, 20000),
+        "top_k": _safe_int(args.get("top_k"), 5, 1, 8),
+        "candidate_limit": _safe_int(args.get("candidate_limit"), 80, 1, 120),
+        "max_total_chars": _safe_int(args.get("max_total_chars"), 12000, 1000, 16000),
+        "max_chunk_chars": _safe_int(args.get("max_chunk_chars"), 3000, 500, 6000),
         "rerank": _safe_bool(args.get("rerank"), False),
     }
     result = _unwrap_mcp_text_json(_handle_context_tool(forwarded))
@@ -387,7 +387,7 @@ LOCAL_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "rag_context": {
         "description": "Search the Codex RAG index for code context. Rerank defaults off to avoid GPU contention.",
-        "parameters": object_schema({"query": string_prop(), "top_k": integer_prop(5, 1, 20), "candidate_limit": integer_prop(80, 1, 200), "max_total_chars": integer_prop(12000, 1000, 80000), "rerank": boolean_prop(False)}, required=["query"]),
+        "parameters": object_schema({"query": string_prop(), "top_k": integer_prop(5, 1, 8), "candidate_limit": integer_prop(80, 1, 120), "max_total_chars": integer_prop(12000, 1000, 16000), "rerank": boolean_prop(False)}, required=["query"]),
     },
 }
 

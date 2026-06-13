@@ -249,6 +249,33 @@ def test_unwrap_mcp_text_json_result() -> None:
     assert result["mcp_text_unwrapped"] is True
 
 
+def test_rag_context_caps_large_model_requests(monkeypatch, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_context(args: dict[str, object]) -> dict[str, object]:
+        captured.update(args)
+        return {"ok": True, "chunks": [], "used_chars": 0}
+
+    monkeypatch.setitem(sys.modules, "rag_mcp_server", types.SimpleNamespace(_handle_context_tool=fake_context))
+
+    result = local_subagent_mcp_server._rag_context(
+        {
+            "query": "local subagent",
+            "top_k": 20,
+            "candidate_limit": 200,
+            "max_total_chars": 50000,
+            "max_chunk_chars": 20000,
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is True
+    assert captured["top_k"] == 8
+    assert captured["candidate_limit"] == 120
+    assert captured["max_total_chars"] == 16000
+    assert captured["max_chunk_chars"] == 6000
+
+
 def test_project_preseed_reads_known_repo_files(tmp_path) -> None:
     root = tmp_path / "repo"
     root.mkdir()

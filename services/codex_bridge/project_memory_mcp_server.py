@@ -235,6 +235,34 @@ def _parse_metadata(value: Any) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
+def _search_terms(query: str, max_terms: int = 16) -> list[str]:
+    terms: list[str] = []
+    for raw in re.split(r"[\s,;]+", query.lower()):
+        term = raw.strip()
+        if len(term) < 2 or term in terms:
+            continue
+        terms.append(term)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _record_search_text(record: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            str(record.get("key") or ""),
+            str(record.get("value") or ""),
+            str(record.get("source_ref") or ""),
+            json.dumps(record.get("tags") or [], ensure_ascii=False),
+            json.dumps(record.get("metadata") or {}, ensure_ascii=False, sort_keys=True),
+        ]
+    ).lower()
+
+
 def _source_file_path(root: Path, source_ref: str) -> Path | None:
     text = str(source_ref or "").strip()
     if not text:
@@ -388,28 +416,48 @@ def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if source_type:
         clauses.append("source_type = ?")
         values.append(source_type)
-    if query:
-        like = f"%{query}%"
-        clauses.append("(key LIKE ? OR value LIKE ? OR source_ref LIKE ? OR tags_json LIKE ?)")
-        values.extend([like, like, like, like])
+    query_terms = _search_terms(query)
+    if query_terms:
+        term_clauses = []
+        for term in query_terms:
+            like = f"%{_escape_like(term)}%"
+            field_clauses = [
+                f"{field} LIKE ? ESCAPE '\\'"
+                for field in ("key", "value", "source_ref", "tags_json", "metadata_json")
+            ]
+            term_clauses.append("(" + " OR ".join(field_clauses) + ")")
+            values.extend([like, like, like, like, like])
+        clauses.append(f"({' OR '.join(term_clauses)})")
     sql = f"""
         SELECT * FROM memory_records
         WHERE {' AND '.join(clauses)}
         ORDER BY last_verified_at DESC, updated_at DESC, id DESC
         LIMIT ?
     """
-    values.append(limit)
+    values.append(min(1000, max(limit, limit * 5)) if query_terms else limit)
     try:
         rows = conn.execute(sql, values).fetchall()
     finally:
         conn.close()
+    records = [_row_to_record(row) for row in rows]
+    if query_terms:
+        scored: list[tuple[int, str, str, dict[str, Any]]] = []
+        for record in records:
+            search_text = _record_search_text(record)
+            score = sum(1 for term in query_terms if term in search_text)
+            if score <= 0:
+                continue
+            record["search_score"] = score
+            scored.append((score, str(record.get("last_verified_at") or ""), str(record.get("updated_at") or ""), record))
+        records = [record for _score, _verified, _updated, record in sorted(scored, key=lambda item: -item[0])[:limit]]
     return {
         "ok": True,
         "tool": "aicarmine_project_memory_search",
         "db": str(_memory_db(root)),
         "db_exists": True,
-        "records": [_row_to_record(row) for row in rows],
-        "count": len(rows),
+        "query_terms": query_terms,
+        "records": records,
+        "count": len(records),
     }
 
 
