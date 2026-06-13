@@ -1536,8 +1536,8 @@ def run_agentic_planner_job(
                         (
                             "planner_native_mode_non_json_output_repeated: planner native tool mode "
                             "was active and tools were provided to Ollama, but the planner repeatedly "
-                            "returned plain text instead of message.tool_calls or one strict terminal "
-                            "JSON object."
+                            "returned malformed protocol-shaped text instead of message.tool_calls or "
+                            "a valid terminal decision."
                         ),
                         {
                             "history": history,
@@ -1573,7 +1573,7 @@ def run_agentic_planner_job(
                     "step": step,
                     "decision": {
                         "action": "continue_required",
-                        "reason": "planner native mode requires native tool_calls or strict terminal JSON",
+                        "reason": "planner native mode requires native tool_calls or a valid terminal answer",
                         "raw_planner_text": raw_planner_text[:4000],
                     },
                     "tool_result": guard_result,

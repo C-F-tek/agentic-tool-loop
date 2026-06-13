@@ -28,6 +28,7 @@ from vulkan_bridge import app as bridge_app  # noqa: E402
 
 repo_code_product_tool = importlib.import_module("aicarmine_broker.tools.repo_code_product")
 evidence_builder = importlib.import_module("aicarmine_broker.application.evidence.builder")
+planner_turn = importlib.import_module("aicarmine_broker.application.planner.turn")
 repo_list_files_tool = importlib.import_module("aicarmine_broker.tools.repo_list_files")
 repo_read_tool = importlib.import_module("aicarmine_broker.tools.repo_read")
 
@@ -407,20 +408,42 @@ def main() -> int:
                 "planner_native_tool_call_required" in native_empty_tool_call_gate.get("violations", []),
                 f"native no-tool-call block was accepted as terminal: {native_empty_tool_call_gate}",
             )
-            native_plain_text_gate = planner.validate_planner_decision_against_evidence(
-                "Native plain text smoke",
+            plain_text_final = planner_turn._native_plain_text_final_decision(
+                "Analisi conclusiva con evidenza citata.",
+                native_tool_names=["repo_read"],
+                prompt_context_continuation_required={},
+                stream_meta={},
+            )
+            require(
+                plain_text_final.get("action") == "final"
+                and plain_text_final.get("final_answer") == "Analisi conclusiva con evidenza citata."
+                and plain_text_final.get("controller_wrapped_plain_text_final") is True,
+                f"native plain terminal text was not wrapped as final: {plain_text_final}",
+            )
+            require(
+                planner_turn._looks_like_malformed_native_protocol('{"action":"tool","tool":"repo_status"}'),
+                "malformed JSON-text tool protocol was not recognized as protocol-shaped",
+            )
+            require(
+                not planner_turn._looks_like_malformed_native_protocol(
+                    "Analisi conclusiva con evidenza citata."
+                ),
+                "ordinary terminal prose was incorrectly classified as protocol-shaped",
+            )
+            native_protocol_text_gate = planner.validate_planner_decision_against_evidence(
+                "Native malformed protocol smoke",
                 {
                     "action": "block",
                     "reason": "planner_native_mode_non_json_output",
                     "controller_synthesized_protocol_block": True,
                     "native_tool_calls_seen": 0,
-                    "raw_planner_text": "Devo restituire un typed block ma non emetto JSON.",
+                    "raw_planner_text": '{"action":"tool","tool":"repo_status"',
                 },
                 [],
             )
             require(
-                "planner_native_mode_non_json_output" in native_plain_text_gate.get("violations", []),
-                f"native plain-text planner output was accepted as terminal: {native_plain_text_gate}",
+                "planner_native_mode_non_json_output" in native_protocol_text_gate.get("violations", []),
+                f"native malformed protocol output was accepted as terminal: {native_protocol_text_gate}",
             )
             native_tool_gate = planner.validate_planner_decision_against_evidence(
                 "Native tool gate smoke",

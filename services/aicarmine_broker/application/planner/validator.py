@@ -102,7 +102,8 @@ def validate_planner_decision_against_evidence(
         contract["required_next_progress"] = (
             "Native tool mode is required. Tool execution must arrive as "
             "message.tool_calls with native_tool_call=true; JSON-text action=tool "
-            "is not executable. Choose a native tool_call, or return final/block JSON."
+            "is not executable. Choose a native tool_call, or return a terminal "
+            "final/block answer."
         )
         return {"ok": False, "violations": violations, "evidence_contract": contract}
     allowed_tool_names_source = (
@@ -288,16 +289,16 @@ def validate_planner_decision_against_evidence(
 
     if action in {"block", "blocked", "need_user", "needs_user"}:
         # Planner-format failures are not accepted as a final loop result before
-        # the controller classifies them. Plain text goes back to the planner;
-        # malformed JSON/tool-shaped output may go to explicit Vulkan/GPU0
-        # repair. The controller still does not invent a substitute action.
+        # the controller classifies them. Plain terminal text is wrapped as a
+        # final candidate in the turn owner; malformed JSON/tool-shaped output
+        # stays rejected. The controller still does not invent a substitute tool.
         reason = str(decision.get("reason") or "")
         reason_low = reason.lower()
         if reason == "planner_final_required_empty_output":
             violations.append("planner_final_required_empty_output")
             contract["required_next_progress"] = (
                 "Quality gate is satisfied and no tool surface was provided. "
-                "Return one strict JSON final object with final_answer. Do not call tools."
+                "Return a terminal final answer. Do not call tools."
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         if reason == "planner_native_tool_call_required":
@@ -305,15 +306,15 @@ def validate_planner_decision_against_evidence(
             contract["required_next_progress"] = (
                 "Native tool mode is active and the planner emitted no message.tool_calls. "
                 "Retry with one native tool_call from candidate_next_actions or return a real "
-                "final/block JSON only if the evidence contract allows it."
+                "final/block answer only if the evidence contract allows it."
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         if reason == "planner_native_mode_non_json_output":
             violations.append("planner_native_mode_non_json_output")
             contract["required_next_progress"] = (
-                "Native tool mode is active and the planner emitted plain text. Retry with "
-                "one native tool_call from candidate_next_actions, or return one strict JSON "
-                "final/block object when the evidence contract allows a terminal decision."
+                "Native tool mode is active and the planner emitted malformed protocol-shaped "
+                "text. Retry with one native tool_call from candidate_next_actions, or return "
+                "a terminal final/block answer when the evidence contract allows it."
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         raw_planner_text = str(

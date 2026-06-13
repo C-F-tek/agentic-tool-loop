@@ -32,8 +32,9 @@ Read before edits:
 - Planner tool dispatch uses native Ollama `message.tool_calls` when
   `AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS` and
   `AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS` are enabled. Text JSON
-  `action=tool` is rejected in that mode; text JSON `final` and `block` remain
-  valid non-tool decisions.
+  `action=tool` is rejected in that mode; text JSON `final`/`block` and
+  terminal prose wrapped by the controller as `final_answer` remain valid
+  non-tool decisions subject to normal validator gates.
 - Successful tool evidence must carry real result data. A path to a local JSON
   artifact is internal storage, not model-visible evidence.
 - Before each 11434 planner turn, 3572 builds a measured prompt pack. The
@@ -272,8 +273,9 @@ The planner protocol has two valid output shapes:
 - Tool dispatch: native Ollama `message.tool_calls` only when native mode is
   required. The normalized decision carries `native_tool_call=true` and keeps
   the raw native call for history/audit.
-- Non-tool terminal decisions: strict JSON text for `final`, `block`,
-  `completed`, `needs_user` or equivalent terminal actions.
+- Non-tool terminal decisions: strict JSON text or controller-wrapped terminal
+  prose for `final`, `block`, `completed`, `needs_user` or equivalent terminal
+  actions.
 
 Invalid shapes:
 

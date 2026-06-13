@@ -267,8 +267,9 @@ must use Ollama native `message.tool_calls`.
 
 - `action=tool` as JSON text is not executable planner output in native mode.
   The validator rejects it before dispatch.
-- `final` and `block` may still be strict JSON text because they are terminal
-  decisions, not tool dispatch requests.
+- `final` and `block` are terminal decisions, not tool dispatch requests. They
+  may be strict JSON text or natural terminal prose wrapped by the controller
+  as `final_answer` before normal validation.
 - The planner payload includes native `tools` schema for internal 3572 tools.
   That schema is internal to 3572 and must not change the public 3571/OpenWebUI
   tool surface.
@@ -280,8 +281,9 @@ must use Ollama native `message.tool_calls`.
 
 Regression signal: a planner text JSON tool call reaching `dispatch_tool()` in
 native-required mode means the native gate failed. A terminal `final`/`block`
-JSON being rejected only for lack of `tool_calls` means the gate is incorrectly
-applied to non-tool decisions.
+decision, including controller-wrapped terminal prose, being rejected only for
+lack of `tool_calls` means the gate is incorrectly applied to non-tool
+decisions.
 
 ### 5. 3572 validates, then dispatches tools
 

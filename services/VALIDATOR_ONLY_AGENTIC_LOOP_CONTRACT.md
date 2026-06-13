@@ -51,8 +51,9 @@ planner verso 11434 e' native tool calling Ollama. In questa modalita':
 - JSON testuale con `{"action":"tool", ...}` non e' un tool call valido e deve
   essere rifiutato prima del dispatch con una violazione tipizzata, per esempio
   `planner_text_tool_call_disallowed_in_native_mode`;
-- `final`, `block` e stati terminali equivalenti possono restare decisioni
-  testuali JSON perche' non sono dispatch di tool;
+- `final`, `block` e stati terminali equivalenti non sono dispatch di tool:
+  possono restare decisioni testuali JSON oppure testo terminale naturale
+  wrapped dal controller come `final_answer` prima del validator;
 - il campo `tools` del payload Ollama e' il manifest operativo dei tool interni
   disponibili al planner; i vincoli del manifest devono restare coerenti con il
   validator;
@@ -67,8 +68,9 @@ planner verso 11434 e' native tool calling Ollama. In questa modalita':
 
 Regola anti-regressione: se una chiamata tool entra nel dispatcher senza
 provenienza native quando native mode e' richiesta, il protocollo planner e'
-rotto. Se invece un `final` o `block` JSON testuale viene rifiutato solo perche'
-non e' un tool call nativo, il gate e' troppo stretto.
+rotto. Se invece un `final`/`block` JSON testuale o una prosa terminale wrapped
+come `final_answer` viene rifiutata solo perche' non e' un tool call nativo, il
+gate e' troppo stretto.
 
 ## Preseed iniziale dinamico
 

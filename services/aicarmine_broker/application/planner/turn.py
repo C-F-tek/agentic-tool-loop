@@ -120,6 +120,49 @@ def _apply_step_budget_guidance_to_contract(
     return out
 
 
+def _looks_like_malformed_native_protocol(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    return (
+        stripped[0] in "{["
+        or lowered.startswith("<tool_call")
+        or lowered.startswith("tool_call")
+        or lowered.startswith("message.tool_calls")
+        or "</tool_call>" in lowered
+    )
+
+
+def _native_plain_text_final_decision(
+    raw_text: str,
+    *,
+    native_tool_names: list[str],
+    prompt_context_continuation_required: dict[str, Any],
+    stream_meta: dict[str, Any],
+) -> dict[str, Any]:
+    stripped = raw_text.strip()
+    decision: dict[str, Any] = {
+        "action": "final",
+        "final_answer": stripped,
+        "raw_planner_text": raw_text[:12000],
+        "raw_planner_text_preview": raw_text[:2000],
+        "planner_native_tools_enabled": True,
+        "native_tool_calls_seen": 0,
+        "native_tool_text_decision_allowed": "plain_text_final",
+        "controller_wrapped_plain_text_final": True,
+        "controller_wrap_reason": (
+            "native_tool_mode_plain_text_terminal_candidate"
+        ),
+        "allowed_tool_names": list(native_tool_names),
+    }
+    if prompt_context_continuation_required:
+        decision["prompt_context_continuation_required"] = prompt_context_continuation_required
+    if stream_meta:
+        decision["planner_stream_meta"] = stream_meta
+    return decision
+
+
 def planner_decision(
     job_id: str,
     state: dict[str, Any],
@@ -593,6 +636,15 @@ def planner_decision(
                 if stream_meta:
                     decision["planner_stream_meta"] = stream_meta
                 return decision
+        if raw_text_for_native_mode.strip() and not _looks_like_malformed_native_protocol(
+            raw_text_for_native_mode
+        ):
+            return _native_plain_text_final_decision(
+                raw_text_for_native_mode,
+                native_tool_names=list(native_tool_names),
+                prompt_context_continuation_required=prompt_context_continuation_required,
+                stream_meta=stream_meta,
+            )
         prompt_eval_count = 0
         try:
             prompt_eval_count = int(response.get("ollama_prompt_eval_count") or 0)
@@ -664,8 +716,7 @@ def planner_decision(
                 "reason": "planner_final_required_empty_output",
                 "final_answer": (
                     "Planner had no native tools in this turn because the evidence contract "
-                    "required a final answer, but Ollama returned neither a strict final JSON "
-                    "object nor usable text."
+                    "required a final answer, but Ollama returned no usable terminal text."
                 ),
                 "raw_planner_text": raw_text_for_native_mode[:12000],
                 "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),
@@ -679,9 +730,9 @@ def planner_decision(
                 "action": "block",
                 "reason": "planner_native_mode_non_json_output",
                 "final_answer": (
-                    "Planner native tool mode received planner text, but the text was neither "
-                    "message.tool_calls nor one strict terminal JSON object. The controller did "
-                    "not reinterpret prose as a tool call or terminal block."
+                    "Planner native tool mode received protocol-shaped text, but it was neither "
+                    "message.tool_calls nor a valid terminal JSON object. Plain terminal prose "
+                    "is wrapped as action=final before validation; malformed protocol text is not."
                 ),
                 "raw_planner_text": raw_text_for_native_mode[:12000],
                 "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),

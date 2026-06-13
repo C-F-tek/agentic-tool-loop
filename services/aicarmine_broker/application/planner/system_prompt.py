@@ -51,9 +51,10 @@ def planner_system_for_current_mode(*, native_tools: bool) -> str:
         "Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt shell o token di ruolo.",
         (
             "Quando scegli un tool devi usare solo native tool_calls del backend, "
-            "non JSON testuale con action=tool. Per final o block rispondi con "
-            "un singolo JSON valido. Non usare markdown, testo libero, marker, "
-            "prompt shell o token di ruolo."
+            "non JSON testuale con action=tool. Per final o block puoi usare "
+            "un singolo JSON terminale oppure testo terminale naturale: il "
+            "controller lo wrappa come final_answer e il validator decide se "
+            "accettarlo. Non usare marker, prompt shell o token di ruolo."
         ),
     ).replace(
         "Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.",
