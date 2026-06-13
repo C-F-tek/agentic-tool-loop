@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # codex_bridge Module Reference
 
-Updated: 2026-06-12
+Updated: 2026-06-13
 
 `codex_bridge` contains optional Codex-facing integration services. These are
 not the OpenWebUI 3571 public bridge and are not the 3572 planner runtime. Keep
@@ -27,6 +27,9 @@ documented as part of the agentic loop tool surface.
 | `repo_validate_mcp_server.py` | Dedicated deterministic repo-validation MCP server exposing diffcheck, ruff, pyright, pytest, shellcheck and semgrep helpers. It is tool-only and does not call broker HTTP or the agentic loop. |
 | `repo_code_mcp_server.py` | Incubating repo-code MCP server for candidate code-edit tools. It stays separate from the stable repo MCPs, exposes proposal/diff-check helpers as report-only tools and exposes exact `old_text` to `new_text` source patching only when `allow_source_write=true` is supplied. |
 | `ops_mcp_server.py` | Incubating Codex ops MCP server for local MCP smoke tests and service-state inspection. It uses static allowlists for child MCP smoke checks, reads Windows process/port/log state without HTTP probes and redacts command-line secrets before returning process rows. |
+| `sqlite_readonly_mcp_server.py` | Dedicated read-only SQLite MCP server for Codex diagnostics. It lists allowlisted repo-local SQLite databases, reads schemas and runs bounded single-statement `SELECT`/`WITH` queries only. It opens databases with SQLite read-only mode, blocks write keywords, rejects user PRAGMA, enforces row/time/cell limits and never calls broker HTTP or the agentic loop. |
+| `job_artifact_mcp_server.py` | Dedicated read-only job artifact MCP server. It reads persisted filesystem artifacts under allowlisted job roots such as `qwen-agent-workspace/vulkan-broker/agent-jobs`, normalizes `job.json`, `events.ndjson`, `final.json`, `tool-results/` and `planner-prompts/` payloads, and does not call 3571, 3572 or `vulkan_helper`. |
+| `git_readonly_mcp_server.py` | Dedicated read-only Git MCP server for regression diagnostics. It exposes bounded `git log`, `git show`, `git diff`, `git blame` and branch compare helpers using subprocess argument lists, path validation under the selected repo root and no write commands. |
 | `rag_index_repo.py` | Standalone index builder for the Codex RAG path. By default it indexes the Git candidate surface (`git ls-files --cached --others --exclude-standard`), so `.gitignore` owns project inclusion/exclusion. It writes a dedicated SQLite/FTS5 code chunk index under `state/codex_rag/`, supports full rebuilds and delta updates, and does not read OpenWebUI/Chroma state or call Ollama/OVMS. |
 | `rag_mcp_server.py` | Dedicated MCP stdio server for Codex RAG. It exposes `aicarmine_rag_context`, `aicarmine_rag_index_status` and `aicarmine_rag_reindex`. Search reads the dedicated SQLite/FTS5 index lazily and optionally reranks candidates through the local OVMS `/v3/rerank` endpoint. Reindex writes only the RAG SQLite index and does not import OpenWebUI, broker dispatchers, or edit/validate tools. |
 | `jsonrpc.py` | Compatibility exports from `mcp_server.py` for older import paths. No behavior should be added here. |
@@ -61,6 +64,11 @@ documented as part of the agentic loop tool surface.
 - `ops_mcp_server.py` is an incubator for Codex-side operational checks only.
   Its MCP smoke runner must stay allowlist-only, and its service-state tools
   must not call `/health`, 3571, 3572, `vulkan_helper` or the agentic loop.
+- `sqlite_readonly_mcp_server.py`, `job_artifact_mcp_server.py` and
+  `git_readonly_mcp_server.py` are observability MCPs. They are host-side
+  Codex tools only; they do not become planner tools and must remain read-only.
+  SQLite user queries must stay `SELECT`/`WITH` only, job artifacts must stay
+  filesystem reads, and Git commands must stay diagnostic read commands.
 - Normal RAG indexing should run as delta. Full mode is for schema changes or
   cleanup after a previously noisy index build.
 - The RAG MCP reranker path uses an FTS candidate pool default of `80`, a

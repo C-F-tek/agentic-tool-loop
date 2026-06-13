@@ -29,6 +29,18 @@ The incubating Codex ops MCP is separate from repo-editing tools:
   tails, but it must not call HTTP health routes, 3571, 3572, `vulkan_helper`
   or the agentic loop.
 
+The read-only observability MCP set is separate from repo-editing tools:
+
+- `aicarmine_sqlite_readonly`: allowlisted SQLite inspection for existing
+  repo-local databases. User queries are limited to one bounded `SELECT`/`WITH`
+  statement, with row/time/cell limits and no user PRAGMA or write keywords.
+- `aicarmine_job_artifact`: filesystem-only agent job artifact reader for
+  `job.json`, `events.ndjson`, `final.json`, `tool-results/`,
+  `planner-prompts/` and rejection summaries.
+- `aicarmine_git_readonly`: bounded Git diagnostics for log/show/diff/blame
+  and branch comparison. It does not fetch, checkout, reset, commit, push or
+  mutate the worktree.
+
 The shared implementation lives in:
 
 - `C:\Users\carmi\AI\services\codex_bridge\repo_mcp_common.py`
@@ -40,6 +52,9 @@ Server entrypoints:
 - `C:\Users\carmi\AI\services\codex_bridge\repo_validate_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\repo_code_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py`
+- `C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py`
+- `C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py`
+- `C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py`
 
 ## Runtime Requirements
 
@@ -84,6 +99,9 @@ Run self-tests with the absolute Python executable:
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\repo_validate_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\repo_code_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py" --self-test
+& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py" --self-test
+& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py" --self-test
+& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py" --self-test
 ```
 
 The server self-tests must pass before the MCP entries are considered valid for
@@ -98,6 +116,9 @@ After a Codex reload or new session, the MCP list must expose:
 - `aicarmine_repo_validate`
 - `aicarmine_repo_code` if the incubator server is enabled locally.
 - `aicarmine_codex_ops` if the ops incubator server is enabled locally.
+- `aicarmine_sqlite_readonly` if the SQLite observability server is enabled locally.
+- `aicarmine_job_artifact` if the job artifact observability server is enabled locally.
+- `aicarmine_git_readonly` if the Git observability server is enabled locally.
 
 Required health tool calls:
 
@@ -106,6 +127,9 @@ Required health tool calls:
 - `aicarmine_repo_validate_health`
 - `aicarmine_repo_code_health` if the incubator server is enabled locally.
 - `aicarmine_codex_ops_health` if the ops incubator server is enabled locally.
+- `aicarmine_sqlite_readonly_health` if the SQLite observability server is enabled locally.
+- `aicarmine_job_artifact_health` if the job artifact observability server is enabled locally.
+- `aicarmine_git_readonly_health` if the Git observability server is enabled locally.
 
 If health is OK, the minimal real-tool gate is:
 
@@ -116,6 +140,9 @@ If health is OK, the minimal real-tool gate is:
   incubator self-test deliberately avoids source writes.
 - `aicarmine_mcp_smoke_run` with `servers=["aicarmine_repo_state"]`.
 - `aicarmine_service_state_snapshot` with bounded process/log limits.
+- `aicarmine_sqlite_readonly_list_databases` with a low `max_results`.
+- `aicarmine_job_artifact_list_jobs` with a low `limit`.
+- `aicarmine_git_readonly_log` with `max_count=1`.
 
 Stable MCP reload verification on 2026-06-11 passed the state/search/validate
 gates in that session. The incubator server requires its own reload gate after
@@ -134,6 +161,9 @@ These MCPs must not introduce or depend on:
 - generic command execution
 - whole-file write tools in the incubator phase
 - source-write tools in the stable state/search/validation MCPs
+- write-capable SQL, unbounded SQL, user PRAGMA, or path-unallowlisted database reads
+- job artifact readers that call 3571, 3572, `vulkan_helper` or HTTP routes
+- Git commands that mutate local or remote state
 
 The ops MCP may read whether ports such as `3571` and `3572` are listening as
 local diagnostic state. It must not call `/health`, send HTTP requests to those
@@ -181,6 +211,21 @@ env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TO
 command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
 args = ['C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py']
 env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\carmi\AI\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+
+[mcp_servers.aicarmine_sqlite_readonly]
+command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+
+[mcp_servers.aicarmine_job_artifact]
+command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+
+[mcp_servers.aicarmine_git_readonly]
+command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.playwright]
 command = 'npx'

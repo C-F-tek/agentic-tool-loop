@@ -623,6 +623,43 @@ the OpenWebUI/3571/3572 agentic path.
   MCP health tool, `aicarmine_service_state_snapshot`, and
   `services/test_codex_ops_mcp_server.py`.
 
+### `codex_bridge/sqlite_readonly_mcp_server.py`
+
+Dedicated read-only SQLite MCP server for Codex-side diagnostics.
+
+- Reads: MCP stdio frames and allowlisted repo-local SQLite databases.
+- Writes: MCP stdio frames only.
+- Risk: must remain single-statement `SELECT`/`WITH` only; no user PRAGMA,
+  write keywords, unbounded rows or path reads outside the allowlist.
+- Verify: `aicarmine_sqlite_readonly_health`,
+  `aicarmine_sqlite_readonly_list_databases`, server `--self-test`, and
+  `services/test_sqlite_readonly_mcp_server.py`.
+
+### `codex_bridge/job_artifact_mcp_server.py`
+
+Dedicated read-only MCP server for persisted agent job artifacts.
+
+- Reads: MCP stdio frames and files under allowlisted job roots, including
+  `job.json`, `events.ndjson`, `final.json`, `tool-results/` and
+  `planner-prompts/`.
+- Writes: MCP stdio frames only.
+- Risk: must not call 3571, 3572, `vulkan_helper`, broker HTTP routes or the
+  agentic loop; local artifact paths are diagnostics, not OpenWebUI evidence.
+- Verify: `aicarmine_job_artifact_health`,
+  `aicarmine_job_artifact_list_jobs`, server `--self-test`, and
+  `services/test_job_artifact_mcp_server.py`.
+
+### `codex_bridge/git_readonly_mcp_server.py`
+
+Dedicated read-only Git MCP server for regression diagnostics.
+
+- Reads: MCP stdio frames and Git metadata/diffs from the selected repo root.
+- Writes: MCP stdio frames only.
+- Risk: must not fetch, checkout, reset, commit, push or mutate local/remote
+  state; file path arguments must resolve under the selected repo root.
+- Verify: `aicarmine_git_readonly_health`, `aicarmine_git_readonly_log`,
+  server `--self-test`, and `services/test_git_readonly_mcp_server.py`.
+
 ### `codex_bridge/rag_index_repo.py`
 
 Standalone index builder for the Codex RAG MCP path. It scans the Git candidate

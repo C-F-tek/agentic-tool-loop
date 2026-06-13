@@ -56,6 +56,12 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
     ),
     "aicarmine_repo_code": LocalMcpServer("repo_code_mcp_server.py", "aicarmine_repo_code_health"),
     "aicarmine_rag": LocalMcpServer("rag_mcp_server.py"),
+    "aicarmine_sqlite_readonly": LocalMcpServer(
+        "sqlite_readonly_mcp_server.py",
+        "aicarmine_sqlite_readonly_health",
+    ),
+    "aicarmine_job_artifact": LocalMcpServer("job_artifact_mcp_server.py", "aicarmine_job_artifact_health"),
+    "aicarmine_git_readonly": LocalMcpServer("git_readonly_mcp_server.py", "aicarmine_git_readonly_health"),
 }
 
 
