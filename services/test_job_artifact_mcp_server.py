@@ -45,6 +45,13 @@ def _make_job(root: Path, job_id: str = "job-demo") -> Path:
     return job_dir
 
 
+def _make_codex_loop_job(root: Path, job_id: str = "job-codex", port: int = 3579) -> Path:
+    job_dir = root / "state" / "codex_bridge" / "agentic_loop_client" / f"port-{port}" / "workspace" / "agent-jobs" / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(job_dir / "job.json", {"job_id": job_id, "status": "completed", "goal": "codex loop", "current_step": 1})
+    return job_dir
+
+
 def test_job_artifact_reader_lists_and_summarizes_jobs(tmp_path) -> None:
     _make_job(tmp_path)
 
@@ -56,6 +63,16 @@ def test_job_artifact_reader_lists_and_summarizes_jobs(tmp_path) -> None:
     assert summary["ok"] is True
     assert summary["status"] == "blocked"
     assert summary["rejection_count"] == 1
+
+
+def test_job_artifact_reader_finds_codex_dedicated_loop_jobs(tmp_path) -> None:
+    _make_codex_loop_job(tmp_path)
+
+    listed = job_artifact_mcp_server._list_jobs({"limit": 5}, tmp_path)
+
+    assert listed["ok"] is True
+    assert listed["jobs"][0]["job_id"] == "job-codex"
+    assert "state" in listed["jobs"][0]["root"]
 
 
 def test_job_artifact_reader_extracts_rejections_and_planner_payload(tmp_path) -> None:

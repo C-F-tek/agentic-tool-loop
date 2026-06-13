@@ -81,13 +81,20 @@ Critical protocol notes:
 - Codex MCP servers under `codex_bridge/` are outside the OpenWebUI ->
   3571 -> 3572 chain. They expose host-side Codex tools over MCP stdio and
   must not be described as planner-selectable tools or as a shortcut into the
-  3572 agentic loop.
+  3572 agentic loop. The explicit exception is the dedicated Codex agentic-loop
+  client MCP, which starts or calls an isolated `aicarmine_broker.app` instance
+  on a non-shared port, default `127.0.0.1:3579`, with the Codex repo root
+  exported as `AICARMINE_LAB_REPO`.
 - Codex MCP root selection is process-local. `AICARMINE_CODEX_MCP_REPO_ROOT`,
   Codex workspace env and the MCP cwd take precedence over inherited broker
   `AICARMINE_LAB_REPO`; before broker-backed imports, the MCP process rewrites
   its own `AICARMINE_LAB_REPO` to that Codex root. This prevents accidental
   import-time broker config capture without forcing OpenWebUI's lab shadow to
   equal the Codex repo root.
+- Dedicated Codex broker instances are multi-instance by port. The 3579 client
+  must set a per-port workspace/job root/job DB/public base URL and must reject
+  shared ports such as 3571, 3572, 11434 and 11435. Existing shared brokers are
+  not stopped or re-rooted by Codex MCP.
 - In OpenWebUI output, `artifact` means the real result produced by a successful
   tool, not a local JSON path.
 - OpenWebUI cannot read `C:\Users\...` paths. Tool results needed by the 30B

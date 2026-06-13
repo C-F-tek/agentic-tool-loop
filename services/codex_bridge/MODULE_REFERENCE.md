@@ -9,11 +9,12 @@ Regole operative non negoziabili:
 Updated: 2026-06-13
 
 `codex_bridge` contains optional Codex-facing integration services. These are
-not the OpenWebUI 3571 public bridge and are not the 3572 planner runtime. Keep
-their startup lightweight and avoid importing broker-heavy modules before a
-tool call actually needs them. Tools exposed by this package are host-side
-Codex MCP tools; they are not planner-native 3572 tools and must not be
-documented as part of the agentic loop tool surface.
+not the OpenWebUI 3571 public bridge and are not planner-native 3572 tools.
+Keep startup lightweight and avoid importing broker-heavy modules before a
+tool call actually needs them. Most tools exposed by this package are host-side
+Codex MCP tools; the explicit exception is
+`agentic_loop_client_mcp_server.py`, which is a Codex MCP client that can start
+or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 
 ## Module Map
 
@@ -33,6 +34,7 @@ documented as part of the agentic loop tool surface.
 | `git_readonly_mcp_server.py` | Dedicated read-only Git MCP server for regression diagnostics. It exposes bounded `git log`, `git show`, `git diff`, `git blame` and branch compare helpers using subprocess argument lists, path validation under the selected repo root and no write commands. |
 | `project_memory_mcp_server.py` | Dedicated project-local persistent memory MCP server. It stores verified memory records in `state/project_memory/project_memory.sqlite3` through semantic tools only, requires explicit write confirmations, records source metadata, supports stale/superseded lifecycle states and never exposes free SQL, broker HTTP or agentic-loop calls. |
 | `local_subagent_mcp_server.py` | Dedicated local Ollama subagent MCP server for Codex-side read-only delegation. It uses only the 11434 Ollama `/api/chat` endpoint, rejects 11435/GPU0 task models, mediates an explicit read-only tool surface and keeps Codex MCP repo root handling process-local through `repo_mcp_common.py`. |
+| `agentic_loop_client_mcp_server.py` | Explicit Codex MCP client for the canonical broker agentic loop. It can ensure a dedicated multi-instance `aicarmine_broker.app` process on `127.0.0.1:3579` by default, with `AICARMINE_LAB_REPO`, terminal cwd, workspace, job root, job DB and public base URL bound to the Codex-selected root and port. It requires confirmation tokens before starting a broker or calling `/vulkan/agent`, rejects shared ports such as 3571/3572/11434/11435, and returns compact Codex-safe job summaries instead of exposing raw oversized payloads by default. |
 | `rag_index_repo.py` | Standalone index builder for the Codex RAG path. By default it indexes the Git candidate surface (`git ls-files --cached --others --exclude-standard`), so `.gitignore` owns project inclusion/exclusion. It writes a dedicated SQLite/FTS5 code chunk index under `state/codex_rag/`, supports full rebuilds and delta updates, and does not read OpenWebUI/Chroma state or call Ollama/OVMS. |
 | `rag_mcp_server.py` | Dedicated MCP stdio server for Codex RAG. It exposes `aicarmine_rag_context`, `aicarmine_rag_index_status` and `aicarmine_rag_reindex`. Search reads the dedicated SQLite/FTS5 index lazily and optionally reranks candidates through the local OVMS `/v3/rerank` endpoint. Reindex writes only the RAG SQLite index and does not import OpenWebUI, broker dispatchers, or edit/validate tools. |
 | `jsonrpc.py` | Compatibility exports from `mcp_server.py` for older import paths. No behavior should be added here. |
@@ -51,9 +53,10 @@ documented as part of the agentic loop tool surface.
   broker `AICARMINE_LAB_REPO`; once resolved, the MCP process rewrites its own
   `AICARMINE_LAB_REPO` before broker imports. Do not require the OpenWebUI lab
   shadow to equal the Codex repo root.
-- Codex MCP tools do not become 3572 planner tool names. The planner tool
+- Codex MCP tools do not become planner-native tool names. The planner tool
   surface is still owned by `aicarmine_broker` turn policy and native Ollama
-  `message.tool_calls`.
+  `message.tool_calls`. The agentic-loop client is a caller of the broker HTTP
+  API on a dedicated port, not a tool injected into the planner surface.
 - The Responses bridge is protocol-sensitive. Do not mix it with the 3571
   OpenWebUI tool contract.
 - The RAG MCP is deliberately separate from `mcp_server.py` to keep Codex tool
@@ -83,6 +86,20 @@ documented as part of the agentic loop tool surface.
   models, 3571, 3572, OpenWebUI, `vulkan_helper`, service launchers or any
   source-write tool. It does not inherit Codex app `/subagents`; it replicates
   a small read-only subset through explicit local handlers.
+- `agentic_loop_client_mcp_server.py` is the only Codex MCP in this folder
+  allowed to start or call the agentic broker. It must use a dedicated
+  non-shared port, default `3579`, and must not call the shared OpenWebUI
+  bridge on 3571 or a shared 3572 broker. `ensure_broker` starts only when the
+  configured port is free and `confirm_ensure_broker` is supplied; `run`,
+  `status` and `result` call `/vulkan/agent` only when the matching
+  `confirm_agentic_loop` token is supplied. Dedicated instances must set
+  `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `OPEN_TERMINAL_CWD`,
+  `AICARMINE_OPEN_TERMINAL_WORKDIR`, `AICARMINE_VULKAN_WORKSPACE`,
+  `AICARMINE_AGENT_JOB_ROOT`, `AICARMINE_AGENT_JOB_DB` and
+  `AICARMINE_AGENT_PUBLIC_BASE_URL` for the selected Codex root and port.
+- `job_artifact_mcp_server.py` also scans dedicated Codex broker workspaces
+  under `state/codex_bridge/agentic_loop_client/port-*/workspace/agent-jobs`
+  so jobs launched through the 3579 client remain inspectable without HTTP.
 - Normal RAG indexing should run as delta. Full mode is for schema changes or
   cleanup after a previously noisy index build.
 - The RAG MCP reranker path uses an FTS candidate pool default of `80`, a

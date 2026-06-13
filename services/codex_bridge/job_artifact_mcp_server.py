@@ -76,9 +76,18 @@ def _dedupe(paths: list[Path]) -> list[Path]:
 
 
 def _job_roots(root: Path) -> list[Path]:
+    codex_agentic_loop_roots: list[Path] = []
+    codex_agentic_loop_root = root / "state" / "codex_bridge" / "agentic_loop_client"
+    if codex_agentic_loop_root.is_dir():
+        codex_agentic_loop_roots = [
+            path / "workspace" / "agent-jobs"
+            for path in sorted(codex_agentic_loop_root.glob("port-*"))
+            if path.is_dir()
+        ]
     candidates = [
         _env_path("AICARMINE_AGENT_JOB_ROOT"),
         root / "qwen-agent-workspace" / "vulkan-broker" / "agent-jobs",
+        *codex_agentic_loop_roots,
         root / "output" / "agent-jobs",
         root / "output" / "agent_jobs",
         root / "agent-jobs",
