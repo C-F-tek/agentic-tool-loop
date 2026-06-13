@@ -62,6 +62,13 @@ def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
     return schema
 
 
+def enum_string_array_prop(values: list[str], default: list[str] | None = None) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "array", "items": {"type": "string", "enum": values}}
+    if default is not None:
+        schema["default"] = default
+    return schema
+
+
 def _safe_int(value: Any, default: int, low: int, high: int) -> int:
     try:
         number = int(value)
@@ -181,6 +188,7 @@ def _repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     query = str(args.get("query") or "").strip().lower()
+    query_terms = [term for term in re.split(r"[\s,;]+", query) if term]
     suffix = str(args.get("suffix") or "").strip().lower()
     limit = _safe_int(args.get("limit") or args.get("max_results"), 200, 1, 2000)
     result = _run_git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], timeout_seconds=20, max_chars=2_000_000)
@@ -201,7 +209,7 @@ def _repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     filtered = []
     for path in sorted(paths):
         low = path.lower()
-        if query and query not in low:
+        if query_terms and not all(term in low for term in query_terms):
             continue
         if suffix and not low.endswith(suffix):
             continue
@@ -275,9 +283,18 @@ def _git_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def _memory_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     from project_memory_mcp_server import _search  # noqa: PLC0415
 
+    raw_scope = str(args.get("scope") or "").strip().lower()
+    scope_aliases = {
+        "project": "repo",
+        "project-local": "repo",
+        "project_local": "repo",
+        "workspace": "repo",
+        "workspace-local": "repo",
+        "local": "repo",
+    }
     forwarded = {
         "query": str(args.get("query") or ""),
-        "scope": str(args.get("scope") or ""),
+        "scope": scope_aliases.get(raw_scope, raw_scope),
         "status": str(args.get("status") or "active"),
         "include_stale": _safe_bool(args.get("include_stale"), False),
         "limit": _safe_int(args.get("limit") or args.get("max_results"), 10, 1, 50),
@@ -286,6 +303,27 @@ def _memory_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     result["proxied_by"] = "aicarmine_local_subagent"
     result["read_only"] = True
     return result
+
+
+def _unwrap_mcp_text_json(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    raw_content = value.get("content")
+    content = raw_content if isinstance(raw_content, list) else []
+    if not content:
+        return value
+    first = content[0] if isinstance(content[0], dict) else {}
+    text = first.get("text") if isinstance(first, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        return value
+    try:
+        decoded = json.loads(text)
+    except json.JSONDecodeError:
+        return value
+    if isinstance(decoded, dict):
+        decoded.setdefault("mcp_text_unwrapped", True)
+        return decoded
+    return value
 
 
 def _rag_context(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -303,7 +341,7 @@ def _rag_context(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "max_chunk_chars": _safe_int(args.get("max_chunk_chars"), 4000, 500, 20000),
         "rerank": _safe_bool(args.get("rerank"), False),
     }
-    result = _handle_context_tool(forwarded)
+    result = _unwrap_mcp_text_json(_handle_context_tool(forwarded))
     result["proxied_by"] = "aicarmine_local_subagent"
     result["read_only"] = True
     return result
@@ -337,7 +375,15 @@ LOCAL_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "memory_search": {
         "description": "Search active project-local persistent memory records.",
-        "parameters": object_schema({"query": string_prop(), "scope": string_prop(), "status": string_prop("active"), "include_stale": boolean_prop(False), "limit": integer_prop(10, 1, 50)}),
+        "parameters": object_schema(
+            {
+                "query": string_prop(),
+                "scope": string_prop(enum=["", "global", "repo", "branch", "service", "tool"]),
+                "status": string_prop("active", enum=["active", "stale", "superseded", "rejected"]),
+                "include_stale": boolean_prop(False),
+                "limit": integer_prop(10, 1, 50),
+            }
+        ),
     },
     "rag_context": {
         "description": "Search the Codex RAG index for code context. Rerank defaults off to avoid GPU contention.",
@@ -512,7 +558,51 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
     assert endpoint is not None and model is not None
 
     tool_names = _allowed_local_tools(args)
+    diagnostic_no_tools = _safe_bool(args.get("diagnostic_no_tools"), False)
+    if not tool_names and not diagnostic_no_tools:
+        return {
+            "ok": False,
+            "error": "no_tools_requires_diagnostic_flag",
+            "message": "Local subagent operational runs require at least one read-only tool. Use diagnostic_no_tools=true only for Ollama liveness smoke.",
+            "allowed_tools": tool_names,
+            "read_only": True,
+            "no_broker_http": True,
+            "no_agentic_loop": True,
+        }
+    raw_required_tools = args.get("required_tools")
+    required_tools: list[str] = []
+    invalid_required_tools: list[str] = []
+    if isinstance(raw_required_tools, list):
+        for item in raw_required_tools:
+            name = str(item).strip()
+            if not name:
+                continue
+            if name not in LOCAL_TOOL_HANDLERS:
+                invalid_required_tools.append(name)
+                continue
+            if name not in required_tools:
+                required_tools.append(name)
+    if invalid_required_tools:
+        return {
+            "ok": False,
+            "error": "required_tool_not_known",
+            "required_tools": required_tools,
+            "invalid_required_tools": invalid_required_tools,
+            "known_tools": list(LOCAL_TOOL_HANDLERS),
+            "read_only": True,
+        }
+    required_not_allowed = [name for name in required_tools if name not in tool_names]
+    if required_not_allowed:
+        return {
+            "ok": False,
+            "error": "required_tool_not_in_allowed_surface",
+            "required_tools": required_tools,
+            "allowed_tools": tool_names,
+            "required_not_allowed": required_not_allowed,
+            "read_only": True,
+        }
     max_tool_rounds = _safe_int(args.get("max_tool_rounds"), 4, 0, 8)
+    min_tool_calls = _safe_int(args.get("min_tool_calls"), 0, 0, 8)
     timeout_seconds = _safe_int(args.get("timeout_seconds"), 120, 5, 600)
     num_ctx = _safe_int(args.get("num_ctx"), 262144, 2048, 262144)
     temperature = _safe_float(args.get("temperature"), 0.1, 0.0, 2.0)
@@ -565,10 +655,34 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "preseed_sources": preseed_sources,
             "preseed_truncated": preseed_truncated,
             "tool_call_count": len(tool_transcript),
+            "successful_tool_call_count": len([item for item in tool_transcript if item.get("ok") is True]),
+            "required_tools": required_tools,
+            "min_tool_calls": min_tool_calls,
             "partial_tool_transcript": tool_transcript if include_tool_transcript else [],
         }
 
     response_text = str(final_message.get("content") or "")
+    successful_tools = [str(item.get("tool") or "") for item in tool_transcript if item.get("ok") is True]
+    missing_required_tools = [name for name in required_tools if name not in successful_tools]
+    if response_text.strip() and (missing_required_tools or len(successful_tools) < min_tool_calls):
+        return {
+            "ok": False,
+            "error": "required_tool_evidence_missing",
+            "endpoint": endpoint,
+            "model": model,
+            "repo_root": str(root),
+            "allowed_tools": tool_names,
+            "required_tools": required_tools,
+            "missing_required_tools": missing_required_tools,
+            "min_tool_calls": min_tool_calls,
+            "successful_tool_call_count": len(successful_tools),
+            "successful_tools": successful_tools,
+            "response": response_text,
+            "tool_transcript": tool_transcript if include_tool_transcript else [],
+            "read_only": True,
+            "no_broker_http": True,
+            "no_agentic_loop": True,
+        }
     if not response_text.strip():
         return {
             "ok": False,
@@ -577,8 +691,12 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "model": model,
             "repo_root": str(root),
             "allowed_tools": tool_names,
+            "diagnostic_no_tools": diagnostic_no_tools,
+            "required_tools": required_tools,
+            "min_tool_calls": min_tool_calls,
             "tool_round_limit": max_tool_rounds,
             "tool_call_count": len(tool_transcript),
+            "successful_tool_call_count": len(successful_tools),
             "preseed_sources": preseed_sources,
             "preseed_truncated": preseed_truncated,
             "initial_context_truncated": initial_context_truncated,
@@ -599,8 +717,12 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "root_isolation": "Codex MCP root is process-local and does not call or reconfigure 3572 agentic loop roots.",
         "forbidden_ports": sorted(FORBIDDEN_PORTS),
         "allowed_tools": tool_names,
+        "diagnostic_no_tools": diagnostic_no_tools,
+        "required_tools": required_tools,
+        "min_tool_calls": min_tool_calls,
         "tool_round_limit": max_tool_rounds,
         "tool_call_count": len(tool_transcript),
+        "successful_tool_call_count": len(successful_tools),
         "preseed_sources": preseed_sources,
         "preseed_truncated": preseed_truncated,
         "initial_context_truncated": initial_context_truncated,
@@ -703,6 +825,9 @@ def _tools() -> dict[str, ToolSpec]:
                 "endpoint": string_prop(DEFAULT_ENDPOINT),
                 "model": string_prop(DEFAULT_MODEL),
                 "allowed_tools": string_array_prop(),
+                "required_tools": enum_string_array_prop(list(LOCAL_TOOL_HANDLERS)),
+                "min_tool_calls": integer_prop(0, 0, 8),
+                "diagnostic_no_tools": boolean_prop(False),
                 "max_tool_rounds": integer_prop(4, 0, 8),
                 "timeout_seconds": integer_prop(120, 5, 600),
                 "num_ctx": integer_prop(262144, 2048, 262144),

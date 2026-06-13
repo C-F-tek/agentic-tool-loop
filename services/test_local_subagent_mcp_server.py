@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -72,6 +73,27 @@ def test_explicit_empty_allowed_tools_means_no_tools(tmp_path) -> None:
     assert surface["ollama_tools"] == []
 
 
+def test_run_readonly_rejects_no_tools_without_diagnostic_flag(monkeypatch, tmp_path) -> None:
+    def fail_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("Ollama should not be called for operational no-tool runs")
+
+    monkeypatch.setattr(local_subagent_mcp_server, "_ollama_chat", fail_chat)
+
+    result = local_subagent_mcp_server._run_readonly(
+        {
+            "task": "Say one word.",
+            "endpoint": "http://127.0.0.1:11434/api/chat",
+            "model": "qwen3.5:9b-coding",
+            "allowed_tools": [],
+            "include_project_preseed": False,
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "no_tools_requires_diagnostic_flag"
+
+
 def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
@@ -95,6 +117,8 @@ def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> Non
             "model": "qwen3.5:9b-coding",
             "endpoint": "http://127.0.0.1:11434/api/chat",
             "allowed_tools": ["repo_read"],
+            "required_tools": ["repo_read"],
+            "min_tool_calls": 1,
             "max_tool_rounds": 2,
             "include_project_preseed": False,
         },
@@ -104,6 +128,7 @@ def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> Non
     assert result["ok"] is True
     assert result["response"] == "README.md contains project facts."
     assert result["tool_call_count"] == 1
+    assert result["successful_tool_call_count"] == 1
     assert result["tool_transcript"][0]["tool"] == "repo_read"
     assert result["tool_transcript"][0]["ok"] is True
 
@@ -143,6 +168,7 @@ def test_run_readonly_reports_empty_final_response(monkeypatch, tmp_path) -> Non
             "endpoint": "http://127.0.0.1:11434/api/chat",
             "model": "qwen3.5:9b-coding",
             "allowed_tools": [],
+            "diagnostic_no_tools": True,
             "include_project_preseed": False,
         },
         root,
@@ -151,6 +177,76 @@ def test_run_readonly_reports_empty_final_response(monkeypatch, tmp_path) -> Non
     assert result["ok"] is False
     assert result["error"] == "empty_final_response"
     assert result["tool_call_count"] == 0
+
+
+def test_run_readonly_fails_when_required_tool_is_not_used(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    monkeypatch.setattr(
+        local_subagent_mcp_server,
+        "_ollama_chat",
+        lambda _endpoint, _payload, _timeout_seconds: {"message": {"role": "assistant", "content": "Answer without evidence."}},
+    )
+
+    result = local_subagent_mcp_server._run_readonly(
+        {
+            "task": "Read the README and summarize one fact.",
+            "endpoint": "http://127.0.0.1:11434/api/chat",
+            "model": "qwen3.5:9b-coding",
+            "allowed_tools": ["repo_read"],
+            "required_tools": ["repo_read"],
+            "min_tool_calls": 1,
+            "include_project_preseed": False,
+        },
+        root,
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "required_tool_evidence_missing"
+    assert result["missing_required_tools"] == ["repo_read"]
+    assert result["successful_tool_call_count"] == 0
+
+
+def test_repo_list_files_matches_query_terms(tmp_path) -> None:
+    root = tmp_path / "repo"
+    target = root / "services" / "codex_bridge" / "local_subagent_mcp_server.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("print('x')\n", encoding="utf-8")
+
+    result = local_subagent_mcp_server._repo_list_files(
+        {"query": "codex_bridge mcp local subagent", "suffix": ".py"},
+        root,
+    )
+
+    assert result["ok"] is True
+    assert result["files"] == ["services\\codex_bridge\\local_subagent_mcp_server.py"] or result["files"] == ["services/codex_bridge/local_subagent_mcp_server.py"]
+
+
+def test_memory_search_normalizes_project_local_scope(monkeypatch, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_search(args: dict[str, object], _root: Path) -> dict[str, object]:
+        captured.update(args)
+        return {"ok": True, "records": [], "count": 0}
+
+    monkeypatch.setitem(sys.modules, "project_memory_mcp_server", types.SimpleNamespace(_search=fake_search))
+
+    result = local_subagent_mcp_server._memory_search({"query": "approval", "scope": "project-local"}, tmp_path)
+
+    assert result["ok"] is True
+    assert captured["scope"] == "repo"
+    assert result["proxied_by"] == "aicarmine_local_subagent"
+
+
+def test_unwrap_mcp_text_json_result() -> None:
+    result = local_subagent_mcp_server._unwrap_mcp_text_json(
+        {"content": [{"type": "text", "text": "{\"ok\": true, \"chunks\": []}"}]}
+    )
+
+    assert result["ok"] is True
+    assert result["chunks"] == []
+    assert result["mcp_text_unwrapped"] is True
 
 
 def test_project_preseed_reads_known_repo_files(tmp_path) -> None:
