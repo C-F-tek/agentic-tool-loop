@@ -231,7 +231,9 @@ def _repo_search_rg(args: dict[str, Any], root: Path) -> dict[str, Any]:
     cmd.extend(["--", pattern, str(search_root)])
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout_seconds, check=False)
     matches: list[dict[str, Any]] = []
-    for line in proc.stdout.splitlines():
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    for line in stdout.splitlines():
         if len(matches) >= max_results:
             break
         try:
@@ -249,7 +251,7 @@ def _repo_search_rg(args: dict[str, Any], root: Path) -> dict[str, Any]:
         raw_lines = data.get("lines")
         lines = raw_lines if isinstance(raw_lines, dict) else {}
         matches.append({"path": display_path, "line_number": data.get("line_number"), "text": str(lines.get("text", "")).rstrip("\r\n")})
-    return {"ok": proc.returncode in {0, 1}, "tool": "repo_search_rg", "path": rel or ".", "pattern": pattern, "matches": matches, "count": len(matches), "truncated": len(matches) >= max_results, "returncode": proc.returncode, "stderr_tail": proc.stderr[-2000:], "read_only": True}
+    return {"ok": proc.returncode in {0, 1}, "tool": "repo_search_rg", "path": rel or ".", "pattern": pattern, "matches": matches, "count": len(matches), "truncated": len(matches) >= max_results, "returncode": proc.returncode, "stderr_tail": stderr[-2000:], "read_only": True}
 
 
 def _git_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -347,9 +349,10 @@ LOCAL_TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 def _allowed_local_tools(args: dict[str, Any] | None = None) -> list[str]:
     args = args or {}
     raw = args.get("allowed_tools")
-    requested = [str(item) for item in raw if str(item).strip()] if isinstance(raw, list) else []
-    names = requested or list(LOCAL_TOOL_HANDLERS)
-    return [name for name in names if name in LOCAL_TOOL_HANDLERS]
+    if isinstance(raw, list):
+        requested = [str(item) for item in raw if str(item).strip()]
+        return [name for name in requested if name in LOCAL_TOOL_HANDLERS]
+    return list(LOCAL_TOOL_HANDLERS)
 
 
 def _ollama_tool_definitions(tool_names: list[str]) -> list[dict[str, Any]]:
@@ -432,6 +435,60 @@ def _system_prompt(root: Path, tool_names: list[str]) -> str:
     )
 
 
+def _default_preseed_paths() -> list[str]:
+    return [
+        "AGENTS.md",
+        "README.md",
+        "services/codex_bridge/REPO_MCP_CONTRACT.md",
+        "services/codex_bridge/README.md",
+        "services/codex_bridge/MODULE_REFERENCE.md",
+    ]
+
+
+def _project_preseed(args: dict[str, Any], root: Path) -> tuple[str, list[dict[str, Any]], bool]:
+    if not _safe_bool(args.get("include_project_preseed"), True):
+        return "", [], False
+    raw_paths = args.get("preseed_paths")
+    paths = [str(item) for item in raw_paths if str(item).strip()] if isinstance(raw_paths, list) else _default_preseed_paths()
+    max_chars = _safe_int(args.get("preseed_max_chars"), 30000, 1000, 80000)
+    sections: list[str] = []
+    sources: list[dict[str, Any]] = []
+    used_chars = 0
+    truncated = False
+    for rel_path in paths:
+        if used_chars >= max_chars:
+            truncated = True
+            break
+        result = _repo_read(
+            {
+                "path": rel_path,
+                "max_chars": min(9000, max_chars - used_chars),
+                "max_lines": 220,
+            },
+            root,
+        )
+        if result.get("ok") is not True:
+            continue
+        content = str(result.get("content") or "")
+        if not content:
+            continue
+        header = f"--- {result.get('path')} ---\n"
+        block = header + content
+        if used_chars + len(block) > max_chars:
+            block = block[: max(0, max_chars - used_chars)]
+            truncated = True
+        sections.append(block)
+        used_chars += len(block)
+        sources.append(
+            {
+                "path": result.get("path"),
+                "truncated": result.get("truncated"),
+                "returned_lines": result.get("returned_lines"),
+            }
+        )
+    return "\n\n".join(sections), sources, truncated
+
+
 def _run_local_tool(name: str, arguments: dict[str, Any], root: Path) -> dict[str, Any]:
     handler = LOCAL_TOOL_HANDLERS.get(name)
     if handler is None:
@@ -461,9 +518,12 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
     temperature = _safe_float(args.get("temperature"), 0.1, 0.0, 2.0)
     include_tool_transcript = _safe_bool(args.get("include_tool_transcript"), True)
     initial_context, initial_context_truncated = _compact_text(str(args.get("initial_context") or "").strip(), 50000)
+    preseed_context, preseed_sources, preseed_truncated = _project_preseed(args, root)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": _system_prompt(root, tool_names)}]
     user_content = task
+    if preseed_context:
+        user_content += "\n\nDeterministic project preseed from repo files:\n" + preseed_context
     if initial_context:
         user_content += "\n\nInitial verified context:\n" + initial_context
     messages.append({"role": "user", "content": user_content})
@@ -494,7 +554,39 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 messages.append({"role": "tool", "tool_name": tool_name, "content": compact_result})
                 tool_transcript.append({"round": round_index + 1, "tool": tool_name, "arguments": tool_args, "ok": bool(isinstance(tool_result, dict) and tool_result.get("ok") is True), "result_truncated": result_truncated, "result": tool_result if include_tool_transcript and not result_truncated else compact_result})
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return {"ok": False, "error": "ollama_chat_failed", "endpoint": endpoint, "model": model, "error_type": type(exc).__name__, "message": str(exc), "hint": "Verify Ollama is listening on 127.0.0.1:11434. This tool never starts 11435 or local services."}
+        return {
+            "ok": False,
+            "error": "ollama_chat_failed",
+            "endpoint": endpoint,
+            "model": model,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+            "hint": "Verify Ollama is listening on 127.0.0.1:11434. This tool never starts 11435 or local services.",
+            "preseed_sources": preseed_sources,
+            "preseed_truncated": preseed_truncated,
+            "tool_call_count": len(tool_transcript),
+            "partial_tool_transcript": tool_transcript if include_tool_transcript else [],
+        }
+
+    response_text = str(final_message.get("content") or "")
+    if not response_text.strip():
+        return {
+            "ok": False,
+            "error": "empty_final_response",
+            "endpoint": endpoint,
+            "model": model,
+            "repo_root": str(root),
+            "allowed_tools": tool_names,
+            "tool_round_limit": max_tool_rounds,
+            "tool_call_count": len(tool_transcript),
+            "preseed_sources": preseed_sources,
+            "preseed_truncated": preseed_truncated,
+            "initial_context_truncated": initial_context_truncated,
+            "tool_transcript": tool_transcript if include_tool_transcript else [],
+            "read_only": True,
+            "no_broker_http": True,
+            "no_agentic_loop": True,
+        }
 
     return {
         "ok": True,
@@ -509,8 +601,10 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "allowed_tools": tool_names,
         "tool_round_limit": max_tool_rounds,
         "tool_call_count": len(tool_transcript),
+        "preseed_sources": preseed_sources,
+        "preseed_truncated": preseed_truncated,
         "initial_context_truncated": initial_context_truncated,
-        "response": str(final_message.get("content") or ""),
+        "response": response_text,
         "tool_transcript": tool_transcript if include_tool_transcript else [],
         "read_only": True,
         "no_broker_http": True,
@@ -614,6 +708,9 @@ def _tools() -> dict[str, ToolSpec]:
                 "num_ctx": integer_prop(262144, 2048, 262144),
                 "temperature": number_prop(0.1, 0.0, 2.0),
                 "include_tool_transcript": boolean_prop(True),
+                "include_project_preseed": boolean_prop(True),
+                "preseed_paths": string_array_prop(),
+                "preseed_max_chars": integer_prop(30000, 1000, 80000),
             },
             required=["task"],
         ),

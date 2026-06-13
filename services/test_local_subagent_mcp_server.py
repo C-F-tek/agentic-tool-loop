@@ -64,6 +64,14 @@ def test_capabilities_report_readonly_surface(tmp_path) -> None:
     assert all("apply" not in name for name in surface["tool_names"])
 
 
+def test_explicit_empty_allowed_tools_means_no_tools(tmp_path) -> None:
+    surface = local_subagent_mcp_server._tool_surface({"allowed_tools": []}, tmp_path)
+
+    assert surface["ok"] is True
+    assert surface["tool_names"] == []
+    assert surface["ollama_tools"] == []
+
+
 def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
@@ -88,6 +96,7 @@ def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> Non
             "endpoint": "http://127.0.0.1:11434/api/chat",
             "allowed_tools": ["repo_read"],
             "max_tool_rounds": 2,
+            "include_project_preseed": False,
         },
         root,
     )
@@ -97,6 +106,68 @@ def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> Non
     assert result["tool_call_count"] == 1
     assert result["tool_transcript"][0]["tool"] == "repo_read"
     assert result["tool_transcript"][0]["ok"] is True
+
+
+def test_repo_search_handles_empty_stdout_from_rg(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    class FakeCompletedProcess:
+        returncode = 1
+        stdout = None
+        stderr = None
+
+    monkeypatch.setattr(local_subagent_mcp_server.shutil, "which", lambda _name: "rg.exe")
+    monkeypatch.setattr(local_subagent_mcp_server.subprocess, "run", lambda *args, **kwargs: FakeCompletedProcess())
+
+    result = local_subagent_mcp_server._repo_search_rg({"path": ".", "pattern": "missing"}, root)
+
+    assert result["ok"] is True
+    assert result["matches"] == []
+    assert result["stderr_tail"] == ""
+
+
+def test_run_readonly_reports_empty_final_response(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    monkeypatch.setattr(
+        local_subagent_mcp_server,
+        "_ollama_chat",
+        lambda _endpoint, _payload, _timeout_seconds: {"message": {"role": "assistant", "content": ""}},
+    )
+
+    result = local_subagent_mcp_server._run_readonly(
+        {
+            "task": "Say one word.",
+            "endpoint": "http://127.0.0.1:11434/api/chat",
+            "model": "qwen3.5:9b-coding",
+            "allowed_tools": [],
+            "include_project_preseed": False,
+        },
+        root,
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "empty_final_response"
+    assert result["tool_call_count"] == 0
+
+
+def test_project_preseed_reads_known_repo_files(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "AGENTS.md").write_text("agent contract", encoding="utf-8")
+    (root / "README.md").write_text("readme contract", encoding="utf-8")
+
+    context, sources, truncated = local_subagent_mcp_server._project_preseed(
+        {"preseed_paths": ["AGENTS.md", "README.md"], "preseed_max_chars": 2000},
+        root,
+    )
+
+    assert "agent contract" in context
+    assert "readme contract" in context
+    assert [source["path"] for source in sources] == ["AGENTS.md", "README.md"]
+    assert truncated is False
 
 
 def test_health_keeps_codex_root_isolation_fields(tmp_path, monkeypatch) -> None:
