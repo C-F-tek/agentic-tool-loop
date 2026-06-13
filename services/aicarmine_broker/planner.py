@@ -2719,6 +2719,7 @@ def _agentic_v2_decision_paths(tool: str, args: dict[str, Any]) -> list[str]:
         "repo_ctags_symbols",
         "repo_semgrep_scan",
         "repo_shellcheck",
+        "repo_validate",
         "repo_ruff_check",
         "repo_pyright_check",
         "repo_pytest_run",

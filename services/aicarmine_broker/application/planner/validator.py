@@ -178,6 +178,14 @@ def validate_planner_decision_against_evidence(
     )
     apply_required = bool(contract.get("goal_requests_apply")) or bool(apply_contract.get("required"))
     apply_patch_applied = bool(apply_contract.get("patch_applied"))
+    post_write_contract = (
+        contract.get("post_write_validation_contract")
+        if isinstance(contract.get("post_write_validation_contract"), dict)
+        else {}
+    )
+    post_write_validation_required = bool(post_write_contract.get("required"))
+    post_write_validation_done = bool(post_write_contract.get("validation_done"))
+    post_write_validation_failed = bool(post_write_contract.get("validation_failed"))
     apply_read_targets = {
         _repo_rel_token(path)
         for path in [
@@ -193,6 +201,12 @@ def validate_planner_decision_against_evidence(
         final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
         if final_contract and final_contract.get("final_allowed") is False:
             violations.append("final_not_allowed_by_evidence_contract:" + str(final_contract.get("reason") or "insufficient evidence"))
+        if post_write_validation_required and not post_write_validation_done:
+            violations.append(
+                "final_after_write_validation_failed"
+                if post_write_validation_failed else
+                "final_after_write_without_validation"
+            )
         final_answer = str(decision.get("final_answer") or decision.get("answer") or decision.get("summary") or "")
         code_product_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
         action_plan_candidate = ""
@@ -421,6 +435,7 @@ def validate_planner_decision_against_evidence(
         "repo_ctags_symbols",
         "repo_semgrep_scan",
         "repo_shellcheck",
+        "repo_validate",
         "repo_ruff_check",
         "repo_pyright_check",
         "repo_pytest_run",

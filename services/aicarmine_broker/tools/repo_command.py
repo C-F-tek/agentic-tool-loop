@@ -159,17 +159,6 @@ def resolve_compile_targets(
             "reason": "Core runtime modules observed in repo evidence.",
             "errors": (),
         }
-    pyproject = root / "pyproject.toml"
-    if pyproject.exists():
-        package_targets = _pyproject_compile_targets(root, pyproject)
-        if package_targets:
-            return {
-                "targets": package_targets,
-                "source": "pyproject",
-                "confidence": "medium",
-                "reason": "pyproject.toml exists and package targets were detected.",
-                "errors": (),
-            }
     explicit: list[str] = []
     for key in ("path", "paths", "target", "targets"):
         for item in _split_targets(args.get(key)):
@@ -184,6 +173,17 @@ def resolve_compile_targets(
             "reason": "Explicit compile target path was provided.",
             "errors": (),
         }
+    pyproject = root / "pyproject.toml"
+    if pyproject.exists():
+        package_targets = _pyproject_compile_targets(root, pyproject)
+        if package_targets:
+            return {
+                "targets": package_targets,
+                "source": "pyproject",
+                "confidence": "medium",
+                "reason": "pyproject.toml exists and package targets were detected.",
+                "errors": (),
+            }
     configured = [
         _repo_relative_existing_path(root, item)
         for item in _split_targets(env_str("AICARMINE_COMPILE_TARGETS", ""))

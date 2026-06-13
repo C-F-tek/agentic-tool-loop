@@ -3,12 +3,201 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from aicarmine_broker.application.evidence.coverage_scorer import score_evidence_coverage
 from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
 from aicarmine_broker.application.tool_surface.candidate_action_gate import gate_candidate_actions
 from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
+
+
+POST_WRITE_VALIDATION_TOOLS = frozenset({
+    "repo_validate",
+    "repo_ruff_check",
+    "repo_pyright_check",
+    "repo_pytest_run",
+})
+POST_WRITE_TOOL_NAMES = frozenset({"repo_apply_patch", "repo_write_file"})
+
+
+def _history_result(row: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(row, dict):
+        return {}
+    result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+    if result:
+        return result
+    return row if row.get("tool") else {}
+
+
+def _collect_result_paths(
+    value: Any,
+    *,
+    repo_rel_token: Callable[[Any], str],
+    output: list[str],
+) -> None:
+    if value in (None, "", [], {}):
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _collect_result_paths(item, repo_rel_token=repo_rel_token, output=output)
+        return
+    if isinstance(value, dict):
+        for key in ("path", "paths", "target", "targets", "target_file", "modified_paths"):
+            if key in value:
+                _collect_result_paths(value.get(key), repo_rel_token=repo_rel_token, output=output)
+        return
+    path = repo_rel_token(value)
+    if path and path != "." and path not in output:
+        output.append(path)
+
+
+def _tool_result_paths(result: dict[str, Any], *, repo_rel_token: Callable[[Any], str]) -> list[str]:
+    paths: list[str] = []
+    for key in ("modified_paths", "paths", "path", "target", "targets", "target_file"):
+        _collect_result_paths(result.get(key), repo_rel_token=repo_rel_token, output=paths)
+    compile_resolution = (
+        result.get("compile_target_resolution")
+        if isinstance(result.get("compile_target_resolution"), dict)
+        else {}
+    )
+    _collect_result_paths(compile_resolution.get("targets"), repo_rel_token=repo_rel_token, output=paths)
+    return paths
+
+
+def _path_covers_target(path: str, target: str) -> bool:
+    path = str(path or "").strip().strip("/")
+    target = str(target or "").strip().strip("/")
+    if not path or not target:
+        return False
+    return path == target or target.startswith(path + "/") or path.startswith(target + "/")
+
+
+def _validation_covers_modified_files(validation_paths: list[str], modified_files: list[str]) -> bool:
+    if not modified_files:
+        return True
+    if not validation_paths:
+        return True
+    return all(
+        any(_path_covers_target(path, target) for path in validation_paths)
+        for target in modified_files
+    )
+
+
+def _post_write_validation_candidates(
+    modified_files: list[str],
+    *,
+    validation_failed: bool,
+) -> list[dict[str, Any]]:
+    paths = modified_files[:8]
+    candidates: list[dict[str, Any]] = []
+    if validation_failed and paths:
+        candidates.append({
+            "tool": "repo_read",
+            "arguments": {"paths": paths, "max_chars": 50000},
+            "reason": "post_write_validation_failed_read_modified_files",
+            "source": "post_write_validation_contract",
+        })
+    validate_args: dict[str, Any] = {"timeout_seconds": 300}
+    if paths:
+        validate_args["paths"] = paths
+    candidates.append({
+        "tool": "repo_validate",
+        "arguments": validate_args,
+        "reason": "post_write_validation_required",
+        "source": "post_write_validation_contract",
+    })
+    python_paths = [path for path in paths if path.endswith(".py")]
+    if python_paths:
+        candidates.append({
+            "tool": "repo_ruff_check",
+            "arguments": {"paths": python_paths, "timeout_seconds": 180},
+            "reason": "post_write_python_validation_candidate",
+            "source": "post_write_validation_contract",
+        })
+    return candidates
+
+
+def _post_write_validation_contract(
+    history: list[dict[str, Any]],
+    *,
+    repo_rel_token: Callable[[Any], str],
+) -> dict[str, Any]:
+    write_events: list[dict[str, Any]] = []
+    for index, row in enumerate(history if isinstance(history, list) else []):
+        result = _history_result(row)
+        tool = str(result.get("tool") or "")
+        if tool not in POST_WRITE_TOOL_NAMES or result.get("ok") is not True:
+            continue
+        if tool == "repo_apply_patch" and result.get("changed") is False:
+            continue
+        paths = _tool_result_paths(result, repo_rel_token=repo_rel_token)
+        write_events.append({
+            "index": index,
+            "tool": tool,
+            "paths": paths,
+            "changed": result.get("changed"),
+        })
+
+    modified_files: list[str] = []
+    for event in write_events:
+        for path in event.get("paths") or []:
+            if path not in modified_files:
+                modified_files.append(path)
+
+    latest_write_index = max((int(event["index"]) for event in write_events), default=-1)
+    validation_events: list[dict[str, Any]] = []
+    for index, row in enumerate(history if isinstance(history, list) else []):
+        if index <= latest_write_index:
+            continue
+        result = _history_result(row)
+        tool = str(result.get("tool") or "")
+        if tool not in POST_WRITE_VALIDATION_TOOLS:
+            continue
+        paths = _tool_result_paths(result, repo_rel_token=repo_rel_token)
+        covers_modified_files = _validation_covers_modified_files(paths, modified_files)
+        validation_events.append({
+            "index": index,
+            "tool": tool,
+            "ok": result.get("ok") is True,
+            "paths": paths,
+            "covers_modified_files": covers_modified_files,
+            "returncode": result.get("returncode"),
+            "error": result.get("error"),
+        })
+
+    latest_covering_validation = next(
+        (event for event in reversed(validation_events) if event.get("covers_modified_files")),
+        {},
+    )
+    validation_done = bool(latest_covering_validation and latest_covering_validation.get("ok") is True)
+    validation_failed = bool(latest_covering_validation and latest_covering_validation.get("ok") is not True)
+    status = (
+        "not_required"
+        if not write_events else
+        "passed"
+        if validation_done else
+        "failed"
+        if validation_failed else
+        "pending"
+    )
+    return {
+        "schema": "post_write_validation_contract.v1",
+        "required": bool(write_events),
+        "status": status,
+        "validation_done": validation_done,
+        "validation_failed": validation_failed,
+        "required_after_tools": sorted(POST_WRITE_TOOL_NAMES),
+        "accepted_validation_tools": sorted(POST_WRITE_VALIDATION_TOOLS),
+        "modified_files": modified_files[:32],
+        "latest_write_index": latest_write_index if latest_write_index >= 0 else None,
+        "write_events": write_events[-8:],
+        "validation_events_after_latest_write": validation_events[-8:],
+        "latest_validation": latest_covering_validation or None,
+        "candidate_next_actions": _post_write_validation_candidates(
+            modified_files,
+            validation_failed=validation_failed,
+        ) if write_events and not validation_done else [],
+    }
 
 
 @dataclass(frozen=True)
@@ -444,7 +633,30 @@ class EvidenceBuilder:
                 goal_mentions_agents_alias = basename == "agents.md" and "agenti" in goal_low
                 if goal_mentions_path or goal_mentions_agents_alias:
                     add_apply_target(path)
-        apply_patch_done = history_has_tool(history, "repo_apply_patch")
+        post_write_validation_contract = _post_write_validation_contract(
+            history,
+            repo_rel_token=_repo_rel_token,
+        )
+        post_write_validation_required = bool(post_write_validation_contract.get("required"))
+        post_write_validation_done = bool(post_write_validation_contract.get("validation_done"))
+        post_write_validation_failed = bool(post_write_validation_contract.get("validation_failed"))
+        post_write_validation_status = str(post_write_validation_contract.get("status") or "")
+        post_write_validation_candidates = [
+            item for item in (
+                post_write_validation_contract.get("candidate_next_actions")
+                if isinstance(post_write_validation_contract.get("candidate_next_actions"), list)
+                else []
+            )
+            if isinstance(item, dict)
+        ]
+        apply_patch_done = any(
+            isinstance(event, dict) and event.get("tool") == "repo_apply_patch"
+            for event in (
+                post_write_validation_contract.get("write_events")
+                if isinstance(post_write_validation_contract.get("write_events"), list)
+                else []
+            )
+        )
         apply_verified_target_reads = [
             p for p in apply_target_files
             if p in verified_read_path_set
@@ -464,7 +676,22 @@ class EvidenceBuilder:
             "preloop_target_candidate_paths": apply_preloop_candidate_paths[:16],
             "target_source": "resolved_goal_file_and_preloop_rag_target_candidates",
             "generic_discovery_allowed": False if goal_requests_apply_value and not apply_patch_done else None,
+            "post_write_validation_required": bool(post_write_validation_required),
+            "post_write_validation_status": post_write_validation_status or None,
         }
+        if post_write_validation_required and not post_write_validation_done:
+            final_allowed = False
+            candidates = post_write_validation_candidates
+            if post_write_validation_failed:
+                final_reason = (
+                    "Post-write validation failed after repo_apply_patch/repo_write_file. "
+                    "Planner must inspect the validation result and fix, revalidate, or return a typed block; final is disallowed."
+                )
+            else:
+                final_reason = (
+                    "Post-write validation is required after repo_apply_patch/repo_write_file. "
+                    "Planner must call repo_validate or another deterministic validation tool over modified files before final."
+                )
         if goal_requests_apply_value and not apply_patch_done:
             final_allowed = False
             if not apply_target_files:
@@ -677,6 +904,7 @@ class EvidenceBuilder:
             "goal_requires_code_product_report": code_product_required,
             "goal_requests_apply": goal_requests_apply_value,
             "apply_write_contract": apply_write_contract,
+            "post_write_validation_contract": post_write_validation_contract,
             "action_plan_candidate": action_plan_candidate or None,
             "requested_file_limit": requested_limit or None,
             "target_kind": target_kind,
@@ -1156,6 +1384,22 @@ class EvidenceBuilder:
                     "read the target with repo_read, then call repo_propose_code_edit with a complete inline code product. "
                     "Do not final with prose-only output."
                 )
+        elif post_write_validation_required and post_write_validation_failed:
+            contract["candidate_next_actions"] = post_write_validation_candidates
+            contract["required_next_progress"] = (
+                "Post-write validation failed after repo_apply_patch/repo_write_file. "
+                "Do not final. Inspect the failed validation evidence and modified files from "
+                "post_write_validation_contract.modified_files, then call repo_apply_patch with verified current "
+                "old_text to fix and re-run validation, or return action=block with a concrete blocker."
+            )
+        elif post_write_validation_required and not post_write_validation_done:
+            contract["candidate_next_actions"] = post_write_validation_candidates
+            contract["required_next_progress"] = (
+                "Post-write validation is required before final. Call repo_validate with "
+                "post_write_validation_contract.modified_files, or another deterministic validation tool from "
+                "post_write_validation_contract.accepted_validation_tools. Do not produce final until one "
+                "covering validation succeeds."
+            )
         elif goal_requests_apply_value and not apply_patch_done:
             if not apply_target_files:
                 contract["candidate_next_actions"] = []

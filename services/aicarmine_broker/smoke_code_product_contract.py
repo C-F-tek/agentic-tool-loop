@@ -1101,6 +1101,133 @@ def main() -> int:
                 ),
                 "repo_apply_patch semantic validation failure was routed to Vulkan/GPU0 repair",
             )
+            apply_result = {
+                "ok": True,
+                "tool": "repo_apply_patch",
+                "path": target,
+                "modified_paths": [target],
+                "changed": True,
+                "replacements": 1,
+                "line_count_before": len(old_text.splitlines()),
+                "line_count_after": len(new_text.splitlines()),
+                "before_sha256": "before-smoke",
+                "after_sha256": "after-smoke",
+            }
+            history_after_apply = history_read + [
+                compact_history_row(
+                    root=job_root,
+                    step=2,
+                    tool="repo_apply_patch",
+                    arguments={"path": target, "old_text": old_text, "new_text": new_text},
+                    result=apply_result,
+                )
+            ]
+            post_apply_contract = planner.planner_evidence_contract(
+                apply_validator_goal,
+                history_after_apply,
+            )
+            post_write_contract = post_apply_contract.get("post_write_validation_contract") or {}
+            require(
+                post_write_contract.get("status") == "pending"
+                and post_write_contract.get("validation_done") is False,
+                f"post-write validation contract did not enter pending state: {post_write_contract}",
+            )
+            require(
+                post_apply_contract.get("finalization_contract", {}).get("final_allowed") is False,
+                f"post-write contract allowed final without validation: {post_apply_contract.get('finalization_contract')}",
+            )
+            post_apply_candidates = post_apply_contract.get("candidate_next_actions") or []
+            require(
+                any(
+                    isinstance(item, dict)
+                    and item.get("tool") == "repo_validate"
+                    and target in ((item.get("arguments") or {}).get("paths") or [])
+                    for item in post_apply_candidates
+                ),
+                f"post-write validation candidate missing targeted repo_validate: {post_apply_candidates}",
+            )
+            post_apply_policy = post_apply_contract.get("turn_tool_surface_policy") or {}
+            require(
+                post_apply_policy.get("reason") == "post_write_validation_required"
+                and "repo_validate" in set(post_apply_policy.get("allowed_tool_names") or []),
+                f"post-write policy did not require validation: {post_apply_policy}",
+            )
+            missing_validation_final_gate = planner.validate_planner_decision_against_evidence(
+                apply_validator_goal,
+                {"action": "final", "final_answer": "Patch applied."},
+                history_after_apply,
+            )
+            require(
+                "final_after_write_without_validation" in missing_validation_final_gate.get("violations", []),
+                f"final without post-write validation was not rejected: {missing_validation_final_gate}",
+            )
+            failed_validation_result = {
+                "ok": False,
+                "tool": "repo_validate",
+                "paths": [target],
+                "results": [{
+                    "index": 1,
+                    "command": "python -m compileall -q 'pkg/example.py'",
+                    "returncode": 1,
+                    "ok": False,
+                    "stderr_tail": "smoke failure",
+                }],
+            }
+            history_after_failed_validation = history_after_apply + [
+                compact_history_row(
+                    root=job_root,
+                    step=3,
+                    tool="repo_validate",
+                    arguments={"paths": [target]},
+                    result=failed_validation_result,
+                )
+            ]
+            failed_validation_final_gate = planner.validate_planner_decision_against_evidence(
+                apply_validator_goal,
+                {"action": "final", "final_answer": "Patch applied."},
+                history_after_failed_validation,
+            )
+            require(
+                "final_after_write_validation_failed" in failed_validation_final_gate.get("violations", []),
+                f"final after failed post-write validation was not rejected: {failed_validation_final_gate}",
+            )
+            successful_validation_result = {
+                "ok": True,
+                "tool": "repo_validate",
+                "paths": [target],
+                "results": [{
+                    "index": 1,
+                    "command": "python -m compileall -q 'pkg/example.py'",
+                    "returncode": 0,
+                    "ok": True,
+                }],
+            }
+            history_after_successful_validation = history_after_apply + [
+                compact_history_row(
+                    root=job_root,
+                    step=4,
+                    tool="repo_validate",
+                    arguments={"paths": [target]},
+                    result=successful_validation_result,
+                )
+            ]
+            successful_validation_contract = planner.planner_evidence_contract(
+                apply_validator_goal,
+                history_after_successful_validation,
+            )
+            require(
+                (successful_validation_contract.get("post_write_validation_contract") or {}).get("status") == "passed",
+                "successful post-write validation did not mark the contract passed",
+            )
+            successful_validation_final_gate = planner.validate_planner_decision_against_evidence(
+                apply_validator_goal,
+                {"action": "final", "final_answer": "Patch applied and validation passed."},
+                history_after_successful_validation,
+            )
+            require(
+                successful_validation_final_gate.get("ok") is True,
+                f"final after successful post-write validation was rejected: {successful_validation_final_gate}",
+            )
             apply_duplicate_read_gate = planner.validate_planner_decision_against_evidence(
                 apply_validator_goal,
                 {

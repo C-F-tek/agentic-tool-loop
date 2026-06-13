@@ -463,7 +463,27 @@ def _html_json_inline_container(value: Any) -> str:
     return _html_json_scalar(value)
 
 
+def _decode_structured_json_text(value: str) -> Any:
+    text = str(value or "").strip()
+    if len(text) < 2 or text[0] not in "{[" or text[-1] not in "}]":
+        return None
+    try:
+        decoded = json.loads(text)
+    except Exception:
+        return None
+    return decoded if isinstance(decoded, (dict, list)) else None
+
+
 def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
+    if isinstance(value, str):
+        decoded = _decode_structured_json_text(value)
+        if decoded is not None:
+            return (
+                "<div class=\"json-decoded\">"
+                "<div class=\"json-decoded-label\">decoded JSON string</div>"
+                f"{_html_json_tree(decoded, path=f'{path}.__decoded_json', depth=depth)}"
+                "</div>"
+            )
     if _json_inline_container(value):
         return _html_json_inline_container(value)
     if isinstance(value, dict):
@@ -571,6 +591,16 @@ def _json_tree_css() -> str:
 }
 .json-string {
   color: #e4e4e4;
+}
+.json-decoded {
+  border-left: 3px solid #4b7fa8;
+  padding-left: 10px;
+}
+.json-decoded-label {
+  color: #9bb8cc;
+  font-size: 11px;
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
 }
 """
 
@@ -686,6 +716,204 @@ def _step_diagnostics_summary_for_view(step: dict[str, Any]) -> dict[str, Any]:
         for key, value in diagnostics.items()
         if value not in ({}, [], "", None)
     }
+
+
+def _event_step_number(event: dict[str, Any]) -> int:
+    try:
+        return int(event.get("step") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _latest_event_step(events: list[dict[str, Any]]) -> int:
+    steps = [_event_step_number(event) for event in events]
+    return max(steps) if steps else 0
+
+
+def _select_step_events(root: Path, events: list[dict[str, Any]], requested_step: int = 0) -> tuple[int, list[dict[str, Any]]]:
+    step = int(requested_step or 0)
+    if step <= 0:
+        step = _latest_planner_step(root) or _latest_event_step(events)
+    return step, [event for event in events if _event_step_number(event) == step]
+
+
+def _last_payload_for_event(step_events: list[dict[str, Any]], event_type: str) -> dict[str, Any]:
+    for event in reversed(step_events):
+        if str(event.get("event_type") or "") != event_type:
+            continue
+        payload = event.get("payload")
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _step_payload_audit(root: Path, compact_payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(compact_payload, dict) or not compact_payload:
+        return {
+            "raw_payload_available": False,
+            "compact_payload_complete": False,
+            "violations": ["compact_payload_missing"],
+        }
+    raw_payload, raw_meta = _read_job_artifact_json(root, compact_payload.get("artifact"))
+    return {**raw_meta, **_tool_payload_audit(compact_payload, raw_payload)}
+
+
+def _status_tone(value: bool | None) -> str:
+    if value is True:
+        return "ok"
+    if value is False:
+        return "bad"
+    return "warn"
+
+
+def _html_status_pill(label: str, value: bool | None) -> str:
+    return (
+        f"<span class=\"status-pill status-pill-{_status_tone(value)}\">"
+        f"{html.escape(label)}: {html.escape(str(value))}</span>"
+    )
+
+
+def _step_strip_html(job_id: str, steps: list[dict[str, Any]], current_step: int) -> str:
+    if not steps:
+        return "<p class=\"muted\">No step index yet.</p>"
+    parts: list[str] = []
+    for step in steps[-24:]:
+        try:
+            step_number = int(step.get("step") or 0)
+        except (TypeError, ValueError):
+            step_number = 0
+        events_count = len(step.get("events") or []) if isinstance(step.get("events"), list) else 0
+        css = "step-chip active" if step_number == current_step else "step-chip"
+        safe_job = html.escape(job_id, quote=True)
+        parts.append(
+            f"<a class=\"{css}\" href=\"/jobs/{safe_job}/ia-view/section/prompt?step={step_number}\" "
+            f"data-step=\"{step_number}\">"
+            f"<span>step {html.escape(str(step_number))}</span>"
+            f"<b>{html.escape(str(events_count))} events</b>"
+            "</a>"
+        )
+    return "<div class=\"step-strip\">" + "".join(parts) + "</div>"
+
+
+def _html_control_panel(
+    *,
+    title: str,
+    role: str,
+    available: bool | None,
+    priority: int,
+    summary: dict[str, Any],
+    body_html: str = "",
+    lazy_title: str = "",
+    lazy_url: str = "",
+    detail_key: str = "",
+) -> str:
+    available_value = "true" if available is True else "false" if available is False else "unknown"
+    lazy = (
+        _html_lazy_details(lazy_title, lazy_url, detail_key=detail_key or title)
+        if lazy_title and lazy_url
+        else ""
+    )
+    return (
+        "<section class=\"control-panel\" "
+        f"data-control-panel=\"1\" data-role=\"{html.escape(role)}\" "
+        f"data-available=\"{available_value}\" data-priority=\"{int(priority)}\">"
+        "<div class=\"control-panel-head\">"
+        f"<h3>{html.escape(title)}</h3>"
+        f"{_html_status_pill('available', available)}"
+        "</div>"
+        f"{_html_json_tree(summary, path=f'ia.panel.{_safe_detail_key(title)}')}"
+        f"{body_html}"
+        f"{lazy}"
+        "</section>"
+    )
+
+
+def _ia_control_css() -> str:
+    return """
+.control-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.control-panel {
+  border: 1px solid #34404a;
+  border-radius: 8px;
+  padding: 12px;
+  background: #171b1f;
+  min-width: 0;
+}
+.control-panel[data-available="false"] {
+  opacity: .72;
+}
+.control-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.control-panel h3 {
+  font-size: 15px;
+  margin: 0;
+}
+.status-pill {
+  border: 1px solid #46515d;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.status-pill-ok {
+  color: #d8f7dd;
+  background: #1d3a24;
+}
+.status-pill-warn {
+  color: #fff0bf;
+  background: #463813;
+}
+.status-pill-bad {
+  color: #ffd9d9;
+  background: #4b1f1f;
+}
+.step-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0 0;
+}
+.step-chip {
+  border: 1px solid #3b4f5c;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #14191d;
+  color: #d9ecf5;
+  text-decoration: none;
+}
+.step-chip span,
+.step-chip b {
+  display: block;
+}
+.step-chip b {
+  color: #9ca8af;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.step-chip.active {
+  border-color: #6fb3e8;
+  background: #132535;
+}
+@media (min-width: 1180px) {
+  .control-layout {
+    grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr);
+  }
+}
+"""
 
 
 def _dashboard_links(job_id: str) -> str:
@@ -1130,6 +1358,22 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
       }}
     }});
   }}
+  function orderDynamicPanels() {{
+    document.querySelectorAll("[data-dynamic-panel-grid]").forEach(function(grid) {{
+      Array.prototype.slice.call(grid.children).sort(function(a, b) {{
+        var aAvailable = a.getAttribute("data-available") === "true" ? 0 : 1;
+        var bAvailable = b.getAttribute("data-available") === "true" ? 0 : 1;
+        if (aAvailable !== bAvailable) {{
+          return aAvailable - bAvailable;
+        }}
+        var aPriority = Number(a.getAttribute("data-priority") || "999");
+        var bPriority = Number(b.getAttribute("data-priority") || "999");
+        return aPriority - bPriority;
+      }}).forEach(function(el) {{
+        grid.appendChild(el);
+      }});
+    }});
+  }}
   function restoreState(restoreScroll) {{
     var state = readState();
     var details = state.details || {{}};
@@ -1144,6 +1388,7 @@ def _stateful_refresh_script(refresh_seconds: int = 0) -> str:
       }}
     }});
     bindLazyDetails();
+    orderDynamicPanels();
     if (restoreScroll !== false && typeof state.scrollY === "number") {{
       window.scrollTo(0, state.scrollY);
     }}
@@ -1416,14 +1661,40 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
                 row["payload_audit"] = {**raw_meta, **_tool_payload_audit(payload, raw_payload)}
     final_json = read_json(root / "final.json", {})
     terminal_payload = {}
-    if include_heavy and isinstance(final_json, dict) and isinstance(final_json.get("tool_context_for_30b"), dict):
-        terminal_payload = final_json["tool_context_for_30b"]
+    terminal_context = final_json.get("tool_context_for_30b") if isinstance(final_json, dict) else None
+    terminal_available = terminal_context not in (None, "", [], {})
+    if include_heavy and terminal_available:
+        terminal_payload = terminal_context
+    selected_step_number = current_step_number or (max(steps.keys()) if steps else 0)
+    selected_row = steps.get(selected_step_number, {})
+    prompt_available = bool(
+        isinstance(selected_row, dict)
+        and isinstance(selected_row.get("prompt_capture"), dict)
+        and selected_row["prompt_capture"].get("available")
+    )
+    stream_available = bool(
+        isinstance(selected_row, dict)
+        and isinstance(selected_row.get("planner_stream"), dict)
+        and (selected_row["planner_stream"].get("native_stream") or selected_row["planner_stream"].get("content"))
+    )
+    tool_feedback_available = bool(
+        isinstance(selected_row, dict)
+        and selected_row.get("history_tool_result_fed_back_to_planner") not in (None, "", [], {})
+    )
+    diagnostics_available = bool(
+        isinstance(selected_row, dict)
+        and (
+            selected_row.get("validator_guard") not in (None, "", [], {})
+            or selected_row.get("payload_audit") not in (None, "", [], {})
+        )
+    )
     event_count_after = len(read_agent_events(job_id, 5000))
     return {
         "ok": True,
         "schema": "aicarmine_ia_live_control_view.v1",
         "read_only": True,
         "surface": "3572_operator_dashboard_only",
+        "selected_step": selected_step_number,
         "job": {
             "job_id": job_id,
             "status": state.get("status"),
@@ -1437,8 +1708,23 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
             "event_count_changed": event_count_before != event_count_after,
         },
         "steps": [steps[key] for key in sorted(steps)],
+        "view_contract": {
+            "schema": "aicarmine_ia_view_source_contract.v1",
+            "selected_step": selected_step_number,
+            "read_only": True,
+            "sources": {
+                "state": {"source": "job.json", "available": bool(state)},
+                "events": {"source": "events.ndjson", "available": True, "count": len(events)},
+                "prompt": {"source": "planner-prompts/step-XXX-planner-payload.json", "available": prompt_available},
+                "planner_stream": {"source": "planner-stream/step-XXX.*", "available": stream_available},
+                "tool_feedback": {"source": "events.ndjson tool_result payload", "available": tool_feedback_available},
+                "raw_tool_result": {"source": "same-job tool-results artifact", "available": tool_feedback_available},
+                "diagnostics": {"source": "validator guard / payload audit", "available": diagnostics_available},
+                "terminal_payload": {"source": "final.json tool_context_for_30b", "available": terminal_available},
+            },
+        },
         "openwebui_30b_payload": terminal_payload,
-        "openwebui_30b_payload_available": bool(final_json),
+        "openwebui_30b_payload_available": terminal_available,
     }
 
 
@@ -1472,38 +1758,61 @@ def agent_job_ia_view_section_html(job_id: str, section: str, *, step: int = 0) 
     if section_name == "events_raw":
         raw, _events = _read_events_ndjson(root)
         return _html_pre(raw)
-    full_payload = agent_job_ia_view_payload(job_id, include_heavy=True)
-    if not full_payload.get("ok"):
-        return _html_pre(full_payload)
-    current_step = _ia_view_payload_step(full_payload, requested_step)
+    events = read_agent_events(job_id, 5000)
+    selected_step, step_events = _select_step_events(root, events, requested_step)
+    compact_tool_result = _last_payload_for_event(step_events, "tool_result")
+    validator_guard = _last_payload_for_event(step_events, "planner_decision_rejected")
     if section_name == "compact_tool_result":
         return _html_json_tree(
-            current_step.get("history_tool_result_fed_back_to_planner") or {},
+            {
+                "selected_step": selected_step,
+                "source": "events.ndjson tool_result payload",
+                "payload": compact_tool_result,
+            },
             path="ia.lazy.compact_tool_result",
         )
     if section_name == "raw_tool_result":
+        raw_payload, raw_meta = _read_job_artifact_json(root, compact_tool_result.get("artifact"))
         return _html_json_tree(
-            current_step.get("raw_tool_result_rehydrated") or {},
+            {
+                "selected_step": selected_step,
+                "source": "same-job tool-results artifact",
+                "artifact": raw_meta,
+                "payload": raw_payload,
+            },
             path="ia.lazy.raw_tool_result",
         )
     if section_name == "payload_audit":
         return _html_json_tree(
-            current_step.get("payload_audit") or {},
+            {
+                "selected_step": selected_step,
+                "source": "compact event payload + same-job artifact",
+                "audit": _step_payload_audit(root, compact_tool_result),
+            },
             path="ia.lazy.payload_audit",
         )
     if section_name == "runtime_debug":
-        guard = (
-            current_step.get("validator_guard")
-            if isinstance(current_step.get("validator_guard"), dict)
-            else {}
-        )
         return _html_json_tree(
-            guard.get("runtime_debug_packet") or {},
+            {
+                "selected_step": selected_step,
+                "source": "planner_decision_rejected event payload",
+                "runtime_debug_packet": validator_guard.get("runtime_debug_packet") or {},
+            },
             path="ia.lazy.runtime_debug",
         )
     if section_name == "openwebui_payload":
+        final_json = read_json(root / "final.json", {})
+        terminal_payload = (
+            final_json.get("tool_context_for_30b")
+            if isinstance(final_json, dict)
+            else {}
+        )
         return _html_json_tree(
-            full_payload.get("openwebui_30b_payload") or {},
+            {
+                "source": "final.json tool_context_for_30b",
+                "available": terminal_payload not in (None, "", [], {}),
+                "payload": terminal_payload or {},
+            },
             path="ia.lazy.openwebui_30b_payload",
         )
     return _html_pre({"ok": False, "error": "unknown_ia_view_section", "section": section_name})
@@ -1592,94 +1901,167 @@ def agent_job_ia_view_html(job_id: str) -> str:
         if value not in (None, "", [], {})
     )
     if isinstance(current_step, dict):
+        current_step_id = current_step.get("step") or 0
         planner_summary = {
             "planner_decision": _compact_planner_decision_for_view(planner_decision),
-            "native_tool_call_stream": native_tool_call_stream,
             "native_stream_summary": {
                 key: value
                 for key, value in native_stream.items()
                 if key != "raw_ndjson"
             },
         }
-        body_parts: list[str] = []
+        planner_output_body = _html_detail_block(
+            "Planner Decision / Stream Summary",
+            _html_json_tree(planner_summary, path="ia.current.planner_summary"),
+            open_by_default=True,
+            detail_key="ia.current.planner_summary",
+        )
         if native_tool_call_stream:
-            body_parts.append(
-                _html_detail_block(
-                    "Native Tool Calls",
-                    _html_json_tree(native_tool_call_stream, path="ia.current.native_tool_calls"),
-                    open_by_default=True,
-                    detail_key="ia.current.native_tool_calls",
-                )
+            planner_output_body += _html_detail_block(
+                "Native Tool Calls",
+                _html_json_tree(native_tool_call_stream, path="ia.current.native_tool_calls"),
+                open_by_default=True,
+                detail_key="ia.current.native_tool_calls",
             )
+        diagnostics_body = ""
         if diagnostics_summary:
-            body_parts.append(
-                _html_detail_block(
-                    "Diagnostics Summary",
-                    _html_json_tree(diagnostics_summary, path="ia.current.diagnostics"),
-                    open_by_default=True,
-                    detail_key="ia.current.diagnostics",
-                )
+            diagnostics_body += _html_detail_block(
+                "Diagnostics Summary",
+                _html_json_tree(diagnostics_summary, path="ia.current.diagnostics"),
+                open_by_default=True,
+                detail_key="ia.current.diagnostics",
+            )
+        if validator_guard:
+            diagnostics_body += _html_detail_block(
+                "Validator Guard / Rejection (compact)",
+                _html_json_tree(_compact_validator_guard_for_view(validator_guard), path="ia.current.validator_guard"),
+                open_by_default=True,
+                detail_key="ia.current.validator_guard",
             )
         if runtime_debug_packet:
-            body_parts.append(
-                _html_lazy_details(
-                    "Runtime Debug Packet",
-                    f"/jobs/{job_id}/ia-view/section/runtime_debug?step={current_step.get('step') or 0}",
-                    detail_key="ia.current.runtime_debug",
-                )
+            diagnostics_body += _html_lazy_details(
+                "Runtime Debug Packet",
+                f"/jobs/{job_id}/ia-view/section/runtime_debug?step={current_step_id}",
+                detail_key="ia.current.runtime_debug",
             )
-        body_parts.append(
-            _html_lazy_details(
-                "Payload Audit",
-                f"/jobs/{job_id}/ia-view/section/payload_audit?step={current_step.get('step') or 0}",
-                detail_key="ia.current.payload_audit",
-            )
+        diagnostics_body += _html_lazy_details(
+            "Payload Audit",
+            f"/jobs/{job_id}/ia-view/section/payload_audit?step={current_step_id}",
+            detail_key="ia.current.payload_audit",
         )
-        if validator_guard:
-            body_parts.append(
-                _html_detail_block(
-                    "Validator Guard / Rejection (compact)",
-                    _html_json_tree(_compact_validator_guard_for_view(validator_guard), path="ia.current.validator_guard"),
-                    open_by_default=True,
-                    detail_key="ia.current.validator_guard",
-                )
-            )
-        body_parts.extend([
-            _html_detail_block(
-                "Planner Decision / Stream Summary",
-                _html_json_tree(planner_summary, path="ia.current.planner_summary"),
-                open_by_default=True,
-                detail_key="ia.current.planner_summary",
-            ),
-            _html_lazy_details(
-                "Prompt Sent To 11434",
-                f"/jobs/{job_id}/ia-view/section/prompt?step={current_step.get('step') or 0}",
+        panels = [
+            _html_control_panel(
+                title="Planner Input",
+                role="working",
+                available=bool(prompt_capture.get("available")),
+                priority=10,
+                summary={
+                    "source": "planner-prompts/step-XXX-planner-payload.json",
+                    "step": current_step_id,
+                    "planner_model": prompt_capture.get("planner_model"),
+                    "planner_url": prompt_capture.get("planner_url"),
+                    "num_ctx_effective": prompt_capture.get("num_ctx_effective"),
+                    "prompt_chars": (prompt_capture.get("prompt_budget_report") or {}).get("total_prompt_chars")
+                    if isinstance(prompt_capture.get("prompt_budget_report"), dict)
+                    else None,
+                },
+                lazy_title="Prompt Sent To 11434",
+                lazy_url=f"/jobs/{job_id}/ia-view/section/prompt?step={current_step_id}",
                 detail_key="ia.current.prompt_summary",
             ),
-            _html_lazy_details(
-                "History/Tool Result Fed Back To Planner",
-                f"/jobs/{job_id}/ia-view/section/compact_tool_result?step={current_step.get('step') or 0}",
-                detail_key="ia.current.compact_tool_result",
-            ) if current_step.get("history_tool_result_fed_back_to_planner") not in (None, "", [], {}) else "",
-            _html_lazy_details(
-                "Raw Tool Result / Rehydrated",
-                f"/jobs/{job_id}/ia-view/section/raw_tool_result?step={current_step.get('step') or 0}",
-                detail_key="ia.current.raw_tool_result",
-            ) if current_step.get("history_tool_result_fed_back_to_planner") not in (None, "", [], {}) else "",
-        ])
+            _html_control_panel(
+                title="Planner Output",
+                role="working",
+                available=bool(planner_decision or native_stream),
+                priority=20,
+                summary={
+                    "source": "events.ndjson planner_decision + planner-stream/step-XXX.*",
+                    "decision": planner_decision.get("action") or planner_decision.get("tool"),
+                    "native_tool_call_count": native_stream.get("native_tool_call_count"),
+                    "done_reason": (native_stream.get("done_meta") or {}).get("done_reason")
+                    if isinstance(native_stream.get("done_meta"), dict)
+                    else None,
+                },
+                body_html=planner_output_body,
+                lazy_title="Planner full raw combined",
+                lazy_url=f"/jobs/{job_id}/ia-view/section/planner_stream_raw?step={current_step_id}",
+                detail_key="ia.current.planner_stream_raw",
+            ),
+            _html_control_panel(
+                title="Tool Feedback",
+                role="working",
+                available=bool(tool_result),
+                priority=30,
+                summary={
+                    "source": "events.ndjson tool_result payload",
+                    "compact_payload_available": bool(tool_result),
+                    "raw_result_available_on_demand": bool(tool_result),
+                    "same_step": current_step_id,
+                },
+                body_html=(
+                    _html_lazy_details(
+                        "History/Tool Result Fed Back To Planner",
+                        f"/jobs/{job_id}/ia-view/section/compact_tool_result?step={current_step_id}",
+                        detail_key="ia.current.compact_tool_result",
+                    )
+                    + _html_lazy_details(
+                        "Raw Tool Result / Rehydrated",
+                        f"/jobs/{job_id}/ia-view/section/raw_tool_result?step={current_step_id}",
+                        detail_key="ia.current.raw_tool_result",
+                    )
+                    if tool_result else ""
+                ),
+            ),
+            _html_control_panel(
+                title="Diagnostics",
+                role="diagnostic",
+                available=bool(validator_guard or diagnostics_summary or tool_result),
+                priority=40,
+                summary={
+                    "source": "validator guard / runtime debug / payload audit",
+                    "validator_guard_available": bool(validator_guard),
+                    "runtime_debug_packet_available": bool(runtime_debug_packet),
+                    "command_policy_available": bool(command_policy),
+                    "search_quality_available": bool(search_quality),
+                    "payload_audit_available_on_demand": bool(tool_result),
+                },
+                body_html=diagnostics_body,
+            ),
+            _html_control_panel(
+                title="Terminal 30B Payload",
+                role="terminal",
+                available=bool(payload.get("openwebui_30b_payload_available")),
+                priority=50,
+                summary={
+                    "source": "final.json tool_context_for_30b",
+                    "available": bool(payload.get("openwebui_30b_payload_available")),
+                    "loaded": "on demand",
+                },
+                lazy_title="Complete terminal payload",
+                lazy_url=f"/jobs/{job_id}/ia-view/section/openwebui_payload",
+                detail_key="ia.openwebui_30b_payload",
+            ),
+            _html_control_panel(
+                title="Source Contract",
+                role="diagnostic",
+                available=True,
+                priority=60,
+                summary=payload.get("view_contract") if isinstance(payload.get("view_contract"), dict) else {},
+            ),
+        ]
         cards.append(
             "<div class='card' data-live-region='ia-current-step'>"
-            f"<h2>Current Step {html.escape(str(current_step.get('step')))}</h2>"
+            f"<h2>Current Step {html.escape(str(current_step_id))}</h2>"
             f"<div class=\"metrics\">{metric_html}</div>"
-            f"{''.join(part for part in body_parts if part)}"
+            "<div class=\"control-layout\">"
+            "<div class=\"control-grid\" data-dynamic-panel-grid=\"1\">"
+            f"{''.join(panels)}"
+            "</div>"
+            "</div>"
             "</div>"
         )
     else:
         cards.append("<div class='card' data-live-region='ia-current-step'><h2>Current Step</h2><p>No planner step is available yet.</p></div>")
-    openwebui_summary = {
-        "available": bool(payload.get("openwebui_30b_payload_available")),
-        "load": "open Complete terminal payload to fetch it on demand",
-    }
     return f"""<!doctype html>
 <html>
 <head>
@@ -1700,6 +2082,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
 .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
 {_json_tree_css()}
+{_ia_control_css()}
 {_gpu0_panel_css()}
 </style>
 {_stateful_refresh_script(2)}
@@ -1715,16 +2098,11 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
     <div class="metric"><span>Read-only check</span><b>{html.escape(str(not mutation_check.get('event_count_changed')))}</b></div>
   </div>
   <p><b>Goal:</b> {html.escape(str(job.get('goal') or ''))}</p>
-  <p>Historical steps are kept in the complete JSON view only.</p>
+  {_step_strip_html(job_id, all_steps, int((current_step or {}).get('step') or 0) if isinstance(current_step, dict) else 0)}
   <p>{_dashboard_links(job_id)}</p>
   {_html_detail_block("Mutation Check", _html_json_tree(mutation_check, path="ia.mutation_check"), detail_key="ia.mutation_check")}
 </div>
 {''.join(cards)}
-<div class="card" data-live-region="ia-openwebui-payload">
-  <h2>OpenWebUI 30B Payload</h2>
-  {_html_json_tree(openwebui_summary, path="ia.openwebui_30b_payload.summary")}
-  {_html_lazy_details("Complete terminal payload", f"/jobs/{job_id}/ia-view/section/openwebui_payload", detail_key="ia.openwebui_30b_payload")}
-</div>
 </body>
 </html>"""
 

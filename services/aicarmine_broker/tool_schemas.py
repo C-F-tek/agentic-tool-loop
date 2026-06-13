@@ -428,13 +428,22 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "repo_validate": _tool_schema(
         "repo_validate",
-        "Run standard validation after changes: git diff --check and Python compileall.",
+        "Run standard validation after changes: git diff --check and targeted Python compileall.",
         {
+            "path": {"type": "string"},
+            "paths": {"type": "array", "items": {"type": "string"}},
             "commands": {"type": "array", "items": {"type": "string"}},
             "timeout_seconds": {"type": "integer", "default": 300},
             "continue_on_failure": {"type": "boolean", "default": False},
         },
-        argument_contract={"default_allowed": {"commands": "standard validation", "timeout_seconds": 300}},
+        argument_contract={
+            "default_allowed": {
+                "path": "repo-relative validation target",
+                "paths": "repo-relative validation targets",
+                "commands": "standard validation",
+                "timeout_seconds": 300,
+            }
+        },
     ),
     "repo_command": _tool_schema(
         "repo_command",

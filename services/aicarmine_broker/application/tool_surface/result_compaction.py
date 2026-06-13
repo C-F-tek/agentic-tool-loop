@@ -165,6 +165,8 @@ def compact_tool_result_for_planner(
         "path", "paths", "count", "total_matches", "limit", "suffix",
         "truncated", "returncode", "stderr_tail", "stdout_tail", "artifact",
         "changed", "replacements", "line_count_before", "line_count_after",
+        "modified_paths", "before_sha256", "after_sha256", "post_write_validation_required",
+        "validation_candidates",
         "command", "query", "mode", "success_count", "failed_count", "all_ok",
         "max_paths", "requested_limit", "candidate_limit", "suggested_next_tool",
         "suggested_repo_read", "db", "record_id", "expires_at",

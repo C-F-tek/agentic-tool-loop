@@ -38,7 +38,9 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if not full.exists() or not full.is_file():
         return {"ok": False, "tool": "repo_apply_patch", "path": rel, "error": "file_not_found"}
 
-    original = full.read_text(encoding="utf-8-sig", errors="replace")
+    original_bytes = full.read_bytes()
+    before_sha256 = hashlib.sha256(original_bytes).hexdigest()
+    original = original_bytes.decode("utf-8-sig", errors="replace")
     occurrences = original.count(old_text)
     if occurrences < 1:
         return {
@@ -57,16 +59,35 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     backup.parent.mkdir(parents=True, exist_ok=True)
     backup.write_text(original, encoding="utf-8")
     full.write_text(updated, encoding="utf-8")
+    after_bytes = full.read_bytes()
+    after_sha256 = hashlib.sha256(after_bytes).hexdigest()
+
+    validation_candidates: list[dict[str, Any]] = [{
+        "tool": "repo_validate",
+        "arguments": {"paths": [rel], "timeout_seconds": 300},
+        "reason": "validate_modified_file_after_repo_apply_patch",
+    }]
+    if rel.endswith(".py"):
+        validation_candidates.append({
+            "tool": "repo_ruff_check",
+            "arguments": {"paths": [rel], "timeout_seconds": 180},
+            "reason": "python_static_validation_after_repo_apply_patch",
+        })
 
     payload = {
         "ok": True,
         "tool": "repo_apply_patch",
         "path": rel,
+        "modified_paths": [rel],
         "changed": updated != original,
         "occurrences_found": occurrences,
         "replacements": replacements,
         "line_count_before": len(original.splitlines()),
         "line_count_after": len(updated.splitlines()),
+        "before_sha256": before_sha256,
+        "after_sha256": after_sha256,
+        "post_write_validation_required": updated != original,
+        "validation_candidates": validation_candidates if updated != original else [],
         "backup_artifact": str(backup),
     }
     write_json(root / "tool-results" / f"{now()}-repo_apply_patch.json", payload)

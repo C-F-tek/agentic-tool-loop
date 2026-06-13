@@ -137,6 +137,44 @@ class ToolSurfacePolicy:
             if isinstance(contract.get("apply_write_contract"), dict)
             else {}
         )
+        post_write_contract = (
+            contract.get("post_write_validation_contract")
+            if isinstance(contract.get("post_write_validation_contract"), dict)
+            else {}
+        )
+        if post_write_contract.get("required") and not post_write_contract.get("validation_done"):
+            if post_write_contract.get("validation_failed"):
+                allowed = set(self._VALIDATION_TOOLS)
+                allowed.update({"repo_read", "repo_apply_patch"})
+                self._set_actions(
+                    contract,
+                    policy,
+                    actions[:16],
+                    "post_write_validation_failed",
+                )
+                self._add_allowed_tools(contract, policy, allowed)
+            else:
+                validation_actions = [
+                    item for item in actions
+                    if candidate_action_tool(item) in self._VALIDATION_TOOLS
+                ]
+                if validation_actions:
+                    self._set_actions(
+                        contract,
+                        policy,
+                        validation_actions,
+                        "post_write_validation_required",
+                    )
+                    self._add_allowed_tools(contract, policy, set(self._VALIDATION_TOOLS))
+                else:
+                    self._set_surface_only(
+                        contract,
+                        policy,
+                        set(self._VALIDATION_TOOLS),
+                        "post_write_validation_required",
+                    )
+            return contract
+
         apply_required = bool(contract.get("goal_requests_apply")) or bool(apply_contract.get("required"))
         if apply_required and not bool(apply_contract.get("patch_applied")):
             if "apply_write_target_not_resolved" in progress or "no resolved concrete existing target file" in progress:

@@ -74,6 +74,7 @@ def repo_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
     payload = {
         "ok": ok,
         "tool": "repo_validate",
+        "paths": list(targets),
         "results": results,
         "compile_target_resolution": target_resolution,
     }
