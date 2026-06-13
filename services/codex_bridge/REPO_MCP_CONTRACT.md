@@ -41,6 +41,15 @@ The read-only observability MCP set is separate from repo-editing tools:
   and branch comparison. It does not fetch, checkout, reset, commit, push or
   mutate the worktree.
 
+The project-local memory MCP is write-capable but semantic and isolated:
+
+- `aicarmine_project_memory`: persistent project memory for verified
+  operational facts, preferences, contracts, path mappings, confirmed bug
+  causes and architecture decisions. It writes only
+  `state/project_memory/project_memory.sqlite3` under the selected repo root,
+  never global memory and never RAG/job/planner SQLite databases. Writes are
+  available only through semantic tools and explicit confirmation strings.
+
 The shared implementation lives in:
 
 - `C:\Users\carmi\AI\services\codex_bridge\repo_mcp_common.py`
@@ -55,6 +64,7 @@ Server entrypoints:
 - `C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py`
+- `C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py`
 
 ## Runtime Requirements
 
@@ -102,6 +112,7 @@ Run self-tests with the absolute Python executable:
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py" --self-test
+& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py" --self-test
 ```
 
 The server self-tests must pass before the MCP entries are considered valid for
@@ -119,6 +130,7 @@ After a Codex reload or new session, the MCP list must expose:
 - `aicarmine_sqlite_readonly` if the SQLite observability server is enabled locally.
 - `aicarmine_job_artifact` if the job artifact observability server is enabled locally.
 - `aicarmine_git_readonly` if the Git observability server is enabled locally.
+- `aicarmine_project_memory` if the project-local memory server is enabled locally.
 
 Required health tool calls:
 
@@ -130,6 +142,7 @@ Required health tool calls:
 - `aicarmine_sqlite_readonly_health` if the SQLite observability server is enabled locally.
 - `aicarmine_job_artifact_health` if the job artifact observability server is enabled locally.
 - `aicarmine_git_readonly_health` if the Git observability server is enabled locally.
+- `aicarmine_project_memory_health` if the project-local memory server is enabled locally.
 
 If health is OK, the minimal real-tool gate is:
 
@@ -143,6 +156,8 @@ If health is OK, the minimal real-tool gate is:
 - `aicarmine_sqlite_readonly_list_databases` with a low `max_results`.
 - `aicarmine_job_artifact_list_jobs` with a low `limit`.
 - `aicarmine_git_readonly_log` with `max_count=1`.
+- `aicarmine_project_memory_search` with a low `limit`. The self-test must
+  not require a write.
 
 Stable MCP reload verification on 2026-06-11 passed the state/search/validate
 gates in that session. The incubator server requires its own reload gate after
@@ -164,6 +179,11 @@ These MCPs must not introduce or depend on:
 - write-capable SQL, unbounded SQL, user PRAGMA, or path-unallowlisted database reads
 - job artifact readers that call 3571, 3572, `vulkan_helper` or HTTP routes
 - Git commands that mutate local or remote state
+- persistent memory writes without source metadata and one of the required
+  confirmation strings: `project_memory_upsert_verified`,
+  `project_memory_mark_stale`, `project_memory_supersede`
+- global memory writes from Codex MCPs unless a separate explicit contract is
+  created
 
 The ops MCP may read whether ports such as `3571` and `3572` are listening as
 local diagnostic state. It must not call `/health`, send HTTP requests to those
@@ -225,6 +245,11 @@ env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_
 [mcp_servers.aicarmine_git_readonly]
 command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
 args = ['C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+
+[mcp_servers.aicarmine_project_memory]
+command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py']
 env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.playwright]

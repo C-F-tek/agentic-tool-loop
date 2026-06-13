@@ -660,6 +660,24 @@ Dedicated read-only Git MCP server for regression diagnostics.
 - Verify: `aicarmine_git_readonly_health`, `aicarmine_git_readonly_log`,
   server `--self-test`, and `services/test_git_readonly_mcp_server.py`.
 
+### `codex_bridge/project_memory_mcp_server.py`
+
+Dedicated project-local persistent memory MCP server.
+
+- Reads: MCP stdio frames and `state/project_memory/project_memory.sqlite3`
+  when present.
+- Writes: MCP stdio frames and semantic memory records in the repo-local
+  project memory SQLite DB. Write tools require explicit confirmation strings:
+  `project_memory_upsert_verified`, `project_memory_mark_stale` or
+  `project_memory_supersede`.
+- Risk: must not become generic SQL, global memory, chat transcript storage,
+  broker HTTP, 3571/3572 access or an agentic-loop substitute. Stored records
+  must carry scope, key, value, source metadata, repo root, branch, commit,
+  timestamps, status and confidence.
+- Verify: `aicarmine_project_memory_health`,
+  `aicarmine_project_memory_search`, server `--self-test`, source audit, and
+  `services/test_project_memory_mcp_server.py`.
+
 ### `codex_bridge/rag_index_repo.py`
 
 Standalone index builder for the Codex RAG MCP path. It scans the Git candidate
