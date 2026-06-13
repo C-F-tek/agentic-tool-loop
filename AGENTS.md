@@ -43,9 +43,24 @@ Per problemi su servizi, launcher, tool loop, OpenWebUI o log:
    quale file viene caricato e quale comando produce il sintomo.
 4. Se un comportamento ricompare, sospetta prima processo vecchio, cache,
    rigenerazione, profilo sbagliato, PATH o venv errata.
-5. Ogni ipotesi deve avere un test discriminante.
+5. Ogni ipotesi deve avere una prova discriminante basata su evidenza reale
+   gia' disponibile o su verifiche mirate richieste dall'utente.
 6. Una soluzione e valida solo con catena: sintomo -> prova -> causa confermata
    -> fix minimo -> verifica.
+
+## Divieto test/smoke non richiesti
+
+- Non creare, aggiungere, modificare, proporre o usare test, smoke test,
+  macro-test o script di test se Carmine non lo richiede esplicitamente.
+- Le verifiche ordinarie devono usare prima evidenza reale: file owner, diff,
+  artifact/job, log, processi, porte, payload completi e letture read-only.
+- Compile, lint, parser check e diff check restano verifiche tecniche mirate,
+  ma non vanno presentate come test o usate per sostituire una diagnosi reale.
+- Documenti o note storiche che propongono test/smoke come flusso normale non
+  sono contratto operativo attivo.
+- Quando Carmine porta evidenza da run reale, log, artifact, processo, porta o
+  payload, quella evidenza batte qualsiasi script locale. Non usare script
+  test/smoke come fonte di verita contro l'evidenza runtime segnalata.
 
 ## Contratto agentic loop
 

@@ -115,7 +115,17 @@ read. The OpenWebUI/3572 lab shadow does not need to match the Codex repo root.
 SQLite index and the local OVMS reranker. `repo_code_mcp_server.py` is a
 separate incubator for candidate code-edit tools; it keeps proposal/diff-check
 tools report-only and requires `allow_source_write=true` before exact source
-patching. `ops_mcp_server.py` is a separate incubator for Codex-side MCP smoke
-checks and read-only service-state inspection; it does not probe HTTP health
+patching. `ops_mcp_server.py` is a separate incubator for Codex-side MCP
+inventory and read-only service-state inspection; it does not probe HTTP health
 routes or call 3571/3572. None of these servers adds planner-native tool names
 to the 3572 turn surface.
+
+## Test/Smoke Guardrail
+
+Test files, smoke scripts and macro runtime test surfaces are not part of the
+active operating contract. Do not create, restore, run or document test/smoke
+flows unless Carmine explicitly asks for them. Use concrete runtime evidence,
+artifact reads, process/port/log inspection, payload inspection, compile/lint
+or diff checks as targeted verification instead. If Carmine reports evidence
+from a real run, that evidence is primary and must not be overruled by local
+scripts.

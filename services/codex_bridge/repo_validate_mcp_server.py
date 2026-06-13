@@ -95,7 +95,7 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_repo_validate_pytest"] = ToolSpec(
         name="aicarmine_repo_validate_pytest",
-        description="Run pytest on selected paths.",
+        description="Run pytest on selected paths only when explicitly requested by the user.",
         input_schema=object_schema(
             {
                 **paths_schema(default_path="."),

@@ -36,7 +36,6 @@ Operational rules:
 - Before starting the sidecar, `python -m npu_phi_service --doctor --pretty`
   can verify model XML/BIN, dependencies, venv identity, cache/spool paths and
   the dedicated `3551 != 3550` contract without side effects.
-- A real hardware smoke test is available at
-  `tests/smoke/test_npu_phi_real_npu.py`. It is skipped by default and runs only
-  with `NPU_PHI_REAL_NPU_SMOKE=1`, calling the already-running sidecar over HTTP
-  instead of constructing a second local pipeline.
+- Do not add or restore smoke/test scripts for this sidecar unless Carmine
+  explicitly asks. Use doctor output, process ownership, port ownership and
+  real sidecar responses as diagnostic evidence.

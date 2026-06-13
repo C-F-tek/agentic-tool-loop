@@ -125,7 +125,7 @@ TOOL_ALIASES = {
     'write_file': 'repo_write_file',
     'create_file': 'repo_write_file', 'overwrite_file': 'repo_write_file',
     'save_file': 'repo_write_file',
-    'validate': 'repo_validate', 'validation': 'repo_validate', 'smoke': 'repo_validate',
+    'validate': 'repo_validate', 'validation': 'repo_validate',
     'command': 'repo_command', 'run': 'repo_command', 'compile': 'repo_command',
     'terminal': 'terminal_run_command_wait', 'terminal_command': 'terminal_run_command_wait',
     'run_command_wait': 'terminal_run_command_wait', 'powershell': 'terminal_run_command_wait',

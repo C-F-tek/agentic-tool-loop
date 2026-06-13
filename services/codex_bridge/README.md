@@ -80,7 +80,7 @@ Core code entry points:
     diff-check helpers as report-only tools, and exposes exact `old_text` to
     `new_text` patching only with explicit `allow_source_write=true`.
 - [ops_mcp_server.py](ops_mcp_server.py)
-  - Incubating Codex ops MCP server for local MCP smoke checks and read-only
+  - Incubating Codex ops MCP server for local MCP inventory and read-only
     service-state inspection. It uses static MCP target allowlists, reads
     process/port/log state without HTTP health probes, and does not call 3571,
     3572, `vulkan_helper` or the agentic loop.
@@ -98,5 +98,12 @@ Core code entry points:
   - OpenAI Responses-compatible adapter around Ollama.
 - [jsonrpc.py](jsonrpc.py), [responses_proxy.py](responses_proxy.py), [storage.py](storage.py)
   - Compatibility facades for historical import paths.
+
+## Test/Smoke Guardrail
+
+Codex bridge changes must not add, restore, run or document test/smoke flows
+unless Carmine explicitly requests them. Prefer read-only MCP health/status,
+RAG index status, artifact/job inspection, process/port/log evidence,
+payload inspection, compile/lint or diff checks as targeted verification.
 - [MODULE_REFERENCE.md](MODULE_REFERENCE.md)
   - Detailed module reference.

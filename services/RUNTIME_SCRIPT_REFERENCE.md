@@ -38,7 +38,6 @@ wrappers, diagnostics or operational helpers.
 | `openvino-env.ps1` | Sets OpenVINO/cache/HuggingFace environment variables for diagnostics/provider processes. |
 | `ovms-reranker-npu.ps1` | Starts OpenVINO Model Server reranker/NPU serving based on configured OVMS env. |
 | `npu-phi-service.ps1` | Starts the Phi-3.5 OpenVINO/NPU diagnostic sidecar on 3551 through `venvs\openvino`; validates model IR files and runs `python -m npu_phi_service`. |
-| `test-openvino.ps1` | Minimal OpenVINO diagnostic that sources `openvino-env.ps1` and runs the configured OpenVINO Python. |
 | `check-dev-toolchain.ps1` | Developer diagnostic for main/lab repo paths and local toolchain assumptions. |
 | `sync-lab-from-main.ps1` | Synchronizes lab worktree from the main project tree. High data-risk script: verify source and destination before running. |
 | `watch-lab-mirror.ps1` | Periodic watcher around lab mirror synchronization. Long-running operational helper. |

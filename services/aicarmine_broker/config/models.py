@@ -39,6 +39,9 @@ class BrokerConfig:
     planner_step_timeout: int
     planner_forced_decision_timeout: int
     planner_temperature: float
+    planner_top_k: int
+    planner_top_p: float
+    planner_presence_penalty: float
     planner_incomprehensible_retries: int
     native_tools: bool
     require_native_tools: bool
@@ -184,6 +187,9 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         planner_step_timeout=env_int("AICARMINE_AGENTIC_PLANNER_STEP_TIMEOUT", 60, env),
         planner_forced_decision_timeout=env_int("AICARMINE_AGENTIC_PLANNER_FORCED_DECISION_TIMEOUT", 75, env),
         planner_temperature=env_float("AICARMINE_AGENTIC_PLANNER_TEMPERATURE", 0.3, env),
+        planner_top_k=env_int("AICARMINE_AGENTIC_PLANNER_TOP_K", 20, env),
+        planner_top_p=env_float("AICARMINE_AGENTIC_PLANNER_TOP_P", 0.85, env),
+        planner_presence_penalty=env_float("AICARMINE_AGENTIC_PLANNER_PRESENCE_PENALTY", 0.0, env),
         planner_incomprehensible_retries=env_int("AICARMINE_AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES", 3, env),
         native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", True, env),
         require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", True, env),

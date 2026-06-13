@@ -25,9 +25,9 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 | `repo_mcp_common.py` | Shared stdio/JSON-RPC helpers for the deterministic Codex repo MCP servers. It resolves the Codex-selected root, rewrites only the MCP process' `AICARMINE_LAB_REPO` before broker-tool imports and reports both the initial and effective root in health payloads. |
 | `repo_state_mcp_server.py` | Dedicated deterministic repo-state MCP server exposing health, status and capability tools. It imports broker repo-status helpers only after `repo_mcp_common.py` has normalized the MCP process root. |
 | `repo_search_det_mcp_server.py` | Dedicated deterministic repo-search MCP server exposing fd/rg/jq/ast-grep/tree-sitter/ctags helpers. It is tool-only and uses the Codex-selected root, not the OpenWebUI lab shadow. |
-| `repo_validate_mcp_server.py` | Dedicated deterministic repo-validation MCP server exposing diffcheck, ruff, pyright, pytest, shellcheck and semgrep helpers. It is tool-only and does not call broker HTTP or the agentic loop. |
+| `repo_validate_mcp_server.py` | Dedicated deterministic repo-validation MCP server exposing diffcheck, ruff, pyright, shellcheck and semgrep helpers. It is tool-only and does not call broker HTTP or the agentic loop. Pytest/test execution is not an active default workflow and must not be used unless Carmine explicitly asks. |
 | `repo_code_mcp_server.py` | Incubating repo-code MCP server for candidate code-edit tools. It stays separate from the stable repo MCPs, exposes proposal/diff-check helpers as report-only tools and exposes exact `old_text` to `new_text` source patching only when `allow_source_write=true` is supplied. |
-| `ops_mcp_server.py` | Incubating Codex ops MCP server for local MCP smoke tests and service-state inspection. It uses static allowlists for child MCP smoke checks, reads Windows process/port/log state without HTTP probes and redacts command-line secrets before returning process rows. |
+| `ops_mcp_server.py` | Incubating Codex ops MCP server for local MCP inventory and service-state inspection. It reads Windows process/port/log state without HTTP probes and redacts command-line secrets before returning process rows. It does not own project test/smoke scripts. |
 | `sqlite_readonly_mcp_server.py` | Dedicated read-only SQLite MCP server for Codex diagnostics. It lists allowlisted repo-local SQLite databases, reads schemas and runs bounded single-statement `SELECT`/`WITH` queries only. It opens databases with SQLite read-only mode, blocks write keywords, rejects user PRAGMA, enforces row/time/cell limits and never calls broker HTTP or the agentic loop. |
 | `job_artifact_mcp_server.py` | Dedicated read-only job artifact MCP server. It reads persisted filesystem artifacts under allowlisted job roots such as `qwen-agent-workspace/vulkan-broker/agent-jobs`, normalizes `job.json`, `events.ndjson`, `final.json`, `tool-results/` and `planner-prompts/` payloads, and does not call 3571, 3572 or `vulkan_helper`. |
 | `job_view_mcp_server.py` | Dedicated read-only job HTML view MCP server. It renders existing broker `job_html.py` and `job_planner_lab.py` views in-process, extracts outlines/links, validates bounded HTML and does not call broker HTTP, 3571, 3572, `vulkan_helper` or the agentic loop. |
@@ -65,11 +65,13 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
   directory blacklist.
 - `repo_code_mcp_server.py` is an incubator, not a promotion into the stable
   state/search/validation MCPs. New code-edit tools should live there first
-  with explicit write flags and concrete tests before being moved into a
-  semantic MCP server.
+  with explicit write flags and concrete runtime evidence before being moved
+  into a semantic MCP server.
 - `ops_mcp_server.py` is an incubator for Codex-side operational checks only.
-  Its MCP smoke runner must stay allowlist-only, and its service-state tools
-  must not call `/health`, 3571, 3572, `vulkan_helper` or the agentic loop.
+  Its service-state tools must not call `/health`, 3571, 3572,
+  `vulkan_helper` or the agentic loop. MCP inventory probes are allowlisted
+  stdio initialize/list/optional-health probes and are separate from deleted
+  project test/smoke scripts.
 - `sqlite_readonly_mcp_server.py`, `job_artifact_mcp_server.py`,
   `job_view_mcp_server.py` and `git_readonly_mcp_server.py` are observability MCPs. They are host-side
   Codex tools only; they do not become planner tools and must remain read-only.
@@ -132,7 +134,7 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
    independently before adding it to Codex configuration.
 6. For repo-code MCP changes, prove report-only tools do not write source and
    prove write-capable tools require an explicit opt-in argument.
-7. For ops MCP changes, prove smoke targets are static, process command lines
-   are redacted and log reads stay inside the selected repo root.
+7. For ops MCP changes, prove process command lines are redacted and log reads
+   stay inside the selected repo root.
 8. For agentic-loop client changes, prove reranker startup stays explicit,
    local-only, repo-script-only and separate from OpenWebUI/3571/3572.

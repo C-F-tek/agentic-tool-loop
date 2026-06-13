@@ -502,7 +502,7 @@ def controller_preplanner_rag_query_plan(
             "entrypoints and core owners",
             "validator/controller/tool-surface/prompt/public-payload owner modules",
             "legacy wrappers or mirrors that may clone owner behavior",
-            "tests that encode the contract being audited",
+            "runtime evidence and owner contracts for the audited behavior",
         ],
         "analysis_only": [
             "concrete owner source modules needed to answer the analysis",
@@ -524,7 +524,7 @@ def controller_preplanner_rag_query_plan(
             "current owner source modules for the loop or feature under review",
             "validator/controller/tool-surface/prompt/public-payload modules when planner semantics are involved",
             "legacy wrapper or compatibility facade only after at least one current owner-source query",
-            "tests or smoke contracts that would catch divergence",
+            "runtime evidence contracts and owner modules that would reveal divergence",
         ],
         "invalid_primary_targets": [
             "README/AGENTS as the only evidence",
@@ -716,7 +716,7 @@ def _path_policy_score(path: str, *, goal: str, repo_root: Path) -> int:
         score += 10
 
     if code_security:
-        if low.startswith(("tools/", "scripting/", "macro_runtine_test/")):
+        if low.startswith(("tools/", "scripting/")):
             score += 22
         if low.startswith(("ia_carmine/", "services/", "src/", "app/", "lib/")):
             score -= 18
@@ -765,7 +765,7 @@ def _select_ranked_paths(
         if enforce_diversity:
             effective_top_limit = (
                 1
-                if code_security and top in {"tools", "scripting", "macro_runtine_test"}
+                if code_security and top in {"tools", "scripting"}
                 else top_limit
             )
             if top and top_counts.get(top, 0) >= effective_top_limit:
@@ -1035,9 +1035,9 @@ def _rerank_ranked_items(
 ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     url = os.environ.get("AICARMINE_CONTROLLER_RAG_RERANK_URL") or os.environ.get("AICARMINE_RAG_RERANK_URL") or _DEFAULT_RERANK_URL
     model = os.environ.get("AICARMINE_CONTROLLER_RAG_RERANK_MODEL") or os.environ.get("AICARMINE_RAG_RERANK_MODEL") or _DEFAULT_RERANK_MODEL
-    candidate_limit = _env_int("AICARMINE_CONTROLLER_RAG_RERANK_CANDIDATE_LIMIT", 24, minimum=1, maximum=100)
-    doc_chars = _env_int("AICARMINE_CONTROLLER_RAG_RERANK_DOC_CHARS", 1800, minimum=200, maximum=20000)
-    timeout_seconds = _env_float("AICARMINE_CONTROLLER_RAG_RERANK_TIMEOUT_SECONDS", 8.0, minimum=1.0, maximum=30.0)
+    candidate_limit = _env_int("AICARMINE_CONTROLLER_RAG_RERANK_CANDIDATE_LIMIT", 48, minimum=1, maximum=100)
+    doc_chars = _env_int("AICARMINE_CONTROLLER_RAG_RERANK_DOC_CHARS", 3000, minimum=200, maximum=20000)
+    timeout_seconds = _env_float("AICARMINE_CONTROLLER_RAG_RERANK_TIMEOUT_SECONDS", 30.0, minimum=1.0, maximum=30.0)
     meta: dict[str, Any] = {
         "enabled": bool(enabled),
         "url": url,

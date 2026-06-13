@@ -10,12 +10,11 @@ its own.
 """
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
-from .config import MAX_TOOL_RESULT_CHARS, VALID_INTERNAL_TOOLS
+from .config import VALID_INTERNAL_TOOLS
 from .repo_tools import compact, repo_read, repo_search, repo_status
 
 
@@ -46,7 +45,7 @@ def helper_search_queries(task: str, public_tool: str) -> list[str]:
     if any(t in low for t in ("patch", "fix", "bug", "errore", "error", "problema", "issue")):
         queries += [
             "TODO|FIXME|HACK|BUG|error|exception|traceback|raise |except ",
-            "patch|diff|backup|py_compile|smoke|validator|test",
+            "patch|diff|backup|py_compile|validator",
         ]
     if any(t in low for t in ("analizza", "analyze", "review", "repo", "repository")):
         queries += [

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only Codex ops MCP tools for smoke tests and local service state."""
+"""Read-only Codex ops MCP tools for local service state."""
 
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ def _mcp_child_env(root: Path) -> dict[str, str]:
     return env
 
 
-def _smoke_one(
+def _probe_one_mcp(
     *,
     name: str,
     spec: LocalMcpServer,
@@ -266,7 +266,7 @@ def _smoke_one(
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "clientInfo": {"name": "aicarmine_mcp_smoke", "version": SERVER_VERSION},
+                    "clientInfo": {"name": "aicarmine_mcp_inventory", "version": SERVER_VERSION},
                 },
             },
             transport,
@@ -287,7 +287,6 @@ def _smoke_one(
             )
         )
 
-    started = True
     timed_out = False
     returncode: int | None = None
     stdout = b""
@@ -311,7 +310,6 @@ def _smoke_one(
             stdout, stderr = proc.communicate(timeout=5)
             returncode = proc.returncode
     except OSError as exc:
-        started = False
         return {
             "ok": False,
             "server": name,
@@ -336,7 +334,7 @@ def _smoke_one(
         health_ok = bool(health and health.get("ok") is True)
 
     return {
-        "ok": bool(started and not timed_out and returncode == 0 and init_ok and list_ok and health_ok),
+        "ok": bool(not timed_out and returncode == 0 and init_ok and list_ok and health_ok),
         "server": name,
         "script": str(script),
         "script_exists": True,
@@ -361,7 +359,7 @@ def _requested_servers(args: dict[str, Any]) -> list[str]:
     return list(LOCAL_MCP_SERVERS)
 
 
-def mcp_smoke_list_targets(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def mcp_inventory_list_targets(args: dict[str, Any], root: Path) -> dict[str, Any]:
     del args
     targets = []
     for name, spec in sorted(LOCAL_MCP_SERVERS.items()):
@@ -376,15 +374,16 @@ def mcp_smoke_list_targets(args: dict[str, Any], root: Path) -> dict[str, Any]:
         )
     return {
         "ok": True,
-        "tool": "aicarmine_mcp_smoke_list_targets",
+        "tool": "aicarmine_mcp_inventory_list_targets",
         "mcp_server": SERVER_NAME,
         "repo_root": str(root),
         "targets": targets,
         "allowlist_only": True,
+        "test_or_smoke_script_runner": False,
     }
 
 
-def mcp_smoke_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def mcp_inventory_probe(args: dict[str, Any], root: Path) -> dict[str, Any]:
     timeout_seconds = int(args.get("timeout_seconds") or 20)
     timeout_seconds = max(1, min(timeout_seconds, 120))
     call_health = args.get("call_health") is not False
@@ -399,7 +398,7 @@ def mcp_smoke_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             results.append({"ok": False, "server": name, "error": "unknown_local_mcp_server"})
             continue
         results.append(
-            _smoke_one(
+            _probe_one_mcp(
                 name=name,
                 spec=spec,
                 root=root,
@@ -411,13 +410,14 @@ def mcp_smoke_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     return {
         "ok": all(item.get("ok") is True for item in results),
-        "tool": "aicarmine_mcp_smoke_run",
+        "tool": "aicarmine_mcp_inventory_probe",
         "mcp_server": SERVER_NAME,
         "repo_root": str(root),
         "servers": results,
         "server_count": len(results),
         "no_broker_http": True,
         "no_agentic_loop": True,
+        "test_or_smoke_script_runner": False,
         "external_tools_skipped": ["aicarmine_vulkan_helper"],
     }
 
@@ -666,20 +666,22 @@ def _tools() -> dict[str, ToolSpec]:
     def health(args: dict[str, Any], root: Path) -> dict[str, Any]:
         payload = health_payload(SERVER_NAME, list(tools))
         payload["incubation_status"] = "isolated_candidate"
-        payload["tool_groups"] = ["aicarmine_mcp_smoke", "aicarmine_service_state"]
+        payload["tool_groups"] = ["aicarmine_mcp_inventory", "aicarmine_service_state"]
         payload["no_http_probes"] = True
+        payload["no_test_or_smoke_script_runner"] = True
         return payload
 
-    def mcp_smoke_health(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    def mcp_inventory_health(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {
             "ok": True,
-            "tool": "aicarmine_mcp_smoke_health",
+            "tool": "aicarmine_mcp_inventory_health",
             "mcp_server": SERVER_NAME,
             "repo_root": str(root),
             "known_local_mcp_servers": sorted(LOCAL_MCP_SERVERS),
             "transport_supported": ["content-length", "jsonl"],
             "no_broker_http": True,
             "no_agentic_loop": True,
+            "test_or_smoke_script_runner": False,
         }
 
     def service_health(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -703,21 +705,21 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(),
         handler=health,
     )
-    tools["aicarmine_mcp_smoke_health"] = ToolSpec(
-        name="aicarmine_mcp_smoke_health",
-        description="Report known local MCP servers that can be smoke-tested over stdio.",
+    tools["aicarmine_mcp_inventory_health"] = ToolSpec(
+        name="aicarmine_mcp_inventory_health",
+        description="Report known local MCP servers available for inventory probing over stdio.",
         input_schema=object_schema(),
-        handler=mcp_smoke_health,
+        handler=mcp_inventory_health,
     )
-    tools["aicarmine_mcp_smoke_list_targets"] = ToolSpec(
-        name="aicarmine_mcp_smoke_list_targets",
-        description="List the static allowlist of local MCP servers that may be smoke-tested.",
+    tools["aicarmine_mcp_inventory_list_targets"] = ToolSpec(
+        name="aicarmine_mcp_inventory_list_targets",
+        description="List the static allowlist of local MCP servers available for inventory probing.",
         input_schema=object_schema(),
-        handler=mcp_smoke_list_targets,
+        handler=mcp_inventory_list_targets,
     )
-    tools["aicarmine_mcp_smoke_run"] = ToolSpec(
-        name="aicarmine_mcp_smoke_run",
-        description="Run read-only stdio initialize/list/optional-health smoke checks against local MCP servers.",
+    tools["aicarmine_mcp_inventory_probe"] = ToolSpec(
+        name="aicarmine_mcp_inventory_probe",
+        description="Run read-only stdio initialize/list/optional-health inventory probes against local MCP servers.",
         input_schema=object_schema(
             {
                 "servers": string_array_prop(sorted(LOCAL_MCP_SERVERS)),
@@ -726,7 +728,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "transport": {"type": "string", "default": "content-length", "enum": ["content-length", "jsonl"]},
             }
         ),
-        handler=mcp_smoke_run,
+        handler=mcp_inventory_probe,
     )
     tools["aicarmine_service_state_health"] = ToolSpec(
         name="aicarmine_service_state_health",

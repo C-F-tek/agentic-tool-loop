@@ -39,6 +39,11 @@ DEFAULT_RERANKER_READY_URL = (
     or os.environ.get("OPENVINO_PROVIDER_HEALTH_URL")
     or f"http://127.0.0.1:{DEFAULT_RERANKER_PORT}/v2/models/BAAI%2Fbge-reranker-v2-m3/ready"
 ).strip()
+DEFAULT_RERANKER_MODEL = (
+    os.environ.get("AICARMINE_RAG_RERANK_MODEL")
+    or os.environ.get("RAG_RERANKING_MODEL")
+    or "BAAI/bge-reranker-v2-m3"
+).strip()
 try:
     DEFAULT_AGENTIC_LOOP_PORT = int(os.environ.get("AICARMINE_AGENTIC_LOOP_CLIENT_PORT", "3579").strip() or "3579")
 except ValueError:
@@ -251,6 +256,49 @@ def _post_agent(endpoint: str, payload: dict[str, Any], *, timeout_seconds: int)
 
 def _get_health(endpoint: str, *, timeout_seconds: int) -> dict[str, Any]:
     return _http_json(method="GET", url=endpoint, timeout_seconds=timeout_seconds)
+
+
+def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict[str, Any]:
+    started = time.monotonic()
+    marker = "aicarmine_codex_mcp_reranker_functional_probe"
+    payload = {
+        "model": DEFAULT_RERANKER_MODEL,
+        "query": f"{marker} planner validator tool surface",
+        "documents": [
+            f"{marker} planner validator tool surface evidence {index}"
+            for index in range(4)
+        ],
+    }
+    response = _http_json(
+        method="POST",
+        url=rerank_url,
+        payload=payload,
+        timeout_seconds=timeout_seconds,
+    )
+    elapsed_ms = round((time.monotonic() - started) * 1000, 1)
+    if response.get("ok") is not True:
+        return {
+            "ok": False,
+            "error": "reranker_functional_probe_failed",
+            "elapsed_ms": elapsed_ms,
+            "response": response,
+        }
+    payload_value = response.get("payload") if isinstance(response.get("payload"), dict) else {}
+    results = payload_value.get("results") if isinstance(payload_value, dict) else None
+    if not isinstance(results, list) or not results:
+        return {
+            "ok": False,
+            "error": "reranker_functional_probe_no_scores",
+            "elapsed_ms": elapsed_ms,
+            "response": response,
+        }
+    return {
+        "ok": True,
+        "elapsed_ms": elapsed_ms,
+        "input_count": len(payload["documents"]),
+        "returned_scores": len(results),
+        "first_result": results[0],
+    }
 
 
 def _json_preview(value: Any, max_chars: int) -> dict[str, Any]:
@@ -860,6 +908,11 @@ def _start_reranker_process(
         health = _get_health(ready_url, timeout_seconds=3)
         last_health = health
         if health.get("ok") is True:
+            functional_probe = _probe_reranker_functional(rerank_url, timeout_seconds=30)
+            last_functional_probe = functional_probe
+            if functional_probe.get("ok") is not True:
+                time.sleep(1.0)
+                continue
             return {
                 "ok": True,
                 "started": True,
@@ -872,6 +925,7 @@ def _start_reranker_process(
                 "script": str(script),
                 "log_path": str(log_path),
                 "health": health,
+                "functional_probe": functional_probe,
             }
         time.sleep(1.0)
     return {
@@ -886,6 +940,7 @@ def _start_reranker_process(
         "log_path": str(log_path),
         "log_tail": _tail_text(log_path),
         "last_health": last_health,
+        "last_functional_probe": last_functional_probe,
     }
 
 
@@ -925,6 +980,28 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
     timeout_seconds = _safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
     health = _get_health(ready_url, timeout_seconds=timeout_seconds)
     if health.get("ok") is True:
+        functional_probe = _probe_reranker_functional(
+            rerank_url,
+            timeout_seconds=_safe_int(
+                args.get("functional_timeout_seconds") or args.get("timeout_seconds"),
+                30,
+                1,
+                120,
+            ),
+        )
+        if functional_probe.get("ok") is not True:
+            return {
+                "ok": False,
+                "tool": "aicarmine_agentic_loop_ensure_reranker",
+                "error": "reranker_ready_but_functional_probe_failed",
+                "reranker_running": "unknown",
+                "reranker_started": False,
+                "port": port,
+                "ready_url": ready_url,
+                "rerank_url": rerank_url,
+                "health": health,
+                "functional_probe": functional_probe,
+            }
         return {
             "ok": True,
             "tool": "aicarmine_agentic_loop_ensure_reranker",
@@ -934,6 +1011,7 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "ready_url": ready_url,
             "rerank_url": rerank_url,
             "health": health,
+            "functional_probe": functional_probe,
         }
     if _port_listening(port=port):
         return {

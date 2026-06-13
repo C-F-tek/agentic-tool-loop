@@ -1,7 +1,7 @@
 # Launch Order Contract
 
-This is a static contract for component-level tests. It documents the expected
-ordering; it is not an executable launcher.
+This is a static launch contract. It documents the expected ordering; it is
+not an executable launcher and not a test/smoke script.
 
 1. Prepare process/user environment for the selected runtime.
 2. Validate venv boundaries:

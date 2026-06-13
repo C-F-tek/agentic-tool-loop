@@ -785,7 +785,6 @@ TOOL_ALIASES: dict[str, str] = {
     "save_file": "repo_write_file",
     "validate": "repo_validate",
     "validation": "repo_validate",
-    "smoke": "repo_validate",
     "command": "repo_command",
     "run": "repo_command",
     "compile": "repo_command",

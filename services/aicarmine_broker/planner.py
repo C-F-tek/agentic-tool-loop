@@ -34,7 +34,10 @@ from .config import (
     AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
     AGENTIC_PLANNER_STEP_TIMEOUT,
     AGENTIC_RESULT_COMPACT_CHARS,
+    AGENTIC_PLANNER_PRESENCE_PENALTY,
     AGENTIC_PLANNER_TEMPERATURE,
+    AGENTIC_PLANNER_TOP_K,
+    AGENTIC_PLANNER_TOP_P,
     AGENT_DEFAULT_MAX_STEPS,
     AGENT_MAX_STEPS,
     LAB_REPO,
@@ -3294,7 +3297,7 @@ def _raw_planner_text_has_explicit_tool_alias_invocation(text: str) -> bool:
         TOOL_ALIASES = {}
     generic_aliases = {
         "capabilities", "tools", "status", "diff", "search", "grep", "rg",
-        "read", "patch", "edit", "validate", "validation", "smoke",
+        "read", "patch", "edit", "validate", "validation",
         "command", "run", "compile", "terminal", "tree", "directory",
         "files",
     }
@@ -4034,6 +4037,9 @@ def planner_decision(
             "AGENTIC_PLANNER_PROMPT_CHAR_BUDGET": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
             "AGENTIC_PLANNER_STEP_TIMEOUT": AGENTIC_PLANNER_STEP_TIMEOUT,
             "AGENTIC_PLANNER_TEMPERATURE": AGENTIC_PLANNER_TEMPERATURE,
+            "AGENTIC_PLANNER_TOP_K": AGENTIC_PLANNER_TOP_K,
+            "AGENTIC_PLANNER_TOP_P": AGENTIC_PLANNER_TOP_P,
+            "AGENTIC_PLANNER_PRESENCE_PENALTY": AGENTIC_PLANNER_PRESENCE_PENALTY,
             "OLLAMA_KEEP_ALIVE": OLLAMA_KEEP_ALIVE,
             "PLANNER_INTRINSIC_CONTEXT_MAX_CHARS": PLANNER_INTRINSIC_CONTEXT_MAX_CHARS,
             "PLANNER_INTRINSIC_RAG_CHAR_BUDGET": PLANNER_INTRINSIC_RAG_CHAR_BUDGET,

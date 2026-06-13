@@ -221,7 +221,7 @@ waits for terminal job state.
 
 - Reads: job DB, state JSON, events NDJSON, final files.
 - Writes: job DB, state JSON, event logs, final response artifacts.
-- Risk: schema/state fields are consumed by 3571, dashboards and tests.
+- Risk: schema/state fields are consumed by 3571 and dashboards.
 - Verify: state JSON, events NDJSON and DB row agree for the same job ID.
 
 ### `aicarmine_broker/application/public_payload/evidence_materializer.py`
@@ -237,7 +237,7 @@ pointers and emits `materialization_report owner=3572_broker`.
 - Writes: no files; returns JSON-serializable public payload sections.
 - Risk: must not read local paths, duplicate large payload into the index, alter
   validator/finalization gates or hide missing inline evidence.
-- Verify: `tests/test_public_evidence_materializer_contract.py`.
+- Verify: inspect inline public payload fields and materialization reports.
 
 ### `aicarmine_broker/application/public_payload/payload_index_resolver.py`
 
@@ -249,7 +249,8 @@ fields, including paths inside `tool_context_for_30b.artifacts[*].artifact`.
 - Writes: none.
 - Risk: resolver drift from the bridge resolver can create contradictory lint
   reports. Keep path grammar aligned.
-- Verify: materializer report tests and bridge payload-index tests.
+- Verify: inspect materializer reports and bridge payload-index resolution
+  against concrete payloads.
 
 ### `aicarmine_broker/memory_tools.py`
 
@@ -366,9 +367,9 @@ optional AST evidence from Tree-sitter, Python AST anchors and `ast-grep`.
 - Risk: this is the contract boundary for diff/refactoring goals. Missing
   dependencies or parse failures must be typed errors, not heuristic fallback
   validation.
-- Verify: `smoke_code_product_contract.py` accepts a valid full diff,
-  rejects preview/path-only payloads, rejects broken diffs, verifies no-op
-  rationale and checks AST tooling smoke cases.
+- Verify: inspect concrete proposal payloads for complete diffs, typed
+  preview/path-only rejection, broken-diff rejection, no-op rationale and AST
+  evidence when available.
 
 ### `aicarmine_broker/tool_contract.py`
 
@@ -530,7 +531,7 @@ Package marker for Codex bridge implementations.
 ### `codex_bridge/mcp_server.py`
 
 Codex MCP JSON-RPC server. It handles framing, direct MCP tool call dispatch,
-memory reports and health/self-test behavior for the host-side Codex
+memory reports and health behavior for the host-side Codex
 integration.
 
 - Reads: stdio frames, env paths, repository files through allowlisted tool
@@ -547,7 +548,7 @@ integration.
 ### `codex_bridge/repo_mcp_common.py`
 
 Shared helper module for deterministic Codex repo MCP servers. It owns stdio
-JSON-RPC framing, schema validation, self-test helpers, health payloads and
+JSON-RPC framing, schema validation, health payloads and
 Codex-root selection.
 
 - Reads: env, cwd and Git root markers for root resolution.
@@ -604,24 +605,22 @@ promoted into a semantic stable MCP surface.
   artifacts for that operation.
 - Risk: must remain isolated from the stable state/search/validation MCPs; do
   not add generic command execution or whole-file write tools here.
-- Verify: `aicarmine_repo_code_health`, server `--self-test`, report-only
-  write flags and the explicit source-write opt-in test.
+- Verify: `aicarmine_repo_code_health`, report-only write flags and explicit
+  source-write opt-in evidence.
 
 ### `codex_bridge/ops_mcp_server.py`
 
 Incubating Codex MCP server for operational checks that should stay outside
 the OpenWebUI/3571/3572 agentic path.
 
-- Reads: MCP stdio frames, static local MCP target metadata, Windows TCP
-  listener/process state and bounded tails from repo-local log files.
-- Writes: MCP stdio frames only; child MCP smoke checks are read-only
-  initialize/list/health calls against allowlisted local scripts.
+- Reads: MCP stdio frames, Windows TCP listener/process state and bounded
+  tails from repo-local log files.
+- Writes: MCP stdio frames only.
 - Risk: must not become a generic command runner, must not call HTTP health
   routes, 3571, 3572, `vulkan_helper` or the agentic loop, and must redact
   command-line secrets before returning process rows.
-- Verify: `aicarmine_codex_ops_health`, `aicarmine_mcp_smoke_run` on a local
-  MCP health tool, `aicarmine_service_state_snapshot`, and
-  `services/test_codex_ops_mcp_server.py`.
+- Verify: `aicarmine_codex_ops_health` and
+  `aicarmine_service_state_snapshot`.
 
 ### `codex_bridge/sqlite_readonly_mcp_server.py`
 
@@ -631,9 +630,8 @@ Dedicated read-only SQLite MCP server for Codex-side diagnostics.
 - Writes: MCP stdio frames only.
 - Risk: must remain single-statement `SELECT`/`WITH` only; no user PRAGMA,
   write keywords, unbounded rows or path reads outside the allowlist.
-- Verify: `aicarmine_sqlite_readonly_health`,
-  `aicarmine_sqlite_readonly_list_databases`, server `--self-test`, and
-  `services/test_sqlite_readonly_mcp_server.py`.
+- Verify: `aicarmine_sqlite_readonly_health` and
+  `aicarmine_sqlite_readonly_list_databases`.
 
 ### `codex_bridge/job_artifact_mcp_server.py`
 
@@ -645,9 +643,8 @@ Dedicated read-only MCP server for persisted agent job artifacts.
 - Writes: MCP stdio frames only.
 - Risk: must not call 3571, 3572, `vulkan_helper`, broker HTTP routes or the
   agentic loop; local artifact paths are diagnostics, not OpenWebUI evidence.
-- Verify: `aicarmine_job_artifact_health`,
-  `aicarmine_job_artifact_list_jobs`, server `--self-test`, and
-  `services/test_job_artifact_mcp_server.py`.
+- Verify: `aicarmine_job_artifact_health` and
+  `aicarmine_job_artifact_list_jobs`.
 
 ### `codex_bridge/job_view_mcp_server.py`
 
@@ -660,9 +657,8 @@ Dedicated read-only MCP server for persisted agent job HTML views.
   services or mutate job state. Rendered HTML and outlines are diagnostics,
   not a replacement for raw job artifacts when validating model-visible
   payloads.
-- Verify: `aicarmine_job_view_health`, `aicarmine_job_view_list_views`,
-  `aicarmine_job_view_render`, server `--self-test`, and
-  `services/test_job_view_mcp_server.py`.
+- Verify: `aicarmine_job_view_health`, `aicarmine_job_view_list_views` and
+  `aicarmine_job_view_render`.
 
 ### `codex_bridge/git_readonly_mcp_server.py`
 
@@ -672,8 +668,8 @@ Dedicated read-only Git MCP server for regression diagnostics.
 - Writes: MCP stdio frames only.
 - Risk: must not fetch, checkout, reset, commit, push or mutate local/remote
   state; file path arguments must resolve under the selected repo root.
-- Verify: `aicarmine_git_readonly_health`, `aicarmine_git_readonly_log`,
-  server `--self-test`, and `services/test_git_readonly_mcp_server.py`.
+- Verify: `aicarmine_git_readonly_health` and
+  `aicarmine_git_readonly_log`.
 
 ### `codex_bridge/project_memory_mcp_server.py`
 
@@ -690,8 +686,7 @@ Dedicated project-local persistent memory MCP server.
   must carry scope, key, value, source metadata, repo root, branch, commit,
   timestamps, status and confidence.
 - Verify: `aicarmine_project_memory_health`,
-  `aicarmine_project_memory_search`, server `--self-test`, source audit, and
-  `services/test_project_memory_mcp_server.py`.
+  `aicarmine_project_memory_search` and source audit.
 
 ### `codex_bridge/local_subagent_mcp_server.py`
 
@@ -707,9 +702,8 @@ repo search, Git diff, RAG context and memory search.
 - Risk: must not use 11435/GPU0 task models, 3571, 3572, OpenWebUI,
   `vulkan_helper`, service launchers or source-write tools. Codex MCP root
   handling stays process-local through `repo_mcp_common.py`.
-- Verify: `aicarmine_local_subagent_health`,
-  `aicarmine_local_subagent_capabilities`, server `--self-test`, and
-  `services/test_local_subagent_mcp_server.py`.
+- Verify: `aicarmine_local_subagent_health` and
+  `aicarmine_local_subagent_capabilities`.
 
 ### `codex_bridge/rag_index_repo.py`
 
@@ -970,15 +964,6 @@ PowerShell entrypoint for the Phi-3.5 OpenVINO/NPU diagnostic sidecar.
   reuse the 3550 reranker port.
 - Verify: PowerShell parse, `NPU_PHI_PYTHON_EXE`, model XML/BIN existence and
   `/healthz`/`/readyz` before any warmup/generation.
-
-### `test-openvino.ps1`
-
-Minimal OpenVINO diagnostic wrapper.
-
-- Reads: `openvino-env.ps1`, `OPENVINO_PYTHON_EXE`.
-- Writes: diagnostic output only.
-- Risk: diagnostic only.
-- Verify: command output shows expected Python/OpenVINO.
 
 ### `check-dev-toolchain.ps1`
 

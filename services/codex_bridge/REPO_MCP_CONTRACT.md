@@ -12,8 +12,9 @@ The stable repo MCP set is tool-only and state/search/validation oriented:
 - `aicarmine_repo_search_det`: deterministic repository search through bounded
   tools such as `rg`, `fd`, `jq`, ast-grep, tree-sitter, and ctags.
 - `aicarmine_repo_validate`: deterministic validation wrappers such as
-  `git diff --check`, compile checks, pytest, ruff, pyright, shellcheck, and
-  semgrep.
+  `git diff --check`, compile checks, ruff, pyright, shellcheck and semgrep.
+  Pytest/test execution is not an active default workflow and must not be used
+  unless Carmine explicitly asks.
 
 The incubating repo-code MCP is separate from the stable set:
 
@@ -24,10 +25,11 @@ The incubating repo-code MCP is separate from the stable set:
 
 The incubating Codex ops MCP is separate from repo-editing tools:
 
-- `aicarmine_codex_ops`: local MCP smoke checks and read-only service-state
-  inspection. It may inspect process tables, TCP listeners and repo-local log
-  tails, but it must not call HTTP health routes, 3571, 3572, `vulkan_helper`
-  or the agentic loop.
+- `aicarmine_codex_ops`: local MCP inventory and read-only service-state
+  inspection. It may inspect process tables, TCP listeners, repo-local log
+  tails and allowlisted MCP stdio inventory, but it must not call HTTP health
+  routes, 3571, 3572, `vulkan_helper` or the agentic loop. It must not own or
+  restore deleted project test/smoke scripts.
 
 The read-only observability MCP set is separate from repo-editing tools:
 
@@ -103,25 +105,13 @@ The effective health gate must report:
 - `git_root_ok`: `true`
 - `branch`: the current Codex work branch for the selected repo root.
 
-## Self-Test Commands
+## Test/Smoke Guardrail
 
-Run self-tests with the absolute Python executable:
-
-```powershell
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\repo_state_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\repo_search_det_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\repo_validate_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\repo_code_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py" --self-test
-& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py" --self-test
-```
-
-The server self-tests must pass before the MCP entries are considered valid for
-Codex reload testing.
+Do not create, restore, run or document project test/smoke scripts unless
+Carmine explicitly asks for them. MCP reload verification should use read-only
+health/status/capability tools, bounded artifact/log/process inspection,
+allowlisted MCP stdio inventory probes and targeted compile/lint/diff checks
+when appropriate.
 
 ## Codex Reload Gate
 
@@ -156,22 +146,17 @@ If health is OK, the minimal real-tool gate is:
 - `aicarmine_repo_state_status`
 - `aicarmine_repo_search_rg` with pattern `AICARMINE_CODEX_MCP_REPO_ROOT|AICARMINE_LAB_REPO`
 - `aicarmine_repo_validate_diffcheck`
-- `aicarmine_repo_code_unidiff_validate` for the incubator server. The
-  incubator self-test deliberately avoids source writes.
-- `aicarmine_mcp_smoke_run` with `servers=["aicarmine_repo_state"]`.
+- `aicarmine_repo_code_unidiff_validate` for the incubator server.
 - `aicarmine_service_state_snapshot` with bounded process/log limits.
 - `aicarmine_sqlite_readonly_list_databases` with a low `max_results`.
 - `aicarmine_job_artifact_list_jobs` with a low `limit`.
 - `aicarmine_job_view_list_views`.
 - `aicarmine_git_readonly_log` with `max_count=1`.
-- `aicarmine_project_memory_search` with a low `limit`. The self-test must
-  not require a write.
+- `aicarmine_project_memory_search` with a low `limit`.
 
-Stable MCP reload verification on 2026-06-11 passed the state/search/validate
-gates in that session. The incubator server requires its own reload gate after
-being enabled in local Codex configuration. The `rg` result was intentionally
-bounded by MCP text limits, so only the successful tool result and count are
-used as the gate, not the full match set.
+Stable MCP reload verification should be based on current health/status outputs
+and bounded real-tool reads in the active Codex session. Historical reload
+notes are not a substitute for current process/root/runtime evidence.
 
 ## Non-Negotiable Exclusions
 
