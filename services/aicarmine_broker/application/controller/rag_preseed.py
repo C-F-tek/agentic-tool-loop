@@ -179,6 +179,26 @@ def _boolish(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on", "si", "sì"}
 
 
+def _optional_boolish(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on", "si", "sì"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", "non", "none"}:
+        return False
+    return None
+
+
+def _first_present(mapping: Mapping[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in mapping:
+            return mapping.get(key)
+    return None
+
+
 def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, Any]:
     fallback_classification = semantic_goal_classification(
         goal,
@@ -229,6 +249,16 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
     planner_read_only = _boolish(value.get("read_only"))
     planner_write_requested = _boolish(value.get("write_requested") or value.get("requires_write"))
     planner_apply_requested = _boolish(value.get("apply_requested") or value.get("requires_apply"))
+    planner_code_product_requested = _optional_boolish(_first_present(
+        value,
+        (
+            "code_product_requested",
+            "diff_requested",
+            "patch_requested",
+            "code_edit_proposal_requested",
+            "proposal_output_requested",
+        ),
+    ))
     planner_declares_no_write = planner_read_only and not planner_write_requested and not planner_apply_requested
     invalid_reasons: list[str] = []
     if planner_goal_class == "apply_write" and planner_declares_no_write:
@@ -237,6 +267,10 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         invalid_reasons.append("non_apply_goal_conflicts_with_write_or_apply_flags")
     if planner_goal_class == "code_product_report" and planner_apply_requested:
         invalid_reasons.append("code_product_report_must_not_request_apply")
+    if planner_goal_class == "code_product_report" and planner_code_product_requested is not True:
+        invalid_reasons.append("code_product_report_requires_positive_code_product_requested_flag")
+    if planner_goal_class != "code_product_report" and planner_code_product_requested is True:
+        invalid_reasons.append("non_code_product_goal_conflicts_with_code_product_requested_flag")
 
     rationale = _sanitize_query_text(value.get("rationale") or value.get("reason"))
     return {
@@ -254,6 +288,8 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         "read_only": _boolish(value.get("read_only")),
         "write_requested": planner_write_requested,
         "apply_requested": planner_apply_requested,
+        "code_product_requested": bool(planner_code_product_requested),
+        "code_product_requested_present": planner_code_product_requested is not None,
         "rationale": rationale,
         "invalid_reasons": invalid_reasons,
     }
@@ -496,6 +532,8 @@ def controller_preplanner_rag_query_plan(
                 "Tool names inside a negative constraint are not evidence that the tool should be used.",
                 "Use apply_write only when the user positively asks to modify/apply/write files.",
                 "Use code_product_report for requested patch/diff/proposal output that must not be applied.",
+                "For code_product_report, semantic_intent.code_product_requested must be true because the user positively asks for a diff, patch, code product, or code edit proposal as output.",
+                "If the user forbids or negates code product, patch, diff, or proposal output, use analysis_only or repo_analysis and set code_product_requested=false.",
             ],
         },
         "required_json_shape": {
@@ -504,6 +542,7 @@ def controller_preplanner_rag_query_plan(
                 "read_only": True,
                 "write_requested": False,
                 "apply_requested": False,
+                "code_product_requested": False,
                 "requires_code_security_coverage": False,
                 "rationale": "short reason",
             },
@@ -527,8 +566,10 @@ def controller_preplanner_rag_query_plan(
                 "previous_semantic_intent": previous.get("semantic_intent"),
                 "required_fix": (
                     "Return strict JSON with semantic_intent.class, read_only, "
-                    "write_requested, apply_requested and rationale. Do not use keyword "
-                    "fallbacks. Resolve contradictions from meaning."
+                    "write_requested, apply_requested, code_product_requested and rationale. "
+                    "For code_product_report, code_product_requested must be true because the "
+                    "user positively requested diff/patch/code-product output. Do not use "
+                    "keyword fallbacks. Resolve contradictions from meaning."
                 ),
             }
         return {

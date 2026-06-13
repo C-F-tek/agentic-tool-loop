@@ -71,7 +71,10 @@ def _semantic_classification_with_preplanner_intent(
     contract_class = goal_class
     if goal_class in {"repo_analysis", "generic"}:
         contract_class = "analysis_only"
-    must_code_product = goal_class == "code_product_report"
+    code_product_requested = bool(preplanner_intent.get("code_product_requested"))
+    if goal_class == "code_product_report" and not code_product_requested:
+        contract_class = "analysis_only"
+    must_code_product = goal_class == "code_product_report" and code_product_requested
     requires_security = bool(preplanner_intent.get("requires_code_security_coverage")) or (
         goal_class == "code_security_analysis"
     )
@@ -94,6 +97,7 @@ def _semantic_classification_with_preplanner_intent(
         "requires_code_security_coverage": requires_security,
         "regex_code_product_override": False,
         "regex_apply_override": False,
+        "code_product_requested": code_product_requested,
         "preplanner_semantic_intent": dict(preplanner_intent),
         "preplanner_goal_class": goal_class,
     })
@@ -109,7 +113,10 @@ def _goal_requests_code_product_from_semantics(
         isinstance(preplanner_intent, Mapping)
         and str(preplanner_intent.get("source") or "") == "planner_query_plan"
     ):
-        return str(preplanner_intent.get("goal_class") or "").strip() == "code_product_report"
+        return (
+            str(preplanner_intent.get("goal_class") or "").strip() == "code_product_report"
+            and preplanner_intent.get("code_product_requested") is True
+        )
     return bool(fallback_value)
 
 

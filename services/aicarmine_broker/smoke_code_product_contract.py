@@ -2778,9 +2778,15 @@ def main() -> int:
                     },
                 },
             )
+            support_primitive_surface = {
+                "planner_scratchpad_read",
+                "planner_scratchpad_write",
+                "runtime_sqlite_memory_search",
+                "runtime_sqlite_memory_write",
+            }
             require(
-                continuation_surface == ["planner_scratchpad_read"],
-                f"explicit continuation did not isolate planner_scratchpad_read surface: {continuation_surface}",
+                set(continuation_surface) == support_primitive_surface,
+                f"explicit continuation exposed non-support tools: {continuation_surface}",
             )
             forced_terminal_surface = planner._tool_surface_names_for_turn(
                 goal=goal,
@@ -2806,8 +2812,8 @@ def main() -> int:
                 },
             )
             require(
-                forced_terminal_surface == [],
-                "forced terminal empty surface was overridden by continuation: "
+                set(forced_terminal_surface).issubset(support_primitive_surface),
+                "forced terminal surface exposed non-support tools: "
                 f"{forced_terminal_surface}",
             )
             final_composition_contract = planner._apply_turn_surface_policy(
@@ -2844,8 +2850,9 @@ def main() -> int:
                 },
             )
             require(
-                final_composition_surface == ["planner_scratchpad_write"],
-                "final composition surface should allow only answer_chunk write, "
+                set(final_composition_surface).issubset(support_primitive_surface)
+                and "planner_scratchpad_write" in final_composition_surface,
+                "final composition surface should expose only support primitives with scratchpad write, "
                 f"got {final_composition_surface}",
             )
 
@@ -2937,6 +2944,7 @@ def main() -> int:
                         "read_only": True,
                         "write_requested": False,
                         "apply_requested": False,
+                        "code_product_requested": False,
                         "requires_code_security_coverage": False,
                         "rationale": "The request explicitly asks for descriptive read-only analysis.",
                     },
@@ -2973,6 +2981,7 @@ def main() -> int:
                                 "read_only": True,
                                 "write_requested": False,
                                 "apply_requested": False,
+                                "code_product_requested": False,
                                 "requires_code_security_coverage": False,
                                 "rationale": "Retry corrected missing semantic intent.",
                             },
@@ -3049,6 +3058,7 @@ def main() -> int:
                         "read_only": True,
                         "write_requested": False,
                         "apply_requested": False,
+                        "code_product_requested": True,
                         "requires_code_security_coverage": False,
                         "rationale": "The request asks for a diff payload but not application.",
                     },
@@ -3064,6 +3074,130 @@ def main() -> int:
             require(
                 rag_preseed._preplanner_goal_class(report_only_patch_goal) == "code_product_report",
                 "preplanner RAG no longer distinguishes report-only diff from apply_write",
+            )
+            technical_analysis_goal = (
+                "Richiesta tecnica read-only per il planner/controller. "
+                "Obiettivo: ricerca approfondita delle contraddizioni nel codice. "
+                "Vincoli: non proporre patch come prodotto principale, non applicare patch, "
+                "non usare repo_propose_code_edit. Restituisci una relazione compatta."
+            )
+            bad_technical_plan = rag_preseed._sanitize_preplanner_query_plan(
+                {
+                    "semantic_intent": {
+                        "class": "code_product_report",
+                        "read_only": True,
+                        "write_requested": False,
+                        "apply_requested": False,
+                        "code_product_requested": False,
+                        "requires_code_security_coverage": False,
+                        "rationale": "The request asks for technical read-only analysis, not patch output.",
+                    },
+                    "queries": [{"query": "planner terminal contradictions", "purpose": "find owner files"}],
+                },
+                goal=technical_analysis_goal,
+            )
+            bad_technical_reasons = (
+                (bad_technical_plan.get("semantic_intent") or {}).get("invalid_reasons") or []
+            )
+            require(
+                bad_technical_plan.get("ok") is False
+                and bad_technical_plan.get("status") == "invalid_semantic_intent"
+                and "code_product_report_requires_positive_code_product_requested_flag" in bad_technical_reasons,
+                f"preplanner accepted code_product_report without positive code product request: {bad_technical_plan}",
+            )
+            good_technical_plan = rag_preseed._sanitize_preplanner_query_plan(
+                {
+                    "semantic_intent": {
+                        "class": "analysis_only",
+                        "read_only": True,
+                        "write_requested": False,
+                        "apply_requested": False,
+                        "code_product_requested": False,
+                        "requires_code_security_coverage": False,
+                        "rationale": "The request asks for a read-only technical relationship.",
+                    },
+                    "queries": [{"query": "planner terminal contradictions", "purpose": "find owner files"}],
+                },
+                goal=technical_analysis_goal,
+            )
+            require(
+                good_technical_plan.get("ok") is True
+                and good_technical_plan.get("goal_class") == "analysis_only",
+                f"preplanner rejected technical read-only analysis intent: {good_technical_plan}",
+            )
+            technical_preseed_row = json.loads(json.dumps(preseed_docs_row))
+            technical_preseed_row["tool_result"]["preplanner_rag"]["ranking"] = {
+                "query_plan": {
+                    "semantic_intent": good_technical_plan["semantic_intent"],
+                }
+            }
+            technical_contract = planner.planner_evidence_contract(
+                technical_analysis_goal,
+                [technical_preseed_row],
+            )
+            require(
+                technical_contract.get("goal_requests_code_product") is False
+                and technical_contract.get("goal_requires_code_product_report") is False
+                and (technical_contract.get("semantic_goal_classification") or {}).get("must_produce_code_product") is False,
+                f"technical read-only analysis still requires code product: {technical_contract}",
+            )
+            support_validation = {
+                "violations": ["code_product_build_state_ready_without_complete_payload"],
+            }
+            support_decision_a = {
+                "action": "tool",
+                "tool": "planner_scratchpad_write",
+                "arguments": {
+                    "kind": "code_product_build_state",
+                    "target_file": "services/aicarmine_broker/application/tool_surface/turn_surface_policy.py",
+                    "text": json.dumps({
+                        "schema": "code_product_build_state.v1",
+                        "target_file": "services/aicarmine_broker/application/tool_surface/turn_surface_policy.py",
+                        "status": "ready_for_propose",
+                        "rationale": "first invalid payload",
+                    }),
+                },
+            }
+            support_decision_b = {
+                "action": "tool",
+                "tool": "planner_scratchpad_write",
+                "arguments": {
+                    "kind": "code_product_build_state",
+                    "target_file": "services/aicarmine_broker/application/tool_surface/turn_surface_policy.py",
+                    "text": json.dumps({
+                        "schema": "code_product_build_state.v1",
+                        "target_file": "services/aicarmine_broker/application/tool_surface/turn_surface_policy.py",
+                        "status": "ready_for_propose",
+                        "rationale": "second invalid payload with different text",
+                    }),
+                },
+            }
+            support_signature_a = planner._controller_guard_rejection_signature(  # noqa: SLF001
+                support_validation,
+                support_decision_a,
+            )
+            support_signature_b = planner._controller_guard_rejection_signature(  # noqa: SLF001
+                support_validation,
+                support_decision_b,
+            )
+            require(
+                support_signature_a == support_signature_b,
+                f"support subturn rejection signature still depends on volatile text: {support_signature_a} != {support_signature_b}",
+            )
+            support_history = [{
+                "decision": {"action": "continue_required", "reason": "support subturn rejected by evidence validator"},
+                "tool_result": {
+                    "tool": "controller_guard",
+                    "invalid_decision_signature": support_signature_a,
+                    "violations": support_validation["violations"],
+                },
+            }]
+            require(
+                planner._controller_guard_rejection_signature_count(  # noqa: SLF001
+                    support_history,
+                    support_signature_b,
+                ) == 1,
+                "support subturn repeated rejection count did not match stable signature",
             )
             require(
                 not planner.goal_has_write_intent(
