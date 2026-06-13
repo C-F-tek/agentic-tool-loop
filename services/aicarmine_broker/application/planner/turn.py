@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
@@ -160,6 +161,30 @@ def _native_plain_text_final_decision(
         decision["prompt_context_continuation_required"] = prompt_context_continuation_required
     if stream_meta:
         decision["planner_stream_meta"] = stream_meta
+    return decision
+
+
+def _degenerate_output_block_decision(
+    response: Mapping[str, Any],
+    stream_path: Path,
+    *,
+    stream_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    partial = str(response.get("partial_content") or response.get("response") or "")
+    decision: dict[str, Any] = {
+        "action": "block",
+        "reason": f"PLANNER_DEGENERATE_OUTPUT_NON_JSON:{response.get('error')}",
+        "final_answer": (
+            "Planner 30B produced degenerate output. No partial JSON extraction, "
+            "plaintext recovery, or controller fallback normalization was executed. "
+            "Plain text output must be retried by the planner; malformed JSON or "
+            "recognizable invalid tool calls remain eligible for Vulkan/GPU0 11435 repair. "
+            f"Partial stream chars={len(partial)}. Stream artifact={stream_path}."
+        ),
+        "raw_planner_text": partial[:12000],
+    }
+    if stream_meta:
+        decision["planner_stream_meta"] = dict(stream_meta)
     return decision
 
 
@@ -580,6 +605,7 @@ def planner_decision(
         PLANNER_URL, planner_payload,
         timeout=AGENTIC_PLANNER_STEP_TIMEOUT,
         job_id=job_id, step=step, stream_path=stream_path,
+        allow_plain_text_without_json=bool(AGENTIC_PLANNER_NATIVE_TOOLS),
     )
     native_calls = response.get("native_tool_calls") if isinstance(response.get("native_tool_calls"), list) else []
     stream_meta = {
@@ -594,6 +620,12 @@ def planner_decision(
         )
         if response.get(key) not in (None, "", [], {})
     }
+    if response.get("planner_degenerate_output"):
+        return _degenerate_output_block_decision(
+            response,
+            stream_path,
+            stream_meta=stream_meta,
+        )
     if native_calls:
         decision = _native_tool_calls_decision(native_calls, str(response.get("response") or ""))
         if decision:
@@ -755,19 +787,7 @@ def planner_decision(
 
     # --- degenerate output ---
     if response.get("planner_degenerate_output"):
-        partial = str(response.get("partial_content") or "")
-        return {
-            "action": "block",
-            "reason": f"PLANNER_DEGENERATE_OUTPUT_NON_JSON:{response.get('error')}",
-            "final_answer": (
-                "Planner 30B produced degenerate output. No partial JSON extraction, "
-                "plaintext recovery, or controller fallback normalization was executed. "
-                "Plain text output must be retried by the planner; malformed JSON or "
-                "recognizable invalid tool calls remain eligible for Vulkan/GPU0 11435 repair. "
-                f"Partial stream chars={len(partial)}. Stream artifact={stream_path}."
-            ),
-            "raw_planner_text": partial[:12000],
-        }
+        return _degenerate_output_block_decision(response, stream_path, stream_meta=stream_meta)
 
     # --- timeout: surface, do not force a fallback decision ---
     if response.get("backend_timeout"):

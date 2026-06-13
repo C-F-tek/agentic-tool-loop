@@ -29,6 +29,7 @@ from vulkan_bridge import app as bridge_app  # noqa: E402
 repo_code_product_tool = importlib.import_module("aicarmine_broker.tools.repo_code_product")
 evidence_builder = importlib.import_module("aicarmine_broker.application.evidence.builder")
 payload_lab = importlib.import_module("aicarmine_broker.application.public_payload.lab")
+planner_json_io = importlib.import_module("aicarmine_broker.planner_core.json_io")
 planner_turn = importlib.import_module("aicarmine_broker.application.planner.turn")
 repo_list_files_tool = importlib.import_module("aicarmine_broker.tools.repo_list_files")
 repo_read_tool = importlib.import_module("aicarmine_broker.tools.repo_read")
@@ -430,6 +431,161 @@ def main() -> int:
                     "Analisi conclusiva con evidenza citata."
                 ),
                 "ordinary terminal prose was incorrectly classified as protocol-shaped",
+            )
+            code_like_final_prose = (
+                "Ho completato la lettura dei file core.\n"
+                + "Questa e' una relazione descrittiva con evidenze file/funzione. " * 12
+                + "Evidenza: in goal_classifier.py si legge: `def semantic_goal_classification`."
+            )
+            require(
+                planner_json_io._planner_stream_repetition_reason(
+                    code_like_final_prose,
+                    allow_plain_text_without_json=True,
+                )
+                == "",
+                "native plain-text final prose with code evidence was incorrectly marked degenerate",
+            )
+            require(
+                planner_json_io._planner_stream_repetition_reason(
+                    code_like_final_prose,
+                    allow_plain_text_without_json=False,
+                )
+                == "non_json_code_like_stream_without_object",
+                "JSON-only stream guard no longer catches code-like non-JSON output",
+            )
+            quoted_role_marker_prose = (
+                'Relazione: la guard deve citare il marker `"Human:"` come evidenza, '
+                "senza trattarlo come role boundary reale."
+            )
+            require(
+                planner_json_io._planner_stream_repetition_reason(
+                    quoted_role_marker_prose,
+                    allow_plain_text_without_json=True,
+                )
+                == "",
+                "quoted role marker in terminal prose was incorrectly marked degenerate",
+            )
+            require(
+                planner_json_io._planner_stream_repetition_reason(
+                    "Human: restart the conversation",
+                    allow_plain_text_without_json=True,
+                )
+                == "role_boundary_marker:Human:",
+                "real role boundary marker was not rejected",
+            )
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_root = Path(tmpdir)
+
+                def fake_build_planner_user_payload(**_kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+                    return (
+                        {"schema": "smoke_planner_payload.v1"},
+                        {
+                            "total_prompt_chars": 1,
+                            "char_budget": 100000,
+                            "generation_headroom_char_budget": 100000,
+                            "native_history_reserve_chars": 0,
+                        },
+                    )
+
+                def fake_post_json_stream_to_file(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+                    return {
+                        "ok": False,
+                        "planner_degenerate_output": True,
+                        "backend_timeout": False,
+                        "backend_unreachable": False,
+                        "error": "non_json_code_like_stream_without_object",
+                        "partial_content": "\n".join(
+                            "from repeated import code_like_stream" for _ in range(80)
+                        ),
+                        "native_tool_calls": [],
+                        "ollama_done_seen": True,
+                        "ollama_done_reason": "stop",
+                    }
+
+                degenerate_decision = planner_turn.planner_decision(
+                    "smoke-native-degenerate-output",
+                    {
+                        "goal": "Analizza il codice in read-only e produci una relazione.",
+                        "planner_memory_surface": {"schema": "smoke_planner_memory.v1"},
+                    },
+                    1,
+                    [],
+                    deps={
+                        "build_planner_user_payload": fake_build_planner_user_payload,
+                        "controller_memory_target_key": lambda *_args, **_kwargs: "smoke",
+                        "filter_tool_manifest_for_names": lambda *_args, **_kwargs: [],
+                        "history_tool_result": lambda *_args, **_kwargs: False,
+                        "input_error_goal": lambda *_args, **_kwargs: False,
+                        "native_tool_calls_decision": lambda *_args, **_kwargs: {},
+                        "native_tools_schema_for_planner": lambda *_args, **_kwargs: [],
+                        "normalize_terminal_planner_decision": lambda decision: dict(decision),
+                        "parse_strict_json_object": lambda *_args, **_kwargs: {},
+                        "planner_history_messages_for_ollama": lambda *_args, **_kwargs: (
+                            [],
+                            {"message_chars": 0, "included_history_items": 0},
+                        ),
+                        "planner_system_for_current_mode": lambda: "system",
+                        "planner_token_generation_reserve": lambda *_args, **_kwargs: 0,
+                        "prompt_context_continuation_from_payload": lambda *_args, **_kwargs: {},
+                        "prompt_generation_headroom_char_budget": lambda: 100000,
+                        "prompt_window_chars": lambda *_args, **_kwargs: 0,
+                        "tool_surface_names_for_turn": lambda *_args, **_kwargs: [
+                            "planner_scratchpad_read"
+                        ],
+                        "agent_job_planner_stream_path": lambda _job_id, _step: (
+                            tmp_root / "planner-stream.ndjson"
+                        ),
+                        "agent_job_root": lambda _job_id: tmp_root,
+                        "append_agent_event": lambda *_args, **_kwargs: None,
+                        "build_planner_intrinsic_context": lambda *_args, **_kwargs: {
+                            "budget_report": {}
+                        },
+                        "goal_requires_code_product_report": lambda *_args, **_kwargs: False,
+                        "history_has_tool": lambda *_args, **_kwargs: False,
+                        "internal_tools_list": lambda *_args, **_kwargs: [],
+                        "normalize_planner_decision": lambda *_args, **_kwargs: {},
+                        "planner_done_token": lambda *_args, **_kwargs: "<DONE>",
+                        "planner_evidence_contract": lambda *_args, **_kwargs: {},
+                        "planner_memory_surface": lambda *_args, **_kwargs: {
+                            "schema": "smoke_planner_memory.v1"
+                        },
+                        "post_json_stream_to_file": fake_post_json_stream_to_file,
+                        "summarize_history_artifacts": lambda *_args, **_kwargs: {},
+                        "write_json": lambda *_args, **_kwargs: None,
+                    },
+                    config={
+                        "AGENTIC_PLANNER_NATIVE_TOOLS": True,
+                        "AGENTIC_PLANNER_NUM_CTX": 8192,
+                        "AGENTIC_PLANNER_NUM_CTX_CAP": 8192,
+                        "AGENTIC_PLANNER_NUM_CTX_REQUESTED": 8192,
+                        "AGENTIC_PLANNER_NUM_PREDICT": 512,
+                        "AGENTIC_PLANNER_PROMPT_CHAR_BUDGET": 100000,
+                        "AGENTIC_PLANNER_STEP_TIMEOUT": 1,
+                        "AGENTIC_PLANNER_TEMPERATURE": 0,
+                        "OLLAMA_KEEP_ALIVE": "5m",
+                        "PLANNER_INTRINSIC_CONTEXT_MAX_CHARS": 0,
+                        "PLANNER_INTRINSIC_RAG_CHAR_BUDGET": 0,
+                        "PLANNER_INTRINSIC_RAG_TOP_K": 0,
+                        "PLANNER_MODEL": "smoke",
+                        "PLANNER_RAG_DB": "",
+                        "PLANNER_RAG_EMBEDDING_BATCH_SIZE": 0,
+                        "PLANNER_RAG_EXTERNAL_RERANKER_URL": "",
+                        "PLANNER_RAG_RERANKING_ENGINE": "",
+                        "PLANNER_RAG_RERANKING_MODEL": "",
+                        "PLANNER_RAG_RERANK_TIMEOUT_SECONDS": 0,
+                        "PLANNER_URL": "http://127.0.0.1:11434/api/chat",
+                    },
+                )
+            require(
+                degenerate_decision.get("action") == "block"
+                and str(degenerate_decision.get("reason") or "").startswith(
+                    "PLANNER_DEGENERATE_OUTPUT_NON_JSON:"
+                ),
+                f"native degenerate planner stream was not blocked: {degenerate_decision}",
+            )
+            require(
+                degenerate_decision.get("controller_wrapped_plain_text_final") is not True,
+                f"native degenerate stream was incorrectly wrapped as final: {degenerate_decision}",
             )
             native_protocol_text_gate = planner.validate_planner_decision_against_evidence(
                 "Native malformed protocol smoke",

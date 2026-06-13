@@ -133,16 +133,193 @@ def _read_text(path: Path, *, max_chars: int) -> tuple[str, bool]:
     return text[:max_chars], truncated
 
 
+def _read_text_page(path: Path, *, offset: int, max_chars: int) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    start = max(0, min(int(offset or 0), len(text)))
+    returned = text[start:start + max_chars]
+    truncated = start + len(returned) < len(text)
+    size = path.stat().st_size if path.is_file() else 0
+    next_offset = start + len(returned) if truncated else None
+    return {
+        "text": returned,
+        "offset": start,
+        "chars": len(returned),
+        "total_chars": len(text),
+        "bytes": size,
+        "truncated": truncated,
+        "next_offset": next_offset,
+    }
+
+
 def _read_json(path: Path, *, max_chars: int = 2_000_000) -> Any:
     try:
-        text, truncated = _read_text(path, max_chars=max_chars)
+        del max_chars
+        text = path.read_text(encoding="utf-8", errors="replace")
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             parsed["_artifact_path"] = str(path)
-            parsed["_truncated_before_parse"] = truncated
+            parsed["_source_chars"] = len(text)
+            parsed["_source_bytes"] = path.stat().st_size if path.is_file() else 0
+            parsed["_truncated_before_parse"] = False
         return parsed
     except Exception as exc:
         return {"_read_error": str(exc), "_artifact_path": str(path)}
+
+
+def _json_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def _json_path_select(value: Any, path: str) -> tuple[Any, str]:
+    current = value
+    normalized = str(path or "").strip().strip(".")
+    if not normalized:
+        return current, ""
+    traversed: list[str] = []
+    for part in normalized.split("."):
+        if isinstance(current, dict):
+            if part not in current:
+                raise KeyError(".".join([*traversed, part]))
+            current = current[part]
+        elif isinstance(current, list):
+            try:
+                index = int(part)
+            except ValueError as exc:
+                raise KeyError(".".join([*traversed, part])) from exc
+            try:
+                current = current[index]
+            except IndexError as exc:
+                raise KeyError(".".join([*traversed, part])) from exc
+        else:
+            raise KeyError(".".join([*traversed, part]))
+        traversed.append(part)
+    return current, ".".join(traversed)
+
+
+def _json_page(value: Any, *, path: str, offset: int, max_chars: int) -> dict[str, Any]:
+    try:
+        selected, normalized_path = _json_path_select(value, path)
+    except KeyError as exc:
+        return {
+            "ok": False,
+            "error": "json_path_not_found",
+            "json_path": str(path or ""),
+            "missing_at": str(exc).strip("'"),
+        }
+    text = _json_text(selected)
+    start = max(0, min(int(offset or 0), len(text)))
+    returned = text[start:start + max_chars]
+    next_offset = start + len(returned) if start + len(returned) < len(text) else None
+    return {
+        "ok": True,
+        "json_path": normalized_path,
+        "offset": start,
+        "max_chars": max_chars,
+        "text": returned,
+        "returned_chars": len(returned),
+        "total_chars": len(text),
+        "truncated": next_offset is not None,
+        "next_offset": next_offset,
+        "selected_type": type(selected).__name__,
+    }
+
+
+def _json_overview(value: Any, *, path: str = "", depth: int = 0) -> dict[str, Any]:
+    text = _json_text(value)
+    if isinstance(value, dict):
+        scalar_values: dict[str, Any] = {}
+        child_fields: list[dict[str, Any]] = []
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            child_text = _json_text(child)
+            if isinstance(child, (str, int, float, bool)) or child is None:
+                scalar_values[str(key)] = child if len(str(child)) <= 500 else str(child)[:500]
+            elif depth < 1:
+                child_fields.append({
+                    "path": child_path,
+                    "type": type(child).__name__,
+                    "chars": len(child_text),
+                    **({"keys": sorted(str(item) for item in child.keys())[:30]} if isinstance(child, dict) else {}),
+                    **({"length": len(child)} if isinstance(child, list) else {}),
+                })
+        return {
+            "type": "dict",
+            "json_path": path,
+            "chars": len(text),
+            "key_count": len(value),
+            "keys": sorted(str(key) for key in value.keys()),
+            "scalars": scalar_values,
+            "children": child_fields,
+        }
+    if isinstance(value, list):
+        return {
+            "type": "list",
+            "json_path": path,
+            "chars": len(text),
+            "length": len(value),
+            "first_items": [
+                {"index": index, "type": type(item).__name__, "chars": len(_json_text(item))}
+                for index, item in enumerate(value[:20])
+            ],
+        }
+    return {"type": type(value).__name__, "json_path": path, "chars": len(text), "preview": str(value)[:1000]}
+
+
+OPENWEBUI_INLINE_TRANSPORT_FIELDS = (
+    "payload_index_for_30b",
+    "priority_evidence_for_30b",
+    "tool_context_for_30b",
+    "openwebui_usage",
+    "result",
+    "evidence_guide_for_30b",
+    "materialization_report",
+)
+
+
+def _openwebui_inline_payload_view(final_json: Any, *, default_page_chars: int) -> dict[str, Any]:
+    if not isinstance(final_json, dict):
+        return {
+            "schema": "aicarmine.job_artifact_final.codex_payload_view.v1",
+            "source": "final.json",
+            "transport": "openwebui_inline_payload",
+            "available": False,
+            "reason": "final_json_not_mapping",
+        }
+    available = [field for field in OPENWEBUI_INLINE_TRANSPORT_FIELDS if field in final_json]
+    field_overviews: dict[str, Any] = {}
+    for field in available:
+        value = final_json.get(field)
+        field_overviews[field] = _json_overview(value, path=field)
+    read_order = [
+        field for field in (
+            "payload_index_for_30b",
+            "priority_evidence_for_30b",
+            "tool_context_for_30b",
+            "result",
+            "openwebui_usage",
+            "evidence_guide_for_30b",
+        )
+        if field in available
+    ]
+    return {
+        "schema": "aicarmine.job_artifact_final.codex_payload_view.v1",
+        "source": "final.json",
+        "transport": "openwebui_inline_payload",
+        "available": bool(available),
+        "available_fields": available,
+        "primary_read_order": read_order,
+        "field_overviews": field_overviews,
+        "next_suggested_json_paths": read_order,
+        "paging": {
+            "tool": "aicarmine_job_artifact_final",
+            "args": {
+                "job_id": "<same job_id>",
+                "json_path": "<one of next_suggested_json_paths>",
+                "offset": 0,
+                "max_chars": default_page_chars,
+            },
+        },
+    }
 
 
 def _read_events(path: Path, *, max_lines: int = 5000) -> list[dict[str, Any]]:
@@ -419,19 +596,59 @@ def _final(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if job_dir is None:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
 
-    max_chars = _safe_int(args.get("max_chars"), 2_000_000, 1000, 5_000_000)
-    final_json = _read_json(job_dir / "final.json", max_chars=max_chars) if (job_dir / "final.json").is_file() else {}
-    final_md = ""
-    final_md_truncated = False
-    if (job_dir / "final.md").is_file():
-        final_md, final_md_truncated = _read_text(job_dir / "final.md", max_chars=max_chars)
+    max_chars = _safe_int(args.get("max_chars"), 200_000, 1000, 5_000_000)
+    offset = _safe_int(args.get("offset"), 0, 0, 500_000_000)
+    json_path = str(args.get("json_path") or "").strip()
+    include_full_json = bool(args.get("include_full_json", False))
+    final_json_path = job_dir / "final.json"
+    final_md_path = job_dir / "final.md"
+    final_json = _read_json(final_json_path) if final_json_path.is_file() else {}
+    final_json_parse_ok = not (
+        isinstance(final_json, dict)
+        and final_json.get("_read_error")
+    )
+    final_json_text_chars = len(_json_text(final_json)) if final_json_parse_ok else 0
+    default_json_path = json_path
+    if not default_json_path and isinstance(final_json, dict):
+        for candidate in OPENWEBUI_INLINE_TRANSPORT_FIELDS:
+            if candidate in final_json:
+                default_json_path = candidate
+                break
+    final_json_page = (
+        _json_page(final_json, path=default_json_path, offset=offset, max_chars=max_chars)
+        if final_json_parse_ok
+        else {"ok": False, "error": "final_json_parse_failed"}
+    )
+    final_json_overview = _json_overview(final_json) if final_json_parse_ok else {}
+    inline_payload_view = _openwebui_inline_payload_view(final_json, default_page_chars=max_chars)
+    return_full_json = bool(include_full_json or (final_json_parse_ok and final_json_text_chars <= max_chars))
+    final_md_page: dict[str, Any] = {
+        "text": "",
+        "offset": 0,
+        "chars": 0,
+        "bytes": 0,
+        "truncated": False,
+        "next_offset": None,
+    }
+    if final_md_path.is_file():
+        final_md_page = _read_text_page(final_md_path, offset=offset, max_chars=max_chars)
     return {
         "ok": True,
         "tool": "aicarmine_job_artifact_final",
         "job_id": job_id,
-        "final_json": final_json,
-        "final_md": final_md,
-        "final_md_truncated": final_md_truncated,
+        "final_json": final_json if return_full_json else None,
+        "final_json_returned_mode": "full" if return_full_json else "paged_overview",
+        "final_json_parse_ok": final_json_parse_ok,
+        "final_json_size": {
+            "bytes": final_json_path.stat().st_size if final_json_path.is_file() else 0,
+            "json_chars": final_json_text_chars,
+        },
+        "final_json_overview": final_json_overview,
+        "final_json_page": final_json_page,
+        "codex_payload_view": inline_payload_view,
+        "final_md": final_md_page.get("text", ""),
+        "final_md_page": final_md_page,
+        "final_md_truncated": bool(final_md_page.get("truncated")),
     }
 
 
@@ -699,8 +916,21 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_job_artifact_final"] = ToolSpec(
         name="aicarmine_job_artifact_final",
-        description="Read final.json and final.md for a persisted agent job.",
-        input_schema=object_schema({"job_id": string_prop(), "max_chars": integer_prop(2000000, 1000, 5000000)}, required=["job_id"]),
+        description=(
+            "Read final.json and final.md for a persisted agent job. Large JSON is parsed "
+            "from the complete file and exposed as Codex-consumable OpenWebUI inline "
+            "transport overview plus json_path/offset pages."
+        ),
+        input_schema=object_schema(
+            {
+                "job_id": string_prop(),
+                "max_chars": integer_prop(200000, 1000, 5000000),
+                "json_path": string_prop(),
+                "offset": integer_prop(0, 0, 500000000),
+                "include_full_json": boolean_prop(False),
+            },
+            required=["job_id"],
+        ),
         handler=_final,
     )
     tools["aicarmine_job_artifact_tool_results"] = ToolSpec(

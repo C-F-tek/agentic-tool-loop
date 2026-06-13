@@ -66,16 +66,24 @@ def _planner_stream_block_response(
     }
 
 
-def _planner_stream_repetition_reason(text: str) -> str:
+def _planner_stream_repetition_reason(
+    text: str,
+    *,
+    allow_plain_text_without_json: bool = False,
+) -> str:
     raw = str(text or "")
-    poisoned = (
+    poisoned_tokens = (
         "<|endoftext|>", "<|im_start|>", "<|im_end|>",
-        "\nHuman:", "\nAssistant:", "\nSystem:",
-        "Human:", "Assistant:", "System:",
     )
-    for marker in poisoned:
+    for marker in poisoned_tokens:
         if marker in raw:
             return f"role_boundary_marker:{marker}"
+    role_boundary = re.search(
+        r"(?m)^\s*(Human|Assistant|System):(?=\s|$)",
+        raw,
+    )
+    if role_boundary:
+        return f"role_boundary_marker:{role_boundary.group(1)}:"
 
     if re.search(r"</?JupyterNotebookCell\b", raw, re.I):
         return "unsupported_native_notebook_cell_output"
@@ -84,7 +92,7 @@ def _planner_stream_repetition_reason(text: str) -> str:
     if stripped in {"halted", "temps", "stopped", "stop", "done"}:
         return f"dead_stop_token:{stripped}"
 
-    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if len(lines) >= 3 and lines[-1] == lines[-2] == lines[-3]:
         return f"repeated_line:{lines[-1][:120]}"
 
@@ -161,7 +169,7 @@ def _planner_stream_repetition_reason(text: str) -> str:
                 if seen[frag] >= 4:
                     return f"repeated_fragment_no_json:{frag[:120]}"
 
-    if "{" not in raw and len(raw) > 600:
+    if not allow_plain_text_without_json and "{" not in raw and len(raw) > 600:
         if any(m in low for m in ("from ", "import ", "def ", "class ", "#!/usr/bin")):
             return "non_json_code_like_stream_without_object"
 
@@ -169,7 +177,7 @@ def _planner_stream_repetition_reason(text: str) -> str:
     # a reasonable limit without even an opening brace, abort it early and let
     # the controller feed a validator/repair guard back to the planner instead
     # of burning the whole 120s timeout.
-    if "{" not in raw and len(raw) >= 8192:
+    if not allow_plain_text_without_json and "{" not in raw and len(raw) >= 8192:
         return "long_non_json_stream_without_object"
 
     return ""
@@ -226,6 +234,7 @@ def post_json_stream_to_file(
     job_id: str,
     step: int,
     stream_path: Path,
+    allow_plain_text_without_json: bool = False,
 ) -> dict[str, Any]:
     started = time.time()
     chunks: list[str] = []
@@ -254,7 +263,11 @@ def post_json_stream_to_file(
 
     append_agent_event(job_id, "planner_stream_started",
                        f"Planner stream started step={step}.",
-                       {"planner_url": url, "timeout_seconds": timeout}, step=step)
+                       {
+                           "planner_url": url,
+                           "timeout_seconds": timeout,
+                           "allow_plain_text_without_json": allow_plain_text_without_json,
+                       }, step=step)
 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -345,7 +358,10 @@ def post_json_stream_to_file(
                          "elapsed_seconds": round(time.time() - started, 3)}, step=step,
                     )
 
-                degenerate_reason = _planner_stream_repetition_reason(guard_text)
+                degenerate_reason = _planner_stream_repetition_reason(
+                    guard_text,
+                    allow_plain_text_without_json=allow_plain_text_without_json,
+                )
                 if degenerate_reason:
                     append_agent_event(
                         job_id, "planner_stream_degenerate_output",

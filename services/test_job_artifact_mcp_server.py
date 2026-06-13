@@ -112,6 +112,61 @@ def test_job_artifact_reader_finds_codex_dedicated_loop_jobs(tmp_path) -> None:
     assert "state" in listed["jobs"][0]["root"]
 
 
+def test_final_reader_parses_large_inline_transport_before_paging(tmp_path) -> None:
+    job_dir = _make_codex_loop_job(tmp_path, job_id="job-large")
+    large_content = "validated evidence line\n" * 400
+    _write_json(
+        job_dir / "final.json",
+        {
+            "status": "completed",
+            "payload_index_for_30b": {
+                "index_kind": "openwebui_payload_index.v1",
+                "job_completed": True,
+                "concrete_results": [{"path": "services/example.py"}],
+            },
+            "priority_evidence_for_30b": {
+                "schema": "openwebui.priority_evidence_for_30b.v1",
+                "items": [{"path": "services/example.py", "content": large_content}],
+            },
+            "tool_context_for_30b": {
+                "type": "agentic_tool_context.v1",
+                "artifacts": [{"path": "services/example.py", "content": large_content}],
+            },
+            "openwebui_usage": {"audience": "codex"},
+        },
+    )
+    (job_dir / "final.md").write_text("human final\n" + large_content, encoding="utf-8")
+
+    final = job_artifact_mcp_server._final({"job_id": "job-large", "max_chars": 1000}, tmp_path)
+    evidence_page = job_artifact_mcp_server._final(
+        {
+            "job_id": "job-large",
+            "max_chars": 1000,
+            "json_path": "priority_evidence_for_30b.items.0.content",
+            "offset": 1000,
+        },
+        tmp_path,
+    )
+
+    assert final["ok"] is True
+    assert final["final_json_parse_ok"] is True
+    assert final["final_json"] is None
+    assert final["final_json_returned_mode"] == "paged_overview"
+    assert final["final_json_page"]["ok"] is True
+    assert final["final_json_page"]["json_path"] == "payload_index_for_30b"
+    assert "openwebui_payload_index.v1" in final["final_json_page"]["text"]
+    assert final["codex_payload_view"]["available"] is True
+    assert final["codex_payload_view"]["primary_read_order"][:3] == [
+        "payload_index_for_30b",
+        "priority_evidence_for_30b",
+        "tool_context_for_30b",
+    ]
+    assert evidence_page["final_json_parse_ok"] is True
+    assert evidence_page["final_json_page"]["json_path"] == "priority_evidence_for_30b.items.0.content"
+    assert evidence_page["final_json_page"]["offset"] == 1000
+    assert "validated evidence line" in evidence_page["final_json_page"]["text"]
+
+
 def test_job_artifact_reader_extracts_rejections_and_planner_payload(tmp_path) -> None:
     _make_job(tmp_path)
 
