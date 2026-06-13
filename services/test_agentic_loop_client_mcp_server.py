@@ -322,6 +322,135 @@ def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) ->
     assert result["reload_applied"] is True
 
 
+def test_ensure_broker_restart_requires_separate_confirmation(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_get_health",
+        lambda *_args, **_kwargs: {"ok": True, "payload": {"lab_repo": str(tmp_path.resolve(strict=False))}},
+    )
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_restart_existing_broker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("broker restart must require explicit confirmation")),
+    )
+
+    result = agentic_loop_client_mcp_server._ensure_broker(
+        {
+            "confirm_ensure_broker": agentic_loop_client_mcp_server.CONFIRM_ENSURE,
+            "port": 3579,
+            "restart": True,
+            "reload": True,
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "explicit_broker_restart_confirmation_required"
+    assert result["confirm_restart_broker_required"] == agentic_loop_client_mcp_server.CONFIRM_RESTART
+    assert result["broker_running"] is True
+    assert result["reload_applied"] is False
+
+
+def test_ensure_broker_restart_targets_broker_then_starts_new_instance(monkeypatch, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_get_health",
+        lambda *_args, **_kwargs: {"ok": True, "payload": {"lab_repo": str(tmp_path.resolve(strict=False))}},
+    )
+
+    def fake_restart(root: Path, port: int, *, trust_port_owner: bool, timeout_seconds: int) -> dict[str, object]:
+        captured["restart_root"] = root
+        captured["restart_port"] = port
+        captured["trust_port_owner"] = trust_port_owner
+        captured["restart_timeout_seconds"] = timeout_seconds
+        return {
+            "ok": True,
+            "port": port,
+            "candidate_scan": {"pids": [32256], "excluded_mcp_pids": [52588]},
+            "termination": {"ok": True, "terminated_pids": [32256], "port_released": True},
+        }
+
+    def fake_start(
+        root: Path,
+        *,
+        port: int,
+        startup_timeout_seconds: int,
+        reload: bool,
+        rerank_url: str,
+        reranker_ready_url: str,
+    ) -> dict[str, object]:
+        captured["start_root"] = root
+        captured["start_port"] = port
+        captured["startup_timeout_seconds"] = startup_timeout_seconds
+        captured["reload"] = reload
+        captured["rerank_url"] = rerank_url
+        captured["reranker_ready_url"] = reranker_ready_url
+        return {"ok": True, "started": True, "pid": 12345, "root_check": {"ok": True}}
+
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_restart_existing_broker", fake_restart)
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_start_broker_process", fake_start)
+
+    result = agentic_loop_client_mcp_server._ensure_broker(
+        {
+            "confirm_restart_broker": agentic_loop_client_mcp_server.CONFIRM_RESTART,
+            "port": 3579,
+            "restart": True,
+            "reload": True,
+            "restart_timeout_seconds": 7,
+            "startup_timeout_seconds": 9,
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is True
+    assert result["broker_restarted"] is True
+    assert result["broker_started"] is True
+    assert result["reload_applied"] is True
+    assert captured["restart_root"] == tmp_path
+    assert captured["restart_port"] == 3579
+    assert captured["trust_port_owner"] is True
+    assert captured["restart_timeout_seconds"] == 7
+    assert captured["start_root"] == tmp_path
+    assert captured["start_port"] == 3579
+    assert captured["startup_timeout_seconds"] == 9
+    assert captured["reload"] is True
+
+
+def test_broker_restart_candidates_exclude_mcp_processes(monkeypatch, tmp_path) -> None:
+    rows = [
+        {
+            "ProcessId": 52588,
+            "ParentProcessId": 23828,
+            "Name": "python.exe",
+            "CommandLine": r"C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe -u services\codex_bridge\agentic_loop_client_mcp_server.py",
+        },
+        {
+            "ProcessId": 32256,
+            "ParentProcessId": 23828,
+            "Name": "python.exe",
+            "CommandLine": r"C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe -m uvicorn aicarmine_vulkan_tool_broker:app --host 127.0.0.1 --port 3579 --reload",
+        },
+        {
+            "ProcessId": 38992,
+            "ParentProcessId": 32256,
+            "Name": "python.exe",
+            "CommandLine": r"C:\Users\carmi\AppData\Local\Programs\Python\Python311\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=32256, pipe_handle=400)",
+        },
+    ]
+
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_windows_process_rows", lambda: rows)
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_port_owner_pids", lambda _port: [52588, 32256])
+
+    result = agentic_loop_client_mcp_server._broker_restart_candidates(tmp_path, 3579, trust_port_owner=True)
+
+    assert 52588 not in result["pids"]
+    assert 52588 in result["excluded_mcp_pids"]
+    assert 32256 in result["pids"]
+    assert 38992 in result["pids"]
+
+
 def test_start_broker_process_adds_uvicorn_reload(monkeypatch, tmp_path) -> None:
     services_root = tmp_path / "services"
     services_root.mkdir(parents=True)
@@ -361,6 +490,8 @@ def test_start_broker_process_adds_uvicorn_reload(monkeypatch, tmp_path) -> None
     assert "--reload" in captured["command"]
     assert captured["cwd"] == str(services_root)
     assert captured["env"]["AICARMINE_BROKER_UVICORN_RELOAD"] == "1"
+    assert result["process_metadata"]["ok"] is True
+    assert (tmp_path / "state" / "codex_bridge" / "agentic_loop_client" / "port-3579" / "broker-process.json").is_file()
 
 
 def test_ensure_reranker_requires_confirmation_before_start(monkeypatch, tmp_path) -> None:
