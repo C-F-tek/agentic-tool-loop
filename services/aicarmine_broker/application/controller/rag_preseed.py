@@ -162,10 +162,12 @@ def _preplanner_goal_class_from_intent(value: Any, *, fallback_goal_class: str) 
         return "code_product_report"
     if normalized in {"code_security", "code_security_analysis", "security_analysis"}:
         return "code_security_analysis"
-    if normalized in {"analysis", "analysis_only", "read", "read_only", "repo_analysis", "review"}:
-        return fallback_goal_class if fallback_goal_class == "code_security_analysis" else "repo_analysis"
+    if normalized in {"analysis", "analysis_only", "read", "read_only", "review"}:
+        return "analysis_only"
+    if normalized == "repo_analysis":
+        return "repo_analysis"
     if normalized in {"generic", "unknown", "unspecified"}:
-        return fallback_goal_class
+        return "generic"
     return None
 
 
@@ -185,9 +187,10 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
     fallback_goal_class = _preplanner_goal_class(goal)
     base: dict[str, Any] = {
         "schema": "agentic_loop_preplanner_semantic_intent.v1",
-        "source": "deterministic_fallback",
+        "source": "missing_planner_query_plan",
         "accepted": False,
-        "goal_class": fallback_goal_class,
+        "goal_class": "",
+        "static_goal_class_hint": fallback_goal_class,
         "fallback_goal_class": fallback_goal_class,
         "fallback_semantic_class": str(fallback_classification.get("class") or ""),
         "negative_write_constraints_present": bool(
@@ -209,7 +212,12 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         fallback_goal_class=fallback_goal_class,
     )
     if planner_goal_class is None:
-        planner_goal_class = fallback_goal_class
+        return {
+            **base,
+            "source": "planner_query_plan",
+            "raw_class": _sanitize_query_text(raw_class),
+            "invalid_reasons": ["semantic_intent_class_missing_or_unknown"],
+        }
 
     if planner_goal_class in {"repo_analysis", "generic"} and _boolish(
         value.get("requires_code_security_coverage")
@@ -218,36 +226,24 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
     ):
         planner_goal_class = "code_security_analysis"
 
-    guardrails: list[str] = []
-    selected_goal_class = planner_goal_class
     planner_read_only = _boolish(value.get("read_only"))
     planner_write_requested = _boolish(value.get("write_requested") or value.get("requires_write"))
     planner_apply_requested = _boolish(value.get("apply_requested") or value.get("requires_apply"))
     planner_declares_no_write = planner_read_only and not planner_write_requested and not planner_apply_requested
-
-    if selected_goal_class == "apply_write" and fallback_goal_class != "apply_write":
-        selected_goal_class = fallback_goal_class if fallback_goal_class != "generic" else "repo_analysis"
-        guardrails.append("planner_apply_write_without_positive_goal_evidence_downgraded")
-    elif fallback_goal_class == "apply_write" and selected_goal_class != "apply_write":
-        if planner_declares_no_write:
-            guardrails.append("planner_read_only_intent_overrode_static_apply_fallback")
-        else:
-            guardrails.append("planner_semantic_intent_overrode_static_apply_fallback")
-
-    if (
-        selected_goal_class == "code_product_report"
-        and bool(fallback_classification.get("negative_write_constraints_present"))
-        and fallback_goal_class != "code_product_report"
-    ):
-        selected_goal_class = fallback_goal_class if fallback_goal_class != "generic" else "repo_analysis"
-        guardrails.append("planner_code_product_from_negative_write_constraint_downgraded")
+    invalid_reasons: list[str] = []
+    if planner_goal_class == "apply_write" and planner_declares_no_write:
+        invalid_reasons.append("apply_write_conflicts_with_read_only_no_write_flags")
+    if planner_goal_class != "apply_write" and (planner_write_requested or planner_apply_requested):
+        invalid_reasons.append("non_apply_goal_conflicts_with_write_or_apply_flags")
+    if planner_goal_class == "code_product_report" and planner_apply_requested:
+        invalid_reasons.append("code_product_report_must_not_request_apply")
 
     rationale = _sanitize_query_text(value.get("rationale") or value.get("reason"))
     return {
         **base,
         "source": "planner_query_plan",
-        "accepted": selected_goal_class == planner_goal_class,
-        "goal_class": selected_goal_class,
+        "accepted": not invalid_reasons,
+        "goal_class": planner_goal_class if not invalid_reasons else "",
         "planner_goal_class": planner_goal_class,
         "raw_class": _sanitize_query_text(raw_class),
         "requires_code_security_coverage": _boolish(
@@ -259,7 +255,7 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         "write_requested": planner_write_requested,
         "apply_requested": planner_apply_requested,
         "rationale": rationale,
-        "guardrails": guardrails,
+        "invalid_reasons": invalid_reasons,
     }
 
 
@@ -307,12 +303,14 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
 
 def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: str) -> dict[str, Any]:
     max_queries = _query_plan_max_queries()
+    static_goal_class_hint = _preplanner_goal_class(goal)
     report: dict[str, Any] = {
         "schema": "agentic_loop_preplanner_rag_query_plan.v1",
         "ok": False,
         "status": "unavailable",
         "source": "none",
-        "goal_class": _preplanner_goal_class(goal),
+        "goal_class": "",
+        "static_goal_class_hint": static_goal_class_hint,
         "semantic_intent": _sanitize_preplanner_semantic_intent(None, goal=goal),
         "queries": [],
     }
@@ -320,7 +318,12 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
         return report
     source = str(value.get("source") or "planner")
     semantic_intent = _sanitize_preplanner_semantic_intent(value.get("semantic_intent"), goal=goal)
-    goal_class = str(semantic_intent.get("goal_class") or _preplanner_goal_class(goal))
+    goal_class = str(semantic_intent.get("goal_class") or "")
+    semantic_intent_usable = bool(
+        semantic_intent.get("source") == "planner_query_plan"
+        and semantic_intent.get("accepted") is True
+        and goal_class
+    )
     raw_queries = value.get("queries")
     queries: list[dict[str, str]] = []
     if isinstance(raw_queries, list):
@@ -338,9 +341,19 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
             queries.append({"query": query, "purpose": purpose})
             if len(queries) >= max_queries:
                 break
+    if not semantic_intent_usable:
+        return {
+            **report,
+            "status": "invalid_semantic_intent",
+            "source": source,
+            "semantic_intent": semantic_intent,
+            "reason": "planner_query_plan_missing_invalid_or_inconsistent_semantic_intent",
+            "queries": queries,
+        }
     if not queries:
         return {
             **report,
+            "ok": True,
             "status": "empty",
             "source": source,
             "goal_class": goal_class,
@@ -375,12 +388,14 @@ def controller_preplanner_rag_query_plan(
         "ok": False,
         "status": "skipped",
         "source": "planner",
+        "semantic_intent_required": True,
         "queries": [],
     }
     if not _env_bool("AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_ENABLED", True):
-        return {**report, "reason": "disabled"}
+        return {**report, "status": "failed", "reason": "semantic_intent_preplanner_disabled"}
 
-    fallback_goal_class = _preplanner_goal_class(goal)
+    static_goal_class_hint = _preplanner_goal_class(goal)
+    fallback_goal_class = "generic"
     if fallback_goal_class == "apply_write":
         focus = [
             "explicit target file names and likely aliases",
@@ -459,7 +474,8 @@ def controller_preplanner_rag_query_plan(
     user_payload = {
         "schema": "agentic_loop_preplanner_rag_query_plan_request.v1",
         "goal": str(goal or ""),
-        "fallback_goal_class": fallback_goal_class,
+        "static_goal_class_hint": static_goal_class_hint,
+        "static_hint_is_not_authoritative": True,
         "constraints": {
             "max_queries": max_queries,
             "query_style": query_style,
@@ -475,6 +491,7 @@ def controller_preplanner_rag_query_plan(
             ],
             "intent_rules": [
                 "Classify the requested operational mode from meaning, not keyword presence.",
+                "static_goal_class_hint is diagnostic only; do not copy it unless the goal meaning independently supports it.",
                 "Negated or forbidden actions are constraints, not requested actions.",
                 "Tool names inside a negative constraint are not evidence that the tool should be used.",
                 "Use apply_write only when the user positively asks to modify/apply/write files.",
@@ -493,53 +510,92 @@ def controller_preplanner_rag_query_plan(
             "queries": [{"query": "target file or owner phrase", "purpose": "find concrete targets"}]
         },
     }
-    payload = {
-        "model": planner_model,
-        "stream": False,
-        "keep_alive": keep_alive,
-        "think": False,
-        "format": "json",
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, indent=2)},
-        ],
-        "options": {
-            "temperature": 0,
-            "num_ctx": max(2048, min(int(num_ctx or 4096), 8192)),
-            "num_predict": _env_int(
-                "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_PREDICT",
-                512,
-                minimum=128,
-                maximum=2048,
-            ),
-        },
-    }
     timeout_seconds = _env_int(
         "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_TIMEOUT_SECONDS",
         min(20, max(5, int(timeout or 20))),
         minimum=3,
         maximum=60,
     )
-    response = post_json(planner_url, payload, timeout_seconds)
-    if not isinstance(response, Mapping):
-        return {**report, "status": "failed", "reason": "non_mapping_response"}
-    if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+
+    def payload_for_attempt(attempt: int, previous: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        request_payload = dict(user_payload)
+        if previous:
+            request_payload["retry_after_invalid_semantic_intent"] = {
+                "attempt": attempt,
+                "previous_status": previous.get("status"),
+                "previous_reason": previous.get("reason"),
+                "previous_semantic_intent": previous.get("semantic_intent"),
+                "required_fix": (
+                    "Return strict JSON with semantic_intent.class, read_only, "
+                    "write_requested, apply_requested and rationale. Do not use keyword "
+                    "fallbacks. Resolve contradictions from meaning."
+                ),
+            }
         return {
-            **report,
-            "status": "failed",
-            "reason": "planner_query_plan_request_failed",
-            "error_type": response.get("error_type"),
-            "error": response.get("error"),
+            "model": planner_model,
+            "stream": False,
+            "keep_alive": keep_alive,
+            "think": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(request_payload, ensure_ascii=False, indent=2)},
+            ],
+            "options": {
+                "temperature": 0,
+                "num_ctx": max(2048, min(int(num_ctx or 4096), 8192)),
+                "num_predict": _env_int(
+                    "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_PREDICT",
+                    512,
+                    minimum=128,
+                    maximum=2048,
+                ),
+            },
         }
-    decoded = _parse_json_object(_extract_query_plan_response_text(response))
-    sanitized = _sanitize_preplanner_query_plan(decoded, goal=goal)
-    sanitized.update({
-        "planner_model": planner_model,
-        "timeout_seconds": timeout_seconds,
-    })
-    if not sanitized.get("ok"):
-        sanitized["raw_response_preview"] = _extract_query_plan_response_text(response)[:1000]
-    return sanitized
+
+    attempts = _env_int(
+        "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_SEMANTIC_RETRIES",
+        2,
+        minimum=1,
+        maximum=3,
+    )
+    last_sanitized: dict[str, Any] = {}
+    for attempt in range(1, attempts + 1):
+        response = post_json(planner_url, payload_for_attempt(attempt, last_sanitized), timeout_seconds)
+        if not isinstance(response, Mapping):
+            last_sanitized = {**report, "status": "failed", "reason": "non_mapping_response"}
+            break
+        if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+            return {
+                **report,
+                "status": "failed",
+                "reason": "planner_query_plan_request_failed",
+                "error_type": response.get("error_type"),
+                "error": response.get("error"),
+                "attempts": attempt,
+            }
+        raw_response_text = _extract_query_plan_response_text(response)
+        decoded = _parse_json_object(raw_response_text)
+        sanitized = _sanitize_preplanner_query_plan(decoded, goal=goal)
+        sanitized.update({
+            "planner_model": planner_model,
+            "timeout_seconds": timeout_seconds,
+            "attempts": attempt,
+            "semantic_intent_required": True,
+        })
+        if not sanitized.get("ok"):
+            sanitized["raw_response_preview"] = raw_response_text[:1000]
+        last_sanitized = sanitized
+        if sanitized.get("ok"):
+            return sanitized
+    return {
+        **last_sanitized,
+        "ok": False,
+        "status": "failed",
+        "reason": "planner_query_plan_semantic_intent_unusable_after_retry",
+        "semantic_intent_required": True,
+        "attempts": attempts,
+    }
 
 
 def _path_policy_score(path: str, *, goal: str, repo_root: Path) -> int:

@@ -14,6 +14,14 @@ DEFAULT_SUMMARY_TEXT_CHARS = 4000
 DEFAULT_STEP_SUMMARY_LIMIT = 80
 DEFAULT_CODE_PRODUCT_LIMIT = 40
 DEFAULT_COMPOSE_PAYLOAD_CHARS = 30000
+PREPLANNER_GOAL_CLASSES = frozenset({
+    "analysis_only",
+    "code_security_analysis",
+    "repo_analysis",
+    "code_product_report",
+    "apply_write",
+    "generic",
+})
 GLOBAL_NARRATIVE_FIELDS = (
     "evidence_guide_for_30b",
     "answer_for_30b",
@@ -73,6 +81,50 @@ COMPOSE_RESPONSE_SCHEMA: dict[str, Any] = {
         "follow_up_questions": {"type": "array", "items": {"type": "string"}},
     },
 }
+
+
+def _preplanner_semantic_intent_from_mapping(value: Any) -> dict[str, Any]:
+    root = value if isinstance(value, dict) else {}
+    contract = root.get("evidence_contract_at_finish")
+    if not isinstance(contract, dict):
+        contract = root.get("evidence_contract_at_terminal") if isinstance(root.get("evidence_contract_at_terminal"), dict) else {}
+    intent = contract.get("preplanner_semantic_intent") if isinstance(contract, dict) else {}
+    if not isinstance(intent, dict):
+        initial_orientation = root.get("initial_orientation_surface")
+        if isinstance(initial_orientation, dict):
+            preplanner_rag = initial_orientation.get("preplanner_rag")
+            ranking = preplanner_rag.get("ranking") if isinstance(preplanner_rag, dict) else {}
+            query_plan = ranking.get("query_plan") if isinstance(ranking, dict) else {}
+            intent = query_plan.get("semantic_intent") if isinstance(query_plan, dict) else {}
+    if not isinstance(intent, dict):
+        return {}
+    if str(intent.get("schema") or "") != "agentic_loop_preplanner_semantic_intent.v1":
+        return {}
+    if str(intent.get("source") or "") != "planner_query_plan":
+        return {}
+    goal_class = str(intent.get("goal_class") or "").strip()
+    if goal_class not in PREPLANNER_GOAL_CLASSES:
+        return {}
+    return {str(key): item for key, item in intent.items()}
+
+
+def _controlled_goal_class_from_tool_context(tool_context: Any) -> str:
+    intent = _preplanner_semantic_intent_from_mapping(tool_context)
+    return str(intent.get("goal_class") or "").strip()
+
+
+def _payload_goal_requests_apply(user_goal: str, tool_context: Any) -> bool:
+    goal_class = _controlled_goal_class_from_tool_context(tool_context)
+    if goal_class:
+        return goal_class == "apply_write"
+    return goal_requests_apply(user_goal)
+
+
+def _payload_goal_requests_code_product(user_goal: str, tool_context: Any) -> bool:
+    goal_class = _controlled_goal_class_from_tool_context(tool_context)
+    if goal_class:
+        return goal_class == "code_product_report"
+    return goal_requests_code_product(user_goal)
 
 
 def bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
@@ -554,7 +606,7 @@ def build_owner_payload_focus(
             "primary_field": code_field,
             "supporting_fields": [],
         }
-    if goal_requests_apply(user_goal):
+    if _payload_goal_requests_apply(user_goal, tool_context):
         for item in code_products if isinstance(code_products, list) else []:
             if not isinstance(item, dict) or not item.get("apply_supported"):
                 continue
@@ -580,7 +632,7 @@ def build_owner_payload_focus(
                 ),
                 "supporting_fields": [],
             }
-    if goal_requests_code_product(user_goal):
+    if _payload_goal_requests_code_product(user_goal, tool_context):
         for item in code_products if isinstance(code_products, list) else []:
             if not isinstance(item, dict):
                 continue
@@ -930,7 +982,9 @@ def build_planner_payload_lab(
         readiness_warnings.append("tool_context_for_30b_missing")
     if not concrete_results and not priority_items:
         readiness_warnings.append("no_priority_or_concrete_payload_index")
-    if not code_products and goal_requests_code_product(user_goal):
+    goal_requests_apply_payload = _payload_goal_requests_apply(user_goal, tool_context)
+    goal_requests_code_product_payload = _payload_goal_requests_code_product(user_goal, tool_context)
+    if not code_products and goal_requests_code_product_payload:
         readiness_warnings.append("diff_goal_without_extractable_code_product")
     if not redundancy_audit.get("ok"):
         readiness_warnings.extend(redundancy_audit.get("violations") or [])
@@ -945,6 +999,9 @@ def build_planner_payload_lab(
         "partial_results": len(partial_results),
         "code_product_candidates": len(code_products),
         "apply_supported_candidates": len([item for item in code_products if item.get("apply_supported")]),
+        "controlled_semantic_goal_class": _controlled_goal_class_from_tool_context(tool_context) or None,
+        "goal_requests_apply": goal_requests_apply_payload,
+        "goal_requests_code_product": goal_requests_code_product_payload,
         "warnings": readiness_warnings,
     }
     owner_payload_focus = build_owner_payload_focus(

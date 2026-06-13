@@ -557,6 +557,7 @@ def run_agentic_planner_job(
             "reason": "query_plan_unhandled_exception",
             "error": str(exc),
             "error_type": type(exc).__name__,
+            "semantic_intent_required": True,
         }
     if preplanner_query_plan:
         state["controller_preplanner_rag_query_plan"] = preplanner_query_plan
@@ -569,6 +570,42 @@ def run_agentic_planner_job(
             preplanner_query_plan,
             step=0,
         )
+        if (
+            preplanner_query_plan.get("semantic_intent_required") is True
+            and preplanner_query_plan.get("ok") is not True
+        ):
+            row = {
+                "step": 0,
+                "decision": {
+                    "action": "block",
+                    "reason": "preplanner_semantic_intent_unusable",
+                },
+                "tool_result": {
+                    "tool": "controller_guard",
+                    "ok": True,
+                    "guard_type": "preplanner_semantic_intent_unusable",
+                    "summary": "preplanner_semantic_intent_unusable",
+                    "preplanner_query_plan": preplanner_query_plan,
+                },
+            }
+            loop_state.append_history_row(row)
+            persist_loop_turn_memory(row)
+            write_agent_job_state(state)
+            return finalize_agentic_job(
+                job_id,
+                state,
+                "blocked_needs_attention",
+                (
+                    "preplanner_semantic_intent_unusable: the controlled preplanner did not "
+                    "return a usable semantic_intent after retry. The controller did not fall "
+                    "back to regex/static goal routing."
+                ),
+                {
+                    "history": history,
+                    "blocked_by": "preplanner_semantic_intent_unusable",
+                    "preplanner_query_plan": preplanner_query_plan,
+                },
+            )
 
     preplanner_plan: dict[str, Any] | None = None
     preplanner_report: dict[str, Any] = {}

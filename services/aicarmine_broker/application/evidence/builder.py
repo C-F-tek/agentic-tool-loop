@@ -20,6 +20,110 @@ POST_WRITE_VALIDATION_TOOLS = frozenset({
 })
 POST_WRITE_TOOL_NAMES = frozenset({"repo_apply_patch", "repo_write_file"})
 MICRO_BATCH_MAX_ACTIONS = 8
+_PREPLANNER_GOAL_CLASSES = frozenset({
+    "analysis_only",
+    "code_security_analysis",
+    "repo_analysis",
+    "code_product_report",
+    "apply_write",
+    "generic",
+})
+
+
+def _preplanner_semantic_intent_from_orientation(
+    initial_orientation_surface: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(initial_orientation_surface, Mapping):
+        return {}
+    preplanner_rag = initial_orientation_surface.get("preplanner_rag")
+    if not isinstance(preplanner_rag, Mapping):
+        return {}
+    ranking = preplanner_rag.get("ranking")
+    if not isinstance(ranking, Mapping):
+        return {}
+    query_plan = ranking.get("query_plan")
+    if not isinstance(query_plan, Mapping):
+        return {}
+    intent = query_plan.get("semantic_intent")
+    if not isinstance(intent, Mapping):
+        return {}
+    if str(intent.get("schema") or "") != "agentic_loop_preplanner_semantic_intent.v1":
+        return {}
+    goal_class = str(intent.get("goal_class") or "").strip()
+    if goal_class not in _PREPLANNER_GOAL_CLASSES:
+        return {}
+    return {str(key): value for key, value in intent.items()}
+
+
+def _semantic_classification_with_preplanner_intent(
+    fallback: Mapping[str, Any],
+    preplanner_intent: Mapping[str, Any],
+) -> dict[str, Any]:
+    classification = dict(fallback if isinstance(fallback, Mapping) else {})
+    if not isinstance(preplanner_intent, Mapping):
+        return classification
+    if str(preplanner_intent.get("source") or "") != "planner_query_plan":
+        return classification
+    goal_class = str(preplanner_intent.get("goal_class") or "").strip()
+    if goal_class not in _PREPLANNER_GOAL_CLASSES:
+        return classification
+
+    contract_class = goal_class
+    if goal_class in {"repo_analysis", "generic"}:
+        contract_class = "analysis_only"
+    must_code_product = goal_class == "code_product_report"
+    requires_security = bool(preplanner_intent.get("requires_code_security_coverage")) or (
+        goal_class == "code_security_analysis"
+    )
+    requested = {
+        "apply_write": "apply/edit/fix/write",
+        "code_product_report": "report-only code product",
+        "code_security_analysis": "code/security repository analysis",
+        "repo_analysis": "repository analysis",
+        "analysis_only": "general answer with evidence",
+        "generic": "general answer with evidence",
+    }.get(goal_class, str(classification.get("requested_deliverable") or "general answer with evidence"))
+
+    classification.update({
+        "schema": "planner_goal_classification.v1",
+        "class": contract_class,
+        "confidence": max(float(classification.get("confidence") or 0.0), 0.9),
+        "reason": "controlled preplanner semantic intent",
+        "requested_deliverable": requested,
+        "must_produce_code_product": must_code_product,
+        "requires_code_security_coverage": requires_security,
+        "regex_code_product_override": False,
+        "regex_apply_override": False,
+        "preplanner_semantic_intent": dict(preplanner_intent),
+        "preplanner_goal_class": goal_class,
+    })
+    return classification
+
+
+def _goal_requests_code_product_from_semantics(
+    *,
+    fallback_value: bool,
+    preplanner_intent: Mapping[str, Any],
+) -> bool:
+    if (
+        isinstance(preplanner_intent, Mapping)
+        and str(preplanner_intent.get("source") or "") == "planner_query_plan"
+    ):
+        return str(preplanner_intent.get("goal_class") or "").strip() == "code_product_report"
+    return bool(fallback_value)
+
+
+def _goal_requests_apply_from_semantics(
+    *,
+    fallback_value: bool,
+    preplanner_intent: Mapping[str, Any],
+) -> bool:
+    if (
+        isinstance(preplanner_intent, Mapping)
+        and str(preplanner_intent.get("source") or "") == "planner_query_plan"
+    ):
+        return str(preplanner_intent.get("goal_class") or "").strip() == "apply_write"
+    return bool(fallback_value)
 
 
 def _micro_batch_contract_from_candidates(
@@ -321,14 +425,15 @@ class EvidenceBuilder:
         failed_repo_list_files_paths = deps["failed_repo_list_files_paths"]
         goal_requires_code_security_coverage = deps["goal_requires_code_security_coverage"]
 
-        semantic_classification = semantic_goal_classification(goal)
+        fallback_semantic_classification = semantic_goal_classification(goal)
+        fallback_goal_requests_apply_value = goal_requests_apply(goal)
+        fallback_goal_requests_code_product_value = goal_requests_code_product(goal)
         latest_list = latest_file_list_result(history)
         known_paths = _paths_from_result(latest_list) if latest_list else []
         requested_limit = requested_file_limit_from_goal(goal, 0)
         target_file = _goal_target_file(goal)
         target_scope = _agentic_v2_goal_scope(goal, {}) or goal_requested_repo_scope(goal)
         target_kind = _goal_target_kind(goal)
-        goal_requests_apply_value = goal_requests_apply(goal)
         read_ok = successful_repo_read_paths(history)
         verified_read_rows = _verified_repo_read_content_rows(history)
         verified_read_paths = [str(row.get("path")) for row in verified_read_rows if row.get("path")]
@@ -363,6 +468,21 @@ class EvidenceBuilder:
             initial_orientation_surface.get("preplanner_rag")
             if isinstance(initial_orientation_surface.get("preplanner_rag"), dict)
             else {}
+        )
+        preplanner_semantic_intent = _preplanner_semantic_intent_from_orientation(
+            initial_orientation_surface
+        )
+        semantic_classification = _semantic_classification_with_preplanner_intent(
+            fallback_semantic_classification,
+            preplanner_semantic_intent,
+        )
+        goal_requests_apply_value = _goal_requests_apply_from_semantics(
+            fallback_value=fallback_goal_requests_apply_value,
+            preplanner_intent=preplanner_semantic_intent,
+        )
+        goal_requests_code_product_value = _goal_requests_code_product_from_semantics(
+            fallback_value=fallback_goal_requests_code_product_value,
+            preplanner_intent=preplanner_semantic_intent,
         )
         ranked_preplanner_paths = [
             _repo_rel_token(path)
@@ -805,7 +925,6 @@ class EvidenceBuilder:
         for p in candidate_repo_read_paths:
             if p not in validator_admissible_read_paths:
                 validator_admissible_read_paths.append(p)
-        goal_requests_code_product_value = goal_requests_code_product(goal)
         code_product_required = bool(semantic_classification.get("must_produce_code_product")) and not goal_requests_apply_value
         code_product_history_required = bool(code_product_required or goal_requests_code_product_value)
         if code_product_history_required:
@@ -954,6 +1073,7 @@ class EvidenceBuilder:
             "controller_may_reject_but_must_not_replace_planner_reasoning": True,
             "controller_must_not_auto_read_or_auto_final": True,
             "semantic_goal_classification": semantic_classification,
+            "preplanner_semantic_intent": preplanner_semantic_intent or None,
             "goal_requests_python_file_review": goal_requests_python_file_review(goal),
             "goal_requests_code_product": goal_requests_code_product_value,
             "goal_requires_code_product_report": code_product_required,

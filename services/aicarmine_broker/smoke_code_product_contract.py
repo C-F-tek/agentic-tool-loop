@@ -28,6 +28,7 @@ from vulkan_bridge import app as bridge_app  # noqa: E402
 
 repo_code_product_tool = importlib.import_module("aicarmine_broker.tools.repo_code_product")
 evidence_builder = importlib.import_module("aicarmine_broker.application.evidence.builder")
+payload_lab = importlib.import_module("aicarmine_broker.application.public_payload.lab")
 planner_turn = importlib.import_module("aicarmine_broker.application.planner.turn")
 repo_list_files_tool = importlib.import_module("aicarmine_broker.tools.repo_list_files")
 repo_read_tool = importlib.import_module("aicarmine_broker.tools.repo_read")
@@ -2781,6 +2782,72 @@ def main() -> int:
                 continuation_surface == ["planner_scratchpad_read"],
                 f"explicit continuation did not isolate planner_scratchpad_read surface: {continuation_surface}",
             )
+            forced_terminal_surface = planner._tool_surface_names_for_turn(
+                goal=goal,
+                evidence_contract={
+                    "finalization_contract": {"final_allowed": True},
+                    "required_next_progress": "Produce action=final now using verified evidence.",
+                    "turn_tool_surface_policy": {
+                        "schema": "planner_turn_tool_surface_policy.v1",
+                        "reason": "step_budget_force_terminal_decision",
+                        "allowed_tool_names": [],
+                        "locked_empty_tool_surface": True,
+                    },
+                },
+                intrinsic_context={},
+                prompt_context_continuation_required={
+                    "tool": "planner_scratchpad_read",
+                    "arguments": {
+                        "kind": "prompt_context_window",
+                        "document_id": "doc",
+                        "offset": 10,
+                        "max_chars": 500,
+                    },
+                },
+            )
+            require(
+                forced_terminal_surface == [],
+                "forced terminal empty surface was overridden by continuation: "
+                f"{forced_terminal_surface}",
+            )
+            final_composition_contract = planner._apply_turn_surface_policy(
+                {
+                    "finalization_contract": {"final_allowed": True},
+                    "required_next_progress": "Produce action=final now using verified evidence.",
+                    "candidate_next_actions": [
+                        {
+                            "action": "tool",
+                            "tool": "planner_scratchpad_write",
+                            "arguments": {
+                                "kind": "answer_chunk",
+                                "tag": "section-1",
+                                "text": "Complete validated section.",
+                            },
+                            "reason": "Write one final answer chunk before terminal composition.",
+                        },
+                        {
+                            "action": "tool",
+                            "tool": "repo_read",
+                            "arguments": {"path": "x.py"},
+                            "reason": "Non-terminal support tool must not leak.",
+                        },
+                    ],
+                }
+            )
+            final_composition_surface = planner._tool_surface_names_for_turn(
+                goal=goal,
+                evidence_contract=final_composition_contract,
+                intrinsic_context={},
+                prompt_context_continuation_required={
+                    "tool": "planner_scratchpad_read",
+                    "arguments": {"kind": "prompt_context_window", "document_id": "doc"},
+                },
+            )
+            require(
+                final_composition_surface == ["planner_scratchpad_write"],
+                "final composition surface should allow only answer_chunk write, "
+                f"got {final_composition_surface}",
+            )
 
             invalid_python_result = repo_tools.repo_propose_code_edit(
                 {
@@ -2854,11 +2921,145 @@ def main() -> int:
                 rag_preseed._preplanner_goal_class(read_only_discovery_goal) == "code_security_analysis",
                 "preplanner RAG misclassified read-only discovery with negative patch constraints",
             )
+            negated_code_product_goal = (
+                "Fai una relazione descrittiva, NON un code product, NON una patch, "
+                "NON un diff. Solo read-only."
+            )
+            static_negated_classification = planner.semantic_goal_classification(negated_code_product_goal)
+            require(
+                static_negated_classification.get("class") == "code_product_report",
+                "smoke fixture no longer exercises the static regex false-positive branch",
+            )
+            sanitized_negated_plan = rag_preseed._sanitize_preplanner_query_plan(
+                {
+                    "semantic_intent": {
+                        "class": "analysis_only",
+                        "read_only": True,
+                        "write_requested": False,
+                        "apply_requested": False,
+                        "requires_code_security_coverage": False,
+                        "rationale": "The request explicitly asks for descriptive read-only analysis.",
+                    },
+                    "queries": [{"query": "planner terminal tool surface policy", "purpose": "find owner files"}],
+                },
+                goal=negated_code_product_goal,
+            )
+            require(
+                sanitized_negated_plan.get("ok") is True
+                and sanitized_negated_plan.get("goal_class") == "analysis_only",
+                f"preplanner semantic intent did not override static false-positive branch: {sanitized_negated_plan}",
+            )
+            missing_intent_plan = rag_preseed._sanitize_preplanner_query_plan(
+                {"queries": [{"query": "patch diff code product", "purpose": "bad fallback path"}]},
+                goal=negated_code_product_goal,
+            )
+            require(
+                missing_intent_plan.get("ok") is False
+                and missing_intent_plan.get("status") == "invalid_semantic_intent"
+                and not missing_intent_plan.get("goal_class"),
+                f"missing semantic intent fell back to static regex branch: {missing_intent_plan}",
+            )
+            retry_payloads: list[dict[str, Any]] = []
+
+            def fake_preplanner_post_json(_url: str, payload: dict[str, Any], _timeout: int) -> dict[str, Any]:
+                retry_payloads.append(payload)
+                if len(retry_payloads) == 1:
+                    return {"message": {"content": json.dumps({"queries": [{"query": "bad", "purpose": "missing intent"}]})}}
+                return {
+                    "message": {
+                        "content": json.dumps({
+                            "semantic_intent": {
+                                "class": "analysis_only",
+                                "read_only": True,
+                                "write_requested": False,
+                                "apply_requested": False,
+                                "requires_code_security_coverage": False,
+                                "rationale": "Retry corrected missing semantic intent.",
+                            },
+                            "queries": [{"query": "planner terminal tool surface", "purpose": "owner files"}],
+                        })
+                    }
+                }
+
+            retry_plan = rag_preseed.controller_preplanner_rag_query_plan(
+                negated_code_product_goal,
+                post_json=fake_preplanner_post_json,
+                planner_url="http://127.0.0.1:11434/api/chat",
+                planner_model="smoke",
+                keep_alive="0",
+                num_ctx=4096,
+                timeout=5,
+            )
+            require(
+                retry_plan.get("ok") is True
+                and retry_plan.get("attempts") == 2
+                and retry_plan.get("goal_class") == "analysis_only",
+                f"preplanner retry did not recover semantic intent without fallback: {retry_plan}",
+            )
+            second_retry_user_payload = json.loads(retry_payloads[1]["messages"][1]["content"])
+            require(
+                "retry_after_invalid_semantic_intent" in second_retry_user_payload,
+                "preplanner retry did not tell the planner why the first semantic intent was invalid",
+            )
+            controlled_preseed_row = json.loads(json.dumps(preseed_docs_row))
+            controlled_preseed_row["tool_result"]["preplanner_rag"]["ranking"] = {
+                "query_plan": {
+                    "semantic_intent": sanitized_negated_plan["semantic_intent"],
+                }
+            }
+            controlled_contract = planner.planner_evidence_contract(
+                negated_code_product_goal,
+                [controlled_preseed_row],
+            )
+            require(
+                controlled_contract.get("goal_requests_code_product") is False
+                and controlled_contract.get("goal_requires_code_product_report") is False,
+                f"evidence contract ignored controlled analysis intent: {controlled_contract}",
+            )
+            require(
+                (controlled_contract.get("semantic_goal_classification") or {}).get("class") == "analysis_only",
+                f"evidence contract did not expose controlled analysis classification: {controlled_contract}",
+            )
+            lab_payload = payload_lab.build_planner_payload_lab(
+                job_id="job-smoke",
+                ia_view_payload={"job": {"job_id": "job-smoke", "goal": negated_code_product_goal}},
+                terminal_response={
+                    "status": "completed",
+                    "tool_context_for_30b": json.dumps({
+                        "evidence_contract_at_finish": controlled_contract,
+                        "initial_orientation_surface": controlled_contract.get("initial_orientation_surface"),
+                    }),
+                },
+            )
+            require(
+                "diff_goal_without_extractable_code_product"
+                not in (lab_payload.get("payload_readiness") or {}).get("warnings", []),
+                f"payload lab still emitted diff warning after controlled analysis intent: {lab_payload}",
+            )
             report_only_patch_goal = "Generate a detailed unified diff for pkg/example.py. Do not apply the patch."
             report_only_classification = planner.semantic_goal_classification(report_only_patch_goal)
             require(
                 report_only_classification.get("class") == "code_product_report",
                 f"report-only positive diff request no longer produces code-product report: {report_only_classification}",
+            )
+            report_only_plan = rag_preseed._sanitize_preplanner_query_plan(
+                {
+                    "semantic_intent": {
+                        "class": "code_product_report",
+                        "read_only": True,
+                        "write_requested": False,
+                        "apply_requested": False,
+                        "requires_code_security_coverage": False,
+                        "rationale": "The request asks for a diff payload but not application.",
+                    },
+                    "queries": [{"query": "pkg example patch anchors", "purpose": "find target"}],
+                },
+                goal=report_only_patch_goal,
+            )
+            require(
+                report_only_plan.get("ok") is True
+                and report_only_plan.get("goal_class") == "code_product_report",
+                f"positive report-only diff was not preserved by controlled intent: {report_only_plan}",
             )
             require(
                 rag_preseed._preplanner_goal_class(report_only_patch_goal) == "code_product_report",

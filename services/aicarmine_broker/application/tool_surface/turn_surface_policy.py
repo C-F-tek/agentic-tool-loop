@@ -69,11 +69,16 @@ class ToolSurfacePolicy:
         intrinsic_context: dict[str, Any],
         prompt_context_continuation_required: dict[str, Any] | None = None,
     ) -> list[str]:
+        contract = evidence_contract if isinstance(evidence_contract, dict) else {}
+        if self._terminal_policy_locks_surface(contract):
+            terminal_policy_tools = self._policy_declared_tools(contract)
+            if terminal_policy_tools is not None:
+                return terminal_policy_tools
+
         continuation_tools = self._continuation_tool_only(prompt_context_continuation_required)
         if continuation_tools is not None:
             return continuation_tools
 
-        contract = evidence_contract if isinstance(evidence_contract, dict) else {}
         policy_tools = self._policy_declared_tools(contract)
         if policy_tools is not None:
             return policy_tools
@@ -418,6 +423,17 @@ class ToolSurfacePolicy:
                 names.update(self._NON_TERMINAL_SUPPORT_TOOLS)
             return self._ordered(names)
         return None
+
+    def _terminal_policy_locks_surface(self, contract: dict[str, Any]) -> bool:
+        surface_policy = (
+            contract.get("turn_tool_surface_policy")
+            if isinstance(contract.get("turn_tool_surface_policy"), dict)
+            else {}
+        )
+        return bool(
+            surface_policy.get("locked_empty_tool_surface")
+            or self._contract_final_required_now(contract)
+        )
 
     def _base_tools_for_goal_class(
         self,
