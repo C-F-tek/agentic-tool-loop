@@ -619,6 +619,7 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
     messages.append({"role": "user", "content": user_content})
     tool_transcript: list[dict[str, Any]] = []
     final_message: dict[str, Any] = {}
+    finalization_retry_performed = False
 
     try:
         for round_index in range(max_tool_rounds + 1):
@@ -663,6 +664,47 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     response_text = str(final_message.get("content") or "")
     successful_tools = [str(item.get("tool") or "") for item in tool_transcript if item.get("ok") is True]
+    if not response_text.strip() and successful_tools:
+        finalization_retry_performed = True
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "The previous read-only tool calls returned the available evidence. "
+                    "Do not request more tools. Produce the final answer now using only that evidence. "
+                    "If the evidence is insufficient, state the limitation explicitly."
+                ),
+            }
+        )
+        try:
+            retry_payload: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": temperature, "num_ctx": num_ctx},
+            }
+            retry_response = _ollama_chat(endpoint, retry_payload, timeout_seconds)
+            raw_retry_message = retry_response.get("message")
+            retry_message = raw_retry_message if isinstance(raw_retry_message, dict) else {}
+            retry_text = str(retry_message.get("content") or "")
+            if retry_text.strip():
+                final_message = retry_message
+                response_text = retry_text
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            return {
+                "ok": False,
+                "error": "ollama_finalization_retry_failed",
+                "endpoint": endpoint,
+                "model": model,
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "tool_call_count": len(tool_transcript),
+                "successful_tool_call_count": len(successful_tools),
+                "partial_tool_transcript": tool_transcript if include_tool_transcript else [],
+                "read_only": True,
+                "no_broker_http": True,
+                "no_agentic_loop": True,
+            }
     missing_required_tools = [name for name in required_tools if name not in successful_tools]
     if response_text.strip() and (missing_required_tools or len(successful_tools) < min_tool_calls):
         return {
@@ -677,6 +719,7 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "min_tool_calls": min_tool_calls,
             "successful_tool_call_count": len(successful_tools),
             "successful_tools": successful_tools,
+            "finalization_retry_performed": finalization_retry_performed,
             "response": response_text,
             "tool_transcript": tool_transcript if include_tool_transcript else [],
             "read_only": True,
@@ -697,6 +740,7 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "tool_round_limit": max_tool_rounds,
             "tool_call_count": len(tool_transcript),
             "successful_tool_call_count": len(successful_tools),
+            "finalization_retry_performed": finalization_retry_performed,
             "preseed_sources": preseed_sources,
             "preseed_truncated": preseed_truncated,
             "initial_context_truncated": initial_context_truncated,
@@ -723,6 +767,7 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "tool_round_limit": max_tool_rounds,
         "tool_call_count": len(tool_transcript),
         "successful_tool_call_count": len(successful_tools),
+        "finalization_retry_performed": finalization_retry_performed,
         "preseed_sources": preseed_sources,
         "preseed_truncated": preseed_truncated,
         "initial_context_truncated": initial_context_truncated,

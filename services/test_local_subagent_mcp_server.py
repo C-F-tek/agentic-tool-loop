@@ -208,6 +208,43 @@ def test_run_readonly_fails_when_required_tool_is_not_used(monkeypatch, tmp_path
     assert result["successful_tool_call_count"] == 0
 
 
+def test_run_readonly_retries_final_after_successful_tool_evidence(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text("project facts\n", encoding="utf-8")
+    responses = [
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "repo_read", "arguments": {"path": "README.md"}}}]}},
+        {"message": {"role": "assistant", "content": ""}},
+        {"message": {"role": "assistant", "content": "Final answer from README evidence."}},
+    ]
+
+    def fake_chat(_endpoint: str, payload: dict[str, object], _timeout_seconds: int) -> dict[str, object]:
+        if len(responses) == 1:
+            assert "tools" not in payload
+        return responses.pop(0)
+
+    monkeypatch.setattr(local_subagent_mcp_server, "_ollama_chat", fake_chat)
+
+    result = local_subagent_mcp_server._run_readonly(
+        {
+            "task": "Read the README and summarize one fact.",
+            "endpoint": "http://127.0.0.1:11434/api/chat",
+            "model": "qwen3.5:9b-coding",
+            "allowed_tools": ["repo_read"],
+            "required_tools": ["repo_read"],
+            "min_tool_calls": 1,
+            "include_project_preseed": False,
+        },
+        root,
+    )
+
+    assert result["ok"] is True
+    assert result["response"] == "Final answer from README evidence."
+    assert result["tool_call_count"] == 1
+    assert result["successful_tool_call_count"] == 1
+    assert result["finalization_retry_performed"] is True
+
+
 def test_repo_list_files_matches_query_terms(tmp_path) -> None:
     root = tmp_path / "repo"
     target = root / "services" / "codex_bridge" / "local_subagent_mcp_server.py"
