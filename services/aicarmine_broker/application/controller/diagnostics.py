@@ -34,6 +34,8 @@ def agent_flow_diagnostics(
     native_tool_call_validated = 0
     native_tool_call_repaired_by_gpu0 = 0
     native_tool_batch_executed = 0
+    native_tool_batch_substeps = 0
+    native_tool_batch_steps: set[Any] = set()
     vulkan_repair_attempted = 0
     memory_tool_calls = 0
     scratchpad_entries = 0
@@ -103,13 +105,17 @@ def agent_flow_diagnostics(
             vulkan_repair_attempted += 1
         if decision.get("action") == "tool_batch":
             native_tool_batch_executed += 1
+        if item.get("substep") not in (None, "", 0) and decision.get("reason") == "native_tool_call_batch":
+            native_tool_batch_substeps += 1
+            native_tool_batch_steps.add(item.get("step"))
 
     return {
         "planner_native_tools_enabled": bool(native_tools_enabled),
         "native_tool_calls_seen": native_tool_calls_seen,
         "native_tool_call_validated": native_tool_call_validated,
         "native_tool_call_repaired_by_gpu0": native_tool_call_repaired_by_gpu0,
-        "native_tool_batch_executed": native_tool_batch_executed,
+        "native_tool_batch_executed": max(native_tool_batch_executed, len(native_tool_batch_steps)),
+        "native_tool_batch_substeps": native_tool_batch_substeps,
         "planner_retry_required_count": guard_counts.get("planner_retry_required", 0),
         "planner_retry_streak": planner_incomprehensible_retry_count(history),
         "vulkan_repair_attempted": vulkan_repair_attempted > 0,

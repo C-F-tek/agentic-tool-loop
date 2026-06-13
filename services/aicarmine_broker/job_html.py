@@ -883,6 +883,17 @@ def _last_payload_for_event(step_events: list[dict[str, Any]], event_type: str) 
     return {}
 
 
+def _payloads_for_event(step_events: list[dict[str, Any]], event_type: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for event in step_events:
+        if str(event.get("event_type") or "") != event_type:
+            continue
+        payload = event.get("payload")
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
 def _step_payload_audit(root: Path, compact_payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(compact_payload, dict) or not compact_payload:
         return {
@@ -1884,20 +1895,25 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
         elif event_type == "tool_start":
             row["tool_start"] = payload
         elif event_type == "tool_result":
-            row["history_tool_result_fed_back_to_planner"] = payload if include_heavy else {
+            tool_feedback = payload if include_heavy else {
                 key: value
                 for key, value in payload.items()
                 if key in {
-                    "tool", "ok", "mode", "kind", "target_file", "edit_kind",
+                    "tool", "ok", "substep", "mode", "kind", "target_file", "edit_kind",
                     "window_start", "window_end", "document_id", "command_class",
                     "policy", "command_execution_policy", "search_quality",
                     "public_payload_lint",
                 }
             }
+            row.setdefault("history_tool_results_fed_back_to_planner", []).append(tool_feedback)
+            row["history_tool_result_fed_back_to_planner"] = tool_feedback
             if include_heavy:
                 raw_payload, raw_meta = _read_job_artifact_json(root, payload.get("artifact"))
+                payload_audit = {**raw_meta, **_tool_payload_audit(payload, raw_payload)}
+                row.setdefault("raw_tool_results_rehydrated", []).append(raw_payload)
+                row.setdefault("payload_audits", []).append(payload_audit)
                 row["raw_tool_result_rehydrated"] = raw_payload
-                row["payload_audit"] = {**raw_meta, **_tool_payload_audit(payload, raw_payload)}
+                row["payload_audit"] = payload_audit
     final_json = read_json(root / "final.json", {})
     terminal_payload = {}
     terminal_context = final_json.get("tool_context_for_30b") if isinstance(final_json, dict) else None
@@ -2001,6 +2017,7 @@ def agent_job_ia_view_section_html(job_id: str, section: str, *, step: int = 0) 
         return _html_pre(raw)
     events = read_agent_events(job_id, 5000)
     selected_step, step_events = _select_step_events(root, events, requested_step)
+    compact_tool_results = _payloads_for_event(step_events, "tool_result")
     compact_tool_result = _last_payload_for_event(step_events, "tool_result")
     validator_guard = _last_payload_for_event(step_events, "planner_decision_rejected")
     if section_name == "compact_tool_result":
@@ -2008,26 +2025,47 @@ def agent_job_ia_view_section_html(job_id: str, section: str, *, step: int = 0) 
             {
                 "selected_step": selected_step,
                 "source": "events.ndjson tool_result payload",
+                "payload_count": len(compact_tool_results),
+                "payloads": compact_tool_results,
                 "payload": compact_tool_result,
             },
             path="ia.lazy.compact_tool_result",
         )
     if section_name == "raw_tool_result":
+        raw_results = []
+        for compact in compact_tool_results:
+            raw_payload_i, raw_meta_i = _read_job_artifact_json(root, compact.get("artifact"))
+            raw_results.append({
+                "compact": compact,
+                "artifact": raw_meta_i,
+                "payload": raw_payload_i,
+            })
         raw_payload, raw_meta = _read_job_artifact_json(root, compact_tool_result.get("artifact"))
         return _html_json_tree(
             {
                 "selected_step": selected_step,
                 "source": "same-job tool-results artifact",
+                "payload_count": len(raw_results),
+                "payloads": raw_results,
                 "artifact": raw_meta,
                 "payload": raw_payload,
             },
             path="ia.lazy.raw_tool_result",
         )
     if section_name == "payload_audit":
+        audits = [
+            {
+                "compact": compact,
+                "audit": _step_payload_audit(root, compact),
+            }
+            for compact in compact_tool_results
+        ]
         return _html_json_tree(
             {
                 "selected_step": selected_step,
                 "source": "compact event payload + same-job artifact",
+                "payload_count": len(audits),
+                "audits": audits,
                 "audit": _step_payload_audit(root, compact_tool_result),
             },
             path="ia.lazy.payload_audit",

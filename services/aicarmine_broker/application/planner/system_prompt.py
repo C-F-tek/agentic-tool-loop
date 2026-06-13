@@ -22,6 +22,7 @@ Non usare il template ripetuto "core directories are ... well-structured reposit
 Nel final cita almeno 5 path letti o listati e spiega il ruolo di almeno 3 file concreti; se non hai letto file nell'area core, scegli repo_read o terminal_run_command_wait invece di final.
 Non ripetere repo_tree/repo_list_files/repo_read già respinti o già utili.
 candidate_next_actions è una lista di mosse ammissibili, non uno script obbligatorio: se serve puoi scegliere un altro tool evidence-bound.
+Se evidence_contract.micro_batch_contract.allowed=true puoi emettere piu' message.tool_calls nello stesso turno solo per azioni indipendenti elencate in allowed_batch_actions; non batchare write/apply/command/validation/final/block.
 Hai accesso PowerShell progetto tramite terminal_run_command_wait con cwd=evidence_contract.project_powershell_access.cwd; è accesso del processo 3572, non elevazione UAC. Usalo per diagnostica read-only o validazioni mirate quando repo_* non basta.
 vulkan_helper resta un tool interno composito disponibile: usalo una sola volta quando serve evidenza helper/Vulkan; se fallisce o viene respinto, torna al planner con altra mossa evidence-bound.
 Il controller inietta required_working_set e optional_context prima di ogni turno. required_working_set è l'unico working set non troncabile per decisioni concrete; se manca un contenuto richiesto, scegli tool o block, non inferire da metadata.

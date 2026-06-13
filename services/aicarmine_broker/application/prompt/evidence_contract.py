@@ -24,6 +24,7 @@ EVIDENCE_PROMPT_KEEP_KEYS = (
     "core_discovery_candidates",
     "initial_orientation_surface",
     "candidate_next_actions",
+    "micro_batch_contract",
     "planner_may_choose_final",
     "code_product_contract",
     "finalization_contract",
@@ -139,6 +140,22 @@ def hard_budget_evidence_contract_summary(
             text_limit=700,
             list_limit=3,
         )
+    micro_batch = contract.get("micro_batch_contract")
+    if isinstance(micro_batch, dict) and micro_batch:
+        compact["micro_batch_contract"] = {
+            key: prompt_clip_value(micro_batch.get(key), text_limit=420, list_limit=8)
+            for key in (
+                "schema",
+                "allowed",
+                "mode",
+                "max_batch_size",
+                "allowed_tools",
+                "allowed_batch_actions",
+                "guard",
+                "reason",
+            )
+            if micro_batch.get(key) not in (None, "", [], {})
+        }
     for key in ("required_next_tool_call", "forbidden_repeated_tool_calls"):
         value = contract.get(key)
         if value not in (None, "", [], {}):

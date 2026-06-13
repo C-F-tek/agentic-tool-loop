@@ -9,6 +9,7 @@ from aicarmine_broker.application.evidence.coverage_scorer import score_evidence
 from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
 from aicarmine_broker.application.tool_surface.candidate_action_gate import gate_candidate_actions
 from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
+from aicarmine_broker.planner_core.cache import CACHEABLE_READ_TOOLS
 
 
 POST_WRITE_VALIDATION_TOOLS = frozenset({
@@ -18,6 +19,60 @@ POST_WRITE_VALIDATION_TOOLS = frozenset({
     "repo_pytest_run",
 })
 POST_WRITE_TOOL_NAMES = frozenset({"repo_apply_patch", "repo_write_file"})
+MICRO_BATCH_MAX_ACTIONS = 8
+
+
+def _micro_batch_contract_from_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    max_actions: int = MICRO_BATCH_MAX_ACTIONS,
+) -> dict[str, Any]:
+    """Expose independent read-only candidate actions that may share one planner turn."""
+    allowed_actions: list[dict[str, Any]] = []
+    seen_action_ids: set[str] = set()
+    for action in candidates if isinstance(candidates, list) else []:
+        if not isinstance(action, dict):
+            continue
+        tool = str(action.get("tool") or "").strip()
+        if tool not in CACHEABLE_READ_TOOLS:
+            continue
+        action_id = str(action.get("action_id") or "").strip()
+        if not action_id or action_id in seen_action_ids:
+            continue
+        args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+        seen_action_ids.add(action_id)
+        allowed_actions.append({
+            "action_id": action_id,
+            "tool": tool,
+            "arguments": args,
+            "reason": action.get("reason"),
+            "source": action.get("source"),
+            "independent_read_only": True,
+        })
+    limit = max(1, int(max_actions or MICRO_BATCH_MAX_ACTIONS))
+    visible_actions = allowed_actions[:limit]
+    return {
+        "schema": "planner_micro_batch_contract.v1",
+        "allowed": len(visible_actions) >= 2,
+        "mode": "native_message_tool_calls_only",
+        "max_batch_size": min(limit, len(visible_actions)) if visible_actions else 0,
+        "allowed_tools": sorted({str(action.get("tool") or "") for action in visible_actions}),
+        "allowed_batch_actions": visible_actions,
+        "candidate_action_count": len(candidates) if isinstance(candidates, list) else 0,
+        "batchable_candidate_count": len(visible_actions),
+        "guard": (
+            "Multiple native message.tool_calls are accepted only when every call "
+            "matches one allowed_batch_actions entry by tool and sanitized arguments. "
+            "Write/apply/command/validation/final actions remain single-step and separately validated."
+        ),
+        "writes_allowed": False,
+        "validation_tools_allowed": False,
+        "reason": (
+            "at_least_two_independent_read_only_candidates"
+            if len(visible_actions) >= 2 else
+            "fewer_than_two_independent_read_only_candidates"
+        ),
+    }
 
 
 def _history_result(row: dict[str, Any]) -> dict[str, Any]:
@@ -1484,6 +1539,9 @@ class EvidenceBuilder:
         candidate_gate = gate_candidate_actions(proofed_candidates)
         contract["candidate_next_actions"] = candidate_gate["candidate_next_actions"]
         contract["rejected_candidate_actions"] = candidate_gate["rejected_candidate_actions"]
+        contract["micro_batch_contract"] = _micro_batch_contract_from_candidates(
+            contract["candidate_next_actions"]
+        )
         contract["evidence_coverage"] = score_evidence_coverage(contract)
         progress_text = str(contract.get("required_next_progress") or "").strip()
         if progress_text:

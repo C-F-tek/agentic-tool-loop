@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import traceback
 from typing import Any, Mapping
 
@@ -16,6 +17,11 @@ def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
 def _list_field(mapping: Mapping[str, Any], key: str) -> list[Any]:
     value = mapping.get(key)
     return list(value) if isinstance(value, list) else []
+
+
+def _canonical_batch_args(args: Mapping[str, Any]) -> str:
+    source = dict(args) if isinstance(args, Mapping) else {}
+    return json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def run_agentic_planner_job(
@@ -364,6 +370,36 @@ def run_agentic_planner_job(
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
         return None
+
+    def match_micro_batch_action(
+        micro_batch_contract: dict[str, Any],
+        *,
+        tool: str,
+        internal_args: dict[str, Any],
+    ) -> dict[str, Any]:
+        actions = micro_batch_contract.get("allowed_batch_actions")
+        if not isinstance(actions, list):
+            return {}
+        wanted_tool = normalize_tool_name(str(tool or ""))
+        wanted_args_key = _canonical_batch_args(internal_args)
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            candidate_tool = normalize_tool_name(str(action.get("tool") or ""))
+            if candidate_tool != wanted_tool:
+                continue
+            candidate_raw_args = (
+                action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+            )
+            candidate_args = sanitize_tool_args(
+                candidate_tool,
+                dict(candidate_raw_args),
+                original_args,
+                public_tool_name,
+            )
+            if _canonical_batch_args(candidate_args) == wanted_args_key:
+                return action
+        return {}
 
     state.update({
         "status": "running_agentic",
@@ -769,6 +805,13 @@ def run_agentic_planner_job(
             calls = _list_field(decision, "tool_calls")
             batch_decisions: list[dict[str, Any]] = []
             batch_guard: dict[str, Any] = {}
+            batch_evidence_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
+            micro_batch_contract = (
+                batch_evidence_contract.get("micro_batch_contract")
+                if isinstance(batch_evidence_contract.get("micro_batch_contract"), dict)
+                else {}
+            )
+            used_micro_batch_action_ids: set[str] = set()
             if not calls:
                 batch_guard = {
                     "tool": "controller_guard",
@@ -783,7 +826,7 @@ def run_agentic_planner_job(
                         validation={
                             "ok": False,
                             "violations": ["native_tool_batch_empty"],
-                            "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                            "evidence_contract": batch_evidence_contract,
                         },
                     ),
                 }
@@ -803,14 +846,51 @@ def run_agentic_planner_job(
                         validation={
                             "ok": False,
                             "violations": ["native_tool_batch_too_large"],
-                            "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                            "evidence_contract": batch_evidence_contract,
+                        },
+                    ),
+                }
+            elif micro_batch_contract.get("allowed") is not True:
+                batch_guard = {
+                    "tool": "controller_guard",
+                    "ok": True,
+                    "guard_type": "native_tool_batch_contract",
+                    "summary": "native_tool_batch_not_allowed_by_evidence_contract",
+                    "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
+                    "micro_batch_contract": micro_batch_contract,
+                    "native_tool_call_count": len(calls),
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        validation={
+                            "ok": False,
+                            "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
+                            "evidence_contract": batch_evidence_contract,
                         },
                     ),
                 }
             else:
                 for call in calls:
                     if not isinstance(call, dict):
-                        continue
+                        batch_guard = {
+                            "tool": "controller_guard",
+                            "ok": True,
+                            "guard_type": "native_tool_batch_invalid",
+                            "summary": "native_tool_batch_call_invalid",
+                            "violations": ["native_tool_batch_call_invalid"],
+                            "runtime_debug_packet": runtime_debug_packet(
+                                step_number=step,
+                                phase="CONTROLLER_GUARD",
+                                planner_decision=decision,
+                                validation={
+                                    "ok": False,
+                                    "violations": ["native_tool_batch_call_invalid"],
+                                    "evidence_contract": batch_evidence_contract,
+                                },
+                            ),
+                        }
+                        break
                     call_decision = {
                         "action": "tool",
                         "tool": normalize_tool_name(str(call.get("tool") or "")),
@@ -831,6 +911,57 @@ def run_agentic_planner_job(
                         original_args,
                         public_tool_name,
                     )
+                    matched_action = match_micro_batch_action(
+                        micro_batch_contract,
+                        tool=call_decision["tool"],
+                        internal_args=internal_args,
+                    )
+                    if not matched_action:
+                        batch_guard = {
+                            "tool": "controller_guard",
+                            "ok": True,
+                            "guard_type": "native_tool_batch_contract",
+                            "summary": "native_tool_batch_call_not_in_micro_batch_contract",
+                            "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
+                            "rejected_decision": call_decision,
+                            "micro_batch_contract": micro_batch_contract,
+                            "runtime_debug_packet": runtime_debug_packet(
+                                step_number=step,
+                                phase="CONTROLLER_GUARD",
+                                planner_decision=call_decision,
+                                validation={
+                                    "ok": False,
+                                    "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
+                                    "evidence_contract": batch_evidence_contract,
+                                },
+                            ),
+                        }
+                        break
+                    action_id = str(matched_action.get("action_id") or "").strip()
+                    if not action_id or action_id in used_micro_batch_action_ids:
+                        batch_guard = {
+                            "tool": "controller_guard",
+                            "ok": True,
+                            "guard_type": "native_tool_batch_contract",
+                            "summary": "native_tool_batch_duplicate_or_missing_action_id",
+                            "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
+                            "rejected_decision": call_decision,
+                            "micro_batch_action_id": action_id,
+                            "runtime_debug_packet": runtime_debug_packet(
+                                step_number=step,
+                                phase="CONTROLLER_GUARD",
+                                planner_decision=call_decision,
+                                validation={
+                                    "ok": False,
+                                    "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
+                                    "evidence_contract": batch_evidence_contract,
+                                },
+                            ),
+                        }
+                        break
+                    used_micro_batch_action_ids.add(action_id)
+                    call_decision["micro_batch_action_id"] = action_id
+                    call_decision["micro_batch_contract_schema"] = micro_batch_contract.get("schema")
                     if not _tool_cache_key(call_decision["tool"], internal_args):
                         batch_guard = {
                             "tool": "controller_guard",
@@ -846,7 +977,7 @@ def run_agentic_planner_job(
                                 validation={
                                     "ok": False,
                                     "violations": ["native_tool_batch_non_readonly"],
-                                    "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
+                                    "evidence_contract": batch_evidence_contract,
                                 },
                             ),
                         }
@@ -940,7 +1071,15 @@ def run_agentic_planner_job(
                     job_id,
                     "native_tool_batch_executed",
                     f"Executing native read-only tool batch. count={len(batch_decisions)}",
-                    {"count": len(batch_decisions)},
+                    {
+                        "schema": "native_tool_batch_execution.v1",
+                        "count": len(batch_decisions),
+                        "micro_batch_action_ids": [
+                            decision.get("micro_batch_action_id")
+                            for decision in batch_decisions
+                            if decision.get("micro_batch_action_id")
+                        ],
+                    },
                     step=step,
                 )
                 for idx, batch_decision in enumerate(batch_decisions, start=1):

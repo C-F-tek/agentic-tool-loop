@@ -67,6 +67,7 @@ def _priority_item_from_artifact(row: dict[str, Any]) -> dict[str, Any]:
     kind = str(artifact.get("kind") or "")
     tool = row.get("tool")
     step = row.get("producer_step")
+    substep = row.get("substep")
 
     if kind == "repo_read":
         content = artifact.get("content")
@@ -78,6 +79,7 @@ def _priority_item_from_artifact(row: dict[str, Any]) -> dict[str, Any]:
             "kind": "repo_file_full_content",
             "tool": tool,
             "step": step,
+            "substep": substep,
             "ok": row.get("ok", True),
             "path": artifact.get("repo_path"),
             "payload_is_complete": True,
@@ -92,6 +94,7 @@ def _priority_item_from_artifact(row: dict[str, Any]) -> dict[str, Any]:
             "kind": "code_edit_proposal",
             "tool": tool,
             "step": step,
+            "substep": substep,
             "ok": row.get("ok", True),
             "target_file": artifact.get("target_file"),
             "edit_kind": edit_kind,
@@ -137,6 +140,7 @@ def _generic_tool_result_priority_item(row: dict[str, Any], *, artifact_index: i
         "kind": "tool_result_inline",
         "tool": tool,
         "step": row.get("producer_step"),
+        "substep": row.get("substep"),
         "ok": row.get("ok", True),
         "payload_is_complete": accepted,
         "validator_accepted": accepted,
@@ -163,6 +167,7 @@ def _analysis_priority_item(tool_context: dict[str, Any], planner_text: str) -> 
             continue
         evidence_files.append(_clean({
             "step": row.get("producer_step"),
+            "substep": row.get("substep"),
             "tool": row.get("tool"),
             "kind": kind or "tool_evidence",
             "path": path,
@@ -236,6 +241,8 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "kind": "repo_file_full_content",
             "payload_type": "file_content",
             "path": item.get("path"),
+            "step": item.get("step"),
+            "substep": item.get("substep"),
             "payload_is_complete": item.get("payload_is_complete"),
             "primary_location": f"{base}.content",
         })
@@ -254,6 +261,8 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "kind": "code_edit_proposal",
             "payload_type": payload_type,
             "target_file": item.get("target_file"),
+            "step": item.get("step"),
+            "substep": item.get("substep"),
             "edit_kind": edit_kind,
             "payload_is_complete": item.get("payload_is_complete"),
             "primary_location": f"{base}.{field}",
@@ -321,6 +330,8 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "kind": "tool_result_inline",
             "payload_type": item.get("payload_type") or "tool_result",
             "tool": item.get("tool"),
+            "step": item.get("step"),
+            "substep": item.get("substep"),
             "payload_is_complete": item.get("payload_is_complete", True),
             "validator_accepted": item.get("validator_accepted", True),
             "primary_location": primary_location,
@@ -426,6 +437,8 @@ def _primary_descriptor_from_row(
         "payload_kind": payload_kind,
         "kind": item.get("kind") or row.get("kind"),
         "tool": item.get("tool") or row.get("tool"),
+        "step": item.get("step") or row.get("step"),
+        "substep": item.get("substep") or row.get("substep"),
         "path": item.get("path") or row.get("path"),
         "target_file": item.get("target_file") or row.get("target_file"),
         "item_index": item_index,

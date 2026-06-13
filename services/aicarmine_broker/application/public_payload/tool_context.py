@@ -416,6 +416,7 @@ def public_tool_context_limits(artifact_rows: list[dict[str, Any]]) -> list[dict
             continue
         base = {
             "step": row.get("producer_step"),
+            "substep": row.get("substep"),
             "tool": row.get("tool"),
             "path": artifact.get("repo_path") or artifact.get("target_file"),
         }

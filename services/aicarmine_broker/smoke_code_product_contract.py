@@ -27,6 +27,7 @@ from aicarmine_broker.tool_contract import TOOLS_SCHEMA  # noqa: E402
 from vulkan_bridge import app as bridge_app  # noqa: E402
 
 repo_code_product_tool = importlib.import_module("aicarmine_broker.tools.repo_code_product")
+evidence_builder = importlib.import_module("aicarmine_broker.application.evidence.builder")
 repo_list_files_tool = importlib.import_module("aicarmine_broker.tools.repo_list_files")
 repo_read_tool = importlib.import_module("aicarmine_broker.tools.repo_read")
 
@@ -730,6 +731,127 @@ def main() -> int:
             require(
                 native_response_format.get("allowed_content_actions") == ["final", "block"],
                 f"native content actions are not final/block only: {native_response_format}",
+            )
+            batch_candidates = [
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": {"path": target, "max_chars": 20000},
+                    "reason": "read primary target",
+                    "source": "smoke",
+                    "action_id": "smoke-read-primary",
+                },
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": {"path": shared_target, "max_chars": 20000},
+                    "reason": "read shared target",
+                    "source": "smoke",
+                    "action_id": "smoke-read-shared",
+                },
+                {
+                    "action": "tool",
+                    "tool": "repo_apply_patch",
+                    "arguments": {"path": target, "old_text": old_text, "new_text": new_text},
+                    "reason": "write must not be batched",
+                    "source": "smoke",
+                    "action_id": "smoke-write",
+                },
+            ]
+            micro_batch_contract = evidence_builder._micro_batch_contract_from_candidates(batch_candidates)
+            require(
+                micro_batch_contract.get("allowed") is True
+                and micro_batch_contract.get("batchable_candidate_count") == 2,
+                f"micro batch contract did not allow two read-only candidates: {micro_batch_contract}",
+            )
+            require(
+                all(item.get("tool") == "repo_read" for item in micro_batch_contract.get("allowed_batch_actions") or []),
+                f"micro batch contract allowed non-read/write candidate: {micro_batch_contract}",
+            )
+            compact_micro_contract = planner._compact_evidence_contract_for_prompt({
+                "candidate_next_actions": batch_candidates,
+                "micro_batch_contract": micro_batch_contract,
+            })
+            require(
+                (compact_micro_contract.get("micro_batch_contract") or {}).get("allowed") is True,
+                f"compact evidence dropped micro_batch_contract: {compact_micro_contract}",
+            )
+            batch_prompt_contract = planner.planner_evidence_contract("Native batch smoke", [native_history_read])
+            batch_prompt_contract["candidate_next_actions"] = batch_candidates
+            batch_prompt_contract["micro_batch_contract"] = micro_batch_contract
+            native_batch_payload, _native_batch_report = planner._build_planner_user_payload(
+                job_id="smoke-native-batch-contract",
+                state={"goal": "Native batch smoke", "max_steps": 5, "approval_mode": "safe_write_lab"},
+                step=3,
+                history=[native_history_read],
+                tool_manifest=tool_manifest,
+                evidence_contract=batch_prompt_contract,
+                planner_memory={"available": True, "records": [], "record_count": 0},
+                intrinsic_context={"schema": "planner_intrinsic_context.v1"},
+                last_tool_result=native_history_read["tool_result"],
+                native_tools_schema=planner._native_tools_schema_for_planner(TOOLS_SCHEMA),
+            )
+            native_batch_response_format = native_batch_payload.get("required_response_format") or {}
+            require(
+                native_batch_response_format.get("native_tool_batch_allowed") is True
+                and native_batch_response_format.get("native_tool_batch_max_size") == 2,
+                f"native prompt did not expose batch contract: {native_batch_response_format}",
+            )
+            require(
+                (native_batch_payload.get("evidence_contract") or {}).get("micro_batch_contract"),
+                f"native prompt evidence contract dropped micro batch contract: {native_batch_payload.get('evidence_contract')}",
+            )
+            batch_history_rows = [
+                {
+                    "step": 9,
+                    "substep": 1,
+                    "decision": {
+                        "action": "tool",
+                        "tool": "repo_status",
+                        "arguments": {},
+                        "reason": "native_tool_call_batch",
+                        "native_tool_call": True,
+                    },
+                    "tool_result": {"tool": "repo_status", "ok": True},
+                },
+                {
+                    "step": 9,
+                    "substep": 2,
+                    "decision": {
+                        "action": "tool",
+                        "tool": "repo_tree",
+                        "arguments": {"path": ".", "max_depth": 1},
+                        "reason": "native_tool_call_batch",
+                        "native_tool_call": True,
+                    },
+                    "tool_result": {"tool": "repo_tree", "ok": True, "path": ".", "entries": []},
+                },
+            ]
+            batch_diagnostics = planner._agent_flow_diagnostics("Native batch smoke", batch_history_rows)
+            require(
+                batch_diagnostics.get("native_tool_batch_executed") == 1
+                and batch_diagnostics.get("native_tool_batch_substeps") == 2,
+                f"native batch diagnostics did not count substep rows: {batch_diagnostics}",
+            )
+            public_limits = planner._public_tool_context_limits([
+                {
+                    "producer_step": 9,
+                    "substep": 2,
+                    "tool": "repo_list_files",
+                    "ok": True,
+                    "artifact": {
+                        "kind": "repo_list_files",
+                        "repo_path": "pkg",
+                        "count": 1,
+                        "total_matches": 3,
+                    },
+                }
+            ])
+            require(
+                public_limits
+                and public_limits[0].get("substep") == 2
+                and public_limits[0].get("kind") == "partial_list",
+                f"public tool context limits lost substep: {public_limits}",
             )
             require(
                 "allowed_actions" not in native_response_format or "tool" not in native_response_format.get("allowed_actions", []),
@@ -3064,7 +3186,9 @@ def main() -> int:
                 encoding="utf-8",
             )
             ia_raw_tool_path = ia_view_root / "tool-results" / "step-001-planner_scratchpad_read.json"
+            ia_raw_tool_path_2 = ia_view_root / "tool-results" / "step-001-02-planner_scratchpad_read.json"
             write_json(ia_raw_tool_path, next_window)
+            write_json(ia_raw_tool_path_2, {**next_window, "tool": "planner_scratchpad_read", "substep": 2})
             ia_events = [
                 {
                     "time": "smoke",
@@ -3090,7 +3214,14 @@ def main() -> int:
                     "step": 1,
                     "event_type": "tool_result",
                     "message": "smoke tool",
-                    "payload": {**next_compact, "artifact": str(ia_raw_tool_path)},
+                    "payload": {**next_compact, "substep": 1, "artifact": str(ia_raw_tool_path)},
+                },
+                {
+                    "time": "smoke",
+                    "step": 1,
+                    "event_type": "tool_result",
+                    "message": "smoke tool substep 2",
+                    "payload": {**next_compact, "substep": 2, "artifact": str(ia_raw_tool_path_2)},
                 },
             ]
             original_view_root = job_html.agent_job_root
@@ -3177,6 +3308,15 @@ def main() -> int:
             require(
                 ia_steps[-1].get("raw_tool_result_rehydrated", {}).get("tool") == "planner_scratchpad_read",
                 f"IA view did not rehydrate raw tool payload: {ia_steps[-1]}",
+            )
+            require(
+                len(ia_steps[-1].get("history_tool_results_fed_back_to_planner") or []) == 2
+                and ia_steps[-1].get("history_tool_result_fed_back_to_planner", {}).get("substep") == 2,
+                f"IA view did not preserve same-step tool_result substeps: {ia_steps[-1]}",
+            )
+            require(
+                "payload_count" in ia_lazy_raw_tool_html and "substep" in ia_lazy_raw_tool_html,
+                "IA view lazy raw tool section did not expose same-step substep payload list",
             )
             require(
                 ia_steps[-1].get("payload_audit", {}).get("compact_payload_complete") is True,

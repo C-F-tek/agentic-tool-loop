@@ -179,6 +179,17 @@ class PromptPackBuilder:
                 final_contract["reason"] = "Real prompt context window continuation is required before final/code-product decision."
                 evidence_for_prompt["finalization_contract"] = final_contract
                 evidence_for_prompt["required_next_progress"] = continuation_action["reason"]
+                evidence_for_prompt["micro_batch_contract"] = {
+                    "schema": "planner_micro_batch_contract.v1",
+                    "allowed": False,
+                    "reason": "prompt_context_continuation_requires_single_tool_call",
+                }
+            micro_batch_contract = (
+                evidence_for_prompt.get("micro_batch_contract")
+                if isinstance(evidence_for_prompt.get("micro_batch_contract"), dict)
+                else {}
+            )
+            micro_batch_allowed = bool(micro_batch_contract.get("allowed"))
             tool_shape_examples = _tool_shape_examples_for_prompt()
             payload_local = {
                 "job_id": job_id,
@@ -246,6 +257,18 @@ class PromptPackBuilder:
                         "allowed_content_actions": ["final", "block"],
                         "textual_tool_action_allowed": False,
                         "tool_execution": "message.tool_calls",
+                        "native_tool_batch_allowed": micro_batch_allowed,
+                        "native_tool_batch_max_size": (
+                            micro_batch_contract.get("max_batch_size")
+                            if micro_batch_allowed else
+                            1
+                        ),
+                        "native_tool_batch_rule": (
+                            "You may emit multiple native message.tool_calls in one turn only when "
+                            "evidence_contract.micro_batch_contract.allowed=true and every call exactly "
+                            "matches one allowed_batch_actions entry by tool and arguments. Do not batch "
+                            "write/apply/command/validation/final/block actions."
+                        ),
                         "tool_arguments_rule": (
                             "When choosing a tool, emit a native tool_call using the provided Ollama tools schema. "
                             "Do not emit JSON content with action=tool."

@@ -1882,6 +1882,7 @@ def _agentic_v9_normalized_call(row, idx):
     return _agentic_v9_clean({
         "schema": "openwebui.validated_tool_call_observation.v1",
         "step": row.get("step") or result.get("step") or idx + 1,
+        "substep": row.get("substep") or result.get("substep"),
         "validated": validated,
         "tool_name": tool,
         "arguments": args,
@@ -1939,6 +1940,7 @@ def _agentic_v9_build_evidence(calls, evidence_contract):
         if tool in {"repo_tree", "repo_tree_files", "tree"} or entries:
             bundle["repo_trees"].append(_agentic_v9_clean({
                 "tool_step": call.get("step"),
+                "tool_substep": call.get("substep"),
                 "path": result.get("path") or args.get("path"),
                 "entries_total": result.get("entries_total") or result.get("count"),
                 "entries_preview": entries[:_AGENTIC_V9_MAX_ITEMS],
@@ -1958,6 +1960,7 @@ def _agentic_v9_build_evidence(calls, evidence_contract):
         if tool in {"repo_list_files", "repo_file_list", "list_files"} or paths or files_preview:
             bundle["repo_file_lists"].append(_agentic_v9_clean({
                 "tool_step": call.get("step"),
+                "tool_substep": call.get("substep"),
                 "path": result.get("path") or args.get("path"),
                 "total_matches": result.get("total_matches") or result.get("paths_total") or result.get("files_total") or result.get("count"),
                 "limit": result.get("limit"),
@@ -2014,12 +2017,17 @@ def _agentic_v9_build_evidence(calls, evidence_contract):
             }))
             add_file(result.get("path"), source_tool="repo_read", line_count=result.get("line_count"), truncated=result.get("truncated"))
         if read_items:
-            bundle["repo_file_reads"].append({"tool_step": call.get("step"), "items": read_items[:_AGENTIC_V9_MAX_ITEMS]})
+            bundle["repo_file_reads"].append(_agentic_v9_clean({
+                "tool_step": call.get("step"),
+                "tool_substep": call.get("substep"),
+                "items": read_items[:_AGENTIC_V9_MAX_ITEMS],
+            }))
 
         matches = _agentic_v9_as_list(result.get("matches") or result.get("results"))
         if tool in {"repo_search", "search"} or matches:
             bundle["repo_searches"].append(_agentic_v9_clean({
                 "tool_step": call.get("step"),
+                "tool_substep": call.get("substep"),
                 "query": result.get("query") or args.get("query"),
                 "matches": matches[:_AGENTIC_V9_MAX_ITEMS],
                 "count": result.get("count") or len(matches),
@@ -2930,6 +2938,7 @@ def _agentic_v9_repo_tree_artifact(call):
     }
     return [_agentic_v9_clean({
         "producer_step": call.get("step"),
+        "substep": call.get("substep"),
         "tool": call.get("tool_name"),
         "arguments": args,
         "ok": structured.get("ok", True),
@@ -2952,6 +2961,7 @@ def _agentic_v9_repo_list_files_artifact(call):
     }
     return [_agentic_v9_clean({
         "producer_step": call.get("step"),
+        "substep": call.get("substep"),
         "tool": call.get("tool_name"),
         "arguments": args,
         "ok": structured.get("ok", True),
@@ -2984,6 +2994,7 @@ def _agentic_v9_repo_read_artifacts(call):
             artifact["content_preview"] = content
         artifacts.append(_agentic_v9_clean({
             "producer_step": call.get("step"),
+            "substep": call.get("substep"),
             "tool": call.get("tool_name"),
             "arguments": args,
             "ok": item.get("ok", True),
@@ -3001,6 +3012,7 @@ def _agentic_v9_generic_tool_artifact(call):
     artifact = {"kind": kind, **_agentic_v9_as_dict(payload)}
     return [_agentic_v9_clean({
         "producer_step": call.get("step"),
+        "substep": call.get("substep"),
         "tool": tool,
         "arguments": args,
         "ok": result.get("ok", True),
@@ -3015,6 +3027,7 @@ def _agentic_v9_code_edit_proposal_artifact(call):
     artifact = {"kind": "code_edit_proposal", **_agentic_v9_as_dict(artifact)}
     return [_agentic_v9_clean({
         "producer_step": call.get("step"),
+        "substep": call.get("substep"),
         "tool": call.get("tool_name"),
         "arguments": args,
         "ok": result.get("ok", True),
@@ -3078,10 +3091,12 @@ def _agentic_v9_structured_tool_limits(observation):
         tool = str(call.get("tool_name") or "")
         result = _agentic_v9_as_dict(call.get("result"))
         step = call.get("step")
+        substep = call.get("substep")
         path = _agentic_v9_repo_result_path(result)
         if result.get("truncated") is True:
             limits.append(_agentic_v9_clean({
                 "step": step,
+                "substep": substep,
                 "tool": tool,
                 "kind": "truncated",
                 "path": path,
@@ -3092,6 +3107,7 @@ def _agentic_v9_structured_tool_limits(observation):
             if total not in (None, "") and visible and int(total) > visible:
                 limits.append(_agentic_v9_clean({
                     "step": step,
+                    "substep": substep,
                     "tool": tool,
                     "kind": "partial_list",
                     "path": path,
@@ -3108,6 +3124,7 @@ def _agentic_v9_structured_tool_limits(observation):
                 if item.get("truncated") is True:
                     limits.append(_agentic_v9_clean({
                         "step": step,
+                        "substep": substep,
                         "tool": tool,
                         "kind": "truncated_read",
                         "path": _agentic_v9_repo_result_path(item),
@@ -3115,6 +3132,7 @@ def _agentic_v9_structured_tool_limits(observation):
                 if preview_only:
                     limits.append(_agentic_v9_clean({
                         "step": step,
+                        "substep": substep,
                         "tool": tool,
                         "kind": "preview_only_read",
                         "path": _agentic_v9_repo_result_path(item),
@@ -3123,6 +3141,7 @@ def _agentic_v9_structured_tool_limits(observation):
                 if not content:
                     limits.append(_agentic_v9_clean({
                         "step": step,
+                        "substep": substep,
                         "tool": tool,
                         "kind": "missing_read_content",
                         "path": _agentic_v9_repo_result_path(item),
@@ -3136,12 +3155,14 @@ def _agentic_v9_priority_item_from_artifact(row):
     kind = str(artifact.get("kind") or "")
     tool = row.get("tool")
     step = row.get("producer_step")
+    substep = row.get("substep")
     if kind == "code_edit_proposal":
         edit_kind = artifact.get("edit_kind")
         item = {
             "kind": "code_edit_proposal",
             "tool": tool,
             "step": step,
+            "substep": substep,
             "ok": row.get("ok", True),
             "target_file": artifact.get("target_file"),
             "edit_kind": edit_kind,
@@ -3178,6 +3199,7 @@ def _agentic_v9_priority_item_from_artifact(row):
             "kind": "repo_file_full_content",
             "tool": tool,
             "step": step,
+            "substep": substep,
             "ok": row.get("ok", True),
             "path": artifact.get("repo_path"),
             "payload_is_complete": True,
@@ -3201,6 +3223,7 @@ def _agentic_v9_repo_analysis_priority_item(tool_context, planner_text):
             continue
         evidence_files.append(_agentic_v9_clean({
             "step": row.get("producer_step"),
+            "substep": row.get("substep"),
             "tool": row.get("tool"),
             "kind": kind or "tool_evidence",
             "path": path,
@@ -3308,6 +3331,8 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "kind": "code_edit_proposal",
             "payload_type": payload_type,
             "target_file": item.get("target_file"),
+            "step": item.get("step"),
+            "substep": item.get("substep"),
             "edit_kind": edit_kind,
             "payload_is_complete": item.get("payload_is_complete"),
             "primary_location": f"{base}.{field}",
@@ -3317,6 +3342,8 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "kind": "repo_file_full_content",
             "payload_type": "file_content",
             "path": item.get("path"),
+            "step": item.get("step"),
+            "substep": item.get("substep"),
             "payload_is_complete": item.get("payload_is_complete"),
             "primary_location": f"{base}.content",
         })
