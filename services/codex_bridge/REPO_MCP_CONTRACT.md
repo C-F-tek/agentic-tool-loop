@@ -37,6 +37,9 @@ The read-only observability MCP set is separate from repo-editing tools:
 - `aicarmine_job_artifact`: filesystem-only agent job artifact reader for
   `job.json`, `events.ndjson`, `final.json`, `tool-results/`,
   `planner-prompts/` and rejection summaries.
+- `aicarmine_job_view`: filesystem/local-renderer-only agent job HTML view
+  reader. It renders existing `job_html.py`/`job_planner_lab.py` views,
+  extracts outlines/links and validates bounded HTML without broker HTTP.
 - `aicarmine_git_readonly`: bounded Git diagnostics for log/show/diff/blame
   and branch comparison. It does not fetch, checkout, reset, commit, push or
   mutate the worktree.
@@ -63,6 +66,7 @@ Server entrypoints:
 - `C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py`
+- `C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py`
 - `C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py`
 
@@ -111,6 +115,7 @@ Run self-tests with the absolute Python executable:
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py" --self-test
+& "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py" --self-test
 & "C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe" "C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py" --self-test
 ```
@@ -129,6 +134,7 @@ After a Codex reload or new session, the MCP list must expose:
 - `aicarmine_codex_ops` if the ops incubator server is enabled locally.
 - `aicarmine_sqlite_readonly` if the SQLite observability server is enabled locally.
 - `aicarmine_job_artifact` if the job artifact observability server is enabled locally.
+- `aicarmine_job_view` if the job HTML view observability server is enabled locally.
 - `aicarmine_git_readonly` if the Git observability server is enabled locally.
 - `aicarmine_project_memory` if the project-local memory server is enabled locally.
 
@@ -141,6 +147,7 @@ Required health tool calls:
 - `aicarmine_codex_ops_health` if the ops incubator server is enabled locally.
 - `aicarmine_sqlite_readonly_health` if the SQLite observability server is enabled locally.
 - `aicarmine_job_artifact_health` if the job artifact observability server is enabled locally.
+- `aicarmine_job_view_health` if the job HTML view observability server is enabled locally.
 - `aicarmine_git_readonly_health` if the Git observability server is enabled locally.
 - `aicarmine_project_memory_health` if the project-local memory server is enabled locally.
 
@@ -155,6 +162,7 @@ If health is OK, the minimal real-tool gate is:
 - `aicarmine_service_state_snapshot` with bounded process/log limits.
 - `aicarmine_sqlite_readonly_list_databases` with a low `max_results`.
 - `aicarmine_job_artifact_list_jobs` with a low `limit`.
+- `aicarmine_job_view_list_views`.
 - `aicarmine_git_readonly_log` with `max_count=1`.
 - `aicarmine_project_memory_search` with a low `limit`. The self-test must
   not require a write.
@@ -178,6 +186,7 @@ These MCPs must not introduce or depend on:
 - source-write tools in the stable state/search/validation MCPs
 - write-capable SQL, unbounded SQL, user PRAGMA, or path-unallowlisted database reads
 - job artifact readers that call 3571, 3572, `vulkan_helper` or HTTP routes
+- job view renderers that start services, call broker HTTP routes or mutate job state
 - Git commands that mutate local or remote state
 - persistent memory writes without source metadata and one of the required
   confirmation strings: `project_memory_upsert_verified`,
@@ -240,6 +249,11 @@ env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_
 [mcp_servers.aicarmine_job_artifact]
 command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
 args = ['C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+
+[mcp_servers.aicarmine_job_view]
+command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py']
 env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_git_readonly]

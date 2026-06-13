@@ -649,6 +649,21 @@ Dedicated read-only MCP server for persisted agent job artifacts.
   `aicarmine_job_artifact_list_jobs`, server `--self-test`, and
   `services/test_job_artifact_mcp_server.py`.
 
+### `codex_bridge/job_view_mcp_server.py`
+
+Dedicated read-only MCP server for persisted agent job HTML views.
+
+- Reads: MCP stdio frames, existing broker job renderer modules, and files
+  under the selected agent job root through those renderer functions.
+- Writes: MCP stdio frames only.
+- Risk: must not call broker HTTP routes, 3571, 3572, `vulkan_helper`, start
+  services or mutate job state. Rendered HTML and outlines are diagnostics,
+  not a replacement for raw job artifacts when validating model-visible
+  payloads.
+- Verify: `aicarmine_job_view_health`, `aicarmine_job_view_list_views`,
+  `aicarmine_job_view_render`, server `--self-test`, and
+  `services/test_job_view_mcp_server.py`.
+
 ### `codex_bridge/git_readonly_mcp_server.py`
 
 Dedicated read-only Git MCP server for regression diagnostics.
