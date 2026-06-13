@@ -162,3 +162,19 @@ def tool_shape_examples_for_prompt(
             },
         ],
     }
+
+
+def hard_budget_tool_shape_examples_for_prompt(*, native_tools: bool) -> dict[str, Any]:
+    if native_tools:
+        return {
+            "schema": "planner_tool_shape_examples.v1",
+            "transport": "native_tool_calls",
+            "examples_omitted_for_prompt_budget": True,
+            "schema_source": "ollama_request.tools",
+            "content_json_tool_calls_allowed": False,
+        }
+    return {
+        "schema": "planner_tool_shape_examples.v1",
+        "transport": "legacy_json_content",
+        "examples_omitted_for_prompt_budget": True,
+    }

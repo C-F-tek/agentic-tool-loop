@@ -360,6 +360,7 @@ from .application.tool_surface.manifest_builder import (
 )
 from .application.prompt.tool_contract import (
     available_tools_for_user_payload as _available_tools_for_user_payload_impl,
+    hard_budget_tool_shape_examples_for_prompt as _hard_budget_tool_shape_examples_for_prompt_impl,
     tool_shape_examples_for_prompt as _tool_shape_examples_for_prompt_impl,
 )
 from .application.tool_surface.result_digest import planner_last_result_digest as _planner_last_result_digest_impl
@@ -483,6 +484,12 @@ def _tool_shape_examples_for_prompt() -> dict[str, Any]:
     return _tool_shape_examples_for_prompt_impl(
         native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
+    )
+
+
+def _hard_budget_tool_shape_examples_for_prompt() -> dict[str, Any]:
+    return _hard_budget_tool_shape_examples_for_prompt_impl(
+        native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
     )
 
 
@@ -1360,6 +1367,7 @@ def _build_planner_user_payload(
             ),
             "forbidden_repeated_prompt_window_calls": _forbidden_repeated_prompt_window_calls,
             "hard_budget_evidence_contract_for_prompt": _hard_budget_evidence_contract_for_prompt,
+            "hard_budget_tool_shape_examples_for_prompt": _hard_budget_tool_shape_examples_for_prompt,
             "json_char_len": _json_char_len,
             "native_history_message_reserve_chars": _native_history_message_reserve_chars,
             "optional_context_for_prompt": _optional_context_for_prompt,

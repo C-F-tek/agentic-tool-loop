@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import itertools
-import json
 import traceback
 from typing import Any, Mapping
 
 from .state import PlannerLoopState
+from ..tool_surface.batch_contract import canonical_batch_args as _canonical_batch_args
+from ..tool_surface.batch_contract import canonical_batch_call_key
 
 
 def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
@@ -18,11 +19,6 @@ def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
 def _list_field(mapping: Mapping[str, Any], key: str) -> list[Any]:
     value = mapping.get(key)
     return list(value) if isinstance(value, list) else []
-
-
-def _canonical_batch_args(args: Mapping[str, Any]) -> str:
-    source = dict(args) if isinstance(args, Mapping) else {}
-    return json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def run_agentic_planner_job(
@@ -98,6 +94,8 @@ def run_agentic_planner_job(
     root = agent_job_root(job_id)
     max_steps = max(1, min(int(state.get("max_steps") or AGENT_DEFAULT_MAX_STEPS), AGENT_MAX_STEPS))
     support_subturns_used = 0
+    support_semantic_turns_used = 0
+    support_semantic_steps_marked: set[int] = set()
     support_subturn_tools = frozenset({
         "planner_scratchpad_read",
         "planner_scratchpad_write",
@@ -123,9 +121,23 @@ def run_agentic_planner_job(
             return False
         return support_subturn_tool(str(planner_decision.get("tool") or ""))
 
+    def semantic_step_for_physical_step(step_number: int) -> int:
+        physical_step = max(1, int(step_number))
+        counted_support_turns = support_semantic_turns_used
+        if physical_step in support_semantic_steps_marked:
+            counted_support_turns = max(0, counted_support_turns - 1)
+        return max(1, physical_step - counted_support_turns)
+
     def mark_support_subturn(row: dict[str, Any], *, semantic_step: int) -> None:
-        nonlocal support_subturns_used
+        nonlocal support_semantic_turns_used, support_subturns_used
         support_subturns_used += 1
+        try:
+            physical_step = int(row.get("step") or 0)
+        except (TypeError, ValueError):
+            physical_step = 0
+        if physical_step > 0 and physical_step not in support_semantic_steps_marked:
+            support_semantic_steps_marked.add(physical_step)
+            support_semantic_turns_used += 1
         row["support_subturn"] = True
         row["semantic_step"] = semantic_step
         result = row.get("tool_result")
@@ -133,7 +145,9 @@ def run_agentic_planner_job(
             result["support_subturn"] = True
             result["semantic_step"] = semantic_step
             result["support_subturn_index"] = support_subturns_used
+            result["support_semantic_turns_used"] = support_semantic_turns_used
         state["support_subturns_used"] = support_subturns_used
+        state["support_semantic_turns_used"] = support_semantic_turns_used
 
     def planner_step_budget_guidance(step_number: int) -> dict[str, Any]:
         remaining_steps = max(0, max_steps - int(step_number) + 1)
@@ -198,7 +212,7 @@ def run_agentic_planner_job(
     def append_cached_tool_result(step_number: int, planner_decision: dict[str, Any], cached: dict[str, Any]) -> None:
         cached_result = _dict_field(cached, "result")
         support_subturn = support_subturn_decision(planner_decision)
-        semantic_step = max(1, int(step_number) - support_subturns_used)
+        semantic_step = semantic_step_for_physical_step(step_number)
         if support_subturn:
             cached_result["support_subturn"] = True
             cached_result["semantic_step"] = semantic_step
@@ -331,7 +345,7 @@ def run_agentic_planner_job(
         internal_args: dict[str, Any],
     ) -> None:
         support_subturn = support_subturn_decision(planner_decision)
-        semantic_step = max(1, int(step_number) - support_subturns_used)
+        semantic_step = semantic_step_for_physical_step(step_number)
         validation_repeat = {
             "ok": False,
             "violations": ["repeated_same_tool_arguments_without_progress"],
@@ -374,7 +388,7 @@ def run_agentic_planner_job(
         args = _dict_field(planner_decision, "arguments")
         internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
         is_support_subturn = support_subturn_decision(planner_decision)
-        semantic_step = max(1, int(step_number) - support_subturns_used)
+        semantic_step = semantic_step_for_physical_step(step_number)
         if repeated_tool_call_count(history, tool, internal_args) >= 2:
             append_repeat_guard_result(step_number, planner_decision, tool, internal_args)
             return None
@@ -765,7 +779,7 @@ def run_agentic_planner_job(
                 preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
 
     for step in itertools.count(1):
-        semantic_step = max(1, step - support_subturns_used)
+        semantic_step = semantic_step_for_physical_step(step)
         if semantic_step > max_steps:
             break
         state = load_agent_job_state(job_id) or state
@@ -788,6 +802,7 @@ def run_agentic_planner_job(
             "current_step": step,
             "semantic_step": semantic_step,
             "support_subturns_used": support_subturns_used,
+            "support_semantic_turns_used": support_semantic_turns_used,
             "status_message": "planning next action",
             "evidence_contract": contract_snapshot,
             "planner_memory_surface": memory_snapshot,
@@ -926,6 +941,7 @@ def run_agentic_planner_job(
                 else {}
             )
             used_micro_batch_action_ids: set[str] = set()
+            used_micro_batch_call_signatures: set[str] = set()
             if not calls:
                 batch_guard = {
                     "tool": "controller_guard",
@@ -960,33 +976,6 @@ def run_agentic_planner_job(
                         validation={
                             "ok": False,
                             "violations": ["native_tool_batch_too_large"],
-                            "evidence_contract": batch_evidence_contract,
-                        },
-                    ),
-                }
-            elif any(
-                support_subturn_tool(str(call.get("tool") or ""))
-                for call in calls
-                if isinstance(call, dict)
-            ):
-                batch_guard = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "native_tool_batch_support_subturn_disallowed",
-                    "summary": "native_tool_batch_support_subturn_disallowed",
-                    "violations": ["native_tool_batch_support_subturn_disallowed"],
-                    "support_subturn_tools": sorted(support_subturn_tools),
-                    "next_instruction": (
-                        "Support primitives must be called as one validated serial subturn, "
-                        "not batched with external progress tools."
-                    ),
-                    "runtime_debug_packet": runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        validation={
-                            "ok": False,
-                            "violations": ["native_tool_batch_support_subturn_disallowed"],
                             "evidence_contract": batch_evidence_contract,
                         },
                     ),
@@ -1044,14 +1033,37 @@ def run_agentic_planner_job(
                         call_decision["allowed_tool_names"] = list(decision["allowed_tool_names"])
                     if isinstance(decision.get("allowed_native_tool_names"), list):
                         call_decision["allowed_native_tool_names"] = list(decision["allowed_native_tool_names"])
-                    if isinstance(decision.get("prompt_context_continuation_required"), dict):
-                        call_decision["prompt_context_continuation_required"] = decision["prompt_context_continuation_required"]
                     internal_args = sanitize_tool_args(
                         call_decision["tool"],
                         dict(call_decision["arguments"]),
                         original_args,
                         public_tool_name,
                     )
+                    call_signature = canonical_batch_call_key(
+                        normalize_tool_name(str(call_decision["tool"] or "")),
+                        internal_args,
+                    )
+                    if call_signature in used_micro_batch_call_signatures:
+                        batch_guard = {
+                            "tool": "controller_guard",
+                            "ok": True,
+                            "guard_type": "native_tool_batch_duplicate_call",
+                            "summary": "native_tool_batch_duplicate_call",
+                            "violations": ["native_tool_batch_duplicate_call"],
+                            "rejected_decision": call_decision,
+                            "runtime_debug_packet": runtime_debug_packet(
+                                step_number=step,
+                                phase="CONTROLLER_GUARD",
+                                planner_decision=call_decision,
+                                validation={
+                                    "ok": False,
+                                    "violations": ["native_tool_batch_duplicate_call"],
+                                    "evidence_contract": batch_evidence_contract,
+                                },
+                            ),
+                        }
+                        break
+                    used_micro_batch_call_signatures.add(call_signature)
                     matched_action = match_micro_batch_action(
                         micro_batch_contract,
                         tool=call_decision["tool"],
@@ -1078,6 +1090,17 @@ def run_agentic_planner_job(
                             ),
                         }
                         break
+                    if call_decision["tool"] == "planner_scratchpad_read":
+                        matched_args = (
+                            matched_action.get("arguments")
+                            if isinstance(matched_action.get("arguments"), dict)
+                            else {}
+                        )
+                        call_decision["prompt_context_continuation_required"] = {
+                            "tool": "planner_scratchpad_read",
+                            "arguments": matched_args,
+                            "reason": matched_action.get("reason"),
+                        }
                     action_id = str(matched_action.get("action_id") or "").strip()
                     if not action_id or action_id in used_micro_batch_action_ids:
                         batch_guard = {
@@ -1371,6 +1394,7 @@ def run_agentic_planner_job(
                             "validation": validation,
                             "semantic_step": semantic_step,
                             "support_subturns_used": support_subturns_used,
+                            "support_semantic_turns_used": support_semantic_turns_used,
                             "invalid_decision_signature": rejection_signature,
                             "invalid_decision_repeat_count": repeated_rejection_count + 1,
                         },

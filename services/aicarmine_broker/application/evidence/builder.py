@@ -9,6 +9,7 @@ from aicarmine_broker.application.evidence.coverage_scorer import score_evidence
 from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
 from aicarmine_broker.application.tool_surface.candidate_action_gate import gate_candidate_actions
 from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
+from aicarmine_broker.application.tool_surface.batch_contract import canonical_batch_call_key
 from aicarmine_broker.planner_core.cache import CACHEABLE_READ_TOOLS
 
 
@@ -140,6 +141,7 @@ def _micro_batch_contract_from_candidates(
 ) -> dict[str, Any]:
     """Expose independent read-only candidate actions that may share one planner turn."""
     allowed_actions: list[dict[str, Any]] = []
+    seen_call_keys: set[str] = set()
     seen_action_ids: set[str] = set()
     for action in candidates if isinstance(candidates, list) else []:
         if not isinstance(action, dict):
@@ -147,10 +149,14 @@ def _micro_batch_contract_from_candidates(
         tool = str(action.get("tool") or "").strip()
         if tool not in CACHEABLE_READ_TOOLS:
             continue
+        args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+        call_key = canonical_batch_call_key(tool, args)
+        if call_key in seen_call_keys:
+            continue
         action_id = str(action.get("action_id") or "").strip()
         if not action_id or action_id in seen_action_ids:
             continue
-        args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+        seen_call_keys.add(call_key)
         seen_action_ids.add(action_id)
         allowed_actions.append({
             "action_id": action_id,

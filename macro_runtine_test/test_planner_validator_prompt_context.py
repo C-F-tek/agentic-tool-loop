@@ -13,8 +13,13 @@ if str(SERVICES) not in sys.path:
 from aicarmine_broker.application.planner.validator import (  # noqa: E402
     validate_planner_decision_against_evidence,
 )
+from aicarmine_broker.application.tool_surface.batch_contract import canonical_batch_args  # noqa: E402
+from aicarmine_broker.application.prompt.tool_contract import (  # noqa: E402
+    hard_budget_tool_shape_examples_for_prompt,
+)
 from aicarmine_broker.application.tool_surface.candidate_actions import (  # noqa: E402
     enforce_required_scratchpad_read_continuation_contract,
+    preserve_required_next_tool_call_for_prompt,
 )
 from aicarmine_broker.application.tool_surface.turn_surface_policy import (  # noqa: E402
     ToolSurfacePolicy,
@@ -253,6 +258,157 @@ def test_turn_surface_policy_required_scratchpad_read_overrides_final_contract()
     assert contract["finalization_contract"]["final_allowed"] is False
     assert contract["planner_may_choose_final"] is False
     assert contract["turn_tool_surface_policy"]["allowed_tool_names"] == ["planner_scratchpad_read"]
+
+
+def test_required_scratchpad_read_exposes_readonly_batch_windows() -> None:
+    contract = enforce_required_scratchpad_read_continuation_contract(
+        {
+            "finalization_contract": {"final_allowed": True},
+            "planner_may_choose_final": True,
+        },
+        {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": "prompt-context-smoke",
+                "offset": 1000,
+                "max_chars": 500,
+            },
+            "batch_window": {
+                "document_id": "prompt-context-smoke",
+                "offset": 1000,
+                "max_chars": 500,
+                "full_chars": 2600,
+                "max_batch_actions": 8,
+            },
+            "reason": "Continue consuming prompt context before final.",
+        },
+    )
+
+    micro_batch = contract["micro_batch_contract"]
+    actions = micro_batch["allowed_batch_actions"]
+    offsets = [item["arguments"]["offset"] for item in actions]
+
+    assert micro_batch["allowed"] is True
+    assert micro_batch["allowed_tools"] == ["planner_scratchpad_read"]
+    assert offsets == [1000, 1500, 2000, 2500]
+    assert len({item["action_id"] for item in actions}) == len(actions)
+    assert contract["finalization_contract"]["final_allowed"] is False
+
+
+def test_required_scratchpad_read_batch_dedupes_semantic_duplicate_windows() -> None:
+    contract = enforce_required_scratchpad_read_continuation_contract(
+        {
+            "micro_batch_contract": {
+                "allowed_batch_actions": [
+                    {
+                        "action_id": "legacy-duplicate",
+                        "tool": "planner_scratchpad_read",
+                        "arguments": {
+                            "kind": "prompt_context_window",
+                            "document_id": "prompt-context-smoke",
+                            "offset": "1000",
+                            "max_chars": "500",
+                            "target_file": "",
+                        },
+                    }
+                ],
+            },
+        },
+        {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": "prompt-context-smoke",
+                "offset": 1000,
+                "max_chars": 500,
+            },
+            "batch_window": {
+                "document_id": "prompt-context-smoke",
+                "offset": 1000,
+                "max_chars": 500,
+                "full_chars": 1600,
+                "max_batch_actions": 8,
+            },
+            "reason": "Continue consuming prompt context before final.",
+        },
+    )
+
+    actions = contract["micro_batch_contract"]["allowed_batch_actions"]
+    offsets = [item["arguments"]["offset"] for item in actions]
+
+    assert offsets == [1000, 1500]
+    assert all(item.get("action_id") != "legacy-duplicate" for item in actions)
+
+
+def test_native_batch_arg_signature_normalizes_numeric_strings_and_empty_values() -> None:
+    assert canonical_batch_args(
+        {
+            "kind": "prompt_context_window",
+            "document_id": "prompt-context-smoke",
+            "offset": "001000",
+            "max_chars": "500",
+            "target_file": "",
+        }
+    ) == canonical_batch_args(
+        {
+            "kind": "prompt_context_window",
+            "document_id": "prompt-context-smoke",
+            "offset": 1000,
+            "max_chars": 500,
+        }
+    )
+
+
+def test_hard_budget_native_tool_shape_examples_omit_verbose_examples() -> None:
+    examples = hard_budget_tool_shape_examples_for_prompt(native_tools=True)
+
+    assert examples["schema_source"] == "ollama_request.tools"
+    assert examples["examples_omitted_for_prompt_budget"] is True
+    assert "examples" not in examples
+    assert examples["content_json_tool_calls_allowed"] is False
+
+
+def test_preserve_required_next_tool_call_handles_legacy_single_read_candidate() -> None:
+    payload = {
+        "evidence_contract": {
+            "finalization_contract": {"final_allowed": True},
+            "planner_may_choose_final": True,
+        }
+    }
+    continuation_action = {
+        "action": "tool",
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "prompt-context-smoke",
+            "offset": 1000,
+            "max_chars": 500,
+        },
+        "batch_window": {
+            "document_id": "prompt-context-smoke",
+            "offset": 1000,
+            "max_chars": 500,
+            "full_chars": 1600,
+        },
+        "reason": "Continue consuming prompt context before final.",
+    }
+
+    preserve_required_next_tool_call_for_prompt(
+        payload,
+        {
+            "candidate_next_actions": [continuation_action],
+            "finalization_contract": {"final_allowed": False},
+            "required_next_progress": "Continue consuming prompt context before final.",
+            "planner_may_choose_final": False,
+        },
+    )
+
+    evidence = payload["evidence_contract"]
+    assert payload["required_next_tool_call"]["arguments"]["offset"] == 1000
+    assert evidence["finalization_contract"]["final_allowed"] is False
+    assert evidence["planner_may_choose_final"] is False
+    assert evidence["micro_batch_contract"]["allowed"] is True
 
 
 def test_valid_support_primitive_is_allowed_during_final_required_gate() -> None:

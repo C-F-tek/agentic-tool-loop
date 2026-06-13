@@ -204,6 +204,13 @@ def prompt_context_continue_action(
         "action": "tool",
         "tool": "planner_scratchpad_read",
         "arguments": args,
+        "batch_window": {
+            "document_id": doc_id,
+            "offset": offset,
+            "max_chars": args["max_chars"],
+            "full_chars": window.get("full_chars"),
+            "max_batch_actions": 8,
+        },
         "reason": reason,
     }
 

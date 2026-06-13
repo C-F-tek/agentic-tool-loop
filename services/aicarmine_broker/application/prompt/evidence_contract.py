@@ -71,7 +71,51 @@ def compact_evidence_contract_for_prompt(
                 list_limit=6,
             ),
         }
+    micro_batch = out.get("micro_batch_contract")
+    if isinstance(micro_batch, dict) and micro_batch:
+        compact_micro = {
+            key: prompt_clip_value(micro_batch.get(key), text_limit=360, list_limit=8)
+            for key in (
+                "schema",
+                "allowed",
+                "mode",
+                "max_batch_size",
+                "allowed_tools",
+                "reason",
+            )
+            if micro_batch.get(key) not in (None, "", [], {})
+        }
+        compact_actions = _compact_allowed_batch_actions_for_prompt(
+            micro_batch.get("allowed_batch_actions"),
+            list_limit=8,
+        )
+        if compact_actions:
+            compact_micro["allowed_batch_actions"] = compact_actions
+        out["micro_batch_contract"] = compact_micro
     return prompt_clip_value(out, text_limit=prompt_preview_chars, list_limit=12)
+
+
+def _compact_allowed_batch_actions_for_prompt(
+    actions: Any,
+    *,
+    list_limit: int,
+) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    if not isinstance(actions, list):
+        return compact
+    for action in actions[: max(0, int(list_limit or 0))]:
+        if not isinstance(action, dict):
+            continue
+        item: dict[str, Any] = {}
+        for key in ("action_id", "tool"):
+            if action.get(key) not in (None, "", [], {}):
+                item[key] = action.get(key)
+        args = action.get("arguments")
+        if isinstance(args, dict) and args:
+            item["arguments"] = prompt_clip_value(args, text_limit=260, list_limit=8)
+        if item:
+            compact.append(item)
+    return compact
 
 
 def hard_budget_evidence_contract_summary(
@@ -142,6 +186,10 @@ def hard_budget_evidence_contract_summary(
         )
     micro_batch = contract.get("micro_batch_contract")
     if isinstance(micro_batch, dict) and micro_batch:
+        compact_actions = _compact_allowed_batch_actions_for_prompt(
+            micro_batch.get("allowed_batch_actions"),
+            list_limit=8,
+        )
         compact["micro_batch_contract"] = {
             key: prompt_clip_value(micro_batch.get(key), text_limit=420, list_limit=8)
             for key in (
@@ -150,12 +198,12 @@ def hard_budget_evidence_contract_summary(
                 "mode",
                 "max_batch_size",
                 "allowed_tools",
-                "allowed_batch_actions",
-                "guard",
                 "reason",
             )
             if micro_batch.get(key) not in (None, "", [], {})
         }
+        if compact_actions:
+            compact["micro_batch_contract"]["allowed_batch_actions"] = compact_actions
     for key in ("required_next_tool_call", "forbidden_repeated_tool_calls"):
         value = contract.get(key)
         if value not in (None, "", [], {}):

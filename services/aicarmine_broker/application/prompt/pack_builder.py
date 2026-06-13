@@ -124,6 +124,7 @@ class PromptPackBuilder:
         ]
         _forbidden_repeated_prompt_window_calls = deps["forbidden_repeated_prompt_window_calls"]
         _hard_budget_evidence_contract_for_prompt = deps["hard_budget_evidence_contract_for_prompt"]
+        _hard_budget_tool_shape_examples_for_prompt = deps["hard_budget_tool_shape_examples_for_prompt"]
         _json_char_len = deps["json_char_len"]
         _native_history_message_reserve_chars = deps["native_history_message_reserve_chars"]
         _optional_context_for_prompt = deps["optional_context_for_prompt"]
@@ -292,8 +293,8 @@ class PromptPackBuilder:
                         "native_tool_batch_rule": (
                             "You may emit multiple native message.tool_calls in one turn only when "
                             "evidence_contract.micro_batch_contract.allowed=true and every call exactly "
-                            "matches one allowed_batch_actions entry by tool and arguments. Do not batch "
-                            "write/apply/command/validation/final/block actions."
+                            "matches one allowed_batch_actions entry by tool and arguments. Batch only "
+                            "read-only actions; do not batch write/apply/command/final/block actions."
                         ),
                         "tool_arguments_rule": (
                             "When choosing a tool, emit a native tool_call using the provided Ollama tools schema. "
@@ -337,39 +338,6 @@ class PromptPackBuilder:
             report_local["window_chars"] = window_chars
             report_local["native_history_reserve_chars"] = native_history_reserve_chars
             return payload_local, report_local, required_chars_local, required_errors_local
-
-        def preserve_required_window_continuation(
-            payload_local: dict[str, Any],
-            previous_evidence: dict[str, Any],
-        ) -> None:
-            raw_candidates = previous_evidence.get("candidate_next_actions")
-            candidates: list[Any] = raw_candidates if isinstance(raw_candidates, list) else []
-            if len(candidates) != 1:
-                return
-            continuation_candidate = candidates[0]
-            if not (
-                isinstance(continuation_candidate, dict)
-                and continuation_candidate.get("tool") == "planner_scratchpad_read"
-            ):
-                return
-            payload_evidence = _dict_field(payload_local, "evidence_contract")
-            payload_evidence["candidate_next_actions"] = [continuation_candidate]
-            for key in (
-                "required_next_tool_call",
-                "forbidden_repeated_tool_calls",
-                "required_next_progress",
-                "planner_may_choose_final",
-            ):
-                if key in previous_evidence:
-                    payload_evidence[key] = previous_evidence[key]
-            final_contract = previous_evidence.get("finalization_contract")
-            if isinstance(final_contract, dict):
-                payload_evidence["finalization_contract"] = final_contract
-            payload_evidence = _enforce_required_scratchpad_read_continuation_contract(
-                payload_evidence,
-                continuation_candidate,
-            )
-            payload_local["evidence_contract"] = payload_evidence
 
         payload, report, required_chars, required_errors = assemble(
             compact_mode=False,
@@ -415,8 +383,7 @@ class PromptPackBuilder:
                     reason="planner_prompt_pack_over_budget_after_compact_mode",
                 )
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
-                preserve_required_window_continuation(payload, evidence_before_hard_budget)
-                payload["tool_shape_examples"] = _tool_shape_examples_for_prompt()
+                payload["tool_shape_examples"] = _hard_budget_tool_shape_examples_for_prompt()
                 payload_evidence = _dict_field(payload, "evidence_contract")
                 if isinstance(payload_evidence.get("required_next_tool_call"), dict):
                     payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
@@ -546,8 +513,7 @@ class PromptPackBuilder:
                     reason="planner_prompt_pack_over_budget_after_budget_report",
                 )
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
-                preserve_required_window_continuation(payload, evidence_before_hard_budget)
-                payload["tool_shape_examples"] = _tool_shape_examples_for_prompt()
+                payload["tool_shape_examples"] = _hard_budget_tool_shape_examples_for_prompt()
                 payload_evidence = _dict_field(payload, "evidence_contract")
                 if isinstance(payload_evidence.get("required_next_tool_call"), dict):
                     payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]

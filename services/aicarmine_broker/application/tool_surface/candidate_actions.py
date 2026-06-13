@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from ...tool_contract import normalize_tool_name
 from ..code_product.state import CODE_PRODUCT_BUILD_STATE_KIND
+from .batch_contract import canonical_batch_call_key
 
 
 def candidate_action_tool(action: Any) -> str:
@@ -312,6 +313,63 @@ def required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _readonly_batch_actions_from_continuation(action: dict[str, Any]) -> list[dict[str, Any]]:
+    args = candidate_action_args(action)
+    batch_window = action.get("batch_window") if isinstance(action.get("batch_window"), dict) else {}
+    try:
+        offset = max(0, int(args.get("offset") or batch_window.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        max_chars = max(500, int(args.get("max_chars") or batch_window.get("max_chars") or 3000))
+    except (TypeError, ValueError):
+        max_chars = 3000
+    try:
+        full_chars = max(0, int(batch_window.get("full_chars") or 0))
+    except (TypeError, ValueError):
+        full_chars = 0
+    try:
+        max_actions = max(1, min(8, int(batch_window.get("max_batch_actions") or 8)))
+    except (TypeError, ValueError):
+        max_actions = 8
+
+    offsets = [offset]
+    if full_chars > offset and max_chars > 0:
+        current = offset + max_chars
+        while current < full_chars and len(offsets) < max_actions:
+            offsets.append(current)
+            current += max_chars
+
+    out: list[dict[str, Any]] = []
+    for current_offset in offsets:
+        call_args = {
+            key: args.get(key)
+            for key in ("kind", "document_id", "section", "max_chars", "target_file")
+            if args.get(key) not in (None, "", [], {})
+        }
+        call_args["offset"] = current_offset
+        call_args["max_chars"] = max_chars
+        action_id_parts = [
+            "required_scratchpad_read_continuation",
+            str(call_args.get("document_id") or call_args.get("section") or ""),
+            str(current_offset),
+            str(max_chars),
+        ]
+        out.append({
+            "action_id": ":".join(action_id_parts),
+            "tool": "planner_scratchpad_read",
+            "arguments": call_args,
+            "reason": action.get("reason"),
+            "source": "required_next_tool_call",
+            "independent_read_only": True,
+        })
+    return out
+
+
+def _batch_action_key(action: dict[str, Any]) -> str:
+    return canonical_batch_call_key(candidate_action_tool(action), candidate_action_args(action))
+
+
 def enforce_required_scratchpad_read_continuation_contract(
     contract: dict[str, Any],
     continuation: dict[str, Any],
@@ -340,6 +398,8 @@ def enforce_required_scratchpad_read_continuation_contract(
         },
         "reason": reason,
     }
+    if isinstance(continuation.get("batch_window"), dict):
+        action["batch_window"] = continuation["batch_window"]
     required = required_next_tool_call_from_action(action)
     if not required:
         return out
@@ -358,11 +418,43 @@ def enforce_required_scratchpad_read_continuation_contract(
 
     micro_batch = out.get("micro_batch_contract") if isinstance(out.get("micro_batch_contract"), dict) else {}
     micro_batch = dict(micro_batch)
+    allowed_actions = (
+        micro_batch.get("allowed_batch_actions")
+        if isinstance(micro_batch.get("allowed_batch_actions"), list)
+        else []
+    )
+    required_batch_actions = _readonly_batch_actions_from_continuation(action)
+    merged_actions = list(required_batch_actions)
+    seen = {_batch_action_key(item) for item in required_batch_actions}
+    for item in allowed_actions:
+        if not isinstance(item, dict):
+            continue
+        if candidate_action_tool(item) != "planner_scratchpad_read":
+            continue
+        key = _batch_action_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_actions.append(item)
     micro_batch.update(
         {
             "schema": "planner_micro_batch_contract.v1",
-            "allowed": False,
-            "reason": "scratchpad_read_continuation_requires_single_tool_call",
+            "allowed": len(merged_actions) >= 2,
+            "mode": "native_message_tool_calls_only",
+            "max_batch_size": len(merged_actions),
+            "allowed_tools": ["planner_scratchpad_read"],
+            "allowed_batch_actions": merged_actions,
+            "guard": (
+                "Batching is allowed only for read-only planner_scratchpad_read "
+                "continuation windows. Write/apply/command/final/block actions remain forbidden."
+            ),
+            "reason": (
+                "scratchpad_read_continuation_readonly_batch_available"
+                if len(merged_actions) >= 2
+                else "scratchpad_read_continuation_single_read_available"
+            ),
+            "writes_allowed": False,
+            "validation_tools_allowed": False,
         }
     )
     out["micro_batch_contract"] = micro_batch
@@ -409,6 +501,14 @@ def preserve_required_next_tool_call_for_prompt(
         if isinstance(previous_evidence_contract.get("required_next_tool_call"), dict)
         else {}
     )
+    if not required:
+        candidates = (
+            previous_evidence_contract.get("candidate_next_actions")
+            if isinstance(previous_evidence_contract.get("candidate_next_actions"), list)
+            else []
+        )
+        if len(candidates) == 1 and candidate_action_tool(candidates[0]) == "planner_scratchpad_read":
+            required = required_next_tool_call_from_action(candidates[0])
     if not required:
         return
     evidence["required_next_tool_call"] = required
@@ -458,6 +558,8 @@ def preserve_required_next_tool_call_for_prompt(
                 or required.get("reason")
             ),
         }
+        if isinstance(matched_action.get("batch_window"), dict):
+            continuation["batch_window"] = matched_action["batch_window"]
         evidence = enforce_required_scratchpad_read_continuation_contract(evidence, continuation)
         payload["required_next_tool_call"] = evidence.get("required_next_tool_call")
         if isinstance(evidence.get("forbidden_repeated_tool_calls"), list):

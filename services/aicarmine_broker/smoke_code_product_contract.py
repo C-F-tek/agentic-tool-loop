@@ -944,6 +944,22 @@ def main() -> int:
                 and micro_batch_contract.get("batchable_candidate_count") == 2,
                 f"micro batch contract did not allow two read-only candidates: {micro_batch_contract}",
             )
+            duplicate_batch_contract = evidence_builder._micro_batch_contract_from_candidates([
+                {
+                    "action": "tool",
+                    "tool": "repo_read",
+                    "arguments": {"path": target, "max_chars": "20000"},
+                    "reason": "read primary target duplicate",
+                    "source": "smoke",
+                    "action_id": "smoke-read-primary-string-duplicate",
+                },
+                *batch_candidates,
+            ])
+            require(
+                duplicate_batch_contract.get("batchable_candidate_count") == 2,
+                "micro batch contract allowed semantic duplicate read-only calls: "
+                f"{duplicate_batch_contract}",
+            )
             require(
                 all(item.get("tool") == "repo_read" for item in micro_batch_contract.get("allowed_batch_actions") or []),
                 f"micro batch contract allowed non-read/write candidate: {micro_batch_contract}",
