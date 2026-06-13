@@ -21,10 +21,11 @@ def _html_page(title: str, body: str, *, initial_job_id: str = "") -> str:
 <meta charset="utf-8">
 <title>{html.escape(title)}</title>
 <style>
-body {{ font-family: Segoe UI, Arial, sans-serif; margin: 18px; background: #101112; color: #e3e3e3; }}
+* {{ box-sizing: border-box; }}
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 18px; background: #101112; color: #e3e3e3; overflow-x: hidden; }}
 a {{ color: #8fd3ff; }}
-.grid {{ display: grid; grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.4fr); gap: 14px; align-items: start; }}
-.card {{ border: 1px solid #3a3a3a; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1c1f; }}
+.grid {{ display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.42fr); gap: 14px; align-items: start; min-width: 0; }}
+.card {{ border: 1px solid #3a3a3a; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1c1f; min-width: 0; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; }}
 textarea, input {{ width: 100%; box-sizing: border-box; background: #0f1012; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; }}
 input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
 label {{ display: block; margin-top: 8px; color: #c8c8c8; }}
@@ -33,14 +34,33 @@ button {{ background: #2b6ca3; color: white; border: 0; border-radius: 6px; padd
 button.secondary {{ background: #3d4651; }}
 button.danger {{ background: #9a3d3d; }}
 button:disabled {{ opacity: 0.45; cursor: not-allowed; }}
-pre {{ white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 12px; line-height: 1.35; }}
-table {{ border-collapse: collapse; width: 100%; }}
-td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; }}
-.metric-row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }}
+pre {{ white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: auto; max-width: 100%; margin: 0; font-size: 12px; line-height: 1.35; }}
+table {{ border-collapse: collapse; width: 100%; table-layout: fixed; }}
+td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; overflow-wrap: anywhere; }}
+.metric-row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 8px; min-width: 0; }}
 .metric {{ border: 1px solid #333; border-radius: 6px; padding: 8px; background: #141519; }}
 .metric span {{ color: #aaa; display: block; font-size: 11px; }}
 .metric b {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
 .pill {{ display: inline-block; border: 1px solid #3c4d5f; border-radius: 999px; padding: 3px 8px; margin: 2px 4px 2px 0; background: #131820; color: #dbeeff; font-size: 12px; }}
+.shell-header {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }}
+.shell-title {{ margin: 0; }}
+.toolbar {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }}
+.toolbar a, .toolbar button {{ margin: 0; }}
+.job-actions {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }}
+.job-actions a {{ display: inline-block; border: 1px solid #3d5368; border-radius: 6px; padding: 7px 9px; background: #13202a; color: #d8efff; text-decoration: none; }}
+.active-job {{ border-left: 4px solid #6fb3e8; }}
+.status-line {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }}
+.status-line b {{ color: #f0f0f0; }}
+.recent-actions {{ white-space: nowrap; }}
+.recent-actions button, .recent-actions a {{ margin: 2px; }}
+.mini-link {{ display: inline-block; color: #bfe5ff; text-decoration: none; border-bottom: 1px solid #44657d; }}
+.recent-job-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 8px; max-height: min(52vh, 620px); overflow: auto; padding-right: 2px; }}
+.recent-job {{ border: 1px solid #303a43; border-radius: 7px; background: #14171b; padding: 9px; min-width: 0; }}
+.recent-job-head {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }}
+.recent-job-id {{ font-family: Consolas, monospace; overflow-wrap: anywhere; }}
+.recent-job-goal {{ color: #c9d1d8; margin: 7px 0; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }}
+.recent-job-actions {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+.recent-job-actions button, .recent-job-actions a {{ margin: 0; }}
 .chat-grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
 .bubble {{ border-radius: 8px; padding: 11px; border: 1px solid #333; }}
 .bubble.user {{ background: #182331; border-left: 4px solid #6fb3e8; }}
@@ -53,6 +73,11 @@ td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; }}
 .warn {{ border-left: 4px solid #d0a34d; }}
 .bad {{ border-left: 4px solid #d15b5b; }}
 .muted {{ color: #aaa; }}
+@media (max-width: 980px) {{
+  body {{ margin: 10px; }}
+  .grid {{ grid-template-columns: minmax(0, 1fr); }}
+  .recent-job-list {{ max-height: none; }}
+}}
 </style>
 </head>
 <body>
@@ -74,7 +99,73 @@ function pretty(value) {{
   return JSON.stringify(value ?? {{}}, null, 2);
 }}
 function setStatus(text) {{
-  document.getElementById("lab-status").textContent = text;
+  const target = document.getElementById("lab-status");
+  if (!target) return;
+  target.textContent = text;
+  target.setAttribute("data-status", text);
+}}
+function jobPath(jobId, suffix = "") {{
+  return `/jobs/${{encodeURIComponent(jobId)}}${{suffix}}`;
+}}
+function stopPolling() {{
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+  setStatus(currentJobId ? `poll_stopped ${{currentJobId}}` : "poll_stopped");
+}}
+function updateActiveJob(jobId = "", statusText = "") {{
+  const target = document.getElementById("active-job-panel");
+  if (!target) return;
+  const cleanJob = String(jobId || "").trim();
+  if (!cleanJob) {{
+    target.innerHTML = `<div class="card active-job">
+      <h2>Active loop</h2>
+      <p class="muted">No job selected.</p>
+    </div>`;
+    return;
+  }}
+  target.innerHTML = `<div class="card active-job">
+    <div class="shell-header">
+      <div>
+        <h2 class="shell-title">Active loop</h2>
+        <div class="status-line"><span>job</span><b>${{htmlEscape(cleanJob)}}</b><span class="muted">${{htmlEscape(statusText || "")}}</span></div>
+      </div>
+      <div class="toolbar">
+        <button onclick="loadJob(true)">Load</button>
+        <button class="secondary" onclick="startPolling()">Poll</button>
+        <button class="secondary" onclick="stopPolling()">Stop poll</button>
+      </div>
+    </div>
+    <div class="job-actions">
+      <a href="${{jobPath(cleanJob, "/planner-lab")}}">job lab</a>
+      <a href="${{jobPath(cleanJob, "/ia-view")}}">IA view</a>
+      <a href="${{jobPath(cleanJob, "/events")}}">events</a>
+      <a href="${{jobPath(cleanJob, "/planner-stream")}}">planner stream</a>
+      <a href="${{jobPath(cleanJob, "/final.json")}}">final json</a>
+      <a href="${{jobPath(cleanJob, "/json")}}">status json</a>
+    </div>
+  </div>`;
+}}
+function selectJob(jobId, poll = true) {{
+  const cleanJob = String(jobId || "").trim();
+  if (!cleanJob) {{
+    setStatus("job_id_missing");
+    return;
+  }}
+  if (currentJobId && currentJobId !== cleanJob) {{
+    guidedConversation = [];
+    guidedDraftText = "";
+  }}
+  currentJobId = cleanJob;
+  const input = document.getElementById("job-id");
+  if (input) input.value = cleanJob;
+  updateActiveJob(cleanJob, poll ? "polling" : "selected");
+  if (poll) startPolling();
+  else loadJob(true);
+}}
+function setLaunchBusy(busy) {{
+  document.querySelectorAll("[data-launch-button]").forEach(button => {{
+    button.disabled = !!busy;
+  }});
 }}
 async function startPlannerJob(returnMode = "background") {{
   const task = document.getElementById("planner-request").value.trim();
@@ -87,23 +178,31 @@ async function startPlannerJob(returnMode = "background") {{
   setStatus("starting");
   guidedConversation = [];
   guidedDraftText = "";
-  const response = await fetch("/planner-lab/start", {{
-    method: "POST",
-    headers: {{"Content-Type": "application/json"}},
-    body: JSON.stringify({{
-      task,
-      return_mode: returnMode,
-      wait_seconds: returnMode === "wait" ? Number(document.getElementById("wait-seconds")?.value || 30) : 1
-    }})
-  }});
-  const data = await response.json();
-  document.getElementById("start-result").textContent = pretty(data);
-  if (data.job_id) {{
-    currentJobId = data.job_id;
-    document.getElementById("job-id").value = currentJobId;
-    startPolling();
-  }} else {{
+  setLaunchBusy(true);
+  try {{
+    const response = await fetch("/planner-lab/start", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json"}},
+      body: JSON.stringify({{
+        task,
+        return_mode: returnMode,
+        wait_seconds: returnMode === "wait" ? Number(document.getElementById("wait-seconds")?.value || 30) : 1
+      }})
+    }});
+    const data = await response.json();
+    document.getElementById("start-result").textContent = pretty(data);
+    if (data.job_id) {{
+      selectJob(data.job_id, true);
+      setStatus(returnMode === "wait" ? "started_wait_result_loaded" : "started_polling");
+    }} else {{
+      setStatus("start_failed");
+      updateActiveJob("", "");
+    }}
+  }} catch (err) {{
+    document.getElementById("start-result").textContent = pretty({{ok: false, error: String(err && err.message ? err.message : err)}});
     setStatus("start_failed");
+  }} finally {{
+    setLaunchBusy(false);
   }}
 }}
 async function loadJob(force = false) {{
@@ -125,10 +224,23 @@ async function loadJob(force = false) {{
     guidedDraftText = "";
   }}
   currentJobId = jobId;
+  updateActiveJob(jobId, "loading");
   const params = labLimitParams();
-  const response = await fetch(`/jobs/${{encodeURIComponent(jobId)}}/planner-lab.json?${{params.toString()}}`);
-  const data = await response.json();
-  renderLab(data);
+  try {{
+    const response = await fetch(`/jobs/${{encodeURIComponent(jobId)}}/planner-lab.json?${{params.toString()}}`);
+    const data = await response.json();
+    if (!response.ok || data.ok === false) {{
+      document.getElementById("lab-output").innerHTML = `<div class="card bad"><h2>Load failed</h2><pre>${{htmlEscape(pretty(data))}}</pre></div>`;
+      setStatus("load_failed");
+      updateActiveJob(jobId, "load failed");
+      return;
+    }}
+    renderLab(data);
+  }} catch (err) {{
+    document.getElementById("lab-output").innerHTML = `<div class="card bad"><h2>Load failed</h2><pre>${{htmlEscape(String(err && err.message ? err.message : err))}}</pre></div>`;
+    setStatus("load_failed");
+    updateActiveJob(jobId, "load failed");
+  }}
 }}
 function labLimitParams() {{
   const params = new URLSearchParams();
@@ -284,7 +396,7 @@ function renderPendingChat(task) {{
     <h2>Chat + Thinking Step Summary</h2>
     <div class="chat-grid">
       <div class="bubble user"><b>User</b><pre>${{htmlEscape(task)}}</pre></div>
-      <div class="bubble warn"><b>Planner</b><pre>Job starting. Waiting for payload extracted from the OpenWebUI-bound response.</pre></div>
+      <div class="bubble warn"><b>Planner</b><pre>Job starting. Waiting for the terminal 30B payload extracted by the internal loop.</pre></div>
     </div>
   </div>`;
 }}
@@ -299,7 +411,7 @@ function renderChatTurn(data) {{
     <h2>Chat + Thinking Step Summary</h2>
     <div class="chat-grid">
       <div class="bubble user"><b>User request</b><pre>${{htmlEscape(userMessage)}}</pre></div>
-      <div class="bubble ${{assistantMessage ? "assistant" : "warn"}}"><b>OpenWebUI-bound assistant payload</b><span class="muted"> status=${{htmlEscape(status)}}</span><pre>${{htmlEscape(assistantMessage || "No assistant text extracted yet.")}}</pre></div>
+      <div class="bubble ${{assistantMessage ? "assistant" : "warn"}}"><b>Terminal 30B assistant payload</b><span class="muted"> status=${{htmlEscape(status)}}</span><pre>${{htmlEscape(assistantMessage || "No assistant text extracted yet.")}}</pre></div>
       ${{gaps.length ? `<div class="bubble warn"><b>Payload gaps</b><pre>${{htmlEscape(gaps.join("\\n"))}}</pre></div>` : ""}}
     </div>
     <details><summary>Visible fields sent toward 30B</summary><pre>${{htmlEscape(pretty(visibleFields))}}</pre></details>
@@ -401,7 +513,7 @@ async function composeFromPayload() {{
     turn_id: `${{turnId}}-waiting`,
     waiting_for: turnId,
     status: "waiting",
-    content: "Waiting for Ollama structured response from the current OpenWebUI-bound payload...",
+    content: "Waiting for an internal Ollama structured response from the current terminal 30B payload...",
     ts: new Date().toISOString()
   }});
   guidedDraftText = "";
@@ -490,6 +602,14 @@ function renderGuidedTurn(turn, index) {{
 function renderLab(data) {{
   const readiness = data.payload_readiness || {{}};
   const statusClass = data.ok && readiness.tool_context_parse_ok ? "ok" : "bad";
+  const jobInfo = data.job || {{}};
+  const loadedJobId = jobInfo.job_id || currentJobId || "";
+  if (loadedJobId) {{
+    currentJobId = loadedJobId;
+    const input = document.getElementById("job-id");
+    if (input) input.value = loadedJobId;
+    updateActiveJob(loadedJobId, jobInfo.status || "loaded");
+  }}
   document.getElementById("lab-output").innerHTML = `
     ${{renderChatTurn(data)}}
     ${{renderTopLevelSurface(data)}}
@@ -503,7 +623,7 @@ function renderLab(data) {{
     <div class="card"><h2>Code products from payload</h2>${{renderCodeProducts(data.code_products || [])}}</div>
     <div class="card">
       <h2>Guided payload conversation</h2>
-      <p class="muted">Wait-mode operator chat over the current OpenWebUI-bound payload. It uses Ollama /api/chat with JSON schema and optional thinking, does not call tools, and keeps each follow-up bounded.</p>
+      <p class="muted">Wait-mode operator chat over the current terminal 30B payload. It uses internal Ollama /api/chat with JSON schema and optional thinking, does not call tools, and keeps each follow-up bounded.</p>
       <textarea id="guided-operator-prompt" oninput="captureGuidedDraft()" placeholder="Chiedi un follow-up sul payload: descrivi dettagliatamente, verifica cosa manca, prepara una risposta diff, o controlla se una patch e applicabile..."></textarea>
       <label><input id="compose-think" type="checkbox" /> request Ollama thinking trace</label>
       <label>max_payload_chars</label>
@@ -522,7 +642,10 @@ function renderLab(data) {{
 }}
 if (initialJobId) {{
   document.getElementById("job-id").value = initialJobId;
+  updateActiveJob(initialJobId, "polling");
   startPolling();
+}} else {{
+  updateActiveJob("", "");
 }}
 </script>
 </body>
@@ -530,40 +653,64 @@ if (initialJobId) {{
 
 
 def planner_lab_index_html(*, limit: int = 20) -> str:
-    rows = []
+    recent_cards = []
     for job in list_agent_jobs(limit=max(1, min(int(limit or 20), 100))):
-        job_id = html.escape(str(job.get("job_id") or ""))
-        rows.append(
-            "<tr>"
-            f"<td><a href=\"/jobs/{job_id}/planner-lab\">{job_id}</a></td>"
-            f"<td>{html.escape(str(job.get('status') or ''))}</td>"
-            f"<td>{html.escape(str(job.get('goal') or ''))}</td>"
-            "</tr>"
+        job_id_raw = str(job.get("job_id") or "")
+        job_id = html.escape(job_id_raw)
+        job_js = html.escape(json.dumps(job_id_raw), quote=True)
+        status = html.escape(str(job.get("status") or ""))
+        goal = html.escape(str(job.get("goal") or ""))
+        recent_cards.append(
+            "<article class=\"recent-job\">"
+            "<div class=\"recent-job-head\">"
+            f"<a class=\"recent-job-id\" href=\"/jobs/{job_id}/planner-lab\">{job_id}</a>"
+            f"<span class=\"pill\">{status}</span>"
+            "</div>"
+            f"<div class=\"recent-job-goal\">{goal}</div>"
+            "<div class=\"recent-job-actions\">"
+            f"<button onclick=\"selectJob({job_js}, true)\">Load</button>"
+            f"<a class=\"mini-link\" href=\"/jobs/{job_id}/ia-view\">IA</a>"
+            f"<a class=\"mini-link\" href=\"/jobs/{job_id}/events\">events</a>"
+            f"<a class=\"mini-link\" href=\"/jobs/{job_id}/planner-stream\">stream</a>"
+            "</div>"
+            "</article>"
         )
     body = f"""
 <div class="card">
-  <h1>Planner Payload Lab</h1>
-  <p class="muted">Operator-only 3572 chat + thinking-step-summary console. It starts normal planner jobs, reads the same terminal payload that goes toward OpenWebUI, and exposes what the 30B should answer from.</p>
-  <p class="muted">Mission: calibrate payload quality. The lab must show the user request, the extracted evidence guide, per-step planner/validator/tool state, payload gaps, code-product candidates, and an explicit repo_apply_patch lane only when exact old_text/new_text is present.</p>
-  <p><a href="/jobs">jobs home</a></p>
+  <div class="shell-header">
+    <div>
+      <h1 class="shell-title">Internal Loop Lab</h1>
+      <p class="muted">Operator-only 3572 console: start an internal planner loop, follow its terminal 30B payload, and continue with a bounded diagnostic chat inside the loop.</p>
+    </div>
+    <div class="toolbar">
+      <a class="mini-link" href="/jobs">jobs</a>
+      <a class="mini-link" href="/jobs.json">jobs json</a>
+    </div>
+  </div>
 </div>
 <div class="grid">
   <div>
     <div class="card">
-      <h2>Direct planner request</h2>
+      <h2>Launch internal loop</h2>
       <textarea id="planner-request" placeholder="analizza la repo e proponi diff concreti..."></textarea>
       <label>wait_seconds for Start + wait</label>
       <input id="wait-seconds" type="number" min="1" max="30" value="30" />
-      <button onclick="startPlannerJob('background')">Start planner job</button>
-      <button class="secondary" onclick="startPlannerJob('wait')">Start + wait for payload</button>
+      <div class="toolbar">
+        <button data-launch-button="1" onclick="startPlannerJob('background')">Start loop</button>
+        <button data-launch-button="1" class="secondary" onclick="startPlannerJob('wait')">Start + wait</button>
+      </div>
       <div class="muted">Status: <span id="lab-status">idle</span></div>
       <pre id="start-result"></pre>
     </div>
+    <div id="active-job-panel"></div>
     <div class="card">
       <h2>Load existing job</h2>
       <input id="job-id" placeholder="job-..." />
-      <button onclick="loadJob(true)">Load once</button>
-      <button class="secondary" onclick="startPolling()">Poll</button>
+      <div class="toolbar">
+        <button onclick="selectJob(document.getElementById('job-id').value, false)">Load once</button>
+        <button class="secondary" onclick="selectJob(document.getElementById('job-id').value, true)">Poll</button>
+        <button class="secondary" onclick="stopPolling()">Stop poll</button>
+      </div>
       <pre id="apply-result"></pre>
     </div>
     <div class="card">
@@ -574,11 +721,11 @@ def planner_lab_index_html(*, limit: int = 20) -> str:
       <input id="step-limit" type="number" min="1" max="500" value="80" />
       <label>code_product_limit</label>
       <input id="code-product-limit" type="number" min="1" max="200" value="40" />
-      <p class="muted">These values affect only this operator lab view, not planner gates or OpenWebUI public schema.</p>
+      <p class="muted">These values affect only this operator lab view, not planner gates or the public tool schema.</p>
     </div>
     <div class="card">
       <h2>Recent jobs</h2>
-      <table><thead><tr><th>Job</th><th>Status</th><th>Goal</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
+      <div class="recent-job-list">{''.join(recent_cards) if recent_cards else '<p class="muted">No recent jobs.</p>'}</div>
     </div>
   </div>
   <div id="lab-output"><div class="card"><p class="muted">Start or load a job.</p></div></div>
@@ -591,27 +738,42 @@ def agent_job_planner_lab_html(job_id: str) -> str:
     safe_job = html.escape(job_id)
     body = f"""
 <div class="card">
-  <h1>Planner Payload Lab - {safe_job}</h1>
-  <p><a href="/planner-lab">planner lab home</a> &middot; <a href="/jobs/{safe_job}/ia-view">IA view</a> &middot; <a href="/jobs/{safe_job}/final.json">final json</a></p>
-  <p class="muted">Chat + thinking-step-summary view for the OpenWebUI-bound payload. Use it to verify whether a detailed repo answer or diff request contains enough inline evidence before the external 30B answers.</p>
+  <div class="shell-header">
+    <div>
+      <h1 class="shell-title">Internal Loop Lab - {safe_job}</h1>
+      <p class="muted">Chat + thinking-step-summary view for the terminal 30B payload. Use it to verify whether a detailed repo answer or diff request contains enough inline evidence before a 30B answer is composed internally.</p>
+    </div>
+    <div class="toolbar">
+      <a class="mini-link" href="/planner-lab">lab home</a>
+      <a class="mini-link" href="/jobs/{safe_job}/ia-view">IA view</a>
+      <a class="mini-link" href="/jobs/{safe_job}/events">events</a>
+      <a class="mini-link" href="/jobs/{safe_job}/final.json">final json</a>
+    </div>
+  </div>
 </div>
 <div class="grid">
   <div>
     <div class="card">
-      <h2>Direct planner request</h2>
+      <h2>Launch internal loop</h2>
       <textarea id="planner-request" placeholder="analizza la repo e proponi diff concreti..."></textarea>
       <label>wait_seconds for Start + wait</label>
       <input id="wait-seconds" type="number" min="1" max="30" value="30" />
-      <button onclick="startPlannerJob('background')">Start planner job</button>
-      <button class="secondary" onclick="startPlannerJob('wait')">Start + wait for payload</button>
-      <p class="muted">Starts a new normal 3572 planner job and then renders the OpenWebUI-bound payload in this lab.</p>
+      <div class="toolbar">
+        <button data-launch-button="1" onclick="startPlannerJob('background')">Start loop</button>
+        <button data-launch-button="1" class="secondary" onclick="startPlannerJob('wait')">Start + wait</button>
+      </div>
+      <p class="muted">Starts a new normal 3572 planner job and then renders the terminal 30B payload in this internal lab.</p>
       <pre id="start-result"></pre>
     </div>
+    <div id="active-job-panel"></div>
     <div class="card">
       <h2>Job</h2>
       <input id="job-id" value="{safe_job}" />
-      <button onclick="loadJob(true)">Load once</button>
-      <button class="secondary" onclick="startPolling()">Poll</button>
+      <div class="toolbar">
+        <button onclick="selectJob(document.getElementById('job-id').value, false)">Load once</button>
+        <button class="secondary" onclick="selectJob(document.getElementById('job-id').value, true)">Poll</button>
+        <button class="secondary" onclick="stopPolling()">Stop poll</button>
+      </div>
       <div class="muted">Status: <span id="lab-status">idle</span></div>
       <pre id="apply-result"></pre>
     </div>
@@ -623,7 +785,7 @@ def agent_job_planner_lab_html(job_id: str) -> str:
       <input id="step-limit" type="number" min="1" max="500" value="80" />
       <label>code_product_limit</label>
       <input id="code-product-limit" type="number" min="1" max="200" value="40" />
-      <p class="muted">These values affect only this operator lab view, not planner gates or OpenWebUI public schema.</p>
+      <p class="muted">These values affect only this operator lab view, not planner gates or the public tool schema.</p>
     </div>
   </div>
   <div id="lab-output"><div class="card"><p class="muted">Loading...</p></div></div>

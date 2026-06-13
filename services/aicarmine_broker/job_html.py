@@ -5,6 +5,7 @@ import html
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .job_store import agent_job_root, compact_agent_status, list_agent_jobs, load_agent_job_state, read_agent_events, read_json
 
@@ -386,6 +387,84 @@ def _html_details(title: str, value: Any, *, open_by_default: bool = False) -> s
     )
 
 
+def _json_payload_char_count(value: Any) -> int:
+    try:
+        return len(_json_pretty(value))
+    except (TypeError, ValueError):
+        return len(str(value))
+
+
+def _json_preview(value: Any, *, max_chars: int = 220) -> str:
+    if isinstance(value, dict):
+        keys = [str(key) for key in list(value.keys())[:8]]
+        suffix = " ..." if len(value) > len(keys) else ""
+        return "keys: " + ", ".join(keys) + suffix
+    if isinstance(value, list):
+        labels = [_json_value_label(item) for item in value[:5]]
+        suffix = " ..." if len(value) > len(labels) else ""
+        return "items: " + ", ".join(labels) + suffix
+    if isinstance(value, str):
+        text = value.replace("\r", "\\r").replace("\n", "\\n")
+    else:
+        text = str(value)
+    return text[:max_chars] + ("..." if len(text) > max_chars else "")
+
+
+def _html_json_payload_index(payload: Any, *, section_base_url: str, path: str) -> str:
+    safe_base = section_base_url.rstrip("/")
+    if isinstance(payload, dict):
+        rows: list[str] = []
+        for key, value in payload.items():
+            key_text = str(key)
+            key_url = f"{safe_base}/key?key={quote(key_text, safe='')}"
+            rows.append(
+                "<tr>"
+                f"<td><code>{html.escape(key_text)}</code></td>"
+                f"<td>{html.escape(_json_value_label(value))}</td>"
+                f"<td>{html.escape(str(_json_payload_char_count(value)))}</td>"
+                f"<td>{html.escape(_json_preview(value))}</td>"
+                "<td>"
+                f"{_html_lazy_details('Load structured value', key_url, detail_key=f'{path}.{key_text}')}"
+                "</td>"
+                "</tr>"
+            )
+        return (
+            "<div class=\"json-index\" data-json-index=\"1\">"
+            "<table><thead><tr>"
+            "<th>Key</th><th>Type</th><th>Chars</th><th>Preview</th><th>Structured value</th>"
+            "</tr></thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table></div>"
+        )
+    if isinstance(payload, list):
+        preview_rows: list[str] = []
+        for index, item in enumerate(payload[:50]):
+            key_url = f"{safe_base}/index?index={index}"
+            preview_rows.append(
+                "<tr>"
+                f"<td><code>[{index}]</code></td>"
+                f"<td>{html.escape(_json_value_label(item))}</td>"
+                f"<td>{html.escape(str(_json_payload_char_count(item)))}</td>"
+                f"<td>{html.escape(_json_preview(item))}</td>"
+                "<td>"
+                f"{_html_lazy_details('Load structured item', key_url, detail_key=f'{path}.{index}')}"
+                "</td>"
+                "</tr>"
+            )
+        omitted = len(payload) - 50
+        omitted_html = f"<p class=\"muted\">{omitted} additional items omitted from the initial map.</p>" if omitted > 0 else ""
+        return (
+            "<div class=\"json-index\" data-json-index=\"1\">"
+            f"{omitted_html}"
+            "<table><thead><tr>"
+            "<th>Index</th><th>Type</th><th>Chars</th><th>Preview</th><th>Structured item</th>"
+            "</tr></thead><tbody>"
+            + "".join(preview_rows)
+            + "</tbody></table></div>"
+        )
+    return _html_json_tree(payload, path=path)
+
+
 def _html_lazy_details(
     title: str,
     url: str,
@@ -601,6 +680,63 @@ def _json_tree_css() -> str:
   font-size: 11px;
   margin: 0 0 6px 0;
   text-transform: uppercase;
+}
+"""
+
+
+def _adaptive_dashboard_css() -> str:
+    return """
+* { box-sizing: border-box; }
+html { min-width: 0; }
+body { overflow-x: hidden; }
+a { overflow-wrap: anywhere; }
+.card,
+details,
+.metric,
+.control-panel,
+.step-card,
+.json-tree,
+.json-index {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.card {
+  overflow: hidden;
+}
+details {
+  max-width: 100%;
+}
+summary {
+  overflow-wrap: anywhere;
+}
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
+}
+table {
+  table-layout: fixed;
+}
+td,
+th {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.adaptive-grid,
+.metrics,
+.control-grid {
+  min-width: 0;
+}
+.adaptive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  body { margin: 10px; }
+  td, th { padding: 6px; }
 }
 """
 
@@ -953,6 +1089,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
   .event-type {{ font-family: Consolas, monospace; }}
   .audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
   .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
+  {_adaptive_dashboard_css()}
   {_json_tree_css()}
   {_gpu0_panel_css()}
 </style>
@@ -971,28 +1108,79 @@ def _structured_json_page(
     payload: Any,
     *,
     summary: dict[str, Any] | None = None,
+    section_base_url: str,
 ) -> str:
+    payload_summary = {
+        "payload_type": type(payload).__name__,
+        "payload_chars": _json_payload_char_count(payload),
+        "top_level": _json_value_label(payload),
+    }
+    if isinstance(payload, dict):
+        payload_summary["top_level_keys"] = list(payload.keys())
+    elif isinstance(payload, list):
+        payload_summary["items"] = len(payload)
+    merged_summary = {**payload_summary, **(summary or {})}
     body = (
         "<div class=\"card\">"
         f"<div class=\"status\">{html.escape(title)} - {html.escape(job_id)}</div>"
         f"<p>{_dashboard_links(job_id)}</p>"
         "</div>"
     )
-    if summary:
-        body += (
-            "<div class=\"card\"><h2>Summary</h2>"
-            f"{_html_json_tree(summary, path='summary')}"
-            "</div>"
-        )
     body += (
+        "<div class=\"card\"><h2>Summary</h2>"
+        f"{_html_json_tree(merged_summary, path='summary')}"
+        "</div>"
         "<div class=\"card\"><h2>Structured JSON</h2>"
-        f"{_html_json_tree(payload, path=title)}"
+        "<p class=\"muted\">Top-level map is loaded inline. Full branches are fetched only when opened.</p>"
+        f"{_html_json_payload_index(payload, section_base_url=section_base_url, path=title)}"
+        f"{_html_lazy_details('Complete structured JSON', f'{section_base_url}/root', detail_key=f'{title}.root')}"
         "</div>"
         "<div class=\"card\"><h2>Raw JSON</h2>"
-        f"{_html_details('Complete raw JSON', payload)}"
+        "<p class=\"muted\">Raw JSON is an audit fallback and is loaded on demand.</p>"
+        f"{_html_lazy_details('Complete raw JSON', f'{section_base_url}/raw', detail_key=f'{title}.raw')}"
         "</div>"
     )
     return _html_page(title, body, job_id=job_id)
+
+
+def _structured_json_section_html(
+    title: str,
+    payload: Any,
+    section: str,
+    *,
+    key: str = "",
+    index: int = 0,
+) -> str:
+    section = str(section or "").strip()
+    if section == "raw":
+        return _html_pre(payload)
+    if section == "root":
+        return _html_json_tree(payload, path=f"{title}.root")
+    if section == "key":
+        if not isinstance(payload, dict):
+            return _html_json_tree(
+                {"ok": False, "error": "payload_is_not_object", "payload_type": type(payload).__name__},
+                path=f"{title}.error",
+            )
+        if key not in payload:
+            return _html_json_tree({"ok": False, "error": "key_not_found", "key": key}, path=f"{title}.error")
+        return (
+            f"<h3><code>{html.escape(key)}</code></h3>"
+            f"{_html_json_tree(payload[key], path=f'{title}.{_safe_detail_key(key)}')}"
+        )
+    if section == "index":
+        if not isinstance(payload, list):
+            return _html_json_tree(
+                {"ok": False, "error": "payload_is_not_array", "payload_type": type(payload).__name__},
+                path=f"{title}.error",
+            )
+        if index < 0 or index >= len(payload):
+            return _html_json_tree({"ok": False, "error": "index_not_found", "index": index}, path=f"{title}.error")
+        return (
+            f"<h3><code>[{index}]</code></h3>"
+            f"{_html_json_tree(payload[index], path=f'{title}.{index}')}"
+        )
+    return _html_json_tree({"ok": False, "error": "unknown_json_section", "section": section}, path=f"{title}.error")
 
 
 def agent_job_status_json_view_html(job_id: str) -> str:
@@ -1001,6 +1189,7 @@ def agent_job_status_json_view_html(job_id: str) -> str:
         job_id,
         "Compact Status JSON View",
         payload,
+        section_base_url=f"/jobs/{job_id}/json/section",
         summary={
             "ok": payload.get("ok"),
             "status": payload.get("status"),
@@ -1008,6 +1197,11 @@ def agent_job_status_json_view_html(job_id: str) -> str:
             "events_tail_count": len(payload.get("events_tail") or []),
         } if isinstance(payload, dict) else None,
     )
+
+
+def agent_job_status_json_section_html(job_id: str, section: str, *, key: str = "", index: int = 0) -> str:
+    payload = compact_agent_status(job_id, include_events=True)
+    return _structured_json_section_html("Compact Status JSON View", payload, section, key=key, index=index)
 
 
 def agent_job_final_json_view_html(job_id: str) -> str:
@@ -1027,7 +1221,24 @@ def agent_job_final_json_view_html(job_id: str) -> str:
             else []
         ),
     }
-    return _structured_json_page(job_id, "Final JSON View", payload, summary=summary)
+    return _structured_json_page(
+        job_id,
+        "Final JSON View",
+        payload,
+        summary=summary,
+        section_base_url=f"/jobs/{job_id}/final.json/section",
+    )
+
+
+def agent_job_final_json_section_html(job_id: str, section: str, *, key: str = "", index: int = 0) -> str:
+    root = agent_job_root(job_id)
+    path = root / "final.json"
+    if not path.exists():
+        payload: Any = {"ok": False, "job_id": job_id, "error": "final_not_found"}
+    else:
+        data = read_json(path, {})
+        payload = data if isinstance(data, dict) else {"ok": True, "job_id": job_id, "data": data}
+    return _structured_json_section_html("Final JSON View", payload, section, key=key, index=index)
 
 
 def _markdown_sections(text: str) -> list[tuple[str, str]]:
@@ -1113,9 +1324,12 @@ def agent_job_events_view_html(job_id: str) -> str:
         for event_index, event in enumerate(step_events):
             payload_html = ""
             if event.get("payload") not in (None, "", [], {}):
-                payload_html = _html_detail_block(
+                payload_html = _html_lazy_details(
                     "payload",
-                    _html_json_tree(event.get("payload"), path=f"events.{step}.{event_index}.payload"),
+                    (
+                        f"/jobs/{job_id}/events/section/payload"
+                        f"?step={quote(str(step), safe='')}&index={event_index}"
+                    ),
                     detail_key=f"events.{step}.{event_index}.payload",
                 )
             rows.append(
@@ -1143,10 +1357,34 @@ def agent_job_events_view_html(job_id: str) -> str:
         f"{''.join(step_parts) if step_parts else '<p>No events.</p>'}"
         "</div>"
         "<div class=\"card\"><h2>Raw NDJSON</h2>"
-        f"{_html_lazy_details('Complete events.ndjson', f'/jobs/{job_id}/ia-view/section/events_raw', detail_key='events.raw_ndjson')}"
+        f"{_html_lazy_details('Complete events.ndjson', f'/jobs/{job_id}/events/section/raw', detail_key='events.raw_ndjson')}"
         "</div>"
     )
     return _html_page("Events View", body, refresh_seconds=2, job_id=job_id)
+
+
+def agent_job_events_section_html(job_id: str, section: str, *, step: str = "", index: int = 0) -> str:
+    root = agent_job_root(job_id)
+    raw, events = _read_events_ndjson(root)
+    section = str(section or "").strip()
+    if section == "raw":
+        return _html_pre(raw)
+    if section != "payload":
+        return _html_json_tree({"ok": False, "error": "unknown_events_section", "section": section}, path="events.error")
+    by_step: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        step_key = str(event.get("step") or "job")
+        by_step.setdefault(step_key, []).append(event)
+    step_events = by_step.get(str(step or "job")) or []
+    if index < 0 or index >= len(step_events):
+        return _html_json_tree(
+            {"ok": False, "error": "event_payload_not_found", "step": step, "index": index},
+            path="events.error",
+        )
+    payload = step_events[index].get("payload")
+    if payload in (None, "", [], {}):
+        return _html_json_tree({"ok": False, "error": "event_payload_empty", "step": step, "index": index}, path="events.error")
+    return _html_json_tree(payload, path=f"events.{_safe_detail_key(step)}.{index}.payload")
 
 
 def agent_job_ia_view_json_view_html(job_id: str) -> str:
@@ -1578,6 +1816,7 @@ td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
 pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
 .muted {{ color: #aaa; }}
+{_adaptive_dashboard_css()}
 {_json_tree_css()}
 </style>
 {_stateful_refresh_script(max(2, int(refresh_seconds or 5)))}
@@ -1725,6 +1964,8 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
         },
         "openwebui_30b_payload": terminal_payload,
         "openwebui_30b_payload_available": terminal_available,
+        "openwebui_30b_payload_included": bool(include_heavy and terminal_payload),
+        "openwebui_30b_payload_omitted": bool(terminal_available and not include_heavy),
     }
 
 
@@ -2081,6 +2322,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .metric b {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
 .audit-ok {{ border-left: 4px solid #45a75a; padding-left: 10px; }}
 .audit-bad {{ border-left: 4px solid #d15b5b; padding-left: 10px; }}
+{_adaptive_dashboard_css()}
 {_json_tree_css()}
 {_ia_control_css()}
 {_gpu0_panel_css()}
@@ -2138,6 +2380,7 @@ table {{ border-collapse: collapse; width: 100%; }}
 td, th {{ border-bottom: 1px solid #333; padding: 8px; vertical-align: top; }}
 pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 .status {{ font-size: 20px; font-weight: 700; }}
+{_adaptive_dashboard_css()}
 {_gpu0_panel_css()}
 </style>
 {_stateful_refresh_script(2)}
