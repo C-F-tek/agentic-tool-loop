@@ -43,6 +43,9 @@ def validate_planner_decision_against_evidence(
     _copyable_example_text = deps["copyable_example_text"]
     _decision_matches_prompt_context_continuation = deps["decision_matches_prompt_context_continuation"]
     _decision_paths = deps["decision_paths"]
+    _enforce_required_scratchpad_read_continuation_contract = deps[
+        "enforce_required_scratchpad_read_continuation_contract"
+    ]
     _final_answer_is_action_plan_without_code_product = deps["final_answer_is_action_plan_without_code_product"]
     _final_composition_tool_names_from_candidates = deps["final_composition_tool_names_from_candidates"]
     _repo_analysis_final_answer_quality = deps["repo_analysis_final_answer_quality"]
@@ -120,6 +123,11 @@ def validate_planner_decision_against_evidence(
             prompt_context_continuation_required,
         )
     )
+    if prompt_context_continuation_required:
+        contract = _enforce_required_scratchpad_read_continuation_contract(
+            contract,
+            prompt_context_continuation_required,
+        )
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
         return {

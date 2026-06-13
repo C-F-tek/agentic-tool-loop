@@ -145,6 +145,7 @@ from .application.public_payload.openwebui_tool_context import build_tool_contex
 from .application.tool_surface.candidate_actions import (
     candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
+    enforce_required_scratchpad_read_continuation_contract as _enforce_scratchpad_read_continuation_contract_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
     required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
@@ -707,6 +708,16 @@ def _preserve_required_next_tool_call_for_prompt(
     previous_evidence_contract: dict[str, Any],
 ) -> None:
     _preserve_required_next_tool_call_for_prompt_impl(payload, previous_evidence_contract)
+
+
+def _enforce_required_scratchpad_read_continuation_contract(
+    contract: dict[str, Any],
+    continuation: dict[str, Any],
+) -> dict[str, Any]:
+    return _enforce_scratchpad_read_continuation_contract_impl(
+        contract,
+        continuation,
+    )
 
 
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
@@ -1344,6 +1355,9 @@ def _build_planner_user_payload(
             "available_tools_window_pack": _available_tools_window_pack,
             "compact_evidence_contract_for_prompt": _compact_evidence_contract_for_prompt,
             "compact_tool_manifest_for_prompt": _compact_tool_manifest_for_prompt,
+            "enforce_required_scratchpad_read_continuation_contract": (
+                _enforce_required_scratchpad_read_continuation_contract
+            ),
             "forbidden_repeated_prompt_window_calls": _forbidden_repeated_prompt_window_calls,
             "hard_budget_evidence_contract_for_prompt": _hard_budget_evidence_contract_for_prompt,
             "json_char_len": _json_char_len,
@@ -3092,6 +3106,9 @@ def validate_planner_decision_against_evidence(
             "copyable_example_text": _copyable_example_text,
             "decision_matches_prompt_context_continuation": _decision_matches_prompt_context_continuation,
             "decision_paths": _decision_paths,
+            "enforce_required_scratchpad_read_continuation_contract": (
+                _enforce_required_scratchpad_read_continuation_contract
+            ),
             "final_answer_is_action_plan_without_code_product": _final_answer_is_action_plan_without_code_product,
             "final_composition_tool_names_from_candidates": _final_composition_tool_names_from_candidates,
             "repo_analysis_final_answer_quality": _repo_analysis_final_answer_quality,
@@ -3863,6 +3880,18 @@ def controller_guard_result_for_validation(
 ) -> dict[str, Any]:
     violations = _list_or_empty(validation.get("violations"))
     contract = _dict_or_empty(validation.get("evidence_contract"))
+    required_continuation = (
+        validation.get("required_prompt_context_continuation")
+        if isinstance(validation.get("required_prompt_context_continuation"), dict)
+        else {}
+    )
+    if required_continuation:
+        contract = _enforce_required_scratchpad_read_continuation_contract(
+            contract,
+            required_continuation,
+        )
+        validation = dict(validation)
+        validation["evidence_contract"] = contract
     guard = {
         "tool": "controller_guard",
         "ok": True,

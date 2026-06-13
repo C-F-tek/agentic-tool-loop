@@ -119,6 +119,9 @@ class PromptPackBuilder:
         _available_tools_window_pack = deps["available_tools_window_pack"]
         _compact_evidence_contract_for_prompt = deps["compact_evidence_contract_for_prompt"]
         _compact_tool_manifest_for_prompt = deps["compact_tool_manifest_for_prompt"]
+        _enforce_required_scratchpad_read_continuation_contract = deps[
+            "enforce_required_scratchpad_read_continuation_contract"
+        ]
         _forbidden_repeated_prompt_window_calls = deps["forbidden_repeated_prompt_window_calls"]
         _hard_budget_evidence_contract_for_prompt = deps["hard_budget_evidence_contract_for_prompt"]
         _json_char_len = deps["json_char_len"]
@@ -132,7 +135,6 @@ class PromptPackBuilder:
         _prompt_generation_headroom_char_budget = deps["prompt_generation_headroom_char_budget"]
         _prompt_window_chars = deps["prompt_window_chars"]
         _report_exceeds_generation_headroom = deps["report_exceeds_generation_headroom"]
-        _required_next_tool_call_from_action = deps["required_next_tool_call_from_action"]
         _required_working_set_continuation_action = deps["required_working_set_continuation_action"]
         _required_working_set_for_prompt = deps["required_working_set_for_prompt"]
         _tool_shape_examples_for_prompt = deps["tool_shape_examples_for_prompt"]
@@ -186,38 +188,22 @@ class PromptPackBuilder:
                 if compact_mode
                 else _compact_evidence_contract_for_prompt(evidence_contract)
             )
-            continuation_action = (
-                None
-                if force_terminal_decision
-                else _required_working_set_continuation_action(
-                    required_working_set,
-                    history=history,
-                    window_chars=window_chars,
-                )
+            continuation_action = _required_working_set_continuation_action(
+                required_working_set,
+                history=history,
+                window_chars=window_chars,
             )
             if continuation_action:
-                required_next_tool_call = _required_next_tool_call_from_action(continuation_action)
                 forbidden_repeated_calls = _forbidden_repeated_prompt_window_calls(
                     history,
                     continuation_action,
                 )
-                evidence_for_prompt["candidate_next_actions"] = [continuation_action]
-                if required_next_tool_call:
-                    evidence_for_prompt["required_next_tool_call"] = required_next_tool_call
+                evidence_for_prompt = _enforce_required_scratchpad_read_continuation_contract(
+                    evidence_for_prompt,
+                    continuation_action,
+                )
                 if forbidden_repeated_calls:
                     evidence_for_prompt["forbidden_repeated_tool_calls"] = forbidden_repeated_calls
-                evidence_for_prompt["planner_may_choose_final"] = False
-                final_contract = evidence_for_prompt.get("finalization_contract") if isinstance(evidence_for_prompt.get("finalization_contract"), dict) else {}
-                final_contract["final_allowed"] = False
-                final_contract["planner_may_choose_final"] = False
-                final_contract["reason"] = "Real prompt context window continuation is required before final/code-product decision."
-                evidence_for_prompt["finalization_contract"] = final_contract
-                evidence_for_prompt["required_next_progress"] = continuation_action["reason"]
-                evidence_for_prompt["micro_batch_contract"] = {
-                    "schema": "planner_micro_batch_contract.v1",
-                    "allowed": False,
-                    "reason": "prompt_context_continuation_requires_single_tool_call",
-                }
             micro_batch_contract = (
                 evidence_for_prompt.get("micro_batch_contract")
                 if isinstance(evidence_for_prompt.get("micro_batch_contract"), dict)
@@ -251,8 +237,9 @@ class PromptPackBuilder:
                     "required_working_set_uses_real_sqlite_windows_when_compacted": True,
                     "optional_context_may_be_omitted_not_used_as_required_payload": True,
                     "step_budget_terminal_guidance_active": bool(step_budget_guidance),
-                    "required_window_continuation_suppressed_by_step_budget": bool(
-                        force_terminal_decision
+                    "required_window_continuation_suppressed_by_step_budget": False,
+                    "step_budget_terminal_guidance_deferred_by_required_window_continuation": bool(
+                        force_terminal_decision and continuation_action
                     ),
                 },
                 "terminal_environment_contract": {
@@ -378,6 +365,10 @@ class PromptPackBuilder:
             final_contract = previous_evidence.get("finalization_contract")
             if isinstance(final_contract, dict):
                 payload_evidence["finalization_contract"] = final_contract
+            payload_evidence = _enforce_required_scratchpad_read_continuation_contract(
+                payload_evidence,
+                continuation_candidate,
+            )
             payload_local["evidence_contract"] = payload_evidence
 
         payload, report, required_chars, required_errors = assemble(

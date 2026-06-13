@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
 from ..prompt.pack_builder import explicit_request_context_from_state
+from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
 
 
 def _dict_from_mapping(value: Any) -> dict[str, Any]:
@@ -58,6 +59,31 @@ def _apply_step_budget_guidance_to_contract(
                 "The configured step budget is almost exhausted. Prefer a validator-accepted "
                 "final when the evidence contract allows it; otherwise use at most one targeted "
                 "tool call needed to make the final robust."
+            ),
+        }
+        out["operational_notes"] = operational
+        return out
+
+    required = _dict_from_mapping(out.get("required_next_tool_call"))
+    if required.get("tool") == "planner_scratchpad_read":
+        guidance_payload["terminal_decision_deferred_by_required_continuation"] = True
+        out["planner_step_budget_guidance"] = guidance_payload
+        out = enforce_required_scratchpad_read_continuation_contract(
+            out,
+            {
+                "tool": "planner_scratchpad_read",
+                "arguments": _dict_from_mapping(required.get("arguments")),
+                "reason": required.get("reason") or out.get("required_next_progress"),
+            },
+        )
+        operational = _dict_from_mapping(out.get("operational_notes"))
+        operational["step_budget_hint"] = {
+            "mode": mode,
+            "remaining_steps": guidance_payload["remaining_steps"],
+            "instruction": (
+                "Step budget is exhausted, but an exact planner_scratchpad_read "
+                "continuation is still required. Consume that continuation before "
+                "any terminal final/block decision."
             ),
         }
         out["operational_notes"] = operational

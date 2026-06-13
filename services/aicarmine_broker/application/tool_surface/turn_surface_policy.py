@@ -13,6 +13,7 @@ from .candidate_actions import (
     candidate_action_is_build_state_write,
     candidate_action_tool,
     dedupe_candidate_actions,
+    enforce_required_scratchpad_read_continuation_contract,
     final_composition_tool_names_from_candidates,
 )
 
@@ -78,9 +79,14 @@ class ToolSurfacePolicy:
         contract = evidence_contract if isinstance(evidence_contract, dict) else {}
         continuation_tools = self._continuation_tool_only(prompt_context_continuation_required)
         if continuation_tools is not None:
-            names = set(continuation_tools)
-            names.update(self._ALWAYS_AVAILABLE_SUPPORT_TOOLS)
-            return self._ordered(names)
+            return self._ordered(set(continuation_tools))
+        required_tools = self._continuation_tool_only(
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else None
+        )
+        if required_tools is not None:
+            return self._ordered(set(required_tools))
 
         if self._terminal_policy_locks_surface(contract):
             terminal_policy_tools = self._policy_declared_tools(contract)
@@ -132,6 +138,37 @@ class ToolSurfacePolicy:
             "allowed_tool_names": [],
             "candidate_actions_filtered": False,
         }
+        required = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if required.get("tool") == "planner_scratchpad_read":
+            enforced = enforce_required_scratchpad_read_continuation_contract(
+                contract,
+                {
+                    "tool": "planner_scratchpad_read",
+                    "arguments": (
+                        required.get("arguments")
+                        if isinstance(required.get("arguments"), dict)
+                        else {}
+                    ),
+                    "reason": required.get("reason") or progress,
+                },
+            )
+            contract.clear()
+            contract.update(enforced)
+            policy.update(
+                {
+                    "reason": "required_scratchpad_read_continuation",
+                    "allowed_tool_names": ["planner_scratchpad_read"],
+                    "candidate_actions_filtered": True,
+                    "required_next_tool_call": contract.get("required_next_tool_call"),
+                    "required_scratchpad_read_continuation": True,
+                }
+            )
+            contract["turn_tool_surface_policy"] = policy
+            return contract
 
         if self._contract_final_required_now(contract):
             final_actions = [
@@ -427,6 +464,8 @@ class ToolSurfacePolicy:
         policy_allowed = surface_policy.get("allowed_tool_names")
         if not isinstance(policy_allowed, list):
             return None
+        if surface_policy.get("required_scratchpad_read_continuation"):
+            return self._ordered({str(name) for name in policy_allowed})
         if policy_allowed or surface_policy.get("locked_empty_tool_surface") or self._contract_final_required_now(contract):
             names = {str(name) for name in policy_allowed}
             if self._contract_final_required_now(contract):

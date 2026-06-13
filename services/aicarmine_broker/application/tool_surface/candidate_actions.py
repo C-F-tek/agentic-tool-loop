@@ -312,6 +312,64 @@ def required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any
     }
 
 
+def enforce_required_scratchpad_read_continuation_contract(
+    contract: dict[str, Any],
+    continuation: dict[str, Any],
+) -> dict[str, Any]:
+    """Make an exact scratchpad-read continuation dominate terminal guidance."""
+    out = dict(contract) if isinstance(contract, dict) else {}
+    if not isinstance(continuation, dict):
+        return out
+    tool = candidate_action_tool(continuation)
+    args = candidate_action_args(continuation)
+    if tool != "planner_scratchpad_read" or not args:
+        return out
+
+    reason = str(
+        continuation.get("reason")
+        or out.get("required_next_progress")
+        or "Required planner scratchpad continuation must be consumed before final/block."
+    )
+    action = {
+        "action": "tool",
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            key: value
+            for key, value in args.items()
+            if value not in (None, "", [], {})
+        },
+        "reason": reason,
+    }
+    required = required_next_tool_call_from_action(action)
+    if not required:
+        return out
+
+    out["candidate_next_actions"] = [action]
+    out["required_next_tool_call"] = required
+    out["planner_may_choose_final"] = False
+    out["required_next_progress"] = reason
+
+    final_contract = out.get("finalization_contract") if isinstance(out.get("finalization_contract"), dict) else {}
+    final_contract = dict(final_contract)
+    final_contract["final_allowed"] = False
+    final_contract["planner_may_choose_final"] = False
+    final_contract["reason"] = reason
+    out["finalization_contract"] = final_contract
+
+    micro_batch = out.get("micro_batch_contract") if isinstance(out.get("micro_batch_contract"), dict) else {}
+    micro_batch = dict(micro_batch)
+    micro_batch.update(
+        {
+            "schema": "planner_micro_batch_contract.v1",
+            "allowed": False,
+            "reason": "scratchpad_read_continuation_requires_single_tool_call",
+        }
+    )
+    out["micro_batch_contract"] = micro_batch
+
+    return out
+
+
 def decision_matches_prompt_context_continuation(
     decision: dict[str, Any],
     continuation: dict[str, Any],
@@ -390,7 +448,23 @@ def preserve_required_next_tool_call_for_prompt(
         if isinstance(previous_evidence_contract.get("finalization_contract"), dict)
         else {}
     )
-    if prev_final_contract.get("final_allowed") is False or required.get("tool") == "planner_scratchpad_read":
+    if required.get("tool") == "planner_scratchpad_read":
+        continuation = {
+            "tool": "planner_scratchpad_read",
+            "arguments": required.get("arguments") if isinstance(required.get("arguments"), dict) else {},
+            "reason": (
+                prev_final_contract.get("reason")
+                or evidence.get("required_next_progress")
+                or required.get("reason")
+            ),
+        }
+        evidence = enforce_required_scratchpad_read_continuation_contract(evidence, continuation)
+        payload["required_next_tool_call"] = evidence.get("required_next_tool_call")
+        if isinstance(evidence.get("forbidden_repeated_tool_calls"), list):
+            payload["forbidden_repeated_tool_calls"] = evidence["forbidden_repeated_tool_calls"]
+        payload["evidence_contract"] = evidence
+        return
+    if prev_final_contract.get("final_allowed") is False:
         final_contract["final_allowed"] = False
         final_contract["planner_may_choose_final"] = False
         final_contract["reason"] = prev_final_contract.get("reason") or evidence.get("required_next_progress")

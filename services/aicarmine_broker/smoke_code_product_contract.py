@@ -2934,15 +2934,9 @@ def main() -> int:
                     },
                 },
             )
-            support_primitive_surface = {
-                "planner_scratchpad_read",
-                "planner_scratchpad_write",
-                "runtime_sqlite_memory_search",
-                "runtime_sqlite_memory_write",
-            }
             require(
-                set(continuation_surface) == support_primitive_surface,
-                f"explicit continuation exposed non-support tools: {continuation_surface}",
+                continuation_surface == ["planner_scratchpad_read"],
+                f"explicit continuation did not lock surface to required read: {continuation_surface}",
             )
             forced_terminal_surface = planner._tool_surface_names_for_turn(
                 goal=goal,
@@ -2968,8 +2962,8 @@ def main() -> int:
                 },
             )
             require(
-                set(forced_terminal_surface).issubset(support_primitive_surface),
-                "forced terminal surface exposed non-support tools: "
+                forced_terminal_surface == ["planner_scratchpad_read"],
+                "forced terminal surface did not let required continuation preempt terminal policy: "
                 f"{forced_terminal_surface}",
             )
             final_composition_contract = planner._apply_turn_surface_policy(
@@ -3006,9 +3000,8 @@ def main() -> int:
                 },
             )
             require(
-                set(final_composition_surface).issubset(support_primitive_surface)
-                and "planner_scratchpad_write" in final_composition_surface,
-                "final composition surface should expose only support primitives with scratchpad write, "
+                final_composition_surface == ["planner_scratchpad_read"],
+                "prompt continuation should preempt final composition surface, "
                 f"got {final_composition_surface}",
             )
 

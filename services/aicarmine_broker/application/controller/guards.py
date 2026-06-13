@@ -47,6 +47,7 @@ def _stable_support_subturn_arguments(tool: str, args: dict[str, Any]) -> dict[s
         "target_file",
         "path",
         "offset",
+        "max_chars",
         "query",
     ):
         value = args.get(key)

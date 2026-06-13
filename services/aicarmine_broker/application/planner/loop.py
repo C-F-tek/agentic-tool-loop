@@ -287,6 +287,25 @@ def run_agentic_planner_job(
         raw_args = _dict_field(planner_decision, "arguments")
         internal_args = sanitize_tool_args(tool, dict(raw_args), original_args, public_tool_name)
         prior_results = successful_prior_tool_results_for_feedback(tool, internal_args)
+        evidence_contract = guard_result.get("evidence_contract")
+        if isinstance(evidence_contract, dict):
+            required = _dict_field(evidence_contract, "required_next_tool_call")
+            if required.get("tool") == "planner_scratchpad_read":
+                next_instruction = str(
+                    evidence_contract.get("required_next_progress")
+                    or required.get("reason")
+                    or "Consume the required planner_scratchpad_read continuation before final/block."
+                )
+                guard_result["next_instruction"] = next_instruction
+                guard_result["required_next_progress"] = next_instruction
+                guard_result["planner_may_choose_final"] = False
+                evidence_contract["required_next_progress"] = next_instruction
+                evidence_contract["planner_may_choose_final"] = False
+                operational = evidence_contract.get("operational_notes")
+                operational = operational if isinstance(operational, dict) else {}
+                operational["next_instruction"] = next_instruction
+                evidence_contract["operational_notes"] = operational
+                return
         next_instruction = (
             f"Do not call {tool} again with the same arguments. Use the successful "
             "prior tool result evidence already present in history to return action=final, "
@@ -297,7 +316,6 @@ def run_agentic_planner_job(
         guard_result["planner_may_choose_final"] = True
         if prior_results:
             guard_result["successful_prior_tool_results"] = prior_results
-        evidence_contract = guard_result.get("evidence_contract")
         if isinstance(evidence_contract, dict):
             evidence_contract["required_next_progress"] = guard_result["required_next_progress"]
             evidence_contract["planner_may_choose_final"] = True

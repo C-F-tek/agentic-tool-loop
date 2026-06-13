@@ -13,6 +13,9 @@ if str(SERVICES) not in sys.path:
 from aicarmine_broker.application.planner.validator import (  # noqa: E402
     validate_planner_decision_against_evidence,
 )
+from aicarmine_broker.application.tool_surface.candidate_actions import (  # noqa: E402
+    enforce_required_scratchpad_read_continuation_contract,
+)
 from aicarmine_broker.application.tool_surface.turn_surface_policy import (  # noqa: E402
     ToolSurfacePolicy,
 )
@@ -62,6 +65,9 @@ def _deps() -> dict[str, Any]:
         "copyable_example_text": lambda value: False,
         "decision_matches_prompt_context_continuation": _matches_prompt_context_continuation,
         "decision_paths": lambda args: [],
+        "enforce_required_scratchpad_read_continuation_contract": (
+            enforce_required_scratchpad_read_continuation_contract
+        ),
         "final_answer_is_action_plan_without_code_product": lambda answer: False,
         "final_composition_tool_names_from_candidates": lambda contract: set(),
         "repo_analysis_final_answer_quality": lambda answer, contract: {"violations": []},
@@ -177,12 +183,76 @@ def test_prompt_context_continuation_surface_preempts_terminal_empty_surface() -
         },
     )
 
-    assert names == [
-        "planner_scratchpad_read",
-        "planner_scratchpad_write",
-        "runtime_sqlite_memory_search",
-        "runtime_sqlite_memory_write",
+    assert names == ["planner_scratchpad_read"]
+
+
+def test_prompt_context_continuation_rejection_contract_disables_final() -> None:
+    continuation_required = {
+        "tool": "planner_scratchpad_read",
+        "arguments": {
+            "kind": "prompt_context_window",
+            "document_id": "prompt-context-smoke",
+            "offset": 32768,
+            "max_chars": 32768,
+        },
+        "reason": "Continue consuming prompt context before final.",
+    }
+
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "final",
+            "final_answer": "premature final",
+            "allowed_tool_names": ["planner_scratchpad_read"],
+            "allowed_native_tool_names": ["planner_scratchpad_read"],
+            "prompt_context_continuation_required": continuation_required,
+        },
+        [],
+        deps=_deps(),
+        config=_config(),
+    )
+
+    contract = result["evidence_contract"]
+    final_contract = contract["finalization_contract"]
+    assert result["ok"] is False
+    assert "prompt_context_continuation_required" in result["violations"]
+    assert final_contract["final_allowed"] is False
+    assert final_contract["planner_may_choose_final"] is False
+    assert contract["planner_may_choose_final"] is False
+    assert contract["required_next_tool_call"]["arguments"]["document_id"] == "prompt-context-smoke"
+    assert contract["candidate_next_actions"] == [
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_read",
+            "arguments": continuation_required["arguments"],
+            "reason": "Continue consuming prompt context before final.",
+        }
     ]
+
+
+def test_turn_surface_policy_required_scratchpad_read_overrides_final_contract() -> None:
+    policy = ToolSurfacePolicy(order_tool_names=lambda names: sorted(names))
+    contract: dict[str, Any] = {
+        "finalization_contract": {"final_allowed": True},
+        "planner_may_choose_final": True,
+        "required_next_progress": "Quality gate is satisfied. produce action=final.",
+        "required_next_tool_call": {
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": "prompt-context-smoke",
+                "offset": 32768,
+                "max_chars": 32768,
+            },
+            "reason": "Continue consuming prompt context before final.",
+        },
+    }
+
+    policy.apply(contract)
+
+    assert contract["finalization_contract"]["final_allowed"] is False
+    assert contract["planner_may_choose_final"] is False
+    assert contract["turn_tool_surface_policy"]["allowed_tool_names"] == ["planner_scratchpad_read"]
 
 
 def test_valid_support_primitive_is_allowed_during_final_required_gate() -> None:
