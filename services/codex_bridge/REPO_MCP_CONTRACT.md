@@ -271,7 +271,7 @@ env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_
 [mcp_servers.aicarmine_local_subagent]
 command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
 args = ['C:\Users\carmi\AI\services\codex_bridge\local_subagent_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000', AICARMINE_LOCAL_SUBAGENT_OLLAMA_URL = 'http://127.0.0.1:11434/api/chat', AICARMINE_LOCAL_SUBAGENT_MODEL = 'qwen3.5:9b-coding' }
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.playwright]
 command = 'npx'

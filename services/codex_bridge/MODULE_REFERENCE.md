@@ -33,7 +33,7 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 | `job_view_mcp_server.py` | Dedicated read-only job HTML view MCP server. It renders existing broker `job_html.py` and `job_planner_lab.py` views in-process, extracts outlines/links, validates bounded HTML and does not call broker HTTP, 3571, 3572, `vulkan_helper` or the agentic loop. |
 | `git_readonly_mcp_server.py` | Dedicated read-only Git MCP server for regression diagnostics. It exposes bounded `git log`, `git show`, `git diff`, `git blame` and branch compare helpers using subprocess argument lists, path validation under the selected repo root and no write commands. |
 | `project_memory_mcp_server.py` | Dedicated project-local persistent memory MCP server. It stores verified memory records in `state/project_memory/project_memory.sqlite3` through semantic tools only, requires explicit write confirmations, records source metadata, supports stale/superseded lifecycle states and never exposes free SQL, broker HTTP or agentic-loop calls. |
-| `local_subagent_mcp_server.py` | Dedicated local Ollama subagent MCP server for Codex-side read-only delegation. It uses only the 11434 Ollama `/api/chat` endpoint, rejects 11435/GPU0 task models, mediates an explicit read-only tool surface and keeps Codex MCP repo root handling process-local through `repo_mcp_common.py`. |
+| `local_subagent_mcp_server.py` | Codex local subagent MCP facade over the dedicated 3579 agentic-loop client. It does not call Ollama directly and does not host a parallel local tool loop; bounded read-only work is delegated to the same broker planner/controller/validator path used by `agentic_loop_client_mcp_server.py`, with Codex MCP root handling process-local through `repo_mcp_common.py`. |
 | `agentic_loop_client_mcp_server.py` | Explicit Codex MCP client for the canonical broker agentic loop. It can ensure a dedicated multi-instance `aicarmine_broker.app` process on `127.0.0.1:3579` by default, with `AICARMINE_LAB_REPO`, terminal cwd, workspace, job root, job DB and public base URL bound to the Codex-selected root and port. It can also ensure the repo-local OVMS/BGE reranker on `127.0.0.1:3550` using `services/ovms-reranker-npu.ps1`, then pass the reranker URLs into the dedicated broker environment. It requires confirmation tokens before starting a reranker, starting a broker or calling `/vulkan/agent`, rejects shared ports such as 3571/3572/11434/11435, and returns compact Codex-safe job summaries instead of exposing raw oversized payloads by default. |
 | `rag_index_repo.py` | Standalone index builder for the Codex RAG path. By default it indexes the Git candidate surface (`git ls-files --cached --others --exclude-standard`), so `.gitignore` owns project inclusion/exclusion. It writes a dedicated SQLite/FTS5 code chunk index under `state/codex_rag/`, supports full rebuilds and delta updates, and does not read OpenWebUI/Chroma state or call Ollama/OVMS. |
 | `rag_mcp_server.py` | Dedicated MCP stdio server for Codex RAG. It exposes `aicarmine_rag_context`, `aicarmine_rag_index_status` and `aicarmine_rag_reindex`. Search reads the dedicated SQLite/FTS5 index lazily and optionally reranks candidates through the local OVMS `/v3/rerank` endpoint. Reindex writes only the RAG SQLite index and does not import OpenWebUI, broker dispatchers, or edit/validate tools. |
@@ -81,11 +81,12 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
   repo-local SQLite database, require `confirm_write`, `confirm_stale` or
   `confirm_supersede`, and must carry source metadata. It must not reuse RAG,
   job or planner SQLite databases as a memory store.
-- `local_subagent_mcp_server.py` is Codex-side only. It may call local Ollama
-  11434 for bounded read-only delegation, but it must not use 11435, GPU0 task
-  models, 3571, 3572, OpenWebUI, `vulkan_helper`, service launchers or any
-  source-write tool. It does not inherit Codex app `/subagents`; it replicates
-  a small read-only subset through explicit local handlers.
+- `local_subagent_mcp_server.py` is Codex-side only and is only a facade over
+  the dedicated agentic-loop client. It must not call Ollama directly, use
+  11434/11435, host a parallel local tool loop, call 3571/3572, OpenWebUI,
+  `vulkan_helper`, service launchers or any source-write tool. It does not
+  inherit Codex app `/subagents`; execution goes through the 3579 broker
+  planner/controller/validator path and artifact surface.
 - `agentic_loop_client_mcp_server.py` is the only Codex MCP in this folder
   allowed to start or call the agentic broker. It must use a dedicated
   non-shared port, default `3579`, and must not call the shared OpenWebUI

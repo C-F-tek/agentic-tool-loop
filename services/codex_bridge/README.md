@@ -85,9 +85,10 @@ Core code entry points:
     process/port/log state without HTTP health probes, and does not call 3571,
     3572, `vulkan_helper` or the agentic loop.
 - [local_subagent_mcp_server.py](local_subagent_mcp_server.py)
-  - Local Ollama-backed read-only subagent MCP server for Codex. It is limited
-    to the 11434 `/api/chat` endpoint, rejects 11435/GPU0 task models and
-    mediates only explicit read-only repo/RAG/git/memory tools.
+  - Local subagent MCP facade for Codex. It delegates bounded read-only work to
+    the dedicated 3579 agentic-loop client, so execution still goes through the
+    broker planner/controller/validator path. It does not call Ollama directly,
+    does not use 3571/3572 and does not expose a parallel local tool loop.
 - [rag_mcp_server.py](rag_mcp_server.py)
   - Dedicated Codex RAG MCP server backed by `state/codex_rag/` SQLite/FTS5 and
     the local OVMS reranker.
