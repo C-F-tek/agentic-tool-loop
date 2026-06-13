@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+SERVICES_ROOT = Path(__file__).resolve().parent
+CODEX_BRIDGE_ROOT = SERVICES_ROOT / "codex_bridge"
+for import_root in (SERVICES_ROOT, CODEX_BRIDGE_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
+from codex_bridge import local_subagent_mcp_server  # noqa: E402
+
+
+def _git_init(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+
+
+def test_endpoint_and_task_model_are_rejected() -> None:
+    endpoint, problem = local_subagent_mcp_server._validate_ollama_endpoint("http://127.0.0.1:11435/api/chat")
+    model, model_problem = local_subagent_mcp_server._validate_model("gpu0/qwen3-task-8k")
+
+    assert endpoint is None
+    assert problem is not None
+    assert problem["error"] == "ollama_endpoint_not_allowlisted"
+    assert 11435 in problem["forbidden_ports"]
+    assert model is None
+    assert model_problem is not None
+    assert model_problem["error"] == "reserved_task_model_rejected"
+
+
+def test_repo_read_is_path_sandboxed(tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+
+    ok = local_subagent_mcp_server._repo_read({"path": "README.md"}, root)
+    rejected = local_subagent_mcp_server._repo_read({"path": str(outside)}, root)
+
+    assert ok["ok"] is True
+    assert ok["content"] == "hello\nworld"
+    assert rejected["ok"] is False
+    assert rejected["error"] == "path_not_under_codex_mcp_repo_root"
+
+
+@pytest.mark.skipif(subprocess.run(["git", "--version"], capture_output=True).returncode != 0, reason="git unavailable")
+def test_capabilities_report_readonly_surface(tmp_path) -> None:
+    _git_init(tmp_path)
+
+    capabilities = local_subagent_mcp_server._capabilities({}, tmp_path)
+    surface = local_subagent_mcp_server._tool_surface({}, tmp_path)
+
+    assert capabilities["ok"] is True
+    assert capabilities["codex_app_subagents_inherited"] is False
+    assert capabilities["write_tools"] == []
+    assert "repo_read" in surface["tool_names"]
+    assert "git_diff" in surface["tool_names"]
+    assert all("apply" not in name for name in surface["tool_names"])
+
+
+def test_run_readonly_uses_mocked_ollama_tool_loop(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text("project facts\n", encoding="utf-8")
+    responses = [
+        {"message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "repo_read", "arguments": {"path": "README.md", "max_chars": 4000}}}]}},
+        {"message": {"role": "assistant", "content": "README.md contains project facts."}},
+    ]
+
+    def fake_chat(endpoint: str, payload: dict[str, object], timeout_seconds: int) -> dict[str, object]:
+        assert endpoint == "http://127.0.0.1:11434/api/chat"
+        assert payload["model"] == "qwen3.5:9b-coding"
+        assert timeout_seconds == 120
+        return responses.pop(0)
+
+    monkeypatch.setattr(local_subagent_mcp_server, "_ollama_chat", fake_chat)
+
+    result = local_subagent_mcp_server._run_readonly(
+        {
+            "task": "Read the README and summarize one fact.",
+            "model": "qwen3.5:9b-coding",
+            "endpoint": "http://127.0.0.1:11434/api/chat",
+            "allowed_tools": ["repo_read"],
+            "max_tool_rounds": 2,
+        },
+        root,
+    )
+
+    assert result["ok"] is True
+    assert result["response"] == "README.md contains project facts."
+    assert result["tool_call_count"] == 1
+    assert result["tool_transcript"][0]["tool"] == "repo_read"
+    assert result["tool_transcript"][0]["ok"] is True
+
+
+def test_health_keeps_codex_root_isolation_fields(tmp_path, monkeypatch) -> None:
+    _git_init(tmp_path)
+    monkeypatch.setenv("AICARMINE_CODEX_MCP_REPO_ROOT", str(tmp_path))
+    monkeypatch.setenv("AICARMINE_LAB_REPO", "C:\\agentic-loop-shadow")
+    tools = local_subagent_mcp_server._tools()
+
+    health = local_subagent_mcp_server._health({}, tmp_path, tools)
+
+    assert health["ok"] is True
+    assert health["repo_root"] == str(tmp_path)
+    assert health["root_isolation"]["codex_mcp_repo_root"] == str(tmp_path)
+    assert "process" in health["root_isolation"]["note"]

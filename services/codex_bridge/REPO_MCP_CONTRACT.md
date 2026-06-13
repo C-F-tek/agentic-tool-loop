@@ -188,6 +188,8 @@ These MCPs must not introduce or depend on:
 - job artifact readers that call 3571, 3572, `vulkan_helper` or HTTP routes
 - job view renderers that start services, call broker HTTP routes or mutate job state
 - Git commands that mutate local or remote state
+- local subagent MCP calls to 11435, GPU0 task models, 3571, 3572,
+  OpenWebUI, service launchers, `vulkan_helper` or source-write tools
 - persistent memory writes without source metadata and one of the required
   confirmation strings: `project_memory_upsert_verified`,
   `project_memory_mark_stale`, `project_memory_supersede`
@@ -265,6 +267,11 @@ env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_
 command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
 args = ['C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py']
 env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+
+[mcp_servers.aicarmine_local_subagent]
+command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\carmi\AI\services\codex_bridge\local_subagent_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000', AICARMINE_LOCAL_SUBAGENT_OLLAMA_URL = 'http://127.0.0.1:11434/api/chat', AICARMINE_LOCAL_SUBAGENT_MODEL = 'qwen3.5:9b-coding' }
 
 [mcp_servers.playwright]
 command = 'npx'

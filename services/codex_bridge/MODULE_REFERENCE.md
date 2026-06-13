@@ -32,6 +32,7 @@ documented as part of the agentic loop tool surface.
 | `job_view_mcp_server.py` | Dedicated read-only job HTML view MCP server. It renders existing broker `job_html.py` and `job_planner_lab.py` views in-process, extracts outlines/links, validates bounded HTML and does not call broker HTTP, 3571, 3572, `vulkan_helper` or the agentic loop. |
 | `git_readonly_mcp_server.py` | Dedicated read-only Git MCP server for regression diagnostics. It exposes bounded `git log`, `git show`, `git diff`, `git blame` and branch compare helpers using subprocess argument lists, path validation under the selected repo root and no write commands. |
 | `project_memory_mcp_server.py` | Dedicated project-local persistent memory MCP server. It stores verified memory records in `state/project_memory/project_memory.sqlite3` through semantic tools only, requires explicit write confirmations, records source metadata, supports stale/superseded lifecycle states and never exposes free SQL, broker HTTP or agentic-loop calls. |
+| `local_subagent_mcp_server.py` | Dedicated local Ollama subagent MCP server for Codex-side read-only delegation. It uses only the 11434 Ollama `/api/chat` endpoint, rejects 11435/GPU0 task models, mediates an explicit read-only tool surface and keeps Codex MCP repo root handling process-local through `repo_mcp_common.py`. |
 | `rag_index_repo.py` | Standalone index builder for the Codex RAG path. By default it indexes the Git candidate surface (`git ls-files --cached --others --exclude-standard`), so `.gitignore` owns project inclusion/exclusion. It writes a dedicated SQLite/FTS5 code chunk index under `state/codex_rag/`, supports full rebuilds and delta updates, and does not read OpenWebUI/Chroma state or call Ollama/OVMS. |
 | `rag_mcp_server.py` | Dedicated MCP stdio server for Codex RAG. It exposes `aicarmine_rag_context`, `aicarmine_rag_index_status` and `aicarmine_rag_reindex`. Search reads the dedicated SQLite/FTS5 index lazily and optionally reranks candidates through the local OVMS `/v3/rerank` endpoint. Reindex writes only the RAG SQLite index and does not import OpenWebUI, broker dispatchers, or edit/validate tools. |
 | `jsonrpc.py` | Compatibility exports from `mcp_server.py` for older import paths. No behavior should be added here. |
@@ -77,6 +78,11 @@ documented as part of the agentic loop tool surface.
   repo-local SQLite database, require `confirm_write`, `confirm_stale` or
   `confirm_supersede`, and must carry source metadata. It must not reuse RAG,
   job or planner SQLite databases as a memory store.
+- `local_subagent_mcp_server.py` is Codex-side only. It may call local Ollama
+  11434 for bounded read-only delegation, but it must not use 11435, GPU0 task
+  models, 3571, 3572, OpenWebUI, `vulkan_helper`, service launchers or any
+  source-write tool. It does not inherit Codex app `/subagents`; it replicates
+  a small read-only subset through explicit local handlers.
 - Normal RAG indexing should run as delta. Full mode is for schema changes or
   cleanup after a previously noisy index build.
 - The RAG MCP reranker path uses an FTS candidate pool default of `80`, a

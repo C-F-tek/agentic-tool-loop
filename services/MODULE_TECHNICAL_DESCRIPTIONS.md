@@ -693,6 +693,24 @@ Dedicated project-local persistent memory MCP server.
   `aicarmine_project_memory_search`, server `--self-test`, source audit, and
   `services/test_project_memory_mcp_server.py`.
 
+### `codex_bridge/local_subagent_mcp_server.py`
+
+Dedicated local Ollama-backed read-only subagent MCP server for Codex-side
+delegation. It accepts bounded tasks, calls only the 11434 Ollama `/api/chat`
+endpoint and mediates a small explicit read-only tool surface for repo reads,
+repo search, Git diff, RAG context and memory search.
+
+- Reads: selected Codex MCP repo root, local Ollama 11434 when a run tool is
+  invoked, repo files, Git diff output, RAG index and project memory through
+  bounded local handlers.
+- Writes: none.
+- Risk: must not use 11435/GPU0 task models, 3571, 3572, OpenWebUI,
+  `vulkan_helper`, service launchers or source-write tools. Codex MCP root
+  handling stays process-local through `repo_mcp_common.py`.
+- Verify: `aicarmine_local_subagent_health`,
+  `aicarmine_local_subagent_capabilities`, server `--self-test`, and
+  `services/test_local_subagent_mcp_server.py`.
+
 ### `codex_bridge/rag_index_repo.py`
 
 Standalone index builder for the Codex RAG MCP path. It scans the Git candidate

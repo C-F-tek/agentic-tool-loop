@@ -84,6 +84,10 @@ Core code entry points:
     service-state inspection. It uses static MCP target allowlists, reads
     process/port/log state without HTTP health probes, and does not call 3571,
     3572, `vulkan_helper` or the agentic loop.
+- [local_subagent_mcp_server.py](local_subagent_mcp_server.py)
+  - Local Ollama-backed read-only subagent MCP server for Codex. It is limited
+    to the 11434 `/api/chat` endpoint, rejects 11435/GPU0 task models and
+    mediates only explicit read-only repo/RAG/git/memory tools.
 - [rag_mcp_server.py](rag_mcp_server.py)
   - Dedicated Codex RAG MCP server backed by `state/codex_rag/` SQLite/FTS5 and
     the local OVMS reranker.

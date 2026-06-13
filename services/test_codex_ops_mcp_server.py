@@ -46,6 +46,7 @@ def test_mcp_smoke_list_targets_is_static_allowlist(tmp_path) -> None:
     assert "aicarmine_repo_state" in names
     assert "aicarmine_project_memory" in names
     assert "aicarmine_job_view" in names
+    assert "aicarmine_local_subagent" in names
     assert "vulkan_helper" not in names
 
 

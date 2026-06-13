@@ -64,6 +64,10 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
     "aicarmine_job_view": LocalMcpServer("job_view_mcp_server.py", "aicarmine_job_view_health"),
     "aicarmine_git_readonly": LocalMcpServer("git_readonly_mcp_server.py", "aicarmine_git_readonly_health"),
     "aicarmine_project_memory": LocalMcpServer("project_memory_mcp_server.py", "aicarmine_project_memory_health"),
+    "aicarmine_local_subagent": LocalMcpServer(
+        "local_subagent_mcp_server.py",
+        "aicarmine_local_subagent_health",
+    ),
 }
 
 
