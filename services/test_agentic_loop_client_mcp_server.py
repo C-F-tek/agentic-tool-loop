@@ -187,10 +187,19 @@ def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) ->
     )
     monkeypatch.setattr(agentic_loop_client_mcp_server, "_port_listening", lambda **kwargs: False)
 
-    def fake_start(root: Path, *, port: int, startup_timeout_seconds: int) -> dict[str, object]:
+    def fake_start(
+        root: Path,
+        *,
+        port: int,
+        startup_timeout_seconds: int,
+        rerank_url: str,
+        reranker_ready_url: str,
+    ) -> dict[str, object]:
         calls["root"] = root
         calls["port"] = port
         calls["startup_timeout_seconds"] = startup_timeout_seconds
+        calls["rerank_url"] = rerank_url
+        calls["reranker_ready_url"] = reranker_ready_url
         return {"ok": True, "started": True, "pid": 123, "root_check": {"ok": True}}
 
     monkeypatch.setattr(agentic_loop_client_mcp_server, "_start_broker_process", fake_start)
@@ -209,3 +218,109 @@ def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) ->
     assert calls["root"] == tmp_path
     assert calls["port"] == 3579
     assert calls["startup_timeout_seconds"] == 9
+    assert calls["rerank_url"] == agentic_loop_client_mcp_server.DEFAULT_RERANKER_URL
+    assert calls["reranker_ready_url"] == agentic_loop_client_mcp_server.DEFAULT_RERANKER_READY_URL
+
+
+def test_ensure_reranker_requires_confirmation_before_start(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_get_health",
+        lambda *_args, **_kwargs: {"ok": False, "error": "request_failed"},
+    )
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_port_listening", lambda **kwargs: False)
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_start_reranker_process",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("reranker must not start without confirmation")),
+    )
+
+    result = agentic_loop_client_mcp_server._ensure_reranker({}, tmp_path)
+
+    assert result["ok"] is False
+    assert result["error"] == "explicit_reranker_start_confirmation_required"
+    assert result["confirm_ensure_reranker_required"] == agentic_loop_client_mcp_server.CONFIRM_RERANKER
+
+
+def test_ensure_reranker_starts_when_free_and_confirmed(monkeypatch, tmp_path) -> None:
+    script = tmp_path / "services" / "ovms-reranker-npu.ps1"
+    script.parent.mkdir(parents=True)
+    script.write_text("Write-Host reranker", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_get_health",
+        lambda *_args, **_kwargs: {"ok": False, "error": "request_failed"},
+    )
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_port_listening", lambda **kwargs: False)
+
+    def fake_start(
+        root: Path,
+        *,
+        startup_timeout_seconds: int,
+        ready_url: str,
+        rerank_url: str,
+        port: int,
+        script: Path,
+    ) -> dict[str, object]:
+        captured["root"] = root
+        captured["startup_timeout_seconds"] = startup_timeout_seconds
+        captured["ready_url"] = ready_url
+        captured["rerank_url"] = rerank_url
+        captured["port"] = port
+        captured["script"] = script
+        return {"ok": True, "started": True, "pid": 456}
+
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_start_reranker_process", fake_start)
+
+    result = agentic_loop_client_mcp_server._ensure_reranker(
+        {
+            "confirm_ensure_reranker": agentic_loop_client_mcp_server.CONFIRM_RERANKER,
+            "script": str(script),
+            "startup_timeout_seconds": 11,
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is True
+    assert result["reranker_started"] is True
+    assert captured["root"] == tmp_path
+    assert captured["startup_timeout_seconds"] == 11
+    assert captured["ready_url"] == agentic_loop_client_mcp_server.DEFAULT_RERANKER_READY_URL
+    assert captured["rerank_url"] == agentic_loop_client_mcp_server.DEFAULT_RERANKER_URL
+    assert captured["port"] == 3550
+    assert captured["script"] == script.resolve(strict=False)
+
+
+def test_run_blocks_before_loop_when_required_reranker_fails(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_ensure_reranker",
+        lambda *_args, **_kwargs: {"ok": False, "error": "reranker_startup_timeout"},
+    )
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_get_health",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("broker health must not run after reranker failure")),
+    )
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_post_agent",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("agentic loop must not start after reranker failure")),
+    )
+
+    result = agentic_loop_client_mcp_server._run(
+        {
+            "task": "Analyze project",
+            "confirm_agentic_loop": agentic_loop_client_mcp_server.CONFIRM_RUN,
+            "ensure_reranker": True,
+            "confirm_ensure_reranker": agentic_loop_client_mcp_server.CONFIRM_RERANKER,
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "reranker_startup_timeout"
+    assert result["agentic_loop_called"] is False
+    assert result["reranker_ensure"]["ok"] is False

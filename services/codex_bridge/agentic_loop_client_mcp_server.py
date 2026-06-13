@@ -27,6 +27,18 @@ SERVER_NAME = "aicarmine-agentic-loop-client-mcp"
 SERVER_VERSION = "0.1.0"
 
 RESERVED_PORTS = {3571, 3572, 8080, 11434, 11435}
+DEFAULT_RERANKER_PORT = 3550
+DEFAULT_RERANKER_URL = (
+    os.environ.get("AICARMINE_CONTROLLER_RAG_RERANK_URL")
+    or os.environ.get("AICARMINE_RAG_RERANK_URL")
+    or os.environ.get("RAG_EXTERNAL_RERANKER_URL")
+    or f"http://127.0.0.1:{DEFAULT_RERANKER_PORT}/v3/rerank"
+).strip()
+DEFAULT_RERANKER_READY_URL = (
+    os.environ.get("AICARMINE_RAG_RERANK_READY_URL")
+    or os.environ.get("OPENVINO_PROVIDER_HEALTH_URL")
+    or f"http://127.0.0.1:{DEFAULT_RERANKER_PORT}/v2/models/BAAI%2Fbge-reranker-v2-m3/ready"
+).strip()
 try:
     DEFAULT_AGENTIC_LOOP_PORT = int(os.environ.get("AICARMINE_AGENTIC_LOOP_CLIENT_PORT", "3579").strip() or "3579")
 except ValueError:
@@ -41,6 +53,7 @@ CONFIRM_RUN = "aicarmine_agentic_loop_run"
 CONFIRM_STATUS = "aicarmine_agentic_loop_status"
 CONFIRM_RESULT = "aicarmine_agentic_loop_result"
 CONFIRM_ENSURE = "aicarmine_agentic_loop_ensure_broker"
+CONFIRM_RERANKER = "aicarmine_agentic_loop_ensure_reranker"
 TERMINAL_STATUSES = {
     "completed",
     "failed",
@@ -152,6 +165,38 @@ def _validate_endpoint(value: Any, *, expected_path: str, port: Any = None) -> t
     return raw, None
 
 
+def _validate_local_http_endpoint(
+    value: Any,
+    *,
+    default_url: str,
+    expected_path_prefix: str,
+    default_port: int,
+    tool: str,
+) -> tuple[str | None, dict[str, Any] | None]:
+    raw = str(value or default_url or "").strip()
+    parsed = urllib.parse.urlparse(raw)
+    problem = {
+        "ok": False,
+        "tool": tool,
+        "error": "local_http_endpoint_not_allowlisted",
+        "endpoint": raw,
+        "allowed_host": "127.0.0.1",
+        "default_port": default_port,
+        "allowed_path_prefix": expected_path_prefix,
+    }
+    if parsed.scheme != "http":
+        return None, problem | {"reason": "scheme_not_http"}
+    if parsed.hostname != "127.0.0.1":
+        return None, problem | {"reason": "host_not_127_0_0_1"}
+    if parsed.port is None:
+        return None, problem | {"reason": "missing_port"}
+    if parsed.path.rstrip("/") and not parsed.path.startswith(expected_path_prefix):
+        return None, problem | {"reason": "path_prefix_mismatch"}
+    if parsed.params or parsed.query or parsed.fragment or parsed.username or parsed.password:
+        return None, problem | {"reason": "endpoint_must_not_include_auth_query_or_fragment"}
+    return raw, None
+
+
 def _http_json(
     *,
     method: str,
@@ -252,7 +297,22 @@ def _port_listening(host: str = "127.0.0.1", port: int = DEFAULT_AGENTIC_LOOP_PO
         return False
 
 
-def _start_broker_process(root: Path, *, port: int, startup_timeout_seconds: int) -> dict[str, Any]:
+def _path_is_under(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(parent.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def _start_broker_process(
+    root: Path,
+    *,
+    port: int,
+    startup_timeout_seconds: int,
+    rerank_url: str = DEFAULT_RERANKER_URL,
+    reranker_ready_url: str = DEFAULT_RERANKER_READY_URL,
+) -> dict[str, Any]:
     services_root = _services_root(root)
     if not services_root.is_dir():
         return {"ok": False, "error": "services_directory_missing", "path": str(services_root)}
@@ -283,6 +343,10 @@ def _start_broker_process(root: Path, *, port: int, startup_timeout_seconds: int
             "AICARMINE_VULKAN_AGENT_URL": f"http://127.0.0.1:{port}/vulkan/agent",
             "AICARMINE_BROKER_SERVICE_NAME": f"aicarmine-codex-agentic-loop-{port}",
             "AICARMINE_BROKER_APP_TITLE": f"AI-Carmine Codex Agentic Loop {port}",
+            "RAG_EXTERNAL_RERANKER_URL": rerank_url,
+            "AICARMINE_RAG_RERANK_URL": rerank_url,
+            "AICARMINE_CONTROLLER_RAG_RERANK_URL": rerank_url,
+            "AICARMINE_RAG_RERANK_READY_URL": reranker_ready_url,
         }
     )
     command = [
@@ -394,6 +458,207 @@ def _broker_root_matches_codex_root(health_payload_value: Any, root: Path) -> di
     }
 
 
+def _reranker_script(root: Path, args: dict[str, Any]) -> Path:
+    raw = str(args.get("script") or os.environ.get("OPENVINO_PROVIDER_SCRIPT") or "").strip()
+    if raw:
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        return candidate.resolve(strict=False)
+    return root / "services" / "ovms-reranker-npu.ps1"
+
+
+def _start_reranker_process(
+    root: Path,
+    *,
+    startup_timeout_seconds: int,
+    ready_url: str,
+    rerank_url: str,
+    port: int,
+    script: Path,
+) -> dict[str, Any]:
+    if not script.is_file():
+        return {"ok": False, "error": "reranker_script_missing", "script": str(script)}
+    if not _path_is_under(script, _services_root(root)):
+        return {
+            "ok": False,
+            "error": "reranker_script_outside_services_root",
+            "script": str(script),
+            "services_root": str(_services_root(root).resolve(strict=False)),
+        }
+    runtime_dir = _runtime_dir(root)
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    log_path = runtime_dir / f"reranker-{port}.log"
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script),
+    ]
+    env = os.environ.copy()
+    env.update(
+        {
+            "RAG_EXTERNAL_RERANKER_URL": rerank_url,
+            "AICARMINE_RAG_RERANK_URL": rerank_url,
+            "AICARMINE_CONTROLLER_RAG_RERANK_URL": rerank_url,
+            "AICARMINE_RAG_RERANK_READY_URL": ready_url,
+        }
+    )
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    log_handle = log_path.open("a", encoding="utf-8", errors="replace")
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=str(script.parent),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=creationflags,
+        )
+    finally:
+        log_handle.close()
+
+    deadline = time.monotonic() + max(1, startup_timeout_seconds)
+    last_health: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        exit_code = process.poll()
+        if exit_code is not None:
+            return {
+                "ok": False,
+                "error": "reranker_process_exited_during_startup",
+                "pid": process.pid,
+                "exit_code": exit_code,
+                "command": command,
+                "cwd": str(script.parent),
+                "log_path": str(log_path),
+                "log_tail": _tail_text(log_path),
+            }
+        health = _get_health(ready_url, timeout_seconds=3)
+        last_health = health
+        if health.get("ok") is True:
+            return {
+                "ok": True,
+                "started": True,
+                "pid": process.pid,
+                "command": command,
+                "cwd": str(script.parent),
+                "port": port,
+                "ready_url": ready_url,
+                "rerank_url": rerank_url,
+                "script": str(script),
+                "log_path": str(log_path),
+                "health": health,
+            }
+        time.sleep(1.0)
+    return {
+        "ok": False,
+        "error": "reranker_startup_timeout",
+        "pid": process.pid,
+        "command": command,
+        "cwd": str(script.parent),
+        "port": port,
+        "ready_url": ready_url,
+        "script": str(script),
+        "log_path": str(log_path),
+        "log_tail": _tail_text(log_path),
+        "last_health": last_health,
+    }
+
+
+def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    ready_url, ready_problem = _validate_local_http_endpoint(
+        args.get("ready_url"),
+        default_url=DEFAULT_RERANKER_READY_URL,
+        expected_path_prefix="/v2/models/",
+        default_port=DEFAULT_RERANKER_PORT,
+        tool="aicarmine_agentic_loop_ensure_reranker",
+    )
+    rerank_url, rerank_problem = _validate_local_http_endpoint(
+        args.get("rerank_url"),
+        default_url=DEFAULT_RERANKER_URL,
+        expected_path_prefix="/v3/rerank",
+        default_port=DEFAULT_RERANKER_PORT,
+        tool="aicarmine_agentic_loop_ensure_reranker",
+    )
+    if ready_problem is not None:
+        return ready_problem | {"reranker_started": False}
+    if rerank_problem is not None:
+        return rerank_problem | {"reranker_started": False}
+    assert ready_url is not None and rerank_url is not None
+    port = _endpoint_port(ready_url, DEFAULT_RERANKER_PORT)
+    rerank_port = _endpoint_port(rerank_url, DEFAULT_RERANKER_PORT)
+    if rerank_port != port:
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_ensure_reranker",
+            "error": "reranker_ready_and_rerank_port_mismatch",
+            "ready_url": ready_url,
+            "rerank_url": rerank_url,
+            "ready_port": port,
+            "rerank_port": rerank_port,
+            "reranker_started": False,
+        }
+    timeout_seconds = _safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
+    health = _get_health(ready_url, timeout_seconds=timeout_seconds)
+    if health.get("ok") is True:
+        return {
+            "ok": True,
+            "tool": "aicarmine_agentic_loop_ensure_reranker",
+            "reranker_running": True,
+            "reranker_started": False,
+            "port": port,
+            "ready_url": ready_url,
+            "rerank_url": rerank_url,
+            "health": health,
+        }
+    if _port_listening(port=port):
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_ensure_reranker",
+            "error": "reranker_port_occupied_but_ready_failed",
+            "reranker_running": "unknown",
+            "reranker_started": False,
+            "port": port,
+            "ready_url": ready_url,
+            "rerank_url": rerank_url,
+            "health": health,
+            "fix": f"Diagnostica il processo su 127.0.0.1:{port}; il client non lo termina automaticamente.",
+        }
+    if str(args.get("confirm_ensure_reranker") or "").strip() != CONFIRM_RERANKER:
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_ensure_reranker",
+            "error": "explicit_reranker_start_confirmation_required",
+            "confirm_ensure_reranker_required": CONFIRM_RERANKER,
+            "reranker_running": False,
+            "reranker_started": False,
+            "ready_url": ready_url,
+            "rerank_url": rerank_url,
+            "health": health,
+        }
+    script = _reranker_script(root, args)
+    startup = _start_reranker_process(
+        root,
+        startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 60, 5, 180),
+        ready_url=ready_url,
+        rerank_url=rerank_url,
+        port=port,
+        script=script,
+    )
+    return {
+        "tool": "aicarmine_agentic_loop_ensure_reranker",
+        "reranker_running": bool(startup.get("ok")),
+        "reranker_started": bool(startup.get("started")),
+        "ready_url": ready_url,
+        "rerank_url": rerank_url,
+        **startup,
+    }
+
+
 def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
     port = _safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
     health_endpoint, health_problem = _validate_endpoint(args.get("health_endpoint"), expected_path="/health", port=port)
@@ -401,6 +666,57 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return health_problem | {"tool": "aicarmine_agentic_loop_ensure_broker", "broker_started": False}
     assert health_endpoint is not None
     port = _endpoint_port(health_endpoint, port)
+    reranker_ensure: dict[str, Any] | None = None
+    rerank_url = DEFAULT_RERANKER_URL
+    reranker_ready_url = DEFAULT_RERANKER_READY_URL
+    if _safe_bool(args.get("ensure_reranker"), False):
+        reranker_ensure = _ensure_reranker(args, root)
+        rerank_url = str(reranker_ensure.get("rerank_url") or rerank_url)
+        reranker_ready_url = str(reranker_ensure.get("ready_url") or reranker_ready_url)
+        if reranker_ensure.get("ok") is not True:
+            return {
+                "ok": False,
+                "tool": "aicarmine_agentic_loop_ensure_broker",
+                "error": reranker_ensure.get("error") or "reranker_ensure_failed",
+                "broker_started": False,
+                "broker_running": False,
+                "reranker_ensure": reranker_ensure,
+            }
+    else:
+        ready_url, ready_problem = _validate_local_http_endpoint(
+            args.get("ready_url"),
+            default_url=DEFAULT_RERANKER_READY_URL,
+            expected_path_prefix="/v2/models/",
+            default_port=DEFAULT_RERANKER_PORT,
+            tool="aicarmine_agentic_loop_ensure_broker",
+        )
+        selected_rerank_url, rerank_problem = _validate_local_http_endpoint(
+            args.get("rerank_url"),
+            default_url=DEFAULT_RERANKER_URL,
+            expected_path_prefix="/v3/rerank",
+            default_port=DEFAULT_RERANKER_PORT,
+            tool="aicarmine_agentic_loop_ensure_broker",
+        )
+        if ready_problem is not None:
+            return ready_problem | {"broker_started": False}
+        if rerank_problem is not None:
+            return rerank_problem | {"broker_started": False}
+        assert ready_url is not None and selected_rerank_url is not None
+        ready_port = _endpoint_port(ready_url, DEFAULT_RERANKER_PORT)
+        rerank_port = _endpoint_port(selected_rerank_url, DEFAULT_RERANKER_PORT)
+        if ready_port != rerank_port:
+            return {
+                "ok": False,
+                "tool": "aicarmine_agentic_loop_ensure_broker",
+                "error": "reranker_ready_and_rerank_port_mismatch",
+                "broker_started": False,
+                "ready_url": ready_url,
+                "rerank_url": selected_rerank_url,
+                "ready_port": ready_port,
+                "rerank_port": rerank_port,
+            }
+        reranker_ready_url = ready_url
+        rerank_url = selected_rerank_url
     timeout_seconds = _safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
     health = _get_health(health_endpoint, timeout_seconds=timeout_seconds)
     if health.get("ok") is True:
@@ -412,6 +728,7 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "broker_started": False,
             "root_check": root_check,
             "health": _compact_agent_response(health, response_budget_chars=4000, include_raw=False),
+            **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
             **(
                 {}
                 if root_check.get("ok")
@@ -441,11 +758,18 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "broker_started": False,
             "health": health,
         }
-    startup = _start_broker_process(root, port=port, startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 45, 5, 180))
+    startup = _start_broker_process(
+        root,
+        port=port,
+        startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 45, 5, 180),
+        rerank_url=rerank_url,
+        reranker_ready_url=reranker_ready_url,
+    )
     return {
         "tool": "aicarmine_agentic_loop_ensure_broker",
         "broker_running": bool(startup.get("ok")),
         "broker_started": bool(startup.get("started")),
+        **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
         **startup,
     }
 
@@ -660,11 +984,18 @@ def _health(args: dict[str, Any], root: Path, tools: dict[str, ToolSpec]) -> dic
                 "status": CONFIRM_STATUS,
                 "result": CONFIRM_RESULT,
                 "ensure_broker": CONFIRM_ENSURE,
+                "ensure_reranker": CONFIRM_RERANKER,
+            },
+            "reranker": {
+                "default_port": DEFAULT_RERANKER_PORT,
+                "ready_url": DEFAULT_RERANKER_READY_URL,
+                "rerank_url": DEFAULT_RERANKER_URL,
+                "ensure_tool": "aicarmine_agentic_loop_ensure_reranker",
             },
             "no_broker_http": False,
             "no_agentic_loop": False,
             "mcp_direct_does_not_call": ["3571", "OpenWebUI", "11434", "11435"],
-            "note": "The MCP only starts or calls the dedicated broker endpoint; the broker itself owns planner/model traffic.",
+            "note": "The MCP only starts or calls the dedicated broker endpoint and optional local BGE reranker; the broker itself owns planner/model traffic.",
             "codex_mcp_repo_root": str(root),
             "broker_runtime_repo_root": "unknown_without_probe",
         }
@@ -698,10 +1029,15 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "creates_no_local_planner_loop": True,
         "requires_confirmation_for_http": True,
         "can_start_dedicated_broker_for_codex_root": True,
+        "can_start_local_bge_reranker": True,
         "start_behavior": "Starts a dedicated broker instance only when its configured port is free and confirm_ensure_broker is supplied.",
+        "reranker_start_behavior": "Starts the repo-local OVMS/BGE reranker script only when its configured port is free and confirm_ensure_reranker is supplied.",
+        "reranker_ready_url": DEFAULT_RERANKER_READY_URL,
+        "reranker_url": DEFAULT_RERANKER_URL,
         "tools": [
             "aicarmine_agentic_loop_health",
             "aicarmine_agentic_loop_capabilities",
+            "aicarmine_agentic_loop_ensure_reranker",
             "aicarmine_agentic_loop_ensure_broker",
             "aicarmine_agentic_loop_run",
             "aicarmine_agentic_loop_status",
@@ -724,11 +1060,26 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return payload_problem
     require_root_match = _safe_bool(args.get("require_broker_repo_root_match"), True)
     broker_root_check: dict[str, Any] = {"ok": None, "skipped": True}
+    reranker_ensure: dict[str, Any] | None = None
+    ensure_broker = _safe_bool(args.get("ensure_broker"), False)
+    if _safe_bool(args.get("ensure_reranker"), False) and not ensure_broker:
+        reranker_ensure = _ensure_reranker(args, root)
+        if reranker_ensure.get("ok") is not True:
+            return {
+                "ok": False,
+                "tool": "aicarmine_agentic_loop_run",
+                "error": reranker_ensure.get("error") or "reranker_ensure_failed",
+                "agentic_loop_called": False,
+                "broker_health_probe_called": False,
+                "reranker_ensure": reranker_ensure,
+            }
     if require_root_match:
-        if _safe_bool(args.get("ensure_broker"), False):
+        if ensure_broker:
             ensure_args = dict(args)
             ensure_args["port"] = port
             ensure = _ensure_broker(ensure_args, root)
+            if isinstance(ensure.get("reranker_ensure"), dict):
+                reranker_ensure = ensure["reranker_ensure"]
             if ensure.get("ok") is not True:
                 return {
                     "ok": False,
@@ -787,6 +1138,7 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "endpoint": endpoint,
             "port": port,
             "codex_mcp_repo_root": str(root),
+            **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
             "request": {
                 "return_mode": payload.get("return_mode"),
                 "wait_seconds": payload.get("wait_seconds"),
@@ -866,12 +1218,31 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(),
         handler=_capabilities,
     )
+    tools["aicarmine_agentic_loop_ensure_reranker"] = ToolSpec(
+        name="aicarmine_agentic_loop_ensure_reranker",
+        description="Ensure the local OVMS/BGE reranker is ready on 127.0.0.1:3550; starts the repo-local provider script only with explicit confirmation and only when the configured port is free.",
+        input_schema=object_schema(
+            {
+                "confirm_ensure_reranker": string_prop(),
+                "ready_url": string_prop(DEFAULT_RERANKER_READY_URL),
+                "rerank_url": string_prop(DEFAULT_RERANKER_URL),
+                "script": string_prop(str(Path("services") / "ovms-reranker-npu.ps1")),
+                "health_timeout_seconds": integer_prop(5, 1, 20),
+                "startup_timeout_seconds": integer_prop(60, 5, 180),
+            }
+        ),
+        handler=_ensure_reranker,
+    )
     tools["aicarmine_agentic_loop_ensure_broker"] = ToolSpec(
         name="aicarmine_agentic_loop_ensure_broker",
         description="Ensure a dedicated broker instance is running with AICARMINE_LAB_REPO equal to the Codex MCP repo root; starts it only with explicit confirmation and only when the configured port is free.",
         input_schema=object_schema(
             {
                 "confirm_ensure_broker": string_prop(),
+                "ensure_reranker": boolean_prop(False),
+                "confirm_ensure_reranker": string_prop(),
+                "ready_url": string_prop(DEFAULT_RERANKER_READY_URL),
+                "rerank_url": string_prop(DEFAULT_RERANKER_URL),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "health_endpoint": string_prop(DEFAULT_HEALTH_ENDPOINT),
                 "health_timeout_seconds": integer_prop(5, 1, 20),
@@ -901,6 +1272,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "append_codex_final_contract": boolean_prop(True),
                 "ensure_broker": boolean_prop(False),
                 "confirm_ensure_broker": string_prop(),
+                "ensure_reranker": boolean_prop(False),
+                "confirm_ensure_reranker": string_prop(),
+                "ready_url": string_prop(DEFAULT_RERANKER_READY_URL),
+                "rerank_url": string_prop(DEFAULT_RERANKER_URL),
                 "require_broker_repo_root_match": boolean_prop(True),
                 "health_endpoint": string_prop(DEFAULT_HEALTH_ENDPOINT),
                 "health_timeout_seconds": integer_prop(5, 1, 20),

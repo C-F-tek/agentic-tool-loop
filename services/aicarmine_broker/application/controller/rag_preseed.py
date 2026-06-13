@@ -8,6 +8,8 @@ import json
 import os
 import re
 import sqlite3
+import urllib.error
+import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,26 @@ _CODE_SUFFIXES = (
 )
 
 _CONFIG_SUFFIXES = (".toml", ".json", ".yaml", ".yml", ".ini", ".cfg")
+_DOC_SUFFIXES = (".md", ".txt", ".rst")
+_EXPLICIT_PATH_SUFFIXES = tuple(sorted(set((*_CODE_SUFFIXES, *_CONFIG_SUFFIXES, *_DOC_SUFFIXES))))
+_EXPLICIT_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_./\\:-])"
+    r"(?:[A-Za-z]:[\\/])?"
+    r"(?:[A-Za-z0-9_.@+-]+[\\/])*"
+    r"[A-Za-z0-9_.@+-]+"
+    r"\.(?:" + "|".join(re.escape(suffix.lstrip(".")) for suffix in _EXPLICIT_PATH_SUFFIXES) + r")"
+    r"(?![A-Za-z0-9_./\\:-])",
+    re.IGNORECASE,
+)
+_DEFAULT_RERANK_URL = "http://127.0.0.1:3550/v3/rerank"
+_DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+_NEGATED_WRITE_PHRASE_RE = re.compile(
+    r"\b(?:non|no|senza)\s+"
+    r"(?:(?:devi|deve|fare|eseguire|procedere|procedi)\s+)?"
+    r"(?:applica\w*|apply|patch|modifica\w*|edit|write|scrivi\w*|correggi\w*|fix)\b"
+    r"(?:\s+[a-z0-9_.@+-]+){0,4}",
+    re.IGNORECASE,
+)
 
 _CODE_SECURITY_EXPANSION_TERMS = (
     "def", "class", "import", "config", "settings", "validate", "validation",
@@ -85,12 +107,19 @@ def _code_security_analysis_goal(goal: str) -> bool:
         "critic", "vulnerabil", "sicurezza", "security", "bug", "errori",
         "violazioni", "best practice", "audit", "review", "analisi", "analizza",
     )
-    return any(term in low for term in code_terms) and any(term in low for term in critique_terms)
+    code_match = any(
+        bool(re.search(r"(?<![a-z0-9_])code(?![a-z0-9_])", low))
+        if term == "code"
+        else term in low
+        for term in code_terms
+    )
+    return code_match and any(term in low for term in critique_terms)
 
 
 def _preplanner_goal_class(goal: str) -> str:
     low = str(goal or "").lower()
-    if any(term in low for term in (
+    write_detection_text = _NEGATED_WRITE_PHRASE_RE.sub(" ", low)
+    if any(term in write_detection_text for term in (
         "applica", "applicare", "apply", "patch", "modifica", "modificare",
         "edit", "write", "scrivi", "correggi", "fix",
     )):
@@ -467,6 +496,17 @@ def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
+def _env_float(name: str, default: float, *, minimum: float, maximum: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return max(minimum, min(maximum, value))
+
+
 def _default_controller_rag_db(repo_root: Path) -> Path:
     raw = os.environ.get("AICARMINE_CONTROLLER_RAG_DB") or os.environ.get("AICARMINE_RAG_DB")
     if raw:
@@ -535,6 +575,198 @@ def _index_meta(conn: sqlite3.Connection) -> dict[str, str]:
         str(key): str(value)
         for key, value in conn.execute("SELECT key, value FROM index_meta")
     }
+
+
+def _explicit_path_texts(goal: str, query_plan: Mapping[str, Any] | None) -> list[str]:
+    texts: list[str] = [str(goal or "")]
+    if isinstance(query_plan, Mapping):
+        raw_queries = query_plan.get("queries")
+        if isinstance(raw_queries, list):
+            for item in raw_queries:
+                if isinstance(item, Mapping):
+                    texts.append(str(item.get("query") or ""))
+                    texts.append(str(item.get("purpose") or ""))
+                else:
+                    texts.append(str(item or ""))
+    return texts
+
+
+def _literal_path_candidates(goal: str, query_plan: Mapping[str, Any] | None) -> list[str]:
+    candidates: list[str] = []
+    for text in _explicit_path_texts(goal, query_plan):
+        for match in _EXPLICIT_PATH_RE.finditer(text):
+            path = repo_rel_token(match.group(0).strip("`'\".,;:)]}"))
+            if path and path != "." and path not in candidates:
+                candidates.append(path)
+    return candidates
+
+
+def _indexed_literal_request_paths(
+    *,
+    db: Path,
+    goal: str,
+    query_plan: Mapping[str, Any] | None,
+    repo_root: Path,
+    safe_rel_path: SafeRelPath,
+    generic_readable_suffixes: Sequence[str],
+    limit: int,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    candidates = _literal_path_candidates(goal, query_plan)
+    if not candidates:
+        return [], []
+    diagnostics: list[dict[str, Any]] = []
+    normalized: list[str] = []
+    for path in candidates:
+        if not repo_existing_file(path, repo_root=repo_root, safe_rel_path=safe_rel_path):
+            diagnostics.append({"stage": "explicit_path_db_lookup", "candidate": path, "reason": "literal_path_not_existing_file"})
+            continue
+        if not repo_readable_evidence_file(path, repo_root=repo_root, generic_readable_suffixes=generic_readable_suffixes):
+            diagnostics.append({"stage": "explicit_path_db_lookup", "candidate": path, "reason": "literal_path_not_readable_evidence_file"})
+            continue
+        if path not in normalized:
+            normalized.append(path)
+
+    if not normalized:
+        return [], diagnostics
+    if not db.exists() or not db.is_file():
+        return [], [
+            *diagnostics,
+            {"stage": "explicit_path_db_lookup", "reason": "rag_db_missing", "candidate_count": len(normalized), "db": str(db)},
+        ]
+
+    try:
+        conn = sqlite3.connect(db)
+        try:
+            tables = _sqlite_tables(conn)
+            if "files" not in tables:
+                return [], [
+                    *diagnostics,
+                    {"stage": "explicit_path_db_lookup", "reason": "files_table_missing", "candidate_count": len(normalized)},
+                ]
+            placeholders = ",".join("?" for _ in normalized)
+            rows = conn.execute(
+                f"SELECT path FROM files WHERE path IN ({placeholders})",
+                tuple(normalized),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:
+        return [], [
+            *diagnostics,
+            {
+                "stage": "explicit_path_db_lookup",
+                "reason": "db_lookup_failed",
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+        ]
+
+    indexed = {repo_rel_token(row[0]) for row in rows if row and row[0]}
+    selected: list[str] = []
+    for path in normalized:
+        if path in indexed and path not in selected:
+            selected.append(path)
+            if len(selected) >= limit:
+                break
+        else:
+            diagnostics.append({"stage": "explicit_path_db_lookup", "candidate": path, "reason": "literal_path_not_indexed_in_db"})
+    return selected, diagnostics
+
+
+def _http_json_post(url: str, payload: Mapping[str, Any], *, timeout_seconds: float) -> Any:
+    body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:
+        text = response.read().decode("utf-8", errors="replace")
+    return json.loads(text) if text else {}
+
+
+def _parse_rerank_results(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, Mapping):
+        raw_results = value.get("results") or value.get("data") or []
+    elif isinstance(value, list):
+        raw_results = value
+    else:
+        raw_results = []
+    parsed: list[dict[str, Any]] = []
+    for position, item in enumerate(raw_results):
+        if not isinstance(item, Mapping):
+            continue
+        raw_index = item.get("index", item.get("document_index", item.get("id", position)))
+        try:
+            index = int(raw_index)
+        except Exception:
+            index = position
+        raw_score = item.get("relevance_score", item.get("score", item.get("logit", 0.0)))
+        try:
+            score = float(raw_score)
+        except Exception:
+            score = 0.0
+        parsed.append({"index": index, "score": score})
+    return parsed
+
+
+def _rerank_ranked_items(
+    *,
+    query: str,
+    items: list[dict[str, Any]],
+    enabled: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    url = os.environ.get("AICARMINE_CONTROLLER_RAG_RERANK_URL") or os.environ.get("AICARMINE_RAG_RERANK_URL") or _DEFAULT_RERANK_URL
+    model = os.environ.get("AICARMINE_CONTROLLER_RAG_RERANK_MODEL") or os.environ.get("AICARMINE_RAG_RERANK_MODEL") or _DEFAULT_RERANK_MODEL
+    candidate_limit = _env_int("AICARMINE_CONTROLLER_RAG_RERANK_CANDIDATE_LIMIT", 24, minimum=1, maximum=100)
+    doc_chars = _env_int("AICARMINE_CONTROLLER_RAG_RERANK_DOC_CHARS", 1800, minimum=200, maximum=20000)
+    timeout_seconds = _env_float("AICARMINE_CONTROLLER_RAG_RERANK_TIMEOUT_SECONDS", 8.0, minimum=1.0, maximum=30.0)
+    meta: dict[str, Any] = {
+        "enabled": bool(enabled),
+        "url": url,
+        "model": model,
+        "candidate_limit": candidate_limit,
+        "doc_chars": doc_chars,
+        "timeout_seconds": timeout_seconds,
+    }
+    if not enabled:
+        return items, {**meta, "status": "skipped_disabled"}, []
+    candidates = items[:candidate_limit]
+    documents = [str(item.get("content_preview") or item.get("content") or "")[:doc_chars] for item in candidates]
+    meta["input_count"] = len(documents)
+    if not documents:
+        return items, {**meta, "status": "skipped_no_candidates"}, []
+    try:
+        response = _http_json_post(
+            url,
+            {"model": model, "query": query, "documents": documents},
+            timeout_seconds=timeout_seconds,
+        )
+        parsed = _parse_rerank_results(response)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        marked = [dict(item, rerank_score=None) for item in items]
+        return marked, {
+            **meta,
+            "status": "unavailable",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_unavailable", "error_type": type(exc).__name__, "error": str(exc)[:500]}]
+
+    reranked: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for result in parsed:
+        index = int(result.get("index") or 0)
+        if index < 0 or index >= len(candidates) or index in seen:
+            continue
+        seen.add(index)
+        reranked.append(dict(candidates[index], rerank_score=result.get("score")))
+    for index, item in enumerate(candidates):
+        if index not in seen:
+            reranked.append(dict(item, rerank_score=None))
+    for item in items[candidate_limit:]:
+        reranked.append(dict(item, rerank_score=None))
+    return reranked, {**meta, "status": "ready", "returned_scores": len(parsed), "ranked_count": len(reranked)}, []
 
 
 def _ranked_paths_from_codex_rag(
@@ -704,6 +936,13 @@ def _ranked_paths_from_codex_rag(
             ),
         ),
     )
+    rerank_query = "\n".join([str(goal or ""), *planner_queries]).strip()
+    ranked, rerank, rerank_skipped = _rerank_ranked_items(
+        query=rerank_query,
+        items=ranked,
+        enabled=_env_bool("AICARMINE_CONTROLLER_RAG_RERANK_ENABLED", True),
+    )
+    skipped.extend(rerank_skipped)
     selected = _select_ranked_paths(ranked, goal=goal, candidate_limit=candidate_limit)
     for index, item in enumerate(selected, start=1):
         item["rank"] = index
@@ -714,6 +953,7 @@ def _ranked_paths_from_codex_rag(
         "ranked_path_count": len(ranked),
         "selected_path_count": len(selected),
         "selected_paths": [str(item.get("path") or "") for item in selected],
+        "rerank": rerank,
     })
     return selected, report, skipped[:40]
 
@@ -813,21 +1053,37 @@ def controller_preplanner_rag_preseed_plan(
     default_anchor_limit = 0 if goal_class == "apply_write" else 2
     anchor_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_ANCHOR_LIMIT", default_anchor_limit, minimum=0, maximum=5)
     ranked_limit = max(1, read_path_limit - anchor_limit)
+    query_plan = args.get("controller_rag_query_plan") if isinstance(args.get("controller_rag_query_plan"), Mapping) else None
     ranked_items, ranking, ranking_skipped = _ranked_paths_from_codex_rag(
         db=db,
         repo_root=repo_root,
         goal=goal,
-        query_plan=args.get("controller_rag_query_plan") if isinstance(args.get("controller_rag_query_plan"), Mapping) else None,
+        query_plan=query_plan,
         safe_rel_path=safe_rel_path,
         named_read_priority=named_read_priority,
         generic_readable_suffixes=generic_readable_suffixes,
         candidate_limit=ranked_limit,
     )
     skipped.extend(ranking_skipped)
+    literal_target_paths, literal_target_skipped = _indexed_literal_request_paths(
+        db=db,
+        goal=goal,
+        query_plan=query_plan,
+        repo_root=repo_root,
+        safe_rel_path=safe_rel_path,
+        generic_readable_suffixes=generic_readable_suffixes,
+        limit=read_path_limit,
+    )
+    skipped.extend(literal_target_skipped)
 
     selected_paths: list[str] = []
+    for path in literal_target_paths:
+        if path not in selected_paths:
+            selected_paths.append(path)
     anchor_paths: list[str] = []
     for path in _anchor_paths(repo_root=repo_root, safe_rel_path=safe_rel_path, max_anchors=anchor_limit):
+        if len(selected_paths) >= read_path_limit:
+            break
         if path not in selected_paths and (
             repo_doc_or_config(path, repo_root=repo_root)
             or repo_readable_evidence_file(path, repo_root=repo_root, generic_readable_suffixes=generic_readable_suffixes)
@@ -850,6 +1106,7 @@ def controller_preplanner_rag_preseed_plan(
         "reindex": reindex,
         "ranking": ranking,
         "selected_paths": selected_paths,
+        "literal_target_paths": literal_target_paths,
         "anchor_paths": anchor_paths,
         "ranked_preplanner_paths": ranked_preplanner_paths,
         "selected_path_count": len(selected_paths),
@@ -876,6 +1133,7 @@ def controller_preplanner_rag_preseed_plan(
             "reindex": reindex,
             "ranking": ranking,
             "selected_paths": selected_paths,
+            "literal_target_paths": literal_target_paths,
             "anchor_paths": anchor_paths,
             "ranked_preplanner_paths": ranked_preplanner_paths,
             "ranked_items": ranked_items[:read_path_limit],
