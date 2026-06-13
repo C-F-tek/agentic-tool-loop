@@ -10,6 +10,11 @@ for import_root in (SERVICES_ROOT, CODEX_BRIDGE_ROOT):
         sys.path.insert(0, str(import_root))
 
 from codex_bridge import agentic_loop_client_mcp_server  # noqa: E402
+from aicarmine_broker.application.prompt.pack_builder import (  # noqa: E402
+    explicit_request_context_from_state,
+    invocation_context_from_explicit_request_context,
+)
+from aicarmine_broker.tool_contract import public_args  # noqa: E402
 
 
 def test_endpoint_validation_rejects_non_3572_agentic_loop() -> None:
@@ -130,13 +135,28 @@ def test_run_posts_codex_root_context_when_broker_root_matches(monkeypatch, tmp_
     assert isinstance(payload, dict)
     arguments = payload["arguments"]
     context = payload["context"]
+    invocation_context = payload["invocation_context"]
     assert isinstance(arguments, dict)
     assert isinstance(context, dict)
+    assert isinstance(invocation_context, dict)
     assert payload["lab_repo"] == str(codex_root.resolve(strict=False))
     assert payload["codex_mcp_repo_root"] == str(codex_root.resolve(strict=False))
+    assert payload["tool_name"] == "vulkan_helper"
+    assert payload["codex_agentic_loop_client"] is True
     assert captured["endpoint"] == "http://127.0.0.1:3579/vulkan/agent"
     assert arguments["lab_repo"] == str(codex_root.resolve(strict=False))
     assert context["expected_broker_lab_repo"] == str(codex_root.resolve(strict=False))
+    assert invocation_context["source"] == "codex_app_mcp_agentic_loop_client"
+    assert invocation_context["audience"] == "operator"
+    assert invocation_context["response_surface"] == "codex_app_mcp"
+    assert invocation_context["router_tool_name"] == "vulkan_helper"
+    assert invocation_context["router_tool_name_is_compatibility_only"] is True
+    assert invocation_context["openwebui_public_tool_available_to_caller"] is False
+    assert arguments["invocation_context"] == invocation_context
+    assert arguments["caller_context"] == invocation_context
+    assert context["invocation_context"] == invocation_context
+    assert context["caller_context"] == invocation_context
+    assert "non dire al chiamante di usare vulkan_helper" in str(payload["task"])
     assert result["ok"] is True
     assert result["terminal"] is True
     assert result["job_id"] == "job-test"
@@ -174,7 +194,77 @@ def test_status_and_result_use_canonical_router_payload(monkeypatch, tmp_path) -
     assert result_payload["job_action"] == "result"
     result_arguments = result_payload["arguments"]
     assert isinstance(result_arguments, dict)
+    assert result_arguments["audience"] == "operator"
+
+
+def test_result_preserves_explicit_openwebui_audience(monkeypatch, tmp_path) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_post_agent(endpoint: str, payload: dict[str, object], timeout_seconds: int) -> dict[str, object]:
+        calls.append({"endpoint": endpoint, "payload": payload, "timeout_seconds": timeout_seconds})
+        return {"ok": True, "http_status": 200, "payload": {"ok": True, "job_id": "job-test", "status": "completed"}}
+
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_post_agent", fake_post_agent)
+
+    result = agentic_loop_client_mcp_server._result(
+        {
+            "job_id": "job-test",
+            "confirm_agentic_loop": agentic_loop_client_mcp_server.CONFIRM_RESULT,
+            "audience": "openwebui",
+        },
+        tmp_path,
+    )
+
+    assert result["ok"] is True
+    result_payload = calls[0]["payload"]
+    assert isinstance(result_payload, dict)
+    result_arguments = result_payload["arguments"]
+    assert isinstance(result_arguments, dict)
     assert result_arguments["audience"] == "openwebui"
+
+
+def test_prompt_pack_derives_codex_invocation_context_from_legacy_context(tmp_path) -> None:
+    root = str(tmp_path.resolve(strict=False))
+
+    invocation_context = invocation_context_from_explicit_request_context(
+        {
+            "source": "codex_app_mcp_agentic_loop_client",
+            "codex_mcp_repo_root": root,
+            "expected_broker_lab_repo": root,
+        }
+    )
+
+    assert invocation_context["caller"] == "codex_app"
+    assert invocation_context["caller_tool"] == "aicarmine_agentic_loop_client"
+    assert invocation_context["audience"] == "operator"
+    assert invocation_context["response_surface"] == "codex_app_mcp"
+    assert invocation_context["repo_root"] == root
+    assert invocation_context["expected_broker_lab_repo"] == root
+    assert invocation_context["router_tool_name"] == "vulkan_helper"
+    assert invocation_context["router_tool_name_is_compatibility_only"] is True
+    assert "Do not recommend vulkan_helper" in invocation_context["response_contract"]
+
+
+def test_codex_invocation_context_survives_public_args_extraction(tmp_path) -> None:
+    payload, problem = agentic_loop_client_mcp_server._build_start_payload(
+        {
+            "task": "Analyze project",
+            "confirm_agentic_loop": agentic_loop_client_mcp_server.CONFIRM_RUN,
+        },
+        tmp_path,
+    )
+
+    assert problem is None
+    assert isinstance(payload, dict)
+    args = public_args(payload)
+    explicit_context = explicit_request_context_from_state({"original_args": args})
+    invocation_context = invocation_context_from_explicit_request_context(explicit_context)
+
+    assert explicit_context["source"] == "codex_app_mcp_agentic_loop_client"
+    assert invocation_context["source"] == "codex_app_mcp_agentic_loop_client"
+    assert invocation_context["audience"] == "operator"
+    assert invocation_context["response_surface"] == "codex_app_mcp"
+    assert invocation_context["router_tool_name_is_compatibility_only"] is True
 
 
 def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) -> None:

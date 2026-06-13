@@ -25,7 +25,7 @@ from repo_mcp_common import (
 SERVER_NAME = "aicarmine-codex-ops-mcp"
 SERVER_VERSION = "0.1.0-incubator"
 
-DEFAULT_PORTS = [3550, 3551, 3560, 3571, 3572, 8080, 8888, 8889, 11434, 11435]
+DEFAULT_PORTS = [3550, 3551, 3560, 3571, 3572, 3579, 8080, 8888, 8889, 11434, 11435]
 DEFAULT_PROCESS_PATTERNS = [
     "uvicorn",
     "aicarmine_broker",
@@ -67,6 +67,10 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
     "aicarmine_local_subagent": LocalMcpServer(
         "local_subagent_mcp_server.py",
         "aicarmine_local_subagent_health",
+    ),
+    "aicarmine_agentic_loop_client": LocalMcpServer(
+        "agentic_loop_client_mcp_server.py",
+        "aicarmine_agentic_loop_health",
     ),
 }
 

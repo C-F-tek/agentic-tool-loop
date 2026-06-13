@@ -41,6 +41,39 @@ def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def invocation_context_from_explicit_request_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Return caller/audience context that must be visible to the planner.
+
+    Public bridge requests, Codex MCP requests and local diagnostics can all
+    reach the same canonical loop. The planner must answer the actual caller,
+    not infer the response surface from a router-compatible ``tool_name``.
+    """
+    for key in ("invocation_context", "caller_context"):
+        value = context.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+    if str(context.get("source") or "") == "codex_app_mcp_agentic_loop_client":
+        return {
+            "schema": "agentic_loop_invocation_context.v1",
+            "caller": "codex_app",
+            "caller_tool": "aicarmine_agentic_loop_client",
+            "source": "codex_app_mcp_agentic_loop_client",
+            "entrypoint": "mcp",
+            "audience": "operator",
+            "response_surface": "codex_app_mcp",
+            "repo_root": context.get("codex_mcp_repo_root"),
+            "expected_broker_lab_repo": context.get("expected_broker_lab_repo"),
+            "router_tool_name": "vulkan_helper",
+            "router_tool_name_is_compatibility_only": True,
+            "response_contract": (
+                "Answer the Codex/operator caller directly. Do not recommend "
+                "vulkan_helper, 3571 or OpenWebUI as the caller's next step for "
+                "this MCP invocation."
+            ),
+        }
+    return {}
+
+
 def step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str, Any]:
     guidance = state.get("planner_step_budget_guidance")
     if not isinstance(guidance, dict):
@@ -109,6 +142,7 @@ class PromptPackBuilder:
 
         goal = str(state.get("goal") or "")
         explicit_request_context = explicit_request_context_from_state(state)
+        invocation_context = invocation_context_from_explicit_request_context(explicit_request_context)
         compact_tools = _compact_tool_manifest_for_prompt(tool_manifest)
         available_tools_for_payload = _available_tools_for_user_payload(compact_tools)
         system_prompt_for_budget = _planner_system_for_current_mode()
@@ -237,6 +271,11 @@ class PromptPackBuilder:
                 **(
                     {"explicit_request_context": explicit_request_context}
                     if explicit_request_context
+                    else {}
+                ),
+                **(
+                    {"invocation_context": invocation_context}
+                    if invocation_context
                     else {}
                 ),
                 "optional_context": _optional_context_for_prompt(

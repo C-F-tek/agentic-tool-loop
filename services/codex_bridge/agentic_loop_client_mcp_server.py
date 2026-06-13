@@ -871,11 +871,53 @@ def _task_with_codex_contract(task: str) -> str:
         "\n\nContratto finale per il chiamante Codex: quando finalizzi, restituisci una risposta "
         "compatta con punti chiave, citazioni a path/file o tool-result realmente letti quando "
         "disponibili, limiti espliciti se il job termina parziale/bloccato, e niente rimandi "
-        "generici a file locali non presenti nel payload pubblico."
+        "generici a file locali non presenti nel payload pubblico. Il chiamante reale e' Codex "
+        "app tramite MCP dedicato, non OpenWebUI: non dire al chiamante di usare vulkan_helper, "
+        "3571 o OpenWebUI come prossimo passo. Se serve citare il canale operativo, cita i tool "
+        "MCP aicarmine_agentic_loop_* e il broker dedicato configurato per questa richiesta."
     )
     if "Contratto finale per il chiamante Codex" in task:
         return task
     return task.rstrip() + contract
+
+
+def _codex_invocation_context(codex_root: str) -> dict[str, Any]:
+    return {
+        "schema": "agentic_loop_invocation_context.v1",
+        "caller": "codex_app",
+        "caller_tool": "aicarmine_agentic_loop_client",
+        "source": "codex_app_mcp_agentic_loop_client",
+        "entrypoint": "mcp",
+        "audience": "operator",
+        "response_surface": "codex_app_mcp",
+        "repo_root": codex_root,
+        "expected_broker_lab_repo": codex_root,
+        "default_broker_port": DEFAULT_AGENTIC_LOOP_PORT,
+        "public_openwebui_bridge": False,
+        "openwebui_public_tool_available_to_caller": False,
+        "router_tool_name": "vulkan_helper",
+        "router_tool_name_is_compatibility_only": True,
+        "router_contract": (
+            "tool_name=vulkan_helper is only canonical /vulkan/agent router compatibility "
+            "for this request; it is not the caller-facing tool surface."
+        ),
+        "response_contract": (
+            "Answer the Codex/operator caller directly. Do not recommend vulkan_helper, "
+            "3571 or OpenWebUI as the caller's next step for this MCP invocation."
+        ),
+        "allowed_followup_surface": [
+            "aicarmine_agentic_loop_run",
+            "aicarmine_agentic_loop_status",
+            "aicarmine_agentic_loop_result",
+            "aicarmine_job_artifact",
+            "aicarmine_job_view",
+        ],
+        "forbidden_caller_recommendations": [
+            "vulkan_helper",
+            "3571",
+            "OpenWebUI",
+        ],
+    }
 
 
 def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -900,6 +942,7 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
         return None, {"ok": False, "error": "invalid_return_mode", "allowed": ["wait", "background", "async", "fire_and_forget"]}
     task_for_loop = _task_with_codex_contract(task) if _safe_bool(args.get("append_codex_final_contract"), True) else task
     codex_root = str(root.resolve(strict=False))
+    invocation_context = _codex_invocation_context(codex_root)
     raw_context = arguments.get("context")
     context: dict[str, Any] = dict(cast(dict[str, Any], raw_context)) if isinstance(raw_context, dict) else {}
     context.update(
@@ -908,6 +951,8 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
             "codex_mcp_repo_root": codex_root,
             "expected_broker_lab_repo": codex_root,
             "path_contract": "Dedicated broker AICARMINE_LAB_REPO must equal codex_mcp_repo_root for this client.",
+            "invocation_context": invocation_context,
+            "caller_context": invocation_context,
         }
     )
     arguments.update(
@@ -921,6 +966,8 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
             "lab_repo": codex_root,
             "codex_mcp_repo_root": codex_root,
             "context": context,
+            "invocation_context": invocation_context,
+            "caller_context": invocation_context,
         }
     )
     for key in ("approval_mode", "user_consent", "job_id", "timeout_seconds"):
@@ -937,6 +984,8 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
         "lab_repo": codex_root,
         "codex_mcp_repo_root": codex_root,
         "context": context,
+        "invocation_context": invocation_context,
+        "caller_context": invocation_context,
         "arguments": arguments,
         "codex_agentic_loop_client": True,
     }
@@ -959,7 +1008,7 @@ def _build_job_action_payload(args: dict[str, Any], *, action: str, confirm_valu
         "job_action": action,
     }
     if action == "result":
-        arguments["audience"] = str(args.get("audience") or "openwebui").strip().lower()
+        arguments["audience"] = str(args.get("audience") or "operator").strip().lower()
     return {
         "tool_name": "vulkan_helper",
         "job_id": job_id,
@@ -1313,7 +1362,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "job_id": string_prop(),
                 "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
-                "audience": string_prop("openwebui", enum=["openwebui", "operator", "internal"]),
+                "audience": string_prop("operator", enum=["openwebui", "operator", "internal"]),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "timeout_seconds": integer_prop(30, 5, 120),
                 "response_budget_chars": integer_prop(16000, 1000, 60000),
