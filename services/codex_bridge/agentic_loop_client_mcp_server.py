@@ -310,6 +310,7 @@ def _start_broker_process(
     *,
     port: int,
     startup_timeout_seconds: int,
+    reload: bool = False,
     rerank_url: str = DEFAULT_RERANKER_URL,
     reranker_ready_url: str = DEFAULT_RERANKER_READY_URL,
 ) -> dict[str, Any]:
@@ -343,6 +344,7 @@ def _start_broker_process(
             "AICARMINE_VULKAN_AGENT_URL": f"http://127.0.0.1:{port}/vulkan/agent",
             "AICARMINE_BROKER_SERVICE_NAME": f"aicarmine-codex-agentic-loop-{port}",
             "AICARMINE_BROKER_APP_TITLE": f"AI-Carmine Codex Agentic Loop {port}",
+            "AICARMINE_BROKER_UVICORN_RELOAD": "1" if reload else "0",
             "RAG_EXTERNAL_RERANKER_URL": rerank_url,
             "AICARMINE_RAG_RERANK_URL": rerank_url,
             "AICARMINE_CONTROLLER_RAG_RERANK_URL": rerank_url,
@@ -359,6 +361,8 @@ def _start_broker_process(
         "--port",
         str(port),
     ]
+    if reload:
+        command.append("--reload")
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_handle = log_path.open("a", encoding="utf-8", errors="replace")
     try:
@@ -400,6 +404,7 @@ def _start_broker_process(
                 "command": command,
                 "cwd": str(services_root),
                 "port": port,
+                "reload": reload,
                 "workspace": str(workspace),
                 "agent_job_root": str(agent_job_root),
                 "agent_job_db": str(agent_job_db),
@@ -415,6 +420,7 @@ def _start_broker_process(
         "command": command,
         "cwd": str(services_root),
         "port": port,
+        "reload": reload,
         "workspace": str(workspace),
         "agent_job_root": str(agent_job_root),
         "agent_job_db": str(agent_job_db),
@@ -661,6 +667,7 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
     port = _safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
+    broker_reload = _safe_bool(args.get("reload"), False)
     health_endpoint, health_problem = _validate_endpoint(args.get("health_endpoint"), expected_path="/health", port=port)
     if health_problem is not None:
         return health_problem | {"tool": "aicarmine_agentic_loop_ensure_broker", "broker_started": False}
@@ -726,9 +733,18 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "tool": "aicarmine_agentic_loop_ensure_broker",
             "broker_running": True,
             "broker_started": False,
+            "reload_requested": broker_reload,
+            "reload_applied": False,
             "root_check": root_check,
             "health": _compact_agent_response(health, response_budget_chars=4000, include_raw=False),
             **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
+            **(
+                {
+                    "reload_note": "reload applies only when this call starts the broker; an already running broker is not terminated automatically."
+                }
+                if broker_reload
+                else {}
+            ),
             **(
                 {}
                 if root_check.get("ok")
@@ -762,6 +778,7 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
         root,
         port=port,
         startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 45, 5, 180),
+        reload=broker_reload,
         rerank_url=rerank_url,
         reranker_ready_url=reranker_ready_url,
     )
@@ -769,6 +786,8 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "tool": "aicarmine_agentic_loop_ensure_broker",
         "broker_running": bool(startup.get("ok")),
         "broker_started": bool(startup.get("started")),
+        "reload_requested": broker_reload,
+        "reload_applied": bool(startup.get("started")) and broker_reload,
         **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
         **startup,
     }
@@ -1078,8 +1097,9 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "creates_no_local_planner_loop": True,
         "requires_confirmation_for_http": True,
         "can_start_dedicated_broker_for_codex_root": True,
+        "can_start_dedicated_broker_with_uvicorn_reload": True,
         "can_start_local_bge_reranker": True,
-        "start_behavior": "Starts a dedicated broker instance only when its configured port is free and confirm_ensure_broker is supplied.",
+        "start_behavior": "Starts a dedicated broker instance only when its configured port is free and confirm_ensure_broker is supplied; reload=true adds uvicorn --reload to newly started broker processes.",
         "reranker_start_behavior": "Starts the repo-local OVMS/BGE reranker script only when its configured port is free and confirm_ensure_reranker is supplied.",
         "reranker_ready_url": DEFAULT_RERANKER_READY_URL,
         "reranker_url": DEFAULT_RERANKER_URL,
@@ -1300,6 +1320,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "health_endpoint": string_prop(DEFAULT_HEALTH_ENDPOINT),
                 "health_timeout_seconds": integer_prop(5, 1, 20),
                 "startup_timeout_seconds": integer_prop(45, 5, 180),
+                "reload": boolean_prop(False),
             }
         ),
         handler=_ensure_broker,
@@ -1333,6 +1354,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "health_endpoint": string_prop(DEFAULT_HEALTH_ENDPOINT),
                 "health_timeout_seconds": integer_prop(5, 1, 20),
                 "startup_timeout_seconds": integer_prop(45, 5, 180),
+                "reload": boolean_prop(False),
                 "approval_mode": string_prop(),
                 "user_consent": string_prop(),
                 "job_id": string_prop(),

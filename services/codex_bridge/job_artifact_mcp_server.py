@@ -22,6 +22,14 @@ from repo_mcp_common import (
 SERVER_NAME = "aicarmine-job-artifact-mcp"
 SERVER_VERSION = "0.1.0"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+SUPPORT_SUBTURN_TOOLS = frozenset(
+    {
+        "planner_scratchpad_read",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_search",
+        "runtime_sqlite_memory_write",
+    }
+)
 
 
 def string_prop(default: str | None = None) -> dict[str, Any]:
@@ -170,6 +178,100 @@ def _event_step(event: dict[str, Any]) -> int | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _event_payload(event: dict[str, Any]) -> dict[str, Any]:
+    value = event.get("payload")
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _event_tool(event: dict[str, Any]) -> str:
+    payload = _event_payload(event)
+    return str(payload.get("tool") or "").strip()
+
+
+def _support_subturn_event(event: dict[str, Any]) -> bool:
+    payload = _event_payload(event)
+    return bool(payload.get("support_subturn")) or _event_tool(event) in SUPPORT_SUBTURN_TOOLS
+
+
+def _tool_result_step_from_name(name: str) -> int | None:
+    match = re.search(r"step-(\d+)", str(name or ""))
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _payload_preview(value: Any, *, max_chars: int) -> dict[str, Any]:
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return {
+        "text": text[:max_chars],
+        "chars": len(text),
+        "truncated": len(text) > max_chars,
+    }
+
+
+def _compact_subturn_event(event: dict[str, Any], *, include_payload: bool, max_chars: int) -> dict[str, Any]:
+    payload = _event_payload(event)
+    args = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+    written = payload.get("written") if isinstance(payload.get("written"), dict) else {}
+    row: dict[str, Any] = {
+        "step": _event_step(event),
+        "type": _event_type(event),
+        "message": event.get("message"),
+        "tool": _event_tool(event),
+        "support_subturn": _support_subturn_event(event),
+        "semantic_step": payload.get("semantic_step"),
+        "support_subturn_index": payload.get("support_subturn_index"),
+        "ok": payload.get("ok"),
+        "kind": args.get("kind") or payload.get("kind") or payload.get("mode") or written.get("kind"),
+        "tag": args.get("tag") or written.get("tag"),
+        "document_id": args.get("document_id") or payload.get("document_id"),
+        "offset": args.get("offset"),
+        "max_chars": args.get("max_chars"),
+        "artifact": payload.get("artifact"),
+        "guard_type": payload.get("guard_type"),
+        "violations": payload.get("violations"),
+    }
+    if include_payload:
+        row["payload_preview"] = _payload_preview(payload, max_chars=max_chars)
+    return {key: value for key, value in row.items() if value not in (None, "", [], {})}
+
+
+def _tool_from_result_payload_or_name(payload: Any, name: str) -> str:
+    if isinstance(payload, dict) and payload.get("tool"):
+        return str(payload.get("tool") or "").strip()
+    lowered = name.lower()
+    for tool in SUPPORT_SUBTURN_TOOLS:
+        if tool in lowered:
+            return tool
+    return ""
+
+
+def _compact_subturn_tool_result(path: Path, payload: Any, *, include_payload: bool, max_chars: int) -> dict[str, Any]:
+    data = payload if isinstance(payload, dict) else {}
+    written = data.get("written") if isinstance(data.get("written"), dict) else {}
+    row: dict[str, Any] = {
+        "name": path.name,
+        "path": str(path),
+        "step": _tool_result_step_from_name(path.name),
+        "tool": _tool_from_result_payload_or_name(payload, path.name),
+        "support_subturn": bool(data.get("support_subturn")) or _tool_from_result_payload_or_name(payload, path.name) in SUPPORT_SUBTURN_TOOLS,
+        "semantic_step": data.get("semantic_step"),
+        "support_subturn_index": data.get("support_subturn_index"),
+        "ok": data.get("ok"),
+        "mode": data.get("mode"),
+        "kind": data.get("kind") or written.get("kind"),
+        "tag": written.get("tag"),
+        "document_id": data.get("document_id"),
+        "artifact": data.get("artifact"),
+    }
+    if include_payload:
+        row["payload_preview"] = _payload_preview(payload, max_chars=max_chars)
+    return {key: value for key, value in row.items() if value not in (None, "", [], {})}
 
 
 def _job_file_overview(job_dir: Path) -> list[dict[str, Any]]:
@@ -383,6 +485,65 @@ def _tool_results(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
+def _subturns(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    try:
+        job_id = _safe_job_id(args.get("job_id"))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    job_dir = _find_job_dir(root, job_id)
+    if job_dir is None:
+        return {"ok": False, "error": "job_not_found", "job_id": job_id}
+
+    tail = _safe_int(args.get("tail") or args.get("limit"), 200, 1, 5000)
+    max_lines = _safe_int(args.get("max_lines"), 300000, 1, 500000)
+    include_payload = bool(args.get("include_payload", False))
+    max_chars = _safe_int(args.get("max_chars"), 8000, 500, 100000)
+    events = _read_events(job_dir / "events.ndjson", max_lines=max_lines)
+    support_events = [_compact_subturn_event(event, include_payload=include_payload, max_chars=max_chars) for event in events if _support_subturn_event(event)]
+
+    tool_result_rows: list[dict[str, Any]] = []
+    tool_dir = job_dir / "tool-results"
+    if tool_dir.is_dir():
+        for path in sorted(tool_dir.iterdir(), key=lambda item: item.name.lower()):
+            if not path.is_file():
+                continue
+            payload = _read_json(path, max_chars=max_chars) if path.suffix.lower() == ".json" else {}
+            tool = _tool_from_result_payload_or_name(payload, path.name)
+            if tool not in SUPPORT_SUBTURN_TOOLS and not (isinstance(payload, dict) and payload.get("support_subturn")):
+                continue
+            tool_result_rows.append(_compact_subturn_tool_result(path, payload, include_payload=include_payload, max_chars=max_chars))
+
+    by_tool = Counter(str(row.get("tool") or "<missing>") for row in support_events if row.get("tool"))
+    by_kind = Counter(str(row.get("kind") or "<missing>") for row in support_events if row.get("kind"))
+    repeated_answer_chunk_tags = [
+        tag
+        for tag, count in Counter(
+            str(row.get("tag") or "")
+            for row in support_events
+            if row.get("kind") in {"answer_chunk", "final_answer_chunk"} and row.get("tag")
+        ).items()
+        if count > 1
+    ]
+    return {
+        "ok": True,
+        "tool": "aicarmine_job_artifact_subturns",
+        "job_id": job_id,
+        "mode": "local_filesystem_no_http",
+        "support_subturn_tools": sorted(SUPPORT_SUBTURN_TOOLS),
+        "events": support_events[-tail:],
+        "tool_results": tool_result_rows[-tail:],
+        "subturn_event_count": len(support_events),
+        "tool_result_count": len(tool_result_rows),
+        "counts": {
+            "by_tool": dict(by_tool.most_common()),
+            "by_kind": dict(by_kind.most_common()),
+            "repeated_answer_chunk_tags": repeated_answer_chunk_tags,
+        },
+        "tail": tail,
+        "include_payload": include_payload,
+    }
+
+
 def _planner_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         job_id = _safe_job_id(args.get("job_id"))
@@ -558,6 +719,22 @@ def _tools() -> dict[str, ToolSpec]:
             required=["job_id"],
         ),
         handler=_tool_results,
+    )
+    tools["aicarmine_job_artifact_subturns"] = ToolSpec(
+        name="aicarmine_job_artifact_subturns",
+        description="Read support-subturn events and tool-result artifacts from a persisted job without broker HTTP.",
+        input_schema=object_schema(
+            {
+                "job_id": string_prop(),
+                "tail": integer_prop(200, 1, 5000),
+                "limit": integer_prop(200, 1, 5000),
+                "max_lines": integer_prop(300000, 1, 500000),
+                "include_payload": boolean_prop(False),
+                "max_chars": integer_prop(8000, 500, 100000),
+            },
+            required=["job_id"],
+        ),
+        handler=_subturns,
     )
     tools["aicarmine_job_artifact_planner_payload"] = ToolSpec(
         name="aicarmine_job_artifact_planner_payload",

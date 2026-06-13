@@ -35,12 +35,49 @@ def _make_job(root: Path, job_id: str = "job-demo") -> Path:
                         "reason": "tool_not_in_turn_surface",
                     }
                 ),
+                json.dumps(
+                    {
+                        "event_type": "tool_start",
+                        "step": 3,
+                        "message": "Executing planner_scratchpad_write",
+                        "payload": {
+                            "tool": "planner_scratchpad_write",
+                            "support_subturn": True,
+                            "semantic_step": 2,
+                            "arguments": {"kind": "answer_chunk", "tag": "part-1", "text": "chunk"},
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_type": "tool_result",
+                        "step": 3,
+                        "message": "planner_scratchpad_write ok=True",
+                        "payload": {
+                            "tool": "planner_scratchpad_write",
+                            "ok": True,
+                            "support_subturn": True,
+                            "semantic_step": 2,
+                            "written": {"kind": "answer_chunk", "tag": "part-1"},
+                        },
+                    }
+                ),
             ]
         )
         + "\n",
         encoding="utf-8",
     )
     _write_json(job_dir / "tool-results" / "step-002-repo_read.json", {"ok": True, "tool": "repo_read"})
+    _write_json(
+        job_dir / "tool-results" / "step-003-planner_scratchpad_write.json",
+        {
+            "ok": True,
+            "tool": "planner_scratchpad_write",
+            "support_subturn": True,
+            "semantic_step": 2,
+            "written": {"kind": "answer_chunk", "tag": "part-1"},
+        },
+    )
     _write_json(job_dir / "planner-prompts" / "step-002-planner-payload.json", {"model": "qwen", "messages": [], "tools": []})
     return job_dir
 
@@ -86,3 +123,16 @@ def test_job_artifact_reader_extracts_rejections_and_planner_payload(tmp_path) -
     assert rejections["rejections"][0]["reason"] == "tool_not_in_turn_surface"
     assert planner_payload["ok"] is True
     assert planner_payload["summary"]["model"] == "qwen"
+
+
+def test_job_artifact_reader_extracts_support_subturns(tmp_path) -> None:
+    _make_job(tmp_path)
+
+    subturns = job_artifact_mcp_server._subturns({"job_id": "job-demo", "tail": 10}, tmp_path)
+
+    assert subturns["ok"] is True
+    assert subturns["subturn_event_count"] == 2
+    assert subturns["tool_result_count"] == 1
+    assert subturns["events"][0]["tool"] == "planner_scratchpad_write"
+    assert subturns["events"][0]["kind"] == "answer_chunk"
+    assert subturns["counts"]["by_tool"]["planner_scratchpad_write"] == 2

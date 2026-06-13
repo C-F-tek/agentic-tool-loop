@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import traceback
 from typing import Any, Mapping
@@ -76,8 +77,6 @@ def run_agentic_planner_job(
     controller_guard_count = deps["controller_guard_count"]
     controller_guard_result_for_validation = deps["controller_guard_result_for_validation"]
     finalize_agentic_job = deps["finalize_agentic_job"]
-    goal_has_write_intent = deps["goal_has_write_intent"]
-    history_has_tool = deps["history_has_tool"]
     load_agent_job_state = deps["load_agent_job_state"]
     planner_decision = deps["planner_decision"]
     planner_evidence_contract = deps["planner_evidence_contract"]
@@ -98,6 +97,13 @@ def run_agentic_planner_job(
 
     root = agent_job_root(job_id)
     max_steps = max(1, min(int(state.get("max_steps") or AGENT_DEFAULT_MAX_STEPS), AGENT_MAX_STEPS))
+    support_subturns_used = 0
+    support_subturn_tools = frozenset({
+        "planner_scratchpad_read",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_search",
+        "runtime_sqlite_memory_write",
+    })
     approval_mode = str(state.get("approval_mode") or "safe_write_lab")
     original_args = dict(state.get("original_args") or {})
     public_tool_name = str(state.get("public_tool_name") or "vulkan_helper")
@@ -108,6 +114,26 @@ def run_agentic_planner_job(
         _history_ledger=planner_history_ledger,
         _evidence_builder=lambda rows: planner_evidence_contract(str(state.get("goal") or ""), rows),
     )
+
+    def support_subturn_tool(tool: str) -> bool:
+        return normalize_tool_name(tool) in support_subturn_tools
+
+    def support_subturn_decision(planner_decision: dict[str, Any]) -> bool:
+        if str(planner_decision.get("action") or "").strip().lower() != "tool":
+            return False
+        return support_subturn_tool(str(planner_decision.get("tool") or ""))
+
+    def mark_support_subturn(row: dict[str, Any], *, semantic_step: int) -> None:
+        nonlocal support_subturns_used
+        support_subturns_used += 1
+        row["support_subturn"] = True
+        row["semantic_step"] = semantic_step
+        result = row.get("tool_result")
+        if isinstance(result, dict):
+            result["support_subturn"] = True
+            result["semantic_step"] = semantic_step
+            result["support_subturn_index"] = support_subturns_used
+        state["support_subturns_used"] = support_subturns_used
 
     def planner_step_budget_guidance(step_number: int) -> dict[str, Any]:
         remaining_steps = max(0, max_steps - int(step_number) + 1)
@@ -171,6 +197,11 @@ def run_agentic_planner_job(
 
     def append_cached_tool_result(step_number: int, planner_decision: dict[str, Any], cached: dict[str, Any]) -> None:
         cached_result = _dict_field(cached, "result")
+        support_subturn = support_subturn_decision(planner_decision)
+        semantic_step = max(1, int(step_number) - support_subturns_used)
+        if support_subturn:
+            cached_result["support_subturn"] = True
+            cached_result["semantic_step"] = semantic_step
         append_agent_event(
             job_id,
             "tool_cache_hit",
@@ -180,6 +211,7 @@ def run_agentic_planner_job(
                 "cache_key": cached.get("cache_key"),
                 "cached_from_step": cached_result.get("cached_from_step"),
                 "cached_from_artifact": cached_result.get("cached_from_artifact"),
+                **({"support_subturn": True, "semantic_step": semantic_step} if support_subturn else {}),
             },
             step=step_number,
         )
@@ -188,6 +220,8 @@ def run_agentic_planner_job(
             "decision": {k: v for k, v in planner_decision.items() if k != "raw_planner_text_preview"},
             "tool_result": cached_result,
         }
+        if support_subturn:
+            mark_support_subturn(row, semantic_step=semantic_step)
         loop_state.append_history_row(row)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
@@ -278,6 +312,8 @@ def run_agentic_planner_job(
         tool: str,
         internal_args: dict[str, Any],
     ) -> None:
+        support_subturn = support_subturn_decision(planner_decision)
+        semantic_step = max(1, int(step_number) - support_subturns_used)
         validation_repeat = {
             "ok": False,
             "violations": ["repeated_same_tool_arguments_without_progress"],
@@ -298,6 +334,10 @@ def run_agentic_planner_job(
             "arguments": internal_args,
             "reason": planner_decision.get("reason"),
         }
+        if support_subturn:
+            guard_result["support_subturn"] = True
+            guard_result["semantic_step"] = semantic_step
+            guard_result["support_subturn_index"] = support_subturns_used + 1
         enrich_repeated_tool_guard_feedback(guard_result, planner_decision, validation_repeat)
         append_agent_event(job_id, "planner_decision_rejected", guard_result["summary"], guard_result, step=step_number)
         row = {
@@ -305,6 +345,8 @@ def run_agentic_planner_job(
             "decision": {"action": "continue_required", "reason": "repeat guard rejected planner proposal"},
             "tool_result": guard_result,
         }
+        if support_subturn:
+            mark_support_subturn(row, semantic_step=semantic_step)
         loop_state.append_history_row(row)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
@@ -313,6 +355,8 @@ def run_agentic_planner_job(
         tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
         args = _dict_field(planner_decision, "arguments")
         internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
+        is_support_subturn = support_subturn_decision(planner_decision)
+        semantic_step = max(1, int(step_number) - support_subturns_used)
         if repeated_tool_call_count(history, tool, internal_args) >= 2:
             append_repeat_guard_result(step_number, planner_decision, tool, internal_args)
             return None
@@ -338,6 +382,9 @@ def run_agentic_planner_job(
             )
 
         event_payload = {"tool": tool, "arguments": internal_args}
+        if is_support_subturn:
+            event_payload["support_subturn"] = True
+            event_payload["semantic_step"] = semantic_step
         if substep is not None:
             event_payload["substep"] = substep
         state["status_message"] = f"executing {tool}"
@@ -354,6 +401,9 @@ def run_agentic_planner_job(
         write_json(tool_result_path, result)
         compact_result = compact_tool_result_for_planner(tool, result if isinstance(result, dict) else {})
         compact_result["artifact"] = str(tool_result_path)
+        if is_support_subturn:
+            compact_result["support_subturn"] = True
+            compact_result["semantic_step"] = semantic_step
         if substep is not None:
             compact_result["substep"] = substep
         if cache_key and bool(compact_result.get("ok")):
@@ -366,6 +416,8 @@ def run_agentic_planner_job(
         }
         if substep is not None:
             row["substep"] = substep
+        if is_support_subturn:
+            mark_support_subturn(row, semantic_step=semantic_step)
         loop_state.append_history_row(row, update_evidence=False)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
@@ -694,13 +746,16 @@ def run_agentic_planner_job(
                 preseed_index += 1
                 preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
 
-    for step in range(1, max_steps + 1):
+    for step in itertools.count(1):
+        semantic_step = max(1, step - support_subturns_used)
+        if semantic_step > max_steps:
+            break
         state = load_agent_job_state(job_id) or state
         if str(state.get("status") or "") == "cancel_requested":
             return finalize_agentic_job(job_id, state, "cancelled", "Job cancelled.", {"history": history})
 
         goal_text = str(state.get("goal") or "")
-        step_budget_guidance = planner_step_budget_guidance(step)
+        step_budget_guidance = planner_step_budget_guidance(semantic_step)
         if step_budget_guidance:
             state["planner_step_budget_guidance"] = step_budget_guidance
         else:
@@ -713,12 +768,16 @@ def run_agentic_planner_job(
         }, root)
         state.update({
             "current_step": step,
+            "semantic_step": semantic_step,
+            "support_subturns_used": support_subturns_used,
             "status_message": "planning next action",
             "evidence_contract": contract_snapshot,
             "planner_memory_surface": memory_snapshot,
             "working_memory_for_30b": {
                 "schema": "agentic_loop_operational_memory.v1",
                 "goal": state.get("goal"),
+                "physical_step": step,
+                "semantic_step": semantic_step,
                 "history_count": len(history),
                 "successful_repo_read_paths": contract_snapshot.get("successful_repo_read_paths", []),
                 "latest_repo_list_path": (contract_snapshot.get("repo_list_files_evidence") or [{}])[-1].get("path") if contract_snapshot.get("repo_list_files_evidence") else None,
@@ -754,7 +813,7 @@ def run_agentic_planner_job(
         if _planner_memory_false_unavailable_claim(memory_claim_text, planner_memory_snapshot):
             retry_limit = (
                 AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES
-                if step < max_steps else 0
+                if semantic_step < max_steps else 0
             )
             retry_count = _planner_incomprehensible_retry_count(history)
             if int(retry_limit or 0) > 0 and retry_count < int(retry_limit):
@@ -883,6 +942,33 @@ def run_agentic_planner_job(
                         validation={
                             "ok": False,
                             "violations": ["native_tool_batch_too_large"],
+                            "evidence_contract": batch_evidence_contract,
+                        },
+                    ),
+                }
+            elif any(
+                support_subturn_tool(str(call.get("tool") or ""))
+                for call in calls
+                if isinstance(call, dict)
+            ):
+                batch_guard = {
+                    "tool": "controller_guard",
+                    "ok": True,
+                    "guard_type": "native_tool_batch_support_subturn_disallowed",
+                    "summary": "native_tool_batch_support_subturn_disallowed",
+                    "violations": ["native_tool_batch_support_subturn_disallowed"],
+                    "support_subturn_tools": sorted(support_subturn_tools),
+                    "next_instruction": (
+                        "Support primitives must be called as one validated serial subturn, "
+                        "not batched with external progress tools."
+                    ),
+                    "runtime_debug_packet": runtime_debug_packet(
+                        step_number=step,
+                        phase="CONTROLLER_GUARD",
+                        planner_decision=decision,
+                        validation={
+                            "ok": False,
+                            "violations": ["native_tool_batch_support_subturn_disallowed"],
                             "evidence_contract": batch_evidence_contract,
                         },
                     ),
@@ -1194,7 +1280,7 @@ def run_agentic_planner_job(
             raw_planner_text = _decision_raw_planner_text(decision)
             retry_limit = (
                 AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES
-                if step < max_steps else 0
+                if semantic_step < max_steps else 0
             )
             planner_memory_snapshot = (
                 state.get("planner_memory_surface")
@@ -1209,6 +1295,69 @@ def run_agentic_planner_job(
                     else []
                 )
             }
+            if support_subturn_decision(decision):
+                rejection_signature = _controller_guard_rejection_signature(validation, decision)
+                repeated_rejection_count = _controller_guard_rejection_signature_count(
+                    history,
+                    rejection_signature,
+                )
+                repeated_rejection_limit = max(1, int(retry_limit or 0))
+                guard_result = controller_guard_result_for_validation(
+                    validation,
+                    decision,
+                    job_id=job_id,
+                    step=step,
+                    goal=str(state.get("goal") or ""),
+                )
+                guard_result["guard_type"] = "support_subturn_validation_failed"
+                guard_result["summary"] = "support_subturn_validation_failed"
+                guard_result["support_subturn"] = True
+                guard_result["semantic_step"] = semantic_step
+                guard_result["support_subturn_index"] = support_subturns_used + 1
+                guard_result["invalid_decision_signature"] = rejection_signature
+                guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
+                guard_result["retry_limit"] = repeated_rejection_limit
+                append_agent_event(
+                    job_id,
+                    "planner_decision_rejected",
+                    guard_result["summary"],
+                    guard_result,
+                    step=step,
+                )
+                row = {
+                    "step": step,
+                    "decision": {
+                        "action": "continue_required",
+                        "reason": "support subturn rejected by evidence validator",
+                        "rejected_decision": guard_result.get("rejected_decision"),
+                    },
+                    "tool_result": guard_result,
+                }
+                mark_support_subturn(row, semantic_step=semantic_step)
+                loop_state.append_history_row(row)
+                persist_loop_turn_memory(row)
+                write_agent_job_state(state)
+                if repeated_rejection_count >= repeated_rejection_limit:
+                    return finalize_agentic_job(
+                        job_id,
+                        state,
+                        "blocked_needs_attention",
+                        (
+                            "support_subturn_validation_failed_repeated: planner repeated the same "
+                            "invalid support primitive after validator feedback."
+                        ),
+                        {
+                            "history": history,
+                            "blocked_by": "support_subturn_validation_failed_repeated",
+                            "planner_decision": decision,
+                            "validation": validation,
+                            "semantic_step": semantic_step,
+                            "support_subturns_used": support_subturns_used,
+                            "invalid_decision_signature": rejection_signature,
+                            "invalid_decision_repeat_count": repeated_rejection_count + 1,
+                        },
+                    )
+                continue
             if "planner_native_tool_call_required" in validation_violations:
                 prior_native_empty_guards = controller_guard_count(
                     history,
@@ -1864,34 +2013,6 @@ def run_agentic_planner_job(
                 decision.get("final_answer") or decision.get("answer")
                 or decision.get("summary") or "Job completed."
             )
-            if goal_has_write_intent(state.get("goal") or "") and not history_has_tool(history, "repo_apply_patch"):
-                row = {
-                    "step": step,
-                    "decision": {"action": "continue_required",
-                                  "reason": "final rejected: patch requested but not applied"},
-                    "tool_result": {
-                        "tool": "controller_guard", "ok": True,
-                        "summary": (
-                            "The user requested a patch. You may not final yet. "
-                            "Use repo_apply_patch if old_text/new_text are ready, "
-                            "or repo_read to get old_text first."
-                        ),
-                        "runtime_debug_packet": runtime_debug_packet(
-                            step_number=step,
-                            phase="CONTROLLER_GUARD",
-                            planner_decision=decision,
-                            validation={
-                                "ok": False,
-                                "violations": ["final_write_intent_without_apply"],
-                                "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
-                            },
-                        ),
-                    },
-                }
-                loop_state.append_history_row(row, update_evidence=False)
-                persist_loop_turn_memory(row)
-                write_agent_job_state(state)
-                continue
             terminal_decision = dict(decision)
             terminal_decision["step"] = step
             return finalize_agentic_job(
@@ -1927,6 +2048,7 @@ def run_agentic_planner_job(
             )
 
         internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
+        is_support_subturn = support_subturn_decision(decision)
         if repeated_tool_call_count(history, tool, internal_args) >= 2:
             append_repeat_guard_result(step, decision, tool, internal_args)
             continue
@@ -1958,8 +2080,12 @@ def run_agentic_planner_job(
 
         state["status_message"] = f"executing {tool}"
         write_agent_job_state(state)
+        tool_start_payload = {"tool": tool, "arguments": internal_args}
+        if is_support_subturn:
+            tool_start_payload["support_subturn"] = True
+            tool_start_payload["semantic_step"] = semantic_step
         append_agent_event(job_id, "tool_start", f"Executing {tool}",
-                            {"tool": tool, "arguments": internal_args}, step=step)
+                            tool_start_payload, step=step)
 
         result = dispatch_tool(
             tool, internal_args, root,
@@ -1970,6 +2096,9 @@ def run_agentic_planner_job(
         write_json(tool_result_path, result)
         compact_result = compact_tool_result_for_planner(tool, result if isinstance(result, dict) else {})
         compact_result["artifact"] = str(tool_result_path)
+        if is_support_subturn:
+            compact_result["support_subturn"] = True
+            compact_result["semantic_step"] = semantic_step
         if cache_key and bool(compact_result.get("ok")):
             compact_result["cache_key"] = cache_key
         append_agent_event(job_id, "tool_result", f"{tool} ok={bool(result.get('ok'))}",
@@ -1980,6 +2109,8 @@ def run_agentic_planner_job(
             "decision": {k: v for k, v in decision.items() if k != "raw_planner_text_preview"},
             "tool_result": compact_result,
         }
+        if is_support_subturn:
+            mark_support_subturn(row, semantic_step=semantic_step)
         loop_state.append_history_row(row, update_evidence=False)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)

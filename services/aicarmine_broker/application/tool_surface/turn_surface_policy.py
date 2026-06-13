@@ -57,6 +57,12 @@ class ToolSurfacePolicy:
         "runtime_sqlite_memory_search",
         "runtime_sqlite_memory_write",
     }
+    _ALWAYS_AVAILABLE_SUPPORT_TOOLS = {
+        "planner_scratchpad_read",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_search",
+        "runtime_sqlite_memory_write",
+    }
 
     def __init__(self, *, order_tool_names: OrderToolNames) -> None:
         self._order_tool_names = order_tool_names
@@ -70,21 +76,25 @@ class ToolSurfacePolicy:
         prompt_context_continuation_required: dict[str, Any] | None = None,
     ) -> list[str]:
         contract = evidence_contract if isinstance(evidence_contract, dict) else {}
+        continuation_tools = self._continuation_tool_only(prompt_context_continuation_required)
+        if continuation_tools is not None:
+            names = set(continuation_tools)
+            names.update(self._ALWAYS_AVAILABLE_SUPPORT_TOOLS)
+            return self._ordered(names)
+
         if self._terminal_policy_locks_surface(contract):
             terminal_policy_tools = self._policy_declared_tools(contract)
             if terminal_policy_tools is not None:
                 return terminal_policy_tools
-
-        continuation_tools = self._continuation_tool_only(prompt_context_continuation_required)
-        if continuation_tools is not None:
-            return continuation_tools
 
         policy_tools = self._policy_declared_tools(contract)
         if policy_tools is not None:
             return policy_tools
 
         if self._contract_final_required_now(contract):
-            return self._ordered(final_composition_tool_names_from_candidates(contract))
+            names = final_composition_tool_names_from_candidates(contract)
+            names.update(self._ALWAYS_AVAILABLE_SUPPORT_TOOLS)
+            return self._ordered(names)
 
         semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
         goal_class = str(semantic.get("class") or "").strip()
@@ -419,7 +429,9 @@ class ToolSurfacePolicy:
             return None
         if policy_allowed or surface_policy.get("locked_empty_tool_surface") or self._contract_final_required_now(contract):
             names = {str(name) for name in policy_allowed}
-            if not self._contract_final_required_now(contract):
+            if self._contract_final_required_now(contract):
+                names.update(self._ALWAYS_AVAILABLE_SUPPORT_TOOLS)
+            else:
                 names.update(self._NON_TERMINAL_SUPPORT_TOOLS)
             return self._ordered(names)
         return None

@@ -286,12 +286,14 @@ def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) ->
         *,
         port: int,
         startup_timeout_seconds: int,
+        reload: bool,
         rerank_url: str,
         reranker_ready_url: str,
     ) -> dict[str, object]:
         calls["root"] = root
         calls["port"] = port
         calls["startup_timeout_seconds"] = startup_timeout_seconds
+        calls["reload"] = reload
         calls["rerank_url"] = rerank_url
         calls["reranker_ready_url"] = reranker_ready_url
         return {"ok": True, "started": True, "pid": 123, "root_check": {"ok": True}}
@@ -303,6 +305,7 @@ def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) ->
             "confirm_ensure_broker": agentic_loop_client_mcp_server.CONFIRM_ENSURE,
             "port": 3579,
             "startup_timeout_seconds": 9,
+            "reload": True,
         },
         tmp_path,
     )
@@ -312,8 +315,52 @@ def test_ensure_broker_starts_dedicated_port_when_free(monkeypatch, tmp_path) ->
     assert calls["root"] == tmp_path
     assert calls["port"] == 3579
     assert calls["startup_timeout_seconds"] == 9
+    assert calls["reload"] is True
     assert calls["rerank_url"] == agentic_loop_client_mcp_server.DEFAULT_RERANKER_URL
     assert calls["reranker_ready_url"] == agentic_loop_client_mcp_server.DEFAULT_RERANKER_READY_URL
+    assert result["reload_requested"] is True
+    assert result["reload_applied"] is True
+
+
+def test_start_broker_process_adds_uvicorn_reload(monkeypatch, tmp_path) -> None:
+    services_root = tmp_path / "services"
+    services_root.mkdir(parents=True)
+    python_exe = tmp_path / "python.exe"
+    python_exe.write_text("", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        pid = 789
+
+        def poll(self) -> int | None:
+            return None
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["cwd"] = kwargs.get("cwd")
+        captured["env"] = kwargs.get("env")
+        return FakeProcess()
+
+    monkeypatch.setattr(agentic_loop_client_mcp_server, "_select_python", lambda _root: python_exe)
+    monkeypatch.setattr(agentic_loop_client_mcp_server.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        agentic_loop_client_mcp_server,
+        "_get_health",
+        lambda *_args, **_kwargs: {"ok": True, "payload": {"lab_repo": str(tmp_path.resolve(strict=False))}},
+    )
+
+    result = agentic_loop_client_mcp_server._start_broker_process(
+        tmp_path,
+        port=3579,
+        startup_timeout_seconds=1,
+        reload=True,
+    )
+
+    assert result["ok"] is True
+    assert result["reload"] is True
+    assert "--reload" in captured["command"]
+    assert captured["cwd"] == str(services_root)
+    assert captured["env"]["AICARMINE_BROKER_UVICORN_RELOAD"] == "1"
 
 
 def test_ensure_reranker_requires_confirmation_before_start(monkeypatch, tmp_path) -> None:

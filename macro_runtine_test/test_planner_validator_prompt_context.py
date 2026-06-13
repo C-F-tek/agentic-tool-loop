@@ -13,6 +13,9 @@ if str(SERVICES) not in sys.path:
 from aicarmine_broker.application.planner.validator import (  # noqa: E402
     validate_planner_decision_against_evidence,
 )
+from aicarmine_broker.application.tool_surface.turn_surface_policy import (  # noqa: E402
+    ToolSurfacePolicy,
+)
 
 
 def _any_argument_group_present(args: dict[str, Any], groups: list[list[str]]) -> bool:
@@ -108,7 +111,12 @@ def _config() -> dict[str, Any]:
     return {
         "AGENTIC_PLANNER_NATIVE_TOOLS": True,
         "CODE_PRODUCT_BUILD_STATE_KIND": "code_product_build_state",
-        "VALID_INTERNAL_TOOLS": {"planner_scratchpad_read"},
+        "VALID_INTERNAL_TOOLS": {
+            "planner_scratchpad_read",
+            "planner_scratchpad_write",
+            "runtime_sqlite_memory_search",
+            "runtime_sqlite_memory_write",
+        },
     }
 
 
@@ -143,3 +151,195 @@ def test_required_prompt_context_continuation_is_not_blocked_by_final_gate() -> 
 
     assert result["ok"] is True
     assert "final_required_tool_call_disallowed" not in result["violations"]
+
+
+def test_prompt_context_continuation_surface_preempts_terminal_empty_surface() -> None:
+    policy = ToolSurfacePolicy(order_tool_names=lambda names: sorted(names))
+    contract: dict[str, Any] = {
+        "finalization_contract": {"final_allowed": True},
+        "required_next_progress": "Quality gate is satisfied. produce action=final.",
+        "candidate_next_actions": [],
+    }
+    policy.apply(contract)
+
+    names = policy.tools_for_turn(
+        goal="read-only technical analysis",
+        evidence_contract=contract,
+        intrinsic_context={},
+        prompt_context_continuation_required={
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": "prompt-context-smoke",
+                "offset": 32768,
+                "max_chars": 32768,
+            },
+        },
+    )
+
+    assert names == [
+        "planner_scratchpad_read",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_search",
+        "runtime_sqlite_memory_write",
+    ]
+
+
+def test_valid_support_primitive_is_allowed_during_final_required_gate() -> None:
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "runtime_sqlite_memory_write",
+            "arguments": {
+                "kind": "turn_note",
+                "tag": "analysis",
+                "text": "validated temporary planner note",
+            },
+            "allowed_tool_names": ["runtime_sqlite_memory_write"],
+            "allowed_native_tool_names": ["runtime_sqlite_memory_write"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "runtime_sqlite_memory_write"}},
+        },
+        [],
+        deps=_deps(),
+        config=_config(),
+    )
+
+    assert result["ok"] is True
+    assert "final_required_tool_call_disallowed" not in result["violations"]
+
+
+def test_invalid_support_primitive_still_fails_validation() -> None:
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_write",
+            "arguments": {"kind": "turn_note"},
+            "allowed_tool_names": ["planner_scratchpad_write"],
+            "allowed_native_tool_names": ["planner_scratchpad_write"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_write"}},
+        },
+        [],
+        deps=_deps(),
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert "planner_scratchpad_write_missing_text" in result["violations"]
+
+
+def test_answer_chunk_requires_final_composition_contract() -> None:
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_write",
+            "arguments": {
+                "kind": "answer_chunk",
+                "tag": "analysis-part-1",
+                "text": "Section 1 of a large final answer.",
+            },
+            "allowed_tool_names": ["planner_scratchpad_write"],
+            "allowed_native_tool_names": ["planner_scratchpad_write"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_write"}},
+        },
+        [],
+        deps=_deps(),
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert "planner_answer_chunk_without_final_composition_contract" in result["violations"]
+
+
+def test_answer_chunk_rejects_terminal_payload_shape_even_when_contract_allows_it() -> None:
+    deps = _deps()
+    deps["final_composition_tool_names_from_candidates"] = lambda contract: {"planner_scratchpad_write"}
+
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_write",
+            "arguments": {
+                "kind": "answer_chunk",
+                "tag": "analysis-part-1",
+                "text": "{\"final_answer\":\"complete answer incorrectly wrapped in a tool\"}",
+            },
+            "allowed_tool_names": ["planner_scratchpad_write"],
+            "allowed_native_tool_names": ["planner_scratchpad_write"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_write"}},
+        },
+        [],
+        deps=deps,
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert "planner_answer_chunk_tool_misused_for_terminal_payload" in result["violations"]
+
+
+def test_answer_chunk_section_is_allowed_when_final_composition_contract_allows_it() -> None:
+    deps = _deps()
+    deps["final_composition_tool_names_from_candidates"] = lambda contract: {"planner_scratchpad_write"}
+
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_write",
+            "arguments": {
+                "kind": "answer_chunk",
+                "tag": "analysis-part-1",
+                "text": "Section 1: evidence and limits.",
+            },
+            "allowed_tool_names": ["planner_scratchpad_write"],
+            "allowed_native_tool_names": ["planner_scratchpad_write"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_write"}},
+        },
+        [],
+        deps=deps,
+        config=_config(),
+    )
+
+    assert result["ok"] is True
+    assert result["violations"] == []
+
+
+def test_code_product_build_state_support_write_requires_code_product_contract() -> None:
+    deps = _deps()
+    deps["code_product_build_state_parse"] = lambda text: {
+        "target_file": "services/example.py",
+        "status": "collecting_source",
+        "notes": ["progress"],
+    }
+    deps["code_product_build_state_has_collecting_progress"] = lambda state: True
+
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_write",
+            "arguments": {
+                "kind": "code_product_build_state",
+                "target_file": "services/example.py",
+                "text": "{\"target_file\":\"services/example.py\",\"status\":\"collecting_source\"}",
+            },
+            "allowed_tool_names": ["planner_scratchpad_write"],
+            "allowed_native_tool_names": ["planner_scratchpad_write"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_write"}},
+        },
+        [],
+        deps=deps,
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert "code_product_build_state_write_outside_code_product_contract" in result["violations"]

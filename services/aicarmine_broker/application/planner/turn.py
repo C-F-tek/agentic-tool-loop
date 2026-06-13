@@ -212,7 +212,6 @@ def planner_decision(
     agent_job_root = deps["agent_job_root"]
     append_agent_event = deps["append_agent_event"]
     build_planner_intrinsic_context = deps["build_planner_intrinsic_context"]
-    goal_has_write_intent = deps["goal_has_write_intent"]
     goal_requires_code_product_report = deps["goal_requires_code_product_report"]
     history_has_tool = deps["history_has_tool"]
     internal_tools_list = deps["internal_tools_list"]
@@ -820,7 +819,14 @@ def planner_decision(
                     "ma il goal richiedeva un code product/diff e manca repo_propose_code_edit."
                 ),
             }
-        if goal_has_write_intent(goal) and not history_has_tool(history, "repo_apply_patch"):
+        apply_contract = (
+            evidence_contract.get("apply_write_contract")
+            if isinstance(evidence_contract.get("apply_write_contract"), dict)
+            else {}
+        )
+        apply_required = bool(evidence_contract.get("goal_requests_apply")) or bool(apply_contract.get("required"))
+        apply_patch_applied = bool(apply_contract.get("patch_applied")) or history_has_tool(history, "repo_apply_patch")
+        if apply_required and not apply_patch_applied:
             return {
                 "action": "block",
                 "reason": "planner done token without applying requested patch",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping
 
 
@@ -17,6 +18,12 @@ def validate_planner_decision_against_evidence(
     AGENTIC_PLANNER_NATIVE_TOOLS = config["AGENTIC_PLANNER_NATIVE_TOOLS"]
     CODE_PRODUCT_BUILD_STATE_KIND = config["CODE_PRODUCT_BUILD_STATE_KIND"]
     VALID_INTERNAL_TOOLS = config["VALID_INTERNAL_TOOLS"]
+    SUPPORT_SUBTURN_TOOLS = frozenset({
+        "planner_scratchpad_read",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_search",
+        "runtime_sqlite_memory_write",
+    })
     _agentic_v2_decision_paths = deps["agentic_v2_decision_paths"]
     _agentic_v2_goal_scope = deps["agentic_v2_goal_scope"]
     _agentic_v2_read_has_window = deps["agentic_v2_read_has_window"]
@@ -72,6 +79,34 @@ def validate_planner_decision_against_evidence(
     args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
     contract = planner_evidence_contract(goal, history)
     violations: list[str] = []
+
+    def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
+        try:
+            parsed = json.loads(str(text or ""))
+        except Exception:
+            return False
+        if not isinstance(parsed, dict):
+            return False
+        return any(str(key) in parsed for key in ("final_answer", "answer", "summary"))
+
+    def _successful_answer_chunk_signatures() -> set[str]:
+        signatures: set[str] = set()
+        for row in history if isinstance(history, list) else []:
+            if not isinstance(row, dict):
+                continue
+            decision_row = row.get("decision") if isinstance(row.get("decision"), dict) else {}
+            result_row = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+            if _normalize_tool_name(str(decision_row.get("tool") or result_row.get("tool") or "")) != "planner_scratchpad_write":
+                continue
+            raw_args = decision_row.get("arguments") if isinstance(decision_row.get("arguments"), dict) else {}
+            written = result_row.get("written") if isinstance(result_row.get("written"), dict) else {}
+            kind = str(raw_args.get("kind") or written.get("kind") or "").strip()
+            if kind not in {"answer_chunk", "final_answer_chunk"} or result_row.get("ok") is not True:
+                continue
+            tag = str(raw_args.get("tag") or written.get("tag") or "").strip()
+            if tag:
+                signatures.add(f"{kind}:{tag}")
+        return signatures
     internal_inconsistencies: list[str] = []
     prompt_context_continuation_required = (
         decision.get("prompt_context_continuation_required")
@@ -187,6 +222,11 @@ def validate_planner_decision_against_evidence(
     post_write_validation_required = bool(post_write_contract.get("required"))
     post_write_validation_done = bool(post_write_contract.get("validation_done"))
     post_write_validation_failed = bool(post_write_contract.get("validation_failed"))
+    code_product_contract = (
+        contract.get("code_product_contract")
+        if isinstance(contract.get("code_product_contract"), dict)
+        else {}
+    )
     apply_read_targets = {
         _repo_rel_token(path)
         for path in [
@@ -349,12 +389,13 @@ def validate_planner_decision_against_evidence(
 
     if _contract_final_required_now(contract) and not prompt_context_continuation_matches:
         final_composition_tools = _final_composition_tool_names_from_candidates(contract)
-        if tool not in final_composition_tools:
+        if tool not in SUPPORT_SUBTURN_TOOLS and tool not in final_composition_tools:
             violations.append("final_required_tool_call_disallowed")
             contract["required_next_progress"] = (
                 "Quality gate is satisfied. The required next action is action=final. "
-                "Do not call repo tools, memory tools or prompt windows unless a concrete "
-                "answer_chunk composition tool is explicitly listed in candidate_next_actions."
+                "Do not call repo tools, validation tools, command tools or other external "
+                "progress tools. Planner support primitives such as scratchpad, prompt windows "
+                "and runtime memory remain allowed when their arguments pass validation."
             )
 
     if tool == "repo_search" and not _any_argument_group_present(args, [["query"], ["pattern"], ["symbol"]]):
@@ -397,10 +438,24 @@ def validate_planner_decision_against_evidence(
         violations.append("terminal_run_command_wait_missing_command")
     elif tool == "repo_command" and not _argument_value_present(args, "command"):
         violations.append("repo_command_missing_command")
+    if tool == "planner_scratchpad_write":
+        kind = str(args.get("kind") or "").strip()
+        text = str(args.get("text") or args.get("content") or "")
+        if kind in {"answer_chunk", "final_answer_chunk"}:
+            final_composition_tools = _final_composition_tool_names_from_candidates(contract)
+            if tool not in final_composition_tools:
+                violations.append("planner_answer_chunk_without_final_composition_contract")
+            if _answer_chunk_misuses_terminal_payload_shape(text):
+                violations.append("planner_answer_chunk_tool_misused_for_terminal_payload")
+            tag = str(args.get("tag") or "").strip()
+            if tag and f"{kind}:{tag}" in _successful_answer_chunk_signatures():
+                violations.append("planner_answer_chunk_tag_already_written_without_progress")
     if violations:
         return {"ok": False, "violations": violations, "evidence_contract": contract}
 
     if tool == "planner_scratchpad_write" and str(args.get("kind") or "") == CODE_PRODUCT_BUILD_STATE_KIND:
+        if not code_product_contract.get("required"):
+            violations.append("code_product_build_state_write_outside_code_product_contract")
         state_text = str(args.get("text") or args.get("content") or "")
         state = _code_product_build_state_parse(state_text)
         if not state:
