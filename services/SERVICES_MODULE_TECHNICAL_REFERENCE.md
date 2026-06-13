@@ -128,10 +128,13 @@ Critical protocol notes:
   The 50% compaction threshold is a soft trigger for SQLite windowing, not a
   hard no-headroom blocker; the hard generation headroom budget is the prompt
   char budget minus the reserved generation margin.
-- If required prompt context still has unread real text, the next planner action
-  must be `planner_scratchpad_read(kind=prompt_context_window, ...)`; the
-  controller rejects other actions as `prompt_context_continuation_required`
-  without sending them to GPU0/11435 repair.
+- If the controller marks prompt context as an explicit required continuation,
+  the next planner action must be
+  `planner_scratchpad_read(kind=prompt_context_window, ...)`; the controller
+  rejects other actions as `prompt_context_continuation_required` without
+  sending them to GPU0/11435 repair. Large `repo_read` windows with
+  `has_more_after=true` are otherwise optional follow-up context and should not
+  force linear consumption before final.
 - 3572 also exposes an internal IA Live Control View at
   `/jobs/{job_id}/ia-view` and `/jobs/{job_id}/ia-view.json`. This is an
   operator dashboard only: it is read-only, hidden from 3571/OpenWebUI OpenAPI,

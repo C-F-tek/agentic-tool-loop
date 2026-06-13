@@ -13,6 +13,9 @@ if str(SERVICES) not in sys.path:
 from aicarmine_broker.application.planner.validator import (  # noqa: E402
     validate_planner_decision_against_evidence,
 )
+from aicarmine_broker.application.prompt.context_windows import (  # noqa: E402
+    required_working_set_continuation_action,
+)
 from aicarmine_broker.application.tool_surface.batch_contract import canonical_batch_args  # noqa: E402
 from aicarmine_broker.application.prompt.tool_contract import (  # noqa: E402
     hard_budget_tool_shape_examples_for_prompt,
@@ -47,6 +50,29 @@ def _matches_prompt_context_continuation(decision: dict[str, Any], required: dic
         and decision_args.get("offset") == required_args.get("offset")
         and decision_args.get("max_chars") == required_args.get("max_chars")
     )
+
+
+def _history_tool_result(row: dict[str, Any]) -> dict[str, Any]:
+    return row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+
+
+def _prompt_window(*, document_id: str = "prompt-context-smoke") -> dict[str, Any]:
+    return {
+        "schema": "planner_prompt_context_window.v1",
+        "document_id": document_id,
+        "section": f"repo_read:{document_id}.py",
+        "store": "job_local_sqlite",
+        "window_start": 0,
+        "window_end": 100,
+        "full_chars": 300,
+        "window_chars": 100,
+        "complete": False,
+        "has_more_before": False,
+        "has_more_after": True,
+        "sha256": f"{document_id}-full",
+        "window_sha256": f"{document_id}-window",
+        "text": "x" * 100,
+    }
 
 
 def _deps() -> dict[str, Any]:
@@ -131,6 +157,74 @@ def _config() -> dict[str, Any]:
     }
 
 
+def test_repo_read_prompt_window_is_optional_not_a_hard_final_gate() -> None:
+    working_set = {
+        "schema": "planner_required_working_set.v1",
+        "continuation_policy": {
+            "repo_read_windows_required": False,
+            "repo_read_windows_are_final_gate": False,
+        },
+        "repo_reads": [{"content_window": _prompt_window()}],
+    }
+
+    action = required_working_set_continuation_action(
+        working_set,
+        history=[],
+        window_chars=100,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind="code_product_build_state",
+    )
+
+    assert action is None
+
+
+def test_policy_can_still_force_repo_read_prompt_window_when_explicitly_required() -> None:
+    working_set = {
+        "schema": "planner_required_working_set.v1",
+        "continuation_policy": {"repo_read_windows_required": True},
+        "repo_reads": [{"content_window": _prompt_window()}],
+    }
+
+    action = required_working_set_continuation_action(
+        working_set,
+        history=[],
+        window_chars=100,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind="code_product_build_state",
+    )
+
+    assert action is not None
+    assert action["tool"] == "planner_scratchpad_read"
+    assert action["arguments"]["document_id"] == "prompt-context-smoke"
+    assert action["arguments"]["offset"] == 100
+
+
+def test_code_product_prompt_window_remains_a_hard_gate() -> None:
+    working_set = {
+        "schema": "planner_required_working_set.v1",
+        "continuation_policy": {
+            "repo_read_windows_required": False,
+            "repo_read_windows_are_final_gate": False,
+        },
+        "repo_reads": [{"content_window": _prompt_window(document_id="repo-source")}],
+        "code_product": {
+            "unified_diff_window": _prompt_window(document_id="code-product-diff"),
+        },
+    }
+
+    action = required_working_set_continuation_action(
+        working_set,
+        history=[],
+        window_chars=100,
+        history_tool_result=_history_tool_result,
+        code_product_build_state_kind="code_product_build_state",
+    )
+
+    assert action is not None
+    assert action["tool"] == "planner_scratchpad_read"
+    assert action["arguments"]["document_id"] == "code-product-diff"
+
+
 def test_required_prompt_context_continuation_is_not_blocked_by_final_gate() -> None:
     continuation_args = {
         "kind": "prompt_context_window",
@@ -162,6 +256,33 @@ def test_required_prompt_context_continuation_is_not_blocked_by_final_gate() -> 
 
     assert result["ok"] is True
     assert "final_required_tool_call_disallowed" not in result["violations"]
+
+
+def test_final_required_rejects_optional_prompt_context_window_read() -> None:
+    result = validate_planner_decision_against_evidence(
+        "read-only technical analysis",
+        {
+            "action": "tool",
+            "tool": "planner_scratchpad_read",
+            "arguments": {
+                "kind": "prompt_context_window",
+                "document_id": "prompt-context-smoke",
+                "offset": 32768,
+                "max_chars": 32768,
+            },
+            "allowed_tool_names": ["planner_scratchpad_read"],
+            "allowed_native_tool_names": ["planner_scratchpad_read"],
+            "native_tool_call": True,
+            "raw_native_tool_call": {"function": {"name": "planner_scratchpad_read"}},
+        },
+        [],
+        deps=_deps(),
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert "final_required_optional_prompt_context_window_disallowed" in result["violations"]
+    assert "Produce action=final" in result["evidence_contract"]["required_next_progress"]
 
 
 def test_prompt_context_continuation_surface_preempts_terminal_empty_surface() -> None:

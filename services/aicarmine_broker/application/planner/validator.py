@@ -206,6 +206,25 @@ def validate_planner_decision_against_evidence(
             "evidence_contract": contract,
             "required_prompt_context_continuation": prompt_context_continuation_required,
         }
+    if (
+        action == "tool"
+        and tool == "planner_scratchpad_read"
+        and not prompt_context_continuation_matches
+        and str(args.get("kind") or "").strip() == "prompt_context_window"
+        and _contract_final_required_now(contract)
+    ):
+        violations.append("final_required_optional_prompt_context_window_disallowed")
+        contract["required_next_progress"] = (
+            "Quality gate is satisfied. Produce action=final from the real context already "
+            "in the prompt and prior verified evidence. Do not consume optional prompt_context_window "
+            "repo_read offsets linearly; if a concrete evidence gap remains, it must be named and "
+            "resolved before the terminal final-required state with selective repo/RAG/search tools."
+        )
+        return {
+            "ok": False,
+            "violations": violations,
+            "evidence_contract": contract,
+        }
 
     requested_limit = int(contract.get("requested_file_limit") or 0)
     target_scope = str(contract.get("resolved_goal_scope") or "")

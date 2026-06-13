@@ -19,10 +19,12 @@ headroom budget is the prompt char budget minus the reserved generation margin
 Large required file/diff/result sections are not replaced by metadata. They are
 stored in job-local SQLite prompt documents and surfaced to the planner as real
 `planner_prompt_context_window.v1` text windows with offsets, hashes and
-`has_more_after`. When a required window has more text to consume, the controller
-requires `planner_scratchpad_read(kind=prompt_context_window, ...)`; other
-actions are rejected with `prompt_context_continuation_required`. This rejection
-is a controller guard and must not be routed to GPU0/11435 repair.
+`has_more_after`. When the controller explicitly marks a window continuation as
+required, it requires
+`planner_scratchpad_read(kind=prompt_context_window, ...)`; other actions are
+rejected with `prompt_context_continuation_required`. Large `repo_read` windows
+without that explicit continuation remain optional adjacent context, not a
+linear EOF gate.
 
 The public OpenWebUI payload is unchanged: `tool_context_for_30b` must still
 contain the reconstructed real successful tool payloads inline. SQLite document

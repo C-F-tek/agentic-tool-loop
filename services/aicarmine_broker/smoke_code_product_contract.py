@@ -3517,10 +3517,21 @@ def main() -> int:
             require(large_window.get("complete") is False, "large window unexpectedly complete")
             require(large_window.get("has_more_after") is True, "large window should advertise following context")
             require("needle_anchor" in large_window.get("text", ""), "large window did not center on goal anchor")
-            large_prompt_actions = (large_payload.get("evidence_contract") or {}).get("candidate_next_actions") or []
+            large_required = large_payload.get("required_working_set") or {}
+            large_policy = large_required.get("continuation_policy") or {}
             require(
-                len(large_prompt_actions) == 1 and large_prompt_actions[0].get("tool") == "planner_scratchpad_read",
-                f"required context continuation did not isolate candidate_next_actions: {large_prompt_actions}",
+                large_policy.get("repo_read_windows_required") is False,
+                f"repo_read prompt windows became a hard continuation gate again: {large_policy}",
+            )
+            require(
+                isinstance(large_item.get("planner_can_request_more"), dict)
+                and large_item["planner_can_request_more"].get("hard_gate") is False,
+                f"large repo_read window did not expose optional follow-up context: {large_item}",
+            )
+            large_evidence = large_payload.get("evidence_contract") or {}
+            require(
+                not isinstance(large_evidence.get("required_next_tool_call"), dict),
+                f"analysis repo_read window forced a required next tool call: {large_evidence.get('required_next_tool_call')}",
             )
             next_window = memory_tools.planner_scratchpad_read(
                 {

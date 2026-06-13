@@ -81,6 +81,12 @@ def repo_read_items_for_prompt(
                             "offset": window.get("window_end"),
                             "max_chars": window_chars,
                         },
+                        "required": False,
+                        "hard_gate": False,
+                        "reason": (
+                            "Optional adjacent repo_read context. Use only for a named evidence gap; "
+                            "prefer selective repo/RAG/search tools for large files."
+                        ),
                     } if window.get("document_id") and window.get("has_more_after") is True else None,
                     "content_chars": len(content),
                 }
@@ -157,6 +163,21 @@ def required_working_set_for_prompt(
             "store": "job_local_sqlite",
             "recursive_window_tool": "planner_scratchpad_read",
             "window_policy": "real_text_windows_with_offsets_and_hashes",
+            "repo_read_window_continuation": "optional_selective_not_final_gate",
+            "hard_gate_window_kinds": [
+                "code_product_unified_diff",
+                "code_product_build_state",
+            ],
+        },
+        "continuation_policy": {
+            "repo_read_windows_required": False,
+            "repo_read_windows_are_final_gate": False,
+            "repo_read_windows_can_request_more": True,
+            "code_product_windows_required": bool(code_product_history_required),
+            "reason": (
+                "repo_read content windows are real prompt context. Additional offsets are optional "
+                "and must be requested for a named evidence gap, not consumed linearly before final."
+            ),
         },
         "target_paths": sorted(target_paths),
         "repo_reads": repo_read_items_for_prompt(

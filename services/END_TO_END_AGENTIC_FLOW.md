@@ -400,11 +400,14 @@ Verified behavior:
 - RAG/chunk/intrinsic context names are not added to `PLANNER_INTERNAL_TOOLS`.
 - `runtime_sqlite_memory_search/write` and `planner_scratchpad_*` remain
   selective follow-up tools only after intrinsic context leaves a concrete gap.
-- When the prompt pack exposes a required
-  `planner_prompt_context_window.v1` with more real text to consume, the next
-  valid planner action is `planner_scratchpad_read` for that document window.
-  A different action is rejected as `prompt_context_continuation_required`;
-  that rejection is not routed to 11435 repair.
+- When the prompt pack exposes an explicit required continuation
+  (`required_next_tool_call` / `prompt_context_continuation_required`) for a
+  `planner_prompt_context_window.v1`, the next valid planner action is
+  `planner_scratchpad_read` for that document window. A different action is
+  rejected as `prompt_context_continuation_required`; that rejection is not
+  routed to 11435 repair. A `repo_read` window with `has_more_after=true`
+  without that explicit continuation is optional adjacent context, not a final
+  gate.
 
 ### 6. 11435 is repair/task support, not the main planner
 

@@ -322,11 +322,13 @@ Regole:
 - se una finestra ha `has_more_after=true`, il planner puo' leggere
   ricorsivamente la finestra successiva tramite `planner_scratchpad_read` con
   `kind=prompt_context_window`, `document_id`, `offset=window_end` e
-  `max_chars`.
+  `max_chars`, ma per `repo_read` questo e' contesto adiacente opzionale salvo
+  continuation esplicita del controller.
 - se anche dopo finestre SQLite piccole e omissione del solo contesto opzionale
   il prompt resta fuori budget, il controller blocca in modo tipizzato invece
   di inviare un prompt troncato.
-- se una finestra necessaria ha ancora testo reale non consumato, il planner
+- se il controller emette `required_next_tool_call` /
+  `prompt_context_continuation_required` per una finestra necessaria, il planner
   deve proseguire con `planner_scratchpad_read(kind=prompt_context_window, ...)`.
   Qualunque altra decisione viene rifiutata con
   `prompt_context_continuation_required`. Questa e' una violazione semantica del

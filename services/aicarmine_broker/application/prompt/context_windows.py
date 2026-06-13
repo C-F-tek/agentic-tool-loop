@@ -297,9 +297,16 @@ def required_working_set_continuation_action(
         code_product_build_state_kind=code_product_build_state_kind,
     )
     windows: list[dict[str, Any]] = []
-    for item in (required_working_set or {}).get("repo_reads") or []:
-        if isinstance(item, dict) and isinstance(item.get("content_window"), dict):
-            windows.append(item["content_window"])
+    continuation_policy = (
+        (required_working_set or {}).get("continuation_policy")
+        if isinstance((required_working_set or {}).get("continuation_policy"), dict)
+        else {}
+    )
+    repo_read_windows_required = bool(continuation_policy.get("repo_read_windows_required"))
+    if repo_read_windows_required:
+        for item in (required_working_set or {}).get("repo_reads") or []:
+            if isinstance(item, dict) and isinstance(item.get("content_window"), dict):
+                windows.append(item["content_window"])
     code_product = (required_working_set or {}).get("code_product")
     if isinstance(code_product, dict) and isinstance(code_product.get("unified_diff_window"), dict):
         windows.append(code_product["unified_diff_window"])
