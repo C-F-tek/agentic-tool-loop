@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -156,6 +157,64 @@ def test_query_plan_semantic_intent_is_not_overridden_by_single_action_words() -
     assert report_plan["goal_class"] == "repo_analysis"
     assert report_plan["semantic_intent"]["accepted"] is True
     assert "planner_read_only_intent_overrode_static_apply_fallback" in report_plan["semantic_intent"]["guardrails"]
+
+
+def test_preplanner_prompt_instructs_semantic_audit_search_contract() -> None:
+    captured_payloads: list[dict[str, Any]] = []
+    goal = (
+        "Verifica nel codice le incongruenze semantiche e il rischio di regressione "
+        "portato da funzioni logiche ripetute localmente invece che ereditate. "
+        "Read-only, nessuna patch."
+    )
+
+    def fake_post_json(_url: str, payload: dict[str, Any], _timeout: int) -> dict[str, Any]:
+        captured_payloads.append(payload)
+        return {
+            "message": {
+                "content": json.dumps({
+                    "semantic_intent": {
+                        "class": "repo_analysis",
+                        "read_only": True,
+                        "write_requested": False,
+                        "apply_requested": False,
+                        "code_product_requested": False,
+                        "requires_code_security_coverage": False,
+                        "rationale": "The goal asks for read-only semantic drift analysis.",
+                    },
+                    "queries": [
+                        {
+                            "query": "planner loop validator tool_surface prompt public_payload owner",
+                            "purpose": "find current owner modules before comparing wrappers",
+                            "target_kind": "owner_source",
+                        }
+                    ],
+                })
+            }
+        }
+
+    query_plan = rag_preseed.controller_preplanner_rag_query_plan(
+        goal,
+        post_json=fake_post_json,
+        planner_url="http://127.0.0.1:11434/api/chat",
+        planner_model="smoke",
+        keep_alive="0",
+        num_ctx=262144,
+        timeout=5,
+    )
+
+    assert query_plan["ok"] is True
+    assert query_plan["queries"][0]["target_kind"] == "owner_source"
+    request_payload = json.loads(captured_payloads[0]["messages"][1]["content"])
+    constraints = request_payload["constraints"]
+    assert request_payload["static_hint_is_not_authoritative"] is True
+    assert "semantic_audit_search_contract" in constraints
+    assert "strategy_by_semantic_intent" in constraints
+    assert "validator/controller/tool-surface/prompt/public-payload owner modules" in (
+        constraints["strategy_by_semantic_intent"]["repo_analysis"]
+    )
+    assert "README/AGENTS as the only evidence" in (
+        constraints["semantic_audit_search_contract"]["invalid_primary_targets"]
+    )
 
 
 def test_preseed_prioritizes_explicit_db_paths_before_ranked(monkeypatch, tmp_path: Path) -> None:

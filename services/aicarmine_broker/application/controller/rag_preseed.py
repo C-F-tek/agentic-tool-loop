@@ -260,8 +260,39 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         ),
     ))
     planner_declares_no_write = planner_read_only and not planner_write_requested and not planner_apply_requested
+    planner_requires_security = _boolish(
+        value.get("requires_code_security_coverage")
+        or value.get("code_security")
+        or value.get("security_analysis")
+    )
+    guardrails: list[str] = []
+    if planner_goal_class in {"analysis_only", "repo_analysis", "generic"} and planner_requires_security:
+        planner_goal_class = "code_security_analysis"
+        guardrails.append("planner_analysis_intent_promoted_to_code_security_analysis")
+    if (
+        fallback_goal_class == "apply_write"
+        and planner_goal_class != "apply_write"
+        and planner_declares_no_write
+    ):
+        guardrails.append("planner_read_only_intent_overrode_static_apply_fallback")
+    if (
+        fallback_goal_class == "code_product_report"
+        and planner_goal_class != "code_product_report"
+        and planner_declares_no_write
+        and planner_code_product_requested is False
+    ):
+        guardrails.append("planner_read_only_intent_overrode_static_code_product_fallback")
+    if (
+        planner_goal_class == "code_product_report"
+        and planner_code_product_requested is None
+        and planner_declares_no_write
+    ):
+        planner_code_product_requested = True
+        guardrails.append("planner_code_product_requested_inferred_from_code_product_report_intent")
+
     invalid_reasons: list[str] = []
     if planner_goal_class == "apply_write" and planner_declares_no_write:
+        guardrails.append("planner_apply_write_without_positive_goal_evidence_downgraded")
         invalid_reasons.append("apply_write_conflicts_with_read_only_no_write_flags")
     if planner_goal_class != "apply_write" and (planner_write_requested or planner_apply_requested):
         invalid_reasons.append("non_apply_goal_conflicts_with_write_or_apply_flags")
@@ -280,11 +311,7 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         "goal_class": planner_goal_class if not invalid_reasons else "",
         "planner_goal_class": planner_goal_class,
         "raw_class": _sanitize_query_text(raw_class),
-        "requires_code_security_coverage": _boolish(
-            value.get("requires_code_security_coverage")
-            or value.get("code_security")
-            or value.get("security_analysis")
-        ),
+        "requires_code_security_coverage": planner_requires_security,
         "read_only": _boolish(value.get("read_only")),
         "write_requested": planner_write_requested,
         "apply_requested": planner_apply_requested,
@@ -292,6 +319,7 @@ def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, 
         "code_product_requested_present": planner_code_product_requested is not None,
         "rationale": rationale,
         "invalid_reasons": invalid_reasons,
+        "guardrails": guardrails,
     }
 
 
@@ -367,14 +395,19 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
             if isinstance(item, Mapping):
                 query = _sanitize_query_text(item.get("query") or item.get("text"))
                 purpose = _sanitize_query_text(item.get("purpose"))
+                target_kind = _sanitize_query_text(item.get("target_kind") or item.get("kind"))
             else:
                 query = _sanitize_query_text(item)
                 purpose = ""
+                target_kind = ""
             if not query:
                 continue
             if query.lower() in {q["query"].lower() for q in queries}:
                 continue
-            queries.append({"query": query, "purpose": purpose})
+            query_item = {"query": query, "purpose": purpose}
+            if target_kind:
+                query_item["target_kind"] = target_kind
+            queries.append(query_item)
             if len(queries) >= max_queries:
                 break
     if not semantic_intent_usable:
@@ -431,75 +464,78 @@ def controller_preplanner_rag_query_plan(
         return {**report, "status": "failed", "reason": "semantic_intent_preplanner_disabled"}
 
     static_goal_class_hint = _preplanner_goal_class(goal)
-    fallback_goal_class = "generic"
-    if fallback_goal_class == "apply_write":
-        focus = [
+    focus = [
+        "classify semantic_intent from the goal meaning before choosing queries",
+        "prefer concrete owner source modules, validators, dispatchers, prompt builders, and public payload surfaces",
+        "include wrappers or legacy mirrors only when they can diverge from an owner implementation",
+        "use docs/contracts as secondary evidence unless the goal explicitly asks for documentation contracts",
+    ]
+    avoid = [
+        "copying static_goal_class_hint as the final intent",
+        "generic architecture discovery when a semantic/code audit is requested",
+        "documentation-only or contract-only searches when source-code owners are needed",
+        "abstract search phrases that name concepts but not concrete runtime owners",
+        "test-only or fixture-only queries unless they verify a specific suspected owner rule",
+    ]
+    query_style = "short concrete owner, symbol, module, or target-file phrases"
+    strategy_by_semantic_intent = {
+        "apply_write": [
             "explicit target file names and likely aliases",
             "patch anchors and old text phrases",
-            "owner docs or source files that must be edited",
-            "nearby configuration or contract files only when named",
-        ]
-        avoid = [
-            "broad architecture discovery",
-            "generic repo tree requests",
-            "unrelated implementation directories",
-            "test-only or fixture-only queries unless explicitly requested",
-        ]
-        query_style = "short target-file, alias, or patch-anchor phrases"
-    elif fallback_goal_class == "code_product_report":
-        focus = [
+            "owner source files that must be edited",
+            "nearby tests or contracts only when they constrain the edit",
+        ],
+        "code_product_report": [
             "explicit target file names and likely aliases",
             "diff or refactor proposal anchors",
-            "owner docs or source files that define the proposed change",
-            "nearby tests or contracts only when named",
-        ]
-        avoid = [
-            "broad architecture discovery",
-            "generic repo tree requests",
-            "unrelated implementation directories",
-            "write/apply execution queries",
-            "test-only or fixture-only queries unless explicitly requested",
-        ]
-        query_style = "short target-file, alias, or proposal-anchor phrases"
-    elif fallback_goal_class == "code_security_analysis":
-        focus = [
+            "owner source files that define the proposed change",
+            "nearby tests or contracts only when they constrain the report",
+        ],
+        "code_security_analysis": [
             "entrypoints and controllers",
             "request/input validation",
             "error and exception handling",
             "security/auth/secrets/database/client code",
             "core services and provider logic",
-        ]
-        avoid = [
-            "generic repo tree requests",
-            "documentation-only queries",
-            "test-only or fixture-only queries unless explicitly requested",
-        ]
-        query_style = "short source-code search phrases, not prose"
-    elif fallback_goal_class == "repo_analysis":
-        focus = [
+        ],
+        "repo_analysis": [
             "entrypoints and core owners",
-            "files named directly by the user",
-            "contracts, docs, and configuration that define behavior",
-            "ranker queries that identify concrete readable targets",
-        ]
-        avoid = [
-            "generic repo tree requests",
-            "exhaustive directory crawling",
-            "low-signal backup/generated/fixture paths",
-        ]
-        query_style = "short owner, contract, symbol, or target-file phrases"
-    else:
-        focus = [
+            "validator/controller/tool-surface/prompt/public-payload owner modules",
+            "legacy wrappers or mirrors that may clone owner behavior",
+            "tests that encode the contract being audited",
+        ],
+        "analysis_only": [
+            "concrete owner source modules needed to answer the analysis",
+            "validator/controller/tool-surface/prompt/public-payload owner modules when loop semantics are involved",
+            "legacy wrappers or mirrors only as comparison targets",
+        ],
+        "generic": [
             "files named directly by the user",
             "project entrypoints and owner contracts",
             "small target-candidate queries for a ranker",
-        ]
-        avoid = [
-            "generic repo tree requests",
-            "exhaustive directory crawling",
-            "test-only or fixture-only queries unless explicitly requested",
-        ]
-        query_style = "short concrete target-candidate phrases"
+        ],
+    }
+    semantic_audit_search_contract = {
+        "trigger": (
+            "When the goal asks about semantic inconsistencies, regression risk, duplicate logic, "
+            "layer drift, hidden guards, or repeated local implementations."
+        ),
+        "required_targets": [
+            "current owner source modules for the loop or feature under review",
+            "validator/controller/tool-surface/prompt/public-payload modules when planner semantics are involved",
+            "legacy wrapper or compatibility facade only after at least one current owner-source query",
+            "tests or smoke contracts that would catch divergence",
+        ],
+        "invalid_primary_targets": [
+            "README/AGENTS as the only evidence",
+            "contract protocol stubs as the only source-code evidence",
+            "generated or copied legacy files without a current owner comparison",
+        ],
+        "query_rule": (
+            "Each query must be a concrete search phrase for a readable target family. "
+            "Attach target_kind so the controller and operator can audit the planned coverage."
+        ),
+    }
 
     max_queries = _query_plan_max_queries()
     system = (
@@ -517,6 +553,8 @@ def controller_preplanner_rag_query_plan(
             "query_style": query_style,
             "focus": focus,
             "avoid": avoid,
+            "strategy_by_semantic_intent": strategy_by_semantic_intent,
+            "semantic_audit_search_contract": semantic_audit_search_contract,
             "semantic_intent_classes": [
                 "analysis_only",
                 "code_security_analysis",
@@ -546,7 +584,14 @@ def controller_preplanner_rag_query_plan(
                 "requires_code_security_coverage": False,
                 "rationale": "short reason",
             },
-            "queries": [{"query": "target file or owner phrase", "purpose": "find concrete targets"}]
+            "queries": [{
+                "query": "target file, owner symbol, module family, or concrete runtime phrase",
+                "purpose": "why this target family is needed",
+                "target_kind": (
+                    "owner_source | validator | controller | tool_surface | prompt | "
+                    "public_payload | legacy_wrapper | contract_doc | test"
+                ),
+            }]
         },
     }
     timeout_seconds = _env_int(
