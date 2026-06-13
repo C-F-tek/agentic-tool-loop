@@ -1173,7 +1173,9 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "fix": f"Avvia il broker dedicato Codex su 127.0.0.1:{port} con AICARMINE_LAB_REPO uguale alla root Codex oppure usa ensure_broker quando la porta e' libera.",
             }
     assert payload is not None
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 120, 15, 900)
+    requested_timeout_seconds = _safe_int(args.get("timeout_seconds"), 120, 15, 900)
+    wait_budget_seconds = _safe_int(payload.get("wait_seconds"), 30, 1, 600)
+    timeout_seconds = max(requested_timeout_seconds, min(900, wait_budget_seconds + 30))
     response_budget_chars = _safe_int(args.get("response_budget_chars"), 12000, 1000, 60000)
     include_raw = _safe_bool(args.get("include_raw_response"), False)
     response = _post_agent(endpoint, payload, timeout_seconds=timeout_seconds)
@@ -1192,6 +1194,8 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "return_mode": payload.get("return_mode"),
                 "wait_seconds": payload.get("wait_seconds"),
                 "max_steps": payload.get("max_steps"),
+                "requested_timeout_seconds": requested_timeout_seconds,
+                "transport_timeout_seconds": timeout_seconds,
                 "task_chars": len(str(payload.get("task") or "")),
             },
         }

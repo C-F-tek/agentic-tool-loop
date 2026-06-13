@@ -125,8 +125,9 @@ def test_run_posts_codex_root_context_when_broker_root_matches(monkeypatch, tmp_
         {
             "task": "Analyze project",
             "confirm_agentic_loop": agentic_loop_client_mcp_server.CONFIRM_RUN,
-            "wait_seconds": 3,
+            "wait_seconds": 240,
             "max_steps": 4,
+            "timeout_seconds": 15,
         },
         codex_root,
     )
@@ -144,6 +145,7 @@ def test_run_posts_codex_root_context_when_broker_root_matches(monkeypatch, tmp_
     assert payload["tool_name"] == "vulkan_helper"
     assert payload["codex_agentic_loop_client"] is True
     assert captured["endpoint"] == "http://127.0.0.1:3579/vulkan/agent"
+    assert captured["timeout_seconds"] == 270
     assert arguments["lab_repo"] == str(codex_root.resolve(strict=False))
     assert context["expected_broker_lab_repo"] == str(codex_root.resolve(strict=False))
     assert invocation_context["source"] == "codex_app_mcp_agentic_loop_client"
@@ -161,6 +163,8 @@ def test_run_posts_codex_root_context_when_broker_root_matches(monkeypatch, tmp_
     assert result["terminal"] is True
     assert result["job_id"] == "job-test"
     assert result["root_check"]["ok"] is True
+    assert result["request"]["requested_timeout_seconds"] == 15
+    assert result["request"]["transport_timeout_seconds"] == 270
     assert result["tool_history_digest"][0]["tool"] == "repo_read"
 
 

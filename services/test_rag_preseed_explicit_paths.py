@@ -39,6 +39,125 @@ def test_preplanner_goal_class_ignores_negated_write_terms() -> None:
     assert rag_preseed._preplanner_goal_class("procedi con le fix e applica patch") == "apply_write"
 
 
+def test_query_plan_semantic_intent_can_enrich_goal_class() -> None:
+    goal = "Fammi capire il sistema di configurazione runtime e quali owner sono piu' rischiosi."
+
+    query_plan = rag_preseed._sanitize_preplanner_query_plan(
+        {
+            "semantic_intent": {
+                "class": "analysis_only",
+                "read_only": True,
+                "write_requested": False,
+                "apply_requested": False,
+                "requires_code_security_coverage": True,
+                "rationale": "The request asks for read-only risk discovery.",
+            },
+            "queries": [
+                {
+                    "query": "runtime configuration owner validation settings",
+                    "purpose": "find concrete code owners",
+                }
+            ],
+        },
+        goal=goal,
+    )
+
+    assert query_plan["ok"] is True
+    assert query_plan["goal_class"] == "code_security_analysis"
+    assert query_plan["semantic_intent"]["source"] == "planner_query_plan"
+    assert query_plan["semantic_intent"]["accepted"] is True
+
+
+def test_query_plan_semantic_intent_downgrades_unsafe_apply_from_negated_constraints() -> None:
+    goal = (
+        "Esegui una discovery read-only sul loop agentico. Non applicare patch, "
+        "non scrivere file, non usare repo_apply_patch."
+    )
+
+    query_plan = rag_preseed._sanitize_preplanner_query_plan(
+        {
+            "semantic_intent": {
+                "class": "apply_write",
+                "read_only": True,
+                "write_requested": False,
+                "apply_requested": False,
+                "rationale": "Incorrectly followed the patch word.",
+            },
+            "queries": [{"query": "agentic loop controller validation", "purpose": "find owners"}],
+        },
+        goal=goal,
+    )
+
+    assert query_plan["goal_class"] != "apply_write"
+    assert query_plan["semantic_intent"]["accepted"] is False
+    assert "planner_apply_write_without_positive_goal_evidence_downgraded" in query_plan["semantic_intent"]["guardrails"]
+
+
+def test_query_plan_semantic_intent_accepts_report_only_code_product() -> None:
+    goal = "Prepara un piano di modifica dettagliato per pkg/example.py senza toccare i file."
+
+    query_plan = rag_preseed._sanitize_preplanner_query_plan(
+        {
+            "semantic_intent": {
+                "class": "code_product_report",
+                "read_only": True,
+                "write_requested": False,
+                "apply_requested": False,
+                "rationale": "The user asks for a report/proposal, not execution.",
+            },
+            "queries": [{"query": "pkg/example.py change plan anchors", "purpose": "find target file"}],
+        },
+        goal=goal,
+    )
+
+    assert query_plan["goal_class"] == "code_product_report"
+    assert query_plan["semantic_intent"]["accepted"] is True
+
+
+def test_query_plan_semantic_intent_is_not_overridden_by_single_action_words() -> None:
+    conceptual_apply_goal = (
+        "Applica lo stesso concetto di lettura read-only al controller del loop: "
+        "cerca i file owner e restituisci solo evidenze, senza modificare file."
+    )
+    conceptual_apply_plan = rag_preseed._sanitize_preplanner_query_plan(
+        {
+            "semantic_intent": {
+                "class": "analysis_only",
+                "read_only": True,
+                "write_requested": False,
+                "apply_requested": False,
+                "requires_code_security_coverage": True,
+                "rationale": "Apply is used as conceptual transfer, not file mutation.",
+            },
+            "queries": [{"query": "loop controller owner read evidence", "purpose": "find owners"}],
+        },
+        goal=conceptual_apply_goal,
+    )
+
+    assert conceptual_apply_plan["goal_class"] == "code_security_analysis"
+    assert conceptual_apply_plan["semantic_intent"]["accepted"] is True
+    assert "planner_read_only_intent_overrode_static_apply_fallback" in conceptual_apply_plan["semantic_intent"]["guardrails"]
+
+    report_goal = "Scrivi solo un report sui rischi di services/aicarmine_broker/planner.py, non modificare file."
+    report_plan = rag_preseed._sanitize_preplanner_query_plan(
+        {
+            "semantic_intent": {
+                "class": "repo_analysis",
+                "read_only": True,
+                "write_requested": False,
+                "apply_requested": False,
+                "rationale": "Writing is the chat/report output, not repository mutation.",
+            },
+            "queries": [{"query": "services/aicarmine_broker/planner.py risk report", "purpose": "find target"}],
+        },
+        goal=report_goal,
+    )
+
+    assert report_plan["goal_class"] == "repo_analysis"
+    assert report_plan["semantic_intent"]["accepted"] is True
+    assert "planner_read_only_intent_overrode_static_apply_fallback" in report_plan["semantic_intent"]["guardrails"]
+
+
 def test_preseed_prioritizes_explicit_db_paths_before_ranked(monkeypatch, tmp_path: Path) -> None:
     explicit_paths = [
         "AGENTS.md",

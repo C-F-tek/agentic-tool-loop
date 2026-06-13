@@ -14,6 +14,10 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ..evidence.goal_classifier import (
+    goal_operational_intent_text,
+    semantic_goal_classification,
+)
 from ..evidence.repo_path_policy import (
     repo_doc_or_config,
     repo_existing_file,
@@ -60,14 +64,6 @@ _EXPLICIT_PATH_RE = re.compile(
 )
 _DEFAULT_RERANK_URL = "http://127.0.0.1:3550/v3/rerank"
 _DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-_NEGATED_WRITE_PHRASE_RE = re.compile(
-    r"\b(?:non|no|senza)\s+"
-    r"(?:(?:devi|deve|fare|eseguire|procedere|procedi)\s+)?"
-    r"(?:applica\w*|apply|patch|modifica\w*|edit|write|scrivi\w*|correggi\w*|fix)\b"
-    r"(?:\s+[a-z0-9_.@+-]+){0,4}",
-    re.IGNORECASE,
-)
-
 _CODE_SECURITY_EXPANSION_TERMS = (
     "def", "class", "import", "config", "settings", "validate", "validation",
     "error", "exception", "request", "response", "service", "provider",
@@ -98,7 +94,7 @@ def _path_family(path: str) -> str:
 
 
 def _code_security_analysis_goal(goal: str) -> bool:
-    low = str(goal or "").lower()
+    low = goal_operational_intent_text(goal).lower()
     code_terms = (
         "codice", "code", "sorgente", "source", "semantiche", "semantic",
         "antipattern", "anti-pattern", "code smell", "qualit",
@@ -117,21 +113,154 @@ def _code_security_analysis_goal(goal: str) -> bool:
 
 
 def _preplanner_goal_class(goal: str) -> str:
-    low = str(goal or "").lower()
-    write_detection_text = _NEGATED_WRITE_PHRASE_RE.sub(" ", low)
-    if any(term in write_detection_text for term in (
-        "applica", "applicare", "apply", "patch", "modifica", "modificare",
-        "edit", "write", "scrivi", "correggi", "fix",
-    )):
+    classification = semantic_goal_classification(
+        goal,
+        repo_analysis=_code_security_analysis_goal(goal),
+    )
+    deliverable_class = str(classification.get("class") or "").strip()
+    if deliverable_class == "apply_write":
         return "apply_write"
-    if _code_security_analysis_goal(goal):
+    if deliverable_class == "code_product_report":
+        return "code_product_report"
+    if classification.get("requires_code_security_coverage") or _code_security_analysis_goal(goal):
         return "code_security_analysis"
+    low = goal_operational_intent_text(goal).lower()
     if any(term in low for term in (
         "analizza", "analisi", "analysis", "review", "audit", "critic",
         "ricerca", "cerca", "trova", "find", "search",
     )):
         return "repo_analysis"
     return "generic"
+
+
+def _preplanner_goal_class_from_intent(value: Any, *, fallback_goal_class: str) -> str | None:
+    raw = re.sub(r"[^a-z0-9_ -]+", " ", str(value or "").strip().lower())
+    normalized = re.sub(r"[\s-]+", "_", raw).strip("_")
+    if not normalized:
+        return None
+    if normalized in {
+        "apply",
+        "apply_patch",
+        "apply_write",
+        "edit",
+        "modify",
+        "write",
+        "write_apply",
+        "fix_apply",
+    }:
+        return "apply_write"
+    if normalized in {
+        "code_product",
+        "code_product_report",
+        "diff",
+        "diff_report",
+        "patch_report",
+        "proposal",
+        "report_only_code_product",
+        "unified_diff",
+    }:
+        return "code_product_report"
+    if normalized in {"code_security", "code_security_analysis", "security_analysis"}:
+        return "code_security_analysis"
+    if normalized in {"analysis", "analysis_only", "read", "read_only", "repo_analysis", "review"}:
+        return fallback_goal_class if fallback_goal_class == "code_security_analysis" else "repo_analysis"
+    if normalized in {"generic", "unknown", "unspecified"}:
+        return fallback_goal_class
+    return None
+
+
+def _boolish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on", "si", "sì"}
+
+
+def _sanitize_preplanner_semantic_intent(value: Any, *, goal: str) -> dict[str, Any]:
+    fallback_classification = semantic_goal_classification(
+        goal,
+        repo_analysis=_code_security_analysis_goal(goal),
+    )
+    fallback_goal_class = _preplanner_goal_class(goal)
+    base: dict[str, Any] = {
+        "schema": "agentic_loop_preplanner_semantic_intent.v1",
+        "source": "deterministic_fallback",
+        "accepted": False,
+        "goal_class": fallback_goal_class,
+        "fallback_goal_class": fallback_goal_class,
+        "fallback_semantic_class": str(fallback_classification.get("class") or ""),
+        "negative_write_constraints_present": bool(
+            fallback_classification.get("negative_write_constraints_present")
+        ),
+    }
+    if not isinstance(value, Mapping):
+        return base
+
+    raw_class = (
+        value.get("goal_class")
+        or value.get("class")
+        or value.get("mode")
+        or value.get("intent")
+        or value.get("operation")
+    )
+    planner_goal_class = _preplanner_goal_class_from_intent(
+        raw_class,
+        fallback_goal_class=fallback_goal_class,
+    )
+    if planner_goal_class is None:
+        planner_goal_class = fallback_goal_class
+
+    if planner_goal_class in {"repo_analysis", "generic"} and _boolish(
+        value.get("requires_code_security_coverage")
+        or value.get("code_security")
+        or value.get("security_analysis")
+    ):
+        planner_goal_class = "code_security_analysis"
+
+    guardrails: list[str] = []
+    selected_goal_class = planner_goal_class
+    planner_read_only = _boolish(value.get("read_only"))
+    planner_write_requested = _boolish(value.get("write_requested") or value.get("requires_write"))
+    planner_apply_requested = _boolish(value.get("apply_requested") or value.get("requires_apply"))
+    planner_declares_no_write = planner_read_only and not planner_write_requested and not planner_apply_requested
+
+    if selected_goal_class == "apply_write" and fallback_goal_class != "apply_write":
+        selected_goal_class = fallback_goal_class if fallback_goal_class != "generic" else "repo_analysis"
+        guardrails.append("planner_apply_write_without_positive_goal_evidence_downgraded")
+    elif fallback_goal_class == "apply_write" and selected_goal_class != "apply_write":
+        if planner_declares_no_write:
+            guardrails.append("planner_read_only_intent_overrode_static_apply_fallback")
+        else:
+            guardrails.append("planner_semantic_intent_overrode_static_apply_fallback")
+
+    if (
+        selected_goal_class == "code_product_report"
+        and bool(fallback_classification.get("negative_write_constraints_present"))
+        and fallback_goal_class != "code_product_report"
+    ):
+        selected_goal_class = fallback_goal_class if fallback_goal_class != "generic" else "repo_analysis"
+        guardrails.append("planner_code_product_from_negative_write_constraint_downgraded")
+
+    rationale = _sanitize_query_text(value.get("rationale") or value.get("reason"))
+    return {
+        **base,
+        "source": "planner_query_plan",
+        "accepted": selected_goal_class == planner_goal_class,
+        "goal_class": selected_goal_class,
+        "planner_goal_class": planner_goal_class,
+        "raw_class": _sanitize_query_text(raw_class),
+        "requires_code_security_coverage": _boolish(
+            value.get("requires_code_security_coverage")
+            or value.get("code_security")
+            or value.get("security_analysis")
+        ),
+        "read_only": _boolish(value.get("read_only")),
+        "write_requested": planner_write_requested,
+        "apply_requested": planner_apply_requested,
+        "rationale": rationale,
+        "guardrails": guardrails,
+    }
 
 
 def _query_plan_max_queries() -> int:
@@ -183,11 +312,15 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
         "ok": False,
         "status": "unavailable",
         "source": "none",
+        "goal_class": _preplanner_goal_class(goal),
+        "semantic_intent": _sanitize_preplanner_semantic_intent(None, goal=goal),
         "queries": [],
     }
     if not isinstance(value, Mapping):
         return report
     source = str(value.get("source") or "planner")
+    semantic_intent = _sanitize_preplanner_semantic_intent(value.get("semantic_intent"), goal=goal)
+    goal_class = str(semantic_intent.get("goal_class") or _preplanner_goal_class(goal))
     raw_queries = value.get("queries")
     queries: list[dict[str, str]] = []
     if isinstance(raw_queries, list):
@@ -210,6 +343,8 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
             **report,
             "status": "empty",
             "source": source,
+            "goal_class": goal_class,
+            "semantic_intent": semantic_intent,
             "reason": str(value.get("reason") or "no_queries"),
         }
     return {
@@ -217,7 +352,8 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
         "ok": True,
         "status": "ready",
         "source": source,
-        "goal_class": _preplanner_goal_class(goal),
+        "goal_class": goal_class,
+        "semantic_intent": semantic_intent,
         "queries": queries,
     }
 
@@ -244,8 +380,8 @@ def controller_preplanner_rag_query_plan(
     if not _env_bool("AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_ENABLED", True):
         return {**report, "reason": "disabled"}
 
-    goal_class = _preplanner_goal_class(goal)
-    if goal_class == "apply_write":
+    fallback_goal_class = _preplanner_goal_class(goal)
+    if fallback_goal_class == "apply_write":
         focus = [
             "explicit target file names and likely aliases",
             "patch anchors and old text phrases",
@@ -259,7 +395,22 @@ def controller_preplanner_rag_query_plan(
             "test-only or fixture-only queries unless explicitly requested",
         ]
         query_style = "short target-file, alias, or patch-anchor phrases"
-    elif goal_class == "code_security_analysis":
+    elif fallback_goal_class == "code_product_report":
+        focus = [
+            "explicit target file names and likely aliases",
+            "diff or refactor proposal anchors",
+            "owner docs or source files that define the proposed change",
+            "nearby tests or contracts only when named",
+        ]
+        avoid = [
+            "broad architecture discovery",
+            "generic repo tree requests",
+            "unrelated implementation directories",
+            "write/apply execution queries",
+            "test-only or fixture-only queries unless explicitly requested",
+        ]
+        query_style = "short target-file, alias, or proposal-anchor phrases"
+    elif fallback_goal_class == "code_security_analysis":
         focus = [
             "entrypoints and controllers",
             "request/input validation",
@@ -273,7 +424,7 @@ def controller_preplanner_rag_query_plan(
             "test-only or fixture-only queries unless explicitly requested",
         ]
         query_style = "short source-code search phrases, not prose"
-    elif goal_class == "repo_analysis":
+    elif fallback_goal_class == "repo_analysis":
         focus = [
             "entrypoints and core owners",
             "files named directly by the user",
@@ -308,14 +459,37 @@ def controller_preplanner_rag_query_plan(
     user_payload = {
         "schema": "agentic_loop_preplanner_rag_query_plan_request.v1",
         "goal": str(goal or ""),
-        "goal_class": goal_class,
+        "fallback_goal_class": fallback_goal_class,
         "constraints": {
             "max_queries": max_queries,
             "query_style": query_style,
             "focus": focus,
             "avoid": avoid,
+            "semantic_intent_classes": [
+                "analysis_only",
+                "code_security_analysis",
+                "repo_analysis",
+                "code_product_report",
+                "apply_write",
+                "generic",
+            ],
+            "intent_rules": [
+                "Classify the requested operational mode from meaning, not keyword presence.",
+                "Negated or forbidden actions are constraints, not requested actions.",
+                "Tool names inside a negative constraint are not evidence that the tool should be used.",
+                "Use apply_write only when the user positively asks to modify/apply/write files.",
+                "Use code_product_report for requested patch/diff/proposal output that must not be applied.",
+            ],
         },
         "required_json_shape": {
+            "semantic_intent": {
+                "class": "analysis_only | code_security_analysis | repo_analysis | code_product_report | apply_write | generic",
+                "read_only": True,
+                "write_requested": False,
+                "apply_requested": False,
+                "requires_code_security_coverage": False,
+                "rationale": "short reason",
+            },
             "queries": [{"query": "target file or owner phrase", "purpose": "find concrete targets"}]
         },
     }
@@ -820,7 +994,7 @@ def _ranked_paths_from_codex_rag(
         "goal_class": goal_class,
         "query_plan": {
             key: sanitized_query_plan.get(key)
-            for key in ("schema", "ok", "status", "source", "goal_class", "queries", "reason")
+            for key in ("schema", "ok", "status", "source", "goal_class", "semantic_intent", "queries", "reason")
             if sanitized_query_plan.get(key) not in (None, "", [], {})
         },
         "query_specs": query_specs,
@@ -1049,16 +1223,20 @@ def controller_preplanner_rag_preseed_plan(
         return None, report, [{"stage": "preplanner_rag_reindex", "reason": "reindex_failed", "error": str(exc)}]
 
     read_path_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_PATH_LIMIT", 8, minimum=1, maximum=24)
-    goal_class = _preplanner_goal_class(goal)
-    default_anchor_limit = 0 if goal_class == "apply_write" else 2
+    query_plan = args.get("controller_rag_query_plan") if isinstance(args.get("controller_rag_query_plan"), Mapping) else None
+    sanitized_query_plan = _sanitize_preplanner_query_plan(query_plan, goal=goal) if query_plan else None
+    goal_class = str(
+        (sanitized_query_plan or {}).get("goal_class")
+        or _preplanner_goal_class(goal)
+    )
+    default_anchor_limit = 0 if goal_class in {"apply_write", "code_product_report"} else 2
     anchor_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_ANCHOR_LIMIT", default_anchor_limit, minimum=0, maximum=5)
     ranked_limit = max(1, read_path_limit - anchor_limit)
-    query_plan = args.get("controller_rag_query_plan") if isinstance(args.get("controller_rag_query_plan"), Mapping) else None
     ranked_items, ranking, ranking_skipped = _ranked_paths_from_codex_rag(
         db=db,
         repo_root=repo_root,
         goal=goal,
-        query_plan=query_plan,
+        query_plan=sanitized_query_plan or query_plan,
         safe_rel_path=safe_rel_path,
         named_read_priority=named_read_priority,
         generic_readable_suffixes=generic_readable_suffixes,
@@ -1068,7 +1246,7 @@ def controller_preplanner_rag_preseed_plan(
     literal_target_paths, literal_target_skipped = _indexed_literal_request_paths(
         db=db,
         goal=goal,
-        query_plan=query_plan,
+        query_plan=sanitized_query_plan or query_plan,
         repo_root=repo_root,
         safe_rel_path=safe_rel_path,
         generic_readable_suffixes=generic_readable_suffixes,

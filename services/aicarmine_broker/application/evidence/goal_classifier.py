@@ -55,8 +55,86 @@ def has_any(text: str, needles: tuple[str, ...]) -> bool:
     return any(n in text for n in needles)
 
 
+_NEGATED_OPERATION_RE = re.compile(
+    r"\b("
+    r"do\s+not\s+(?:actually\s+)?(?:apply|modify|change|edit|write|fix)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
+    r"don't\s+(?:apply|modify|change|edit|write|fix)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
+    r"without\s+(?:actually\s+)?(?:applying|modifying|changing|editing|writing)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
+    r"no\s+(?:apply|changes?)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
+    r"non\s+(?:devi\s+|deve\s+)?(?:usare|usa|applicare|applica|modificare|modifica|cambiare|cambia|editare|edita|scrivere|scrivi|correggere|correggi)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
+    r"senza\s+(?:usare|applicare|modificare|cambiare|editare|scrivere|correggere)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
+    r"read[-\s]?only|"
+    r"solo\s+lettura"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_TOOL_NAME_NOISE_RE = re.compile(
+    r"\b(?:repo_apply_patch|repo_write_file|terminal_run_command_wait|repo_command)\b",
+    re.IGNORECASE,
+)
+
+
+def goal_operational_intent_text(goal: str) -> str:
+    """Return goal text with negative constraints removed before intent matching."""
+    text = semantic_goal_text(goal)
+    text = _TOOL_NAME_NOISE_RE.sub(" ", text)
+    text = _NEGATED_OPERATION_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def goal_has_negative_write_constraints(goal: str) -> bool:
+    text = semantic_goal_text(goal)
+    return bool(_TOOL_NAME_NOISE_RE.search(text) or _NEGATED_OPERATION_RE.search(text))
+
+
+def _positive_code_product_marker(text: str) -> bool:
+    low = str(text or "").lower()
+    patterns = (
+        r"\bunified\s+diff\b",
+        r"\bcode\s+diff\b",
+        r"\bdetailed\s+code\s+diff\b",
+        r"\bcomplete\s+diff\s+patch(?:es)?\b",
+        r"\bdiff\s+patch(?:es)?\b",
+        r"\bcomplete\s+diff\s+information\b",
+        r"\bcomprehensive\s+diff\s+information\b",
+        r"\bcomplete\s+diff\s+output(?:s)?\b",
+        r"\bcomprehensive\s+diff\s+output(?:s)?\b",
+        r"\bdiff\s+completo\b",
+        r"\bdiff\s+concret[aoei]\b",
+        r"\bdifferenziale(?:\s+di\s+codice)?\b",
+        r"\bformato\s+diff\b",
+        r"\bin\s+formato\s+diff\b",
+        r"\bproposta\s+(?:di\s+)?patch\b",
+        r"\bproposte\s+(?:di\s+)?patch\b",
+        r"\bproponi(?:mi)?\s+(?:patch|diff)\b",
+        r"\bproponi(?:mi)?\s+(?:un|una)\s+(?:patch|diff)\b",
+        r"\bpropone\s+(?:patch|diff)\b",
+        r"\bproporre\s+(?:patch|diff)\b",
+        r"\bgenera(?:re)?\s+(?:un|una)?\s*(?:patch|diff)\b",
+        r"\b(?:fai|fare)\s+(?:un|una)?\s*(?:diff)\b",
+        r"\bpatch\s+(?:diff|concret[aoei]|complet[aoei])\b",
+        r"\bpatch\s+candidate\b",
+        r"\bcandidate\s+patch\b",
+        r"\bcode\s+product\b",
+        r"\bcode\s+edit\s+proposal(?:s)?\b",
+        r"\breport[-\s]?only\s+code\s+edit\s+proposal(?:s)?\b",
+        r"\breport[-\s]?only\s+(?:diff|patch|code\s+product)\b",
+        r"\bproposta\s+(?:di\s+)?refactor(?:ing)?\b",
+        r"\bproponi(?:mi)?\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
+        r"\bproporre\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
+        r"\brefactor\s+concreto\b",
+        r"\brefactoring\s+concreto\b",
+        r"\bgenera(?:re)?\s+(?:un\s+)?diff\b",
+        r"\bgenerate\s+(?:a\s+)?patch\b",
+        r"\bgenerate\s+(?:a\s+)?(?:detailed\s+)?(?:code\s+)?diff\b",
+        r"\bproduce\s+(?:a\s+)?(?:code\s+)?diff\b",
+    )
+    return any(re.search(pattern, low) for pattern in patterns)
+
+
 def goal_report_only_code_product_marker(goal: str) -> bool:
-    low = str(goal or "").lower()
+    low = semantic_goal_low(goal)
     report_only = re.search(
         r"\b("
         r"report[-\s]?only|"
@@ -67,17 +145,7 @@ def goal_report_only_code_product_marker(goal: str) -> bool:
         r")\b",
         low,
     )
-    code_surface = re.search(
-        r"\b("
-        r"diff(?:\s+patch(?:es)?)?|"
-        r"patch(?:es)?|"
-        r"code\s+edit\s+proposal(?:s)?|"
-        r"code\s+product|"
-        r"refactor(?:ing)?"
-        r")\b",
-        low,
-    )
-    return bool(report_only and code_surface)
+    return bool(report_only and _positive_code_product_marker(goal_operational_intent_text(goal)))
 
 
 def goal_diff_output_not_apply_marker(goal: str) -> bool:
@@ -114,47 +182,10 @@ def goal_diff_output_not_apply_marker(goal: str) -> bool:
 
 
 def goal_requests_code_product(goal: str) -> bool:
-    low = str(goal or "").lower()
-    patterns = (
-        r"\bunified\s+diff\b",
-        r"\bcode\s+diff\b",
-        r"\bdetailed\s+code\s+diff\b",
-        r"\bcomplete\s+diff\s+patch(?:es)?\b",
-        r"\bdiff\s+patch(?:es)?\b",
-        r"\bcomplete\s+diff\s+information\b",
-        r"\bcomprehensive\s+diff\s+information\b",
-        r"\bcomplete\s+diff\s+output(?:s)?\b",
-        r"\bcomprehensive\s+diff\s+output(?:s)?\b",
-        r"\bdiff\s+completo\b",
-        r"\bdiff\s+concret[aoei]\b",
-        r"\bdifferenziale(?:\s+di\s+codice)?\b",
-        r"\bformato\s+diff\b",
-        r"\bin\s+formato\s+diff\b",
-        r"\bproposta\s+(?:di\s+)?patch\b",
-        r"\bproposte\s+(?:di\s+)?patch\b",
-        r"\bproponi(?:mi)?\s+(?:patch|diff)\b",
-        r"\bproponi(?:mi)?\s+(?:un|una)\s+(?:patch|diff)\b",
-        r"\bpropone\s+(?:patch|diff)\b",
-        r"\bproporre\s+(?:patch|diff)\b",
-        r"\bgenera(?:re)?\s+patch\b",
-        r"\b(?:fai|fare)\s+(?:un|una)?\s*(?:diff)\b",
-        r"\bpatch\s+(?:diff|concret[aoei]|complet[aoei])\b",
-        r"\bpatch\s+candidate\b",
-        r"\bcandidate\s+patch\b",
-        r"\bcode\s+product\b",
-        r"\bcode\s+edit\s+proposal(?:s)?\b",
-        r"\breport[-\s]?only\s+code\s+edit\s+proposal(?:s)?\b",
-        r"\breport[-\s]?only\s+(?:diff|patch|code\s+product)\b",
-        r"\bproposta\s+(?:di\s+)?refactor(?:ing)?\b",
-        r"\bproponi(?:mi)?\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
-        r"\bproporre\s+(?:un\s+)?refactor(?:ing)?(?:\s+concreto)?\b",
-        r"\brefactor\s+concreto\b",
-        r"\brefactoring\s+concreto\b",
-        r"\bgenera(?:re)?\s+(?:un\s+)?diff\b",
-        r"\bgenerate\s+(?:a\s+)?(?:detailed\s+)?(?:code\s+)?diff\b",
-        r"\bproduce\s+(?:a\s+)?(?:code\s+)?diff\b",
+    return (
+        goal_report_only_code_product_marker(goal)
+        or _positive_code_product_marker(goal_operational_intent_text(goal))
     )
-    return goal_report_only_code_product_marker(goal) or any(re.search(pattern, low) for pattern in patterns)
 
 
 def goal_requires_code_security_coverage(goal: str) -> bool:
@@ -181,7 +212,7 @@ def goal_requires_code_security_coverage(goal: str) -> bool:
 
 
 def goal_requests_apply(goal: str) -> bool:
-    low = str(goal or "").lower()
+    low = goal_operational_intent_text(goal).lower()
     if goal_report_only_code_product_marker(goal) or goal_diff_output_not_apply_marker(goal):
         return False
     for negated in (
@@ -227,7 +258,7 @@ def goal_requests_apply(goal: str) -> bool:
     if goal_requests_code_product(goal) and (
         goal_diff_output_not_apply_marker(goal) or re.search(
             r"\b(report[-\s]?only|do\s+not\s+(?:actually\s+)?apply|without\s+(?:actually\s+)?applying(?:\s+changes?)?|non\s+applicare|senza\s+applicare)\b",
-            str(goal or "").lower(),
+            semantic_goal_low(goal),
         )
     ):
         return False
@@ -273,9 +304,11 @@ def final_answer_is_action_plan_without_code_product(text: str) -> bool:
 def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> dict[str, Any]:
     """Classify the requested deliverable without changing planner ownership."""
     text = semantic_goal_text(goal)
-    low = text.lower()
+    intent_text = goal_operational_intent_text(goal)
+    low = intent_text.lower()
     explicit_apply = goal_requests_apply(goal)
     explicit_code_product = goal_requests_code_product(goal)
+    negative_constraints = goal_has_negative_write_constraints(goal)
 
     refactor_terms = (
         "refactor", "refactoring", "ristruttura", "ristrutturazione",
@@ -348,4 +381,6 @@ def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> d
         "requires_code_security_coverage": goal_requires_code_security_coverage(goal),
         "regex_code_product_override": bool(explicit_code_product),
         "regex_apply_override": bool(explicit_apply),
+        "negative_write_constraints_present": bool(negative_constraints),
+        "operational_intent_text_changed": bool(intent_text != text),
     }

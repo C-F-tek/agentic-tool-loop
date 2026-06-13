@@ -2812,6 +2812,35 @@ def main() -> int:
             )
             require(planner.goal_has_write_intent("fix the bug in pkg/example.py"), "apply/fix intent no longer detected")
             require(planner.goal_requests_code_product(goal), "code product intent no longer detected")
+            read_only_discovery_goal = (
+                "Esegui una discovery read-only mirata alla ricerca di potenziali criticita' "
+                "di codice o semantiche nell'area del loop agentico. Vincoli: read-only, "
+                "non applicare patch, non scrivere file, non usare repo_apply_patch/repo_write_file. "
+                "Devi citare path e funzioni lette, distinguere findings confermati da rischi da testare."
+            )
+            read_only_classification = planner.semantic_goal_classification(read_only_discovery_goal)
+            require(
+                read_only_classification.get("class") == "analysis_only",
+                f"read-only discovery was incorrectly hard-routed: {read_only_classification}",
+            )
+            require(
+                not planner.goal_requests_code_product(read_only_discovery_goal),
+                "read-only negative patch constraint was incorrectly treated as code-product intent",
+            )
+            require(
+                rag_preseed._preplanner_goal_class(read_only_discovery_goal) == "code_security_analysis",
+                "preplanner RAG misclassified read-only discovery with negative patch constraints",
+            )
+            report_only_patch_goal = "Generate a detailed unified diff for pkg/example.py. Do not apply the patch."
+            report_only_classification = planner.semantic_goal_classification(report_only_patch_goal)
+            require(
+                report_only_classification.get("class") == "code_product_report",
+                f"report-only positive diff request no longer produces code-product report: {report_only_classification}",
+            )
+            require(
+                rag_preseed._preplanner_goal_class(report_only_patch_goal) == "code_product_report",
+                "preplanner RAG no longer distinguishes report-only diff from apply_write",
+            )
             require(
                 not planner.goal_has_write_intent(
                     "Leggi AGENTS.md nella repo lab e rispondi con una frase. Non modificare nulla."
