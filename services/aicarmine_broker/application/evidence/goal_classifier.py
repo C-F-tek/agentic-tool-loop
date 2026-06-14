@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
+logger = logging.getLogger(__name__)
 
 REPO_ANALYSIS_PREPLANNER_CLASSES = frozenset({
     "repo_analysis",
@@ -62,18 +64,40 @@ def has_any(text: str, needles: tuple[str, ...]) -> bool:
     return any(n in text for n in needles)
 
 
+_NEGATED_OPERATION_PATTERNS = (
+    r"do\s+not\s+(?:actually\s+)?(?:apply|modify|change|edit|write|fix|patch)(?:\s+[a-z0-9_.@+/-]+){0,5}",
+    r"don't\s+(?:actually\s+)?(?:apply|modify|change|edit|write|fix|patch)(?:\s+[a-z0-9_.@+/-]+){0,5}",
+    r"without\s+(?:actually\s+)?(?:applying|modifying|changing|editing|writing|fixing|patching)(?:\s+[a-z0-9_.@+/-]+){0,5}",
+    r"no\s+(?:apply|changes?|edits?|writes?|patch(?:es)?|modifications?)(?:\s+[a-z0-9_.@+/-]+){0,5}",
+    r"only\s+(?:read|reading|analysis|inspect|review)",
+    r"reading\s+only",
+    r"read[-\s]?only",
+    r"non\s+(?:devi\s+|deve\s+|voglio\s+|serve\s+)?(?:usare|usa|applicare|applica|applico|modificare|modifica|modifico|effettuare\s+modifiche|fare\s+modifiche|cambiare|cambia|editare|edita|scrivere|scrivi|correggere|correggi|patchare|patcha|patch|fixare|fixa)(?:\s+[a-z0-9_.@+/-]+){0,6}",
+    r"senza\s+(?:usare|applicare|modificare|toccare|fare\s+modifiche|fare\s+patch|cambiare|editare|scrivere|correggere|patchare|patch|fixare)(?:\s+[a-z0-9_.@+/-]+){0,6}",
+    r"solo\s+(?:lettura|analisi|ispezione|review)",
+)
+
 _NEGATED_OPERATION_RE = re.compile(
-    r"\b("
-    r"do\s+not\s+(?:actually\s+)?(?:apply|modify|change|edit|write|fix|patch)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
-    r"don't\s+(?:apply|modify|change|edit|write|fix|patch)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
-    r"without\s+(?:actually\s+)?(?:applying|modifying|changing|editing|writing)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
-    r"no\s+(?:apply|changes?)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
-    r"non\s+(?:devi\s+|deve\s+)?(?:usare|usa|applicare|applica|modificare|modifica|cambiare|cambia|editare|edita|scrivere|scrivi|correggere|correggi|patchare|patcha|patch|fixare|fixa)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
-    r"senza\s+(?:usare|applicare|modificare|cambiare|editare|scrivere|correggere|patchare|patch|fixare)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
-    r"read[-\s]?only|"
-    r"solo\s+lettura"
-    r")\b",
+    r"\b(?:" + "|".join(_NEGATED_OPERATION_PATTERNS) + r")\b",
     re.IGNORECASE,
+)
+
+_APPLY_REQUEST_PATTERNS = (
+    r"\bapplica(?:re)?\b",
+    r"\bapplica\s+(?:la\s+)?patch\b",
+    r"\bapply\b",
+    r"\bapply\s+(?:the\s+)?patch\b",
+    r"\b(?:fai|fare)\s+(?:un|una)?\s*patch\b",
+    r"\bmodifica(?:re)?\b",
+    r"\bscrivi\b",
+    r"\bwrite\b",
+    r"\bedit\b",
+    r"\bchange\b",
+    r"\bfix(?:are)?\b",
+    r"\brisolvi(?:ere|re)?\b",
+    r"\bcorreggi(?:ere|re)?\b",
+    r"\brepair\b",
+    r"\bhotfix\b",
 )
 
 _TOOL_NAME_NOISE_RE = re.compile(
@@ -142,16 +166,7 @@ def _positive_code_product_marker(text: str) -> bool:
 
 def goal_report_only_code_product_marker(goal: str) -> bool:
     low = semantic_goal_low(goal)
-    report_only = re.search(
-        r"\b("
-        r"report[-\s]?only|"
-        r"do\s+not\s+(?:actually\s+)?apply|"
-        r"without\s+(?:actually\s+)?applying(?:\s+changes?)?|"
-        r"non\s+applicare|"
-        r"senza\s+applicare"
-        r")\b",
-        low,
-    )
+    report_only = re.search(r"\breport[-\s]?only\b", low) or _NEGATED_OPERATION_RE.search(low)
     return bool(report_only and _positive_code_product_marker(goal_operational_intent_text(goal)))
 
 
@@ -222,71 +237,16 @@ def goal_requests_apply(goal: str) -> bool:
     low = goal_operational_intent_text(goal).lower()
     if goal_report_only_code_product_marker(goal) or goal_diff_output_not_apply_marker(goal):
         return False
-    for negated in (
-        r"\bdo\s+not\s+apply\b",
-        r"\bdo\s+not\s+actually\s+apply\b",
-        r"\bdo\s+not\s+modify\b",
-        r"\bdo\s+not\s+change\b",
-        r"\bdo\s+not\s+edit\b",
-        r"\bdo\s+not\s+write\b",
-        r"\bdo\s+not\s+fix\b",
-        r"\bdo\s+not\s+patch\b",
-        r"\bdon't\s+apply\b",
-        r"\bdon't\s+modify\b",
-        r"\bdon't\s+change\b",
-        r"\bdon't\s+edit\b",
-        r"\bdon't\s+write\b",
-        r"\bdon't\s+fix\b",
-        r"\bdon't\s+patch\b",
-        r"\bwithout\s+applying\b",
-        r"\bwithout\s+applying\s+changes?\b",
-        r"\bwithout\s+actually\s+applying(?:\s+changes?)?\b",
-        r"\bwithout\s+modifying\b",
-        r"\bwithout\s+changing\b",
-        r"\bwithout\s+editing\b",
-        r"\bwithout\s+writing\b",
-        r"\bno\s+apply\b",
-        r"\bno\s+changes?\b",
-        r"\bread[-\s]?only\b",
-        r"\bnon\s+applicare\b",
-        r"\bnon\s+modificare(?:\s+nulla)?\b",
-        r"\bnon\s+cambiare(?:\s+nulla)?\b",
-        r"\bnon\s+editare(?:\s+nulla)?\b",
-        r"\bnon\s+scrivere(?:\s+nulla)?\b",
-        r"\bnon\s+correggere(?:\s+nulla)?\b",
-        r"\bnon\s+patchare(?:\s+nulla)?\b",
-        r"\bnon\s+patch(?:\s+nulla)?\b",
-        r"\bnon\s+fixare(?:\s+nulla)?\b",
-        r"\bsenza\s+applicare\b",
-        r"\bsenza\s+modificare\b",
-        r"\bsenza\s+cambiare\b",
-        r"\bsenza\s+editare\b",
-        r"\bsenza\s+scrivere\b",
-        r"\bsenza\s+patchare\b",
-        r"\bsenza\s+patch\b",
-        r"\bsenza\s+fixare\b",
-        r"\bnon\s+applica(?:re)?\b",
-        r"\breport[-\s]?only\b",
-    ):
-        low = re.sub(negated, " ", low)
+    low = _NEGATED_OPERATION_RE.sub(" ", low)
+    low = re.sub(r"\breport[-\s]?only\b", " ", low)
     low = re.sub(r"\bcode\s+edit\s+proposal(?:s)?\b", " ", low)
     if goal_requests_code_product(goal) and (
-        goal_diff_output_not_apply_marker(goal) or re.search(
-            r"\b(report[-\s]?only|do\s+not\s+(?:actually\s+)?apply|without\s+(?:actually\s+)?applying(?:\s+changes?)?|non\s+applicare|senza\s+applicare)\b",
-            semantic_goal_low(goal),
-        )
+        goal_diff_output_not_apply_marker(goal)
+        or re.search(r"\breport[-\s]?only\b", semantic_goal_low(goal))
+        or _NEGATED_OPERATION_RE.search(semantic_goal_low(goal))
     ):
         return False
-    patterns = (
-        r"\bapplica(?:re)?\b", r"\bapplica\s+(?:la\s+)?patch\b",
-        r"\bapply\b", r"\bapply\s+(?:the\s+)?patch\b",
-        r"\b(?:fai|fare)\s+(?:un|una)?\s*patch\b",
-        r"\bmodifica(?:re)?\b", r"\bscrivi\b", r"\bwrite\b",
-        r"\bedit\b", r"\bchange\b", r"\bfix(?:are)?\b",
-        r"\brisolvi(?:ere|re)?\b", r"\bcorreggi(?:ere|re)?\b",
-        r"\brepair\b", r"\bhotfix\b",
-    )
-    return any(re.search(pattern, low) for pattern in patterns)
+    return any(re.search(pattern, low) for pattern in _APPLY_REQUEST_PATTERNS)
 
 
 def final_answer_has_inline_code_product(text: str) -> bool:
@@ -324,6 +284,11 @@ def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> d
     explicit_apply = goal_requests_apply(goal)
     explicit_code_product = goal_requests_code_product(goal)
     negative_constraints = goal_has_negative_write_constraints(goal)
+    if negative_constraints and any(re.search(pattern, text.lower()) for pattern in _APPLY_REQUEST_PATTERNS):
+        logger.debug(
+            "Goal classification saw apply markers with negative write constraints; text_chars=%s",
+            len(text),
+        )
 
     refactor_terms = (
         "refactor", "refactoring", "ristruttura", "ristrutturazione",

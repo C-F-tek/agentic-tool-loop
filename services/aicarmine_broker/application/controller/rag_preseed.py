@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -34,6 +35,8 @@ from ..shared.path_tokens import repo_rel_token
 
 SafeRelPath = Callable[[str], str]
 PostJson = Callable[[str, dict[str, Any], int], dict[str, Any]]
+
+logger = logging.getLogger(__name__)
 
 _STOPWORDS = {
     "a", "ad", "ai", "al", "alla", "anche", "and", "are", "che", "con",
@@ -69,11 +72,30 @@ _EXPLICIT_PATH_RE = re.compile(
 )
 _DEFAULT_RERANK_URL = "http://127.0.0.1:3550/v3/rerank"
 _DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+_RERANK_RESPONSE_BYTES = 64_000
 _CODE_SECURITY_EXPANSION_TERMS = (
     "def", "class", "import", "config", "settings", "validate", "validation",
     "error", "exception", "request", "response", "service", "provider",
     "client", "database", "security", "auth",
 )
+
+
+class ControllerRagHTTPError(RuntimeError):
+    """Typed HTTP error from the optional controller RAG reranker."""
+
+    def __init__(self, *, status: int, reason: str, body_preview: str) -> None:
+        super().__init__(f"controller RAG reranker HTTP {status}: {reason}")
+        self.status = status
+        self.reason = reason
+        self.body_preview = body_preview
+
+
+class ControllerRagIndexerLoadError(ImportError):
+    """Typed indexer load failure with operator-facing diagnostics."""
+
+    def __init__(self, message: str, *, diagnostics: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics
 
 def _low_signal_ranked_path(path: str) -> bool:
     low = repo_rel_token(path).lower()
@@ -349,24 +371,68 @@ def _extract_query_plan_response_text(response: Mapping[str, Any]) -> str:
     )
 
 
-def _parse_json_object(text: str) -> dict[str, Any] | None:
-    raw = str(text or "").strip()
+def _parse_json_object_diagnostics(text: str) -> dict[str, Any]:
+    raw_input = str(text or "")
+    raw = raw_input.strip()
+    diagnostics: dict[str, Any] = {
+        "schema": "controller_rag_json_object_parse_diagnostics.v1",
+        "ok": False,
+        "raw_response_chars": len(raw_input),
+        "stripped_chars": len(raw),
+    }
     if not raw:
-        return None
+        return {**diagnostics, "error_type": "empty"}
     try:
         decoded = json.loads(raw)
-        return decoded if isinstance(decoded, dict) else None
-    except Exception:
-        pass
+        if isinstance(decoded, dict):
+            return {**diagnostics, "ok": True, "decoded": decoded, "recovered_from_embedded_object": False}
+        return {**diagnostics, "error_type": "not_json_object", "decoded_type": type(decoded).__name__}
+    except json.JSONDecodeError as exc:
+        full_decode_error = {
+            "error_type": "json_decode_error",
+            "error": str(exc)[:500],
+            "line": exc.lineno,
+            "column": exc.colno,
+            "position": exc.pos,
+        }
+    except ValueError as exc:
+        full_decode_error = {"error_type": type(exc).__name__, "error": str(exc)[:500]}
     start = raw.find("{")
     end = raw.rfind("}")
-    if start < 0 or end <= start:
-        return None
+    if start < 0:
+        return {**diagnostics, **full_decode_error, "error_type": "no_json_object"}
+    if end <= start:
+        return {**diagnostics, **full_decode_error}
     try:
         decoded = json.loads(raw[start:end + 1])
-        return decoded if isinstance(decoded, dict) else None
-    except Exception:
-        return None
+        if isinstance(decoded, dict):
+            return {
+                **diagnostics,
+                "ok": True,
+                "decoded": decoded,
+                "recovered_from_embedded_object": True,
+                "embedded_start": start,
+                "embedded_end": end + 1,
+            }
+        return {**diagnostics, "error_type": "not_json_object", "decoded_type": type(decoded).__name__}
+    except json.JSONDecodeError as exc:
+        return {
+            **diagnostics,
+            "error_type": "json_decode_error",
+            "error": str(exc)[:500],
+            "line": exc.lineno,
+            "column": exc.colno,
+            "position": exc.pos,
+            "full_decode_error": full_decode_error,
+        }
+    except ValueError as exc:
+        return {**diagnostics, "error_type": type(exc).__name__, "error": str(exc)[:500]}
+
+
+def _parse_json_object(text: str) -> dict[str, Any] | None:
+    diagnostics = _parse_json_object_diagnostics(text)
+    decoded = diagnostics.get("decoded") if diagnostics.get("ok") is True else None
+    return decoded if isinstance(decoded, dict) else None
 
 
 def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: str) -> dict[str, Any]:
@@ -681,7 +747,8 @@ def controller_preplanner_rag_query_plan(
                 "attempts": attempt,
             }
         raw_response_text = _extract_query_plan_response_text(response)
-        decoded = _parse_json_object(raw_response_text)
+        parse_diagnostics = _parse_json_object_diagnostics(raw_response_text)
+        decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else None
         sanitized = _sanitize_preplanner_query_plan(decoded, goal=goal)
         sanitized.update({
             "planner_model": planner_model,
@@ -691,6 +758,11 @@ def controller_preplanner_rag_query_plan(
         })
         if not sanitized.get("ok"):
             sanitized["raw_response_preview"] = raw_response_text[:1000]
+            sanitized["raw_response_chars"] = len(raw_response_text)
+            if parse_diagnostics.get("ok") is not True:
+                sanitized["json_parse_error_type"] = parse_diagnostics.get("error_type")
+                if parse_diagnostics.get("error") not in (None, "", [], {}):
+                    sanitized["json_parse_error"] = parse_diagnostics.get("error")
         last_sanitized = sanitized
         if sanitized.get("ok"):
             return sanitized
@@ -863,14 +935,76 @@ def _default_controller_rag_db(repo_root: Path) -> Path:
     return home / "AI" / "state" / "controller_rag" / digest / "code_rag.sqlite3"
 
 
+def _rag_indexer_operator_hint(exc: Exception) -> str:
+    if isinstance(exc, ControllerRagIndexerLoadError):
+        return "Controller RAG indexer module could not be loaded; verify PYTHONPATH and codex_bridge dependencies."
+    return "Controller RAG reindex failed; verify repo path, DB path, permissions and indexer configuration."
+
+
 def _load_codex_rag_indexer() -> Any:
-    errors: list[str] = []
+    errors: list[dict[str, Any]] = []
+    required_attrs = (
+        "DEFAULT_SUFFIXES",
+        "MAX_FILE_BYTES_DEFAULT",
+        "CHUNK_LINES_DEFAULT",
+        "CHUNK_CHARS_DEFAULT",
+        "SOURCE_GIT_DEFAULT",
+        "MODE_DELTA",
+        "build_index",
+    )
     for module_name in ("codex_bridge.rag_index_repo", "services.codex_bridge.rag_index_repo"):
         try:
-            return importlib.import_module(module_name)
-        except Exception as exc:
-            errors.append(f"{module_name}: {type(exc).__name__}: {exc}")
-    raise ImportError("; ".join(errors))
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            missing_name = str(getattr(exc, "name", "") or "")
+            target_missing = bool(missing_name and (module_name == missing_name or module_name.startswith(missing_name + ".")))
+            errors.append({
+                "module": module_name,
+                "stage": "import",
+                "category": "module_missing" if target_missing else "dependency_missing",
+                "missing_name": missing_name,
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            })
+            continue
+        except ImportError as exc:
+            errors.append({
+                "module": module_name,
+                "stage": "import",
+                "category": "dependency_import_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            })
+            continue
+        except AttributeError as exc:
+            errors.append({
+                "module": module_name,
+                "stage": "import",
+                "category": "module_initialization_attribute_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            })
+            continue
+        missing_attrs = [name for name in required_attrs if not hasattr(module, name)]
+        if missing_attrs:
+            errors.append({
+                "module": module_name,
+                "stage": "attribute_validation",
+                "category": "missing_required_attributes",
+                "missing_attributes": missing_attrs,
+                "error_type": "AttributeError",
+                "error": "RAG indexer module is missing required attributes.",
+            })
+            continue
+        if errors:
+            logger.warning("Controller RAG indexer loaded after earlier module failures: %s", errors)
+        return module
+    message = "; ".join(
+        f"{item.get('module')}:{item.get('category')}:{item.get('error_type')}"
+        for item in errors
+    )
+    logger.warning("Controller RAG indexer failed to load: %s", errors)
+    raise ControllerRagIndexerLoadError(message or "Controller RAG indexer unavailable", diagnostics=errors)
 
 
 def _parse_suffixes(default_suffixes: set[str]) -> set[str]:
@@ -1073,9 +1207,30 @@ def _http_json_post(url: str, payload: Mapping[str, Any], *, timeout_seconds: fl
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:
-        text = response.read().decode("utf-8", errors="replace")
-    return json.loads(text) if text else {}
+    try:
+        with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:
+            raw = response.read(_RERANK_RESPONSE_BYTES)
+            text = raw.decode("utf-8", errors="replace")
+            status = getattr(response, "status", None)
+            content_type = (response.headers.get("Content-Type") or "").lower()
+    except urllib.error.HTTPError as exc:
+        raw = exc.read(_RERANK_RESPONSE_BYTES)
+        text = raw.decode("utf-8", errors="replace")
+        raise ControllerRagHTTPError(
+            status=int(exc.code or 0),
+            reason=str(exc.reason or exc),
+            body_preview=text[:2000],
+        ) from exc
+    if not text.strip():
+        return {"status": status}
+    if "application/json" in content_type or text.strip().startswith(("{", "[")):
+        return json.loads(text)
+    return {
+        "status": status,
+        "content_type": content_type,
+        "text": text[:2000],
+        "non_json_response": True,
+    }
 
 
 def _parse_rerank_results(value: Any) -> list[dict[str, Any]]:
@@ -1135,15 +1290,103 @@ def _rerank_ranked_items(
             {"model": model, "query": query, "documents": documents},
             timeout_seconds=timeout_seconds,
         )
+        if isinstance(response, Mapping) and response.get("non_json_response"):
+            marked = [dict(item, rerank_score=None) for item in items]
+            return marked, {
+                **meta,
+                "status": "error",
+                "error": "reranker_non_json_response",
+                "error_type": "non_json_response",
+                "http_status": response.get("status"),
+                "content_type": response.get("content_type"),
+                "body_preview": str(response.get("text") or "")[:1000],
+            }, [{
+                "stage": "preplanner_rag_rerank",
+                "reason": "reranker_non_json_response",
+                "http_status": response.get("status"),
+            }]
         parsed = _parse_rerank_results(response)
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except ControllerRagHTTPError as exc:
+        marked = [dict(item, rerank_score=None) for item in items]
+        http_status = int(exc.status or 0)
+        status = "unavailable" if http_status == 429 or http_status >= 500 else "error"
+        return marked, {
+            **meta,
+            "status": status,
+            "error": "reranker_http_error",
+            "error_type": type(exc).__name__,
+            "http_status": http_status,
+            "http_reason": exc.reason[:200],
+            "body_preview": exc.body_preview[:1000],
+        }, [{
+            "stage": "preplanner_rag_rerank",
+            "reason": "reranker_http_error",
+            "http_status": http_status,
+            "error_type": type(exc).__name__,
+        }]
+    except TimeoutError as exc:
         marked = [dict(item, rerank_score=None) for item in items]
         return marked, {
             **meta,
             "status": "unavailable",
+            "error": "reranker_timeout",
+            "error_type": type(exc).__name__,
+            "details": str(exc)[:500],
+        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_timeout", "error_type": type(exc).__name__, "error": str(exc)[:500]}]
+    except urllib.error.URLError as exc:
+        marked = [dict(item, rerank_score=None) for item in items]
+        reason = getattr(exc, "reason", None)
+        is_timeout = isinstance(reason, TimeoutError)
+        return marked, {
+            **meta,
+            "status": "unavailable",
+            "error": "reranker_timeout" if is_timeout else "reranker_network_unavailable",
+            "error_type": type(exc).__name__,
+            "network_reason_type": type(reason).__name__ if reason is not None else None,
+            "details": str(exc)[:500],
+        }, [{
+            "stage": "preplanner_rag_rerank",
+            "reason": "reranker_timeout" if is_timeout else "reranker_network_unavailable",
             "error_type": type(exc).__name__,
             "error": str(exc)[:500],
-        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_unavailable", "error_type": type(exc).__name__, "error": str(exc)[:500]}]
+        }]
+    except json.JSONDecodeError as exc:
+        marked = [dict(item, rerank_score=None) for item in items]
+        return marked, {
+            **meta,
+            "status": "error",
+            "error": "reranker_invalid_json",
+            "error_type": type(exc).__name__,
+            "json_error": str(exc)[:500],
+        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_invalid_json", "error_type": type(exc).__name__}]
+    except (OSError, ValueError) as exc:
+        marked = [dict(item, rerank_score=None) for item in items]
+        return marked, {
+            **meta,
+            "status": "unavailable",
+            "error": "reranker_network_unavailable",
+            "error_type": type(exc).__name__,
+            "details": str(exc)[:500],
+        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_network_unavailable", "error_type": type(exc).__name__, "error": str(exc)[:500]}]
+    except Exception as exc:
+        marked = [dict(item, rerank_score=None) for item in items]
+        return marked, {
+            **meta,
+            "status": "error",
+            "error": "reranker_response_error",
+            "error_type": type(exc).__name__,
+            "details": str(exc)[:500],
+        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_response_error", "error_type": type(exc).__name__, "error": str(exc)[:500]}]
+
+    if not parsed:
+        marked = [dict(item, rerank_score=None) for item in items]
+        return marked, {
+            **meta,
+            "status": "error",
+            "error": "reranker_no_scores",
+            "error_type": "no_scores",
+            "response_shape": type(response).__name__,
+        }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_no_scores"}]
 
     reranked: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -1404,6 +1647,27 @@ def controller_preplanner_rag_preseed_plan(
 
     try:
         indexer = _load_codex_rag_indexer()
+    except Exception as exc:
+        report.update({
+            "status": "failed",
+            "reason": "reindex_failed",
+            "error_stage": "indexer_load",
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "operator_hint": _rag_indexer_operator_hint(exc),
+        })
+        diagnostics = getattr(exc, "diagnostics", None)
+        if isinstance(diagnostics, list):
+            report["indexer_load_diagnostics"] = diagnostics[:4]
+        return None, report, [{
+            "stage": "preplanner_rag_reindex",
+            "reason": "reindex_failed",
+            "error_stage": "indexer_load",
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }]
+
+    try:
         default_suffixes = set(getattr(indexer, "DEFAULT_SUFFIXES"))
         reindex = indexer.build_index(
             repo_root=repo_root,
@@ -1435,10 +1699,18 @@ def controller_preplanner_rag_preseed_plan(
         report.update({
             "status": "failed",
             "reason": "reindex_failed",
+            "error_stage": "build_index",
             "error": str(exc),
             "error_type": type(exc).__name__,
+            "operator_hint": _rag_indexer_operator_hint(exc),
         })
-        return None, report, [{"stage": "preplanner_rag_reindex", "reason": "reindex_failed", "error": str(exc)}]
+        return None, report, [{
+            "stage": "preplanner_rag_reindex",
+            "reason": "reindex_failed",
+            "error_stage": "build_index",
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }]
 
     read_path_limit = _env_int("AICARMINE_CONTROLLER_RAG_PRESEED_PATH_LIMIT", 8, minimum=1, maximum=24)
     query_plan = args.get("controller_rag_query_plan") if isinstance(args.get("controller_rag_query_plan"), Mapping) else None

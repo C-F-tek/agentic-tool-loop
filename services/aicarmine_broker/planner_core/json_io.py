@@ -461,6 +461,62 @@ def post_json_stream_to_file(
 # ---------------------------------------------------------------------------
 
 
+def parse_strict_json_object_diagnostics(text: str) -> dict[str, Any]:
+    """Return diagnostics for the strict planner JSON parser."""
+    raw_input = str(text or "")
+    raw = raw_input.strip()
+    diagnostics: dict[str, Any] = {
+        "schema": "strict_json_object_parse_diagnostics.v1",
+        "ok": False,
+        "raw_response_chars": len(raw_input),
+        "stripped_chars": len(raw),
+    }
+    if not raw:
+        diagnostics["error_type"] = "empty"
+        return diagnostics
+    if not raw.startswith("{"):
+        diagnostics.update({
+            "error_type": "not_json_object",
+            "start_preview": raw[:80],
+        })
+        return diagnostics
+    try:
+        decoder = json.JSONDecoder()
+        decoded, end = decoder.raw_decode(raw)
+    except json.JSONDecodeError as exc:
+        diagnostics.update({
+            "error_type": "json_decode_error",
+            "error": str(exc)[:500],
+            "line": exc.lineno,
+            "column": exc.colno,
+            "position": exc.pos,
+        })
+        return diagnostics
+    except Exception as exc:
+        diagnostics.update({
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        })
+        return diagnostics
+    trailing = raw[end:].strip()
+    if trailing:
+        diagnostics.update({
+            "error_type": "trailing_content",
+            "trailing_preview": trailing[:200],
+            "json_end": end,
+        })
+        return diagnostics
+    if not isinstance(decoded, dict):
+        diagnostics.update({
+            "error_type": "not_json_object",
+            "decoded_type": type(decoded).__name__,
+        })
+        return diagnostics
+    diagnostics["ok"] = True
+    diagnostics["decoded"] = decoded
+    return diagnostics
+
+
 def _parse_strict_json_object(text: str) -> dict[str, Any]:
     """Parse only one complete JSON object.
 
@@ -472,14 +528,6 @@ def _parse_strict_json_object(text: str) -> dict[str, Any]:
     Markdown fences, prose before/after the object, embedded snippets, multiple
     objects, and partial JSON recovered from a degenerate stream remain invalid.
     """
-    raw = str(text or "").strip()
-    if not raw or not raw.startswith("{") or not raw.endswith("}"):
-        return {}
-    try:
-        decoder = json.JSONDecoder()
-        decoded, end = decoder.raw_decode(raw)
-        if raw[end:].strip():
-            return {}
-        return decoded if isinstance(decoded, dict) else {}
-    except Exception:
-        return {}
+    diagnostics = parse_strict_json_object_diagnostics(text)
+    decoded = diagnostics.get("decoded") if diagnostics.get("ok") is True else {}
+    return decoded if isinstance(decoded, dict) else {}

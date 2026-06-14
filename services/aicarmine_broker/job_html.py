@@ -10,6 +10,9 @@ from urllib.parse import quote
 from .job_store import agent_job_root, compact_agent_status, list_agent_jobs, load_agent_job_state, read_agent_events, read_json
 
 
+IA_VIEW_STEP_STRIP_LIMIT = 24
+
+
 def _json_pretty(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
@@ -923,12 +926,21 @@ def _html_status_pill(label: str, value: bool | None) -> str:
 def _step_strip_html(job_id: str, steps: list[dict[str, Any]], current_step: int) -> str:
     if not steps:
         return "<p class=\"muted\">No step index yet.</p>"
-    parts: list[str] = []
-    for step in steps[-24:]:
+    def step_number_for(row: dict[str, Any]) -> int:
         try:
-            step_number = int(step.get("step") or 0)
+            return int(row.get("step") or 0)
         except (TypeError, ValueError):
-            step_number = 0
+            return 0
+
+    visible_steps = list(steps[-IA_VIEW_STEP_STRIP_LIMIT:])
+    if current_step and not any(step_number_for(step) == current_step for step in visible_steps if isinstance(step, dict)):
+        for step in steps:
+            if isinstance(step, dict) and step_number_for(step) == current_step:
+                visible_steps = [step] + visible_steps[-max(0, IA_VIEW_STEP_STRIP_LIMIT - 1):]
+                break
+    parts: list[str] = []
+    for step in visible_steps:
+        step_number = step_number_for(step)
         events_count = len(step.get("events") or []) if isinstance(step.get("events"), list) else 0
         css = "step-chip active" if step_number == current_step else "step-chip"
         safe_job = html.escape(job_id, quote=True)
@@ -2103,6 +2115,8 @@ def agent_job_ia_view_html(job_id: str) -> str:
         return f'<html><body><h1>Job not found</h1><pre>{html.escape(_json_pretty(payload))}</pre></body></html>'
     cards: list[str] = []
     all_steps = [step for step in (payload.get("steps") or []) if isinstance(step, dict)]
+    steps_omitted_count = max(0, len(all_steps) - min(len(all_steps), IA_VIEW_STEP_STRIP_LIMIT))
+    view_truncated_for_operator_page = steps_omitted_count > 0
     current_step_number = (payload.get("job") or {}).get("current_step")
     current_step = None
     try:
@@ -2170,6 +2184,8 @@ def agent_job_ia_view_html(job_id: str) -> str:
         "search_quality": search_quality.get("quality"),
         "command_policy": command_policy.get("command_class"),
         "payload_complete": audit.get("compact_payload_complete"),
+        "steps_omitted_count": steps_omitted_count if view_truncated_for_operator_page else None,
+        "view_truncated_for_operator_page": view_truncated_for_operator_page if view_truncated_for_operator_page else None,
     }
     metric_html = "".join(
         "<div class=\"metric\">"
@@ -2341,6 +2357,23 @@ def agent_job_ia_view_html(job_id: str) -> str:
         )
     else:
         cards.append("<div class='card' data-live-region='ia-current-step'><h2>Current Step</h2><p>No planner step is available yet.</p></div>")
+    step_window_html = ""
+    if view_truncated_for_operator_page:
+        step_window_html = _html_detail_block(
+            "Operator Step Window",
+            _html_json_tree(
+                {
+                    "view_truncated_for_operator_page": True,
+                    "total_steps": len(all_steps),
+                    "visible_step_chip_limit": IA_VIEW_STEP_STRIP_LIMIT,
+                    "steps_omitted_count": steps_omitted_count,
+                    "current_step_preserved": bool(current_step),
+                    "heavy_payloads_remain_lazy": True,
+                },
+                path="ia.operator_step_window",
+            ),
+            detail_key="ia.operator_step_window",
+        )
     return f"""<!doctype html>
 <html>
 <head>
@@ -2379,6 +2412,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
   </div>
   <p><b>Goal:</b> {html.escape(str(job.get('goal') or ''))}</p>
   {_step_strip_html(job_id, all_steps, int((current_step or {}).get('step') or 0) if isinstance(current_step, dict) else 0)}
+  {step_window_html}
   <p>{_dashboard_links(job_id)}</p>
   {_html_detail_block("Mutation Check", _html_json_tree(mutation_check, path="ia.mutation_check"), detail_key="ia.mutation_check")}
 </div>

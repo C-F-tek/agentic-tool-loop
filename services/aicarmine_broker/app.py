@@ -81,6 +81,37 @@ from .tool_dispatch import dispatch_tool
 from .tool_registry import capability_map
 
 
+def _parse_planner_lab_wait_seconds(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    raw = payload.get("wait_seconds") if isinstance(payload, dict) else None
+    if raw in (None, ""):
+        return 1, {}
+    if isinstance(raw, bool):
+        return 1, {
+            "ok": False,
+            "error": "invalid_wait_seconds",
+            "received_type": type(raw).__name__,
+            "received_preview": str(raw)[:120],
+            "expected": "integer between 1 and 30",
+            "min": 1,
+            "max": 30,
+        }
+    if isinstance(raw, int):
+        value = raw
+    elif isinstance(raw, str) and raw.strip().lstrip("+-").isdigit():
+        value = int(raw.strip())
+    else:
+        return 1, {
+            "ok": False,
+            "error": "invalid_wait_seconds",
+            "received_type": type(raw).__name__,
+            "received_preview": str(raw)[:120],
+            "expected": "integer between 1 and 30",
+            "min": 1,
+            "max": 30,
+        }
+    return max(1, min(value, 30)), {}
+
+
 def jobs_endpoint_paths() -> list[str]:
     return [
         JOBS_INDEX_PATH,
@@ -144,14 +175,9 @@ def create_app() -> FastAPI:
         ).strip()
         if not task:
             return {"ok": False, "error": "missing_task"}
-        try:
-            wait_seconds = max(1, min(int(payload.get("wait_seconds") or 1), 30))
-        except Exception:
-            return {
-                "ok": False,
-                "error": "invalid_wait_seconds",
-                "expected": "integer between 1 and 30",
-            }
+        wait_seconds, wait_error = _parse_planner_lab_wait_seconds(payload)
+        if wait_error:
+            return wait_error
         arguments = {
             "task": task,
             "request": task,

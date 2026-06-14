@@ -79,6 +79,7 @@ from .planner_intrinsic_context import build_planner_intrinsic_context
 from .repo_tools import safe_rel_path
 from .planner_core.json_io import (
     _parse_strict_json_object,
+    parse_strict_json_object_diagnostics,
     post_json,
     post_json_stream_to_file,
 )
@@ -3157,7 +3158,8 @@ def _repo_analysis_final_answer_model_quality(
 
     message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
-    decoded = _parse_strict_json_object(raw_text)
+    parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
     quality = _sanitize_repo_analysis_final_model_quality(decoded)
     quality.update({
         "planner_model": PLANNER_MODEL,
@@ -3166,6 +3168,11 @@ def _repo_analysis_final_answer_model_quality(
     })
     if not quality.get("model_decision_available"):
         quality["raw_response_preview"] = raw_text[:2000]
+        quality["raw_response_chars"] = len(raw_text)
+        if parse_diagnostics.get("ok") is not True:
+            quality["json_parse_error_type"] = parse_diagnostics.get("error_type")
+            if parse_diagnostics.get("error") not in (None, "", [], {}):
+                quality["json_parse_error"] = parse_diagnostics.get("error")
         quality["violations"] = ["repo_analysis_final_model_quality_invalid"]
         quality["required_next_progress"] = (
             "Final answer rejected because the model final-quality judge did not return valid JSON. "
@@ -3854,7 +3861,8 @@ def planner_replan_specialist_for_validation(
         }
     message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
-    decoded = _parse_strict_json_object(raw_text)
+    parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
     result = _sanitize_replan_specialist_response(decoded)
     result.update({
         "planner_model": PLANNER_MODEL,
@@ -3863,6 +3871,11 @@ def planner_replan_specialist_for_validation(
     })
     if not result.get("ok"):
         result["raw_response_preview"] = raw_text[:1200]
+        result["raw_response_chars"] = len(raw_text)
+        if parse_diagnostics.get("ok") is not True:
+            result["json_parse_error_type"] = parse_diagnostics.get("error_type")
+            if parse_diagnostics.get("error") not in (None, "", [], {}):
+                result["json_parse_error"] = parse_diagnostics.get("error")
     return result
 
 
@@ -4190,11 +4203,15 @@ def vulkan_repair_invalid_planner_decision(
 
     message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or "")
-    repaired = _parse_strict_json_object(raw_text)
+    parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    repaired = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
     if not isinstance(repaired, dict) or not repaired:
         return {
             "ok": False,
             "error": "vulkan_repair_no_pure_json_decision",
+            "json_parse_error_type": parse_diagnostics.get("error_type"),
+            "json_parse_error": parse_diagnostics.get("error"),
+            "raw_response_chars": len(raw_text),
             "raw_text_preview": raw_text[:2000],
             "raw_planner_text_preview": raw_planner_text[:2000],
             "repair_cache_key": repair_key,
