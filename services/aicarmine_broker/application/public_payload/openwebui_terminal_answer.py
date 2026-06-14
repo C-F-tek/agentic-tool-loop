@@ -26,12 +26,33 @@ def _has_successful_inline_evidence(result: dict[str, Any]) -> bool:
 
 
 def _coverage_missing(result: dict[str, Any]) -> tuple[bool, list[str]]:
+    status = _coverage_status(result)
+    return bool(status.get("coverage_gap")), list(status.get("missing_owner_paths") or [])
+
+
+def _coverage_status(result: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {
+            "coverage_gap": False,
+            "missing_owner_paths": [],
+            "coverage_contract_invalid": True,
+            "coverage_contract_error": "result_not_object",
+            "received_type": type(result).__name__,
+        }
     contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
+    contract_invalid = False
+    invalid_reason = ""
+    if result.get("evidence_contract") not in (None, "", [], {}) and not isinstance(result.get("evidence_contract"), dict):
+        contract_invalid = True
+        invalid_reason = "evidence_contract_not_object"
     coverage = (
         contract.get("minimum_read_coverage")
         if isinstance(contract.get("minimum_read_coverage"), dict)
         else {}
     )
+    if contract.get("minimum_read_coverage") not in (None, "", [], {}) and not isinstance(contract.get("minimum_read_coverage"), dict):
+        contract_invalid = True
+        invalid_reason = invalid_reason or "minimum_read_coverage_not_object"
     if coverage:
         coverage_satisfied = coverage.get("coverage_satisfied")
         raw_missing = coverage.get("missing_owner_paths")
@@ -45,7 +66,13 @@ def _coverage_missing(result: dict[str, Any]) -> tuple[bool, list[str]]:
     if isinstance(raw_missing, dict) and isinstance(raw_missing.get("items"), list):
         raw_missing = raw_missing.get("items")
     missing = [str(path) for path in raw_missing] if isinstance(raw_missing, list) else []
-    return coverage_satisfied is False, missing
+    return {
+        "coverage_gap": coverage_satisfied is False,
+        "coverage_satisfied": coverage_satisfied,
+        "missing_owner_paths": missing,
+        "coverage_contract_invalid": contract_invalid,
+        "coverage_contract_error": invalid_reason,
+    }
 
 
 def _terminal_evidence_first_text(
@@ -91,11 +118,18 @@ def answer_for_openwebui(
     if status_text == "blocked_needs_attention":
         blocked_by = str(result.get("blocked_by") or "unknown")
         extra: list[str] = []
-        coverage_gap, missing_paths = _coverage_missing(result)
+        coverage_status = _coverage_status(result)
+        coverage_gap = bool(coverage_status.get("coverage_gap"))
+        missing_paths = list(coverage_status.get("missing_owner_paths") or [])
         if coverage_gap:
             extra.append(
                 "Coverage non soddisfatta: coverage_satisfied=false; "
                 f"missing_owner_paths={missing_paths[:20]}"
+            )
+        elif coverage_status.get("coverage_contract_invalid"):
+            extra.append(
+                "Coverage contract non interpretabile: "
+                + str(coverage_status.get("coverage_contract_error") or "unknown")
             )
         partial_answer = partial_product_answer_text(result)
         if partial_answer:
@@ -165,6 +199,7 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
     status_text = str(status or "unknown")
     action = "answer_user_from_evidence_guide_for_30b"
     coverage_gap, missing_paths = _coverage_missing(result)
+    coverage_status = _coverage_status(result)
     if coverage_gap:
         action = "report_coverage_required_with_missing_owner_paths"
     if status_text == "blocked_needs_attention":
@@ -187,6 +222,10 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
         "blocked_by": result.get("blocked_by"),
         "coverage_satisfied": False if coverage_gap else None,
         "missing_owner_paths": missing_paths if coverage_gap else None,
+        "coverage_contract_invalid": (
+            True if coverage_status.get("coverage_contract_invalid") else None
+        ),
+        "coverage_contract_error": coverage_status.get("coverage_contract_error") or None,
         "do_not": [
             "do_not_ignore_evidence_guide_for_30b",
             "do_not_treat_job_url_as_the_only_result",

@@ -273,11 +273,19 @@ def _coverage_priority_item(tool_context: dict[str, Any]) -> dict[str, Any]:
     })
 
 
-def _context_location(tool_context: dict[str, Any], item: dict[str, Any]) -> str:
+def _context_location_resolution(tool_context: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     kind = str(item.get("kind") or "")
     target_file = str(item.get("target_file") or "")
     path = str(item.get("path") or "")
-    for index, row in enumerate(_as_list(tool_context.get("artifacts"))):
+    artifacts = _as_list(tool_context.get("artifacts"))
+    if not artifacts:
+        return {
+            "location": "tool_context_for_30b.artifacts[*].artifact",
+            "location_resolved": False,
+            "location_resolution_reason": "tool_context_artifacts_empty",
+            "artifact_index": item.get("artifact_index"),
+        }
+    for index, row in enumerate(artifacts):
         artifact = _as_dict(_as_dict(row).get("artifact"))
         artifact_kind = str(artifact.get("kind") or "")
         if kind == "code_edit_proposal" and artifact_kind == "code_edit_proposal":
@@ -285,22 +293,46 @@ def _context_location(tool_context: dict[str, Any], item: dict[str, Any]) -> str
                 continue
             edit_kind = str(artifact.get("edit_kind") or "")
             if edit_kind == "unified_diff":
-                return f"tool_context_for_30b.artifacts[{index}].artifact.unified_diff"
-            if edit_kind == "structured_edit":
-                return f"tool_context_for_30b.artifacts[{index}].artifact.structured_operations"
-            return f"tool_context_for_30b.artifacts[{index}].artifact"
+                location = f"tool_context_for_30b.artifacts[{index}].artifact.unified_diff"
+            elif edit_kind == "structured_edit":
+                location = f"tool_context_for_30b.artifacts[{index}].artifact.structured_operations"
+            else:
+                location = f"tool_context_for_30b.artifacts[{index}].artifact"
+            return {
+                "location": location,
+                "location_resolved": True,
+                "location_resolution_reason": "matched_code_edit_proposal_artifact",
+                "artifact_index": index,
+            }
         if kind == "repo_file_full_content" and artifact_kind == "repo_read":
             if path and str(artifact.get("repo_path") or "") != path:
                 continue
-            return f"tool_context_for_30b.artifacts[{index}].artifact.content"
-    return "tool_context_for_30b.artifacts[*].artifact"
+            return {
+                "location": f"tool_context_for_30b.artifacts[{index}].artifact.content",
+                "location_resolved": True,
+                "location_resolution_reason": "matched_repo_read_artifact",
+                "artifact_index": index,
+            }
+    return {
+        "location": "tool_context_for_30b.artifacts[*].artifact",
+        "location_resolved": False,
+        "location_resolution_reason": "matching_artifact_not_found",
+        "artifact_index": item.get("artifact_index"),
+        "artifact_count": len(artifacts),
+    }
+
+
+def _context_location(tool_context: dict[str, Any], item: dict[str, Any]) -> str:
+    location = _context_location_resolution(tool_context, item).get("location")
+    return str(location or "tool_context_for_30b.artifacts[*].artifact")
 
 
 def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str, Any]) -> dict[str, Any]:
     kind = str(item.get("kind") or "")
     base = f"priority_evidence_for_30b.items[{index}]"
     if kind == "repo_file_full_content":
-        context_location = _context_location(tool_context, item)
+        context_resolution = _context_location_resolution(tool_context, item)
+        context_location = str(context_resolution.get("location") or "tool_context_for_30b.artifacts[*].artifact")
         return _clean({
             "kind": "repo_file_full_content",
             "payload_type": "file_content",
@@ -311,7 +343,9 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "primary_location": context_location,
             "full_context_location": context_location,
             "metadata_location": base,
-            "artifact_index": item.get("artifact_index"),
+            "artifact_index": context_resolution.get("artifact_index"),
+            "location_resolved": context_resolution.get("location_resolved"),
+            "location_resolution_reason": context_resolution.get("location_resolution_reason"),
             "sha256": item.get("sha256"),
             "chars": item.get("chars"),
             "line_count": item.get("line_count"),
@@ -325,7 +359,8 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             payload_type = "structured_operations"
         else:
             payload_type = "code_edit_proposal"
-        context_location = _context_location(tool_context, item)
+        context_resolution = _context_location_resolution(tool_context, item)
+        context_location = str(context_resolution.get("location") or "tool_context_for_30b.artifacts[*].artifact")
         return _clean({
             "kind": "code_edit_proposal",
             "payload_type": payload_type,
@@ -337,7 +372,9 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
             "primary_location": context_location,
             "full_context_location": context_location,
             "metadata_location": base,
-            "artifact_index": item.get("artifact_index"),
+            "artifact_index": context_resolution.get("artifact_index"),
+            "location_resolved": context_resolution.get("location_resolved"),
+            "location_resolution_reason": context_resolution.get("location_resolution_reason"),
             "sha256": item.get("sha256"),
             "chars": item.get("chars"),
             "content_not_duplicated_here": True,

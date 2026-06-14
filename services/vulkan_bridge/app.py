@@ -551,10 +551,35 @@ def _payload_browser_public_payload(record: dict[str, Any]) -> dict[str, Any]:
     if isinstance(tool_context, str):
         try:
             parsed = json.loads(tool_context)
-        except BaseException:
+        except json.JSONDecodeError as exc:
+            payload["_payload_browser_diagnostics"] = {
+                "tool_context_parse_error": {
+                    "reason": "invalid_json",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                    "value_preview": tool_context[:500],
+                }
+            }
+            parsed = None
+        except (TypeError, ValueError) as exc:
+            payload["_payload_browser_diagnostics"] = {
+                "tool_context_parse_error": {
+                    "reason": "parse_error",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                    "value_preview": tool_context[:500],
+                }
+            }
             parsed = None
         if isinstance(parsed, dict):
             payload["tool_context"] = parsed
+        elif parsed is not None:
+            payload["_payload_browser_diagnostics"] = {
+                "tool_context_parse_error": {
+                    "reason": "parsed_value_not_object",
+                    "decoded_type": type(parsed).__name__,
+                }
+            }
     return payload
 
 
@@ -574,9 +599,10 @@ def _payload_browser_normalize_path(path: str) -> str:
     return text
 
 
-def _payload_browser_tokenize(path: str) -> list[tuple[str, str | None]]:
+def _payload_browser_tokenize_with_diagnostics(path: str) -> tuple[list[tuple[str, str | None]], list[dict[str, Any]]]:
     tokens: list[tuple[str, str | None]] = []
-    for raw in _payload_browser_normalize_path(path).split("."):
+    diagnostics: list[dict[str, Any]] = []
+    for position, raw in enumerate(_payload_browser_normalize_path(path).split(".")):
         raw = raw.strip()
         if not raw:
             continue
@@ -585,6 +611,16 @@ def _payload_browser_tokenize(path: str) -> list[tuple[str, str | None]]:
             tokens.append((match.group("name"), match.group("index")))
         else:
             tokens.append((raw, None))
+            diagnostics.append({
+                "position": position,
+                "token": raw,
+                "reason": "invalid_token_syntax",
+            })
+    return tokens, diagnostics
+
+
+def _payload_browser_tokenize(path: str) -> list[tuple[str, str | None]]:
+    tokens, _diagnostics = _payload_browser_tokenize_with_diagnostics(path)
     return tokens
 
 
@@ -616,11 +652,14 @@ def _payload_browser_resolve_tokens(current: Any, tokens: list[tuple[str, str | 
 
 def _payload_browser_resolve_path(payload: dict[str, Any], path: str) -> dict[str, Any]:
     normalized = _payload_browser_normalize_path(path)
-    values = _payload_browser_resolve_tokens(payload, _payload_browser_tokenize(normalized))
+    tokens, token_diagnostics = _payload_browser_tokenize_with_diagnostics(normalized)
+    values = _payload_browser_resolve_tokens(payload, tokens)
     return {
         "path": normalized,
         "exists": bool(values),
         "match_count": len(values),
+        "token_count": len(tokens),
+        "tokenization_errors": token_diagnostics,
         "value": values[0] if len(values) == 1 else values,
     }
 

@@ -1,26 +1,39 @@
 """Shared helpers for native read-only tool batch contracts."""
 from __future__ import annotations
 
-import json
 from typing import Any, Mapping
 
+from ..shared.diagnostics import diagnostic_row, safe_json_text, safe_text
 
-def canonical_batch_value(value: Any) -> Any:
+
+def canonical_batch_value(value: Any, *, _depth: int = 0) -> Any:
+    if _depth > 8:
+        return safe_text(value, limit=300)
     if isinstance(value, Mapping):
         out: dict[str, Any] = {}
-        for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
-            canonical = canonical_batch_value(item)
-            if canonical in (None, "", [], {}):
-                continue
-            out[str(key)] = canonical
+        try:
+            pairs = sorted(value.items(), key=lambda pair: safe_text(pair[0], limit=120))
+        except Exception as exc:
+            return diagnostic_row("canonical_batch_mapping_failed", exc=exc)
+        for key, item in pairs:
+            try:
+                canonical = canonical_batch_value(item, _depth=_depth + 1)
+                if canonical in (None, "", [], {}):
+                    continue
+                out[safe_text(key, limit=120)] = canonical
+            except Exception as exc:
+                out[safe_text(key, limit=120)] = diagnostic_row("canonical_batch_value_failed", exc=exc)
         return out
     if isinstance(value, (list, tuple)):
         out: list[Any] = []
-        for item in value:
-            canonical = canonical_batch_value(item)
-            if canonical in (None, "", [], {}):
-                continue
-            out.append(canonical)
+        for index, item in enumerate(value):
+            try:
+                canonical = canonical_batch_value(item, _depth=_depth + 1)
+                if canonical in (None, "", [], {}):
+                    continue
+                out.append(canonical)
+            except Exception as exc:
+                out.append(diagnostic_row("canonical_batch_list_item_failed", exc=exc, item_index=index))
         return out
     if isinstance(value, str):
         text = value.strip()
@@ -42,23 +55,21 @@ def canonical_batch_arguments(args: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def canonical_batch_args(args: Mapping[str, Any]) -> str:
-    return json.dumps(
+    text, _diagnostic = safe_json_text(
         canonical_batch_arguments(args),
-        ensure_ascii=False,
-        sort_keys=True,
+        reason="canonical_batch_args_json_failed",
         separators=(",", ":"),
-        default=str,
     )
+    return text
 
 
 def canonical_batch_call_key(tool: str, args: Mapping[str, Any]) -> str:
-    return json.dumps(
+    text, _diagnostic = safe_json_text(
         {
-            "tool": str(tool or "").strip(),
+            "tool": safe_text(tool, limit=160).strip(),
             "arguments": canonical_batch_arguments(args),
         },
-        ensure_ascii=False,
-        sort_keys=True,
+        reason="canonical_batch_call_key_json_failed",
         separators=(",", ":"),
-        default=str,
     )
+    return text

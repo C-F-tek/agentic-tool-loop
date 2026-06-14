@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .diagnostics import diagnostic_row, safe_text
 from .payload_metadata import compact_value, counted_list, stable_json_fingerprint
 
 
@@ -42,9 +43,15 @@ def _as_items(value: Any) -> list[Any]:
 
 
 def compact_minimum_read_coverage(coverage: Any, *, list_limit: int = 20) -> dict[str, Any]:
-    coverage = coverage if isinstance(coverage, dict) else {}
-    if not coverage:
+    if coverage in (None, "", [], {}):
         return {}
+    if not isinstance(coverage, dict):
+        return diagnostic_row(
+            "coverage_contract_invalid",
+            schema="minimum_read_coverage.diagnostic.v1",
+            received_type=type(coverage).__name__,
+            received_preview=safe_text(coverage, limit=300),
+        )
     summary = {
         key: coverage.get(key)
         for key in (
@@ -65,15 +72,27 @@ def compact_minimum_read_coverage(coverage: Any, *, list_limit: int = 20) -> dic
 
 
 def coverage_status_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
-    contract = contract if isinstance(contract, dict) else {}
+    if not isinstance(contract, dict):
+        return {
+            "schema": "minimum_read_coverage.public_status.v1",
+            "coverage_contract_invalid": True,
+            "coverage_contract_error": "evidence_contract_not_object",
+            "received_type": type(contract).__name__,
+        }
     coverage = (
         contract.get("minimum_read_coverage")
         if isinstance(contract.get("minimum_read_coverage"), dict)
         else {}
     )
     compact_coverage = compact_minimum_read_coverage(coverage)
+    coverage_invalid = (
+        contract.get("minimum_read_coverage") not in (None, "", [], {})
+        and not isinstance(contract.get("minimum_read_coverage"), dict)
+    )
     return {
         "schema": "minimum_read_coverage.public_status.v1",
+        "coverage_contract_invalid": True if coverage_invalid else None,
+        "coverage_contract_error": "minimum_read_coverage_not_object" if coverage_invalid else None,
         "coverage_satisfied": (
             coverage.get("coverage_satisfied")
             if coverage else contract.get("coverage_satisfied")
@@ -96,38 +115,53 @@ def compact_evidence_contract_summary(
     list_limit: int = 20,
     text_limit: int = 900,
 ) -> dict[str, Any]:
-    contract = contract if isinstance(contract, dict) else {}
-    if not contract:
+    if contract in (None, "", [], {}):
         return {}
-    if contract.get("full_contract_not_duplicated_here") is True:
-        return dict(contract)
-    chars, sha256 = stable_json_fingerprint(contract)
-    coverage = (
-        contract.get("minimum_read_coverage")
-        if isinstance(contract.get("minimum_read_coverage"), dict)
-        else {}
-    )
-    coverage_summary = compact_minimum_read_coverage(coverage, list_limit=list_limit)
-    summary: dict[str, Any] = {
-        "schema": schema,
-        "full_contract_not_duplicated_here": True,
-        "evidence_contract_chars": chars,
-        "evidence_contract_sha256": sha256,
-        "coverage_satisfied": coverage.get("coverage_satisfied", contract.get("coverage_satisfied")),
-        "minimum_read_coverage": coverage_summary,
-        "planner_may_choose_final": contract.get("planner_may_choose_final"),
-        "required_next_progress": str(contract.get("required_next_progress") or "")[:text_limit],
-        "successful_repo_read_count": contract.get("successful_repo_read_count"),
-        "verified_content_read_count": contract.get("verified_content_read_count"),
-    }
-    for key in _CONTRACT_LIST_KEYS:
-        compact = counted_list(_as_items(contract.get(key)), limit=list_limit)
-        if compact:
-            summary[key] = compact
-    for key in _COMPACT_VALUE_KEYS:
-        value = contract.get(key)
-        if value not in (None, "", [], {}):
-            summary[key] = compact_value(value, text_limit=text_limit, list_limit=8)
+    if not isinstance(contract, dict):
+        return diagnostic_row(
+            "evidence_contract_invalid",
+            schema=schema,
+            received_type=type(contract).__name__,
+            received_preview=safe_text(contract, limit=300),
+        )
+    try:
+        if contract.get("full_contract_not_duplicated_here") is True:
+            return dict(contract)
+        chars, sha256 = stable_json_fingerprint(contract)
+        coverage = (
+            contract.get("minimum_read_coverage")
+            if isinstance(contract.get("minimum_read_coverage"), dict)
+            else {}
+        )
+        coverage_summary = compact_minimum_read_coverage(contract.get("minimum_read_coverage"), list_limit=list_limit)
+        coverage_invalid = (
+            contract.get("minimum_read_coverage") not in (None, "", [], {})
+            and not isinstance(contract.get("minimum_read_coverage"), dict)
+        )
+        summary: dict[str, Any] = {
+            "schema": schema,
+            "full_contract_not_duplicated_here": True,
+            "evidence_contract_chars": chars,
+            "evidence_contract_sha256": sha256,
+            "coverage_contract_invalid": True if coverage_invalid else None,
+            "coverage_contract_error": "minimum_read_coverage_not_object" if coverage_invalid else None,
+            "coverage_satisfied": coverage.get("coverage_satisfied", contract.get("coverage_satisfied")),
+            "minimum_read_coverage": coverage_summary,
+            "planner_may_choose_final": contract.get("planner_may_choose_final"),
+            "required_next_progress": safe_text(contract.get("required_next_progress"), limit=text_limit),
+            "successful_repo_read_count": contract.get("successful_repo_read_count"),
+            "verified_content_read_count": contract.get("verified_content_read_count"),
+        }
+        for key in _CONTRACT_LIST_KEYS:
+            compact = counted_list(_as_items(contract.get(key)), limit=list_limit)
+            if compact:
+                summary[key] = compact
+        for key in _COMPACT_VALUE_KEYS:
+            value = contract.get(key)
+            if value not in (None, "", [], {}):
+                summary[key] = compact_value(value, text_limit=text_limit, list_limit=8)
+    except Exception as exc:
+        return diagnostic_row("evidence_contract_summary_failed", schema=schema, exc=exc)
     return {
         key: value
         for key, value in summary.items()

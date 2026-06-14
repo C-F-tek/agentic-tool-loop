@@ -43,35 +43,67 @@ def _clip_text(value: str, limit: int = MAX_STRING_LENGTH) -> str:
     return text[:limit] + f"...<truncated:{len(text) - limit}>"
 
 
-def _bounded_jsonable(value: Any, *, key: str = "") -> Any:
-    key_l = str(key or "").lower()
-    if key_l in _SENSITIVE_PATH_KEYS:
-        return "<redacted:local_operator_path>"
-    if key_l in _LARGE_PAYLOAD_KEYS:
-        return "<redacted:large_runtime_payload>"
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    if isinstance(value, str):
-        return _clip_text(value)
-    if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for idx, (item_key, item_value) in enumerate(value.items()):
-            if idx >= MAX_LIST_LENGTH:
-                out["_truncated_keys"] = max(0, len(value) - MAX_LIST_LENGTH)
-                break
-            out[str(item_key)] = _bounded_jsonable(item_value, key=str(item_key))
-        return out
-    if isinstance(value, (list, tuple, set)):
-        seq = list(value)
-        out = [_bounded_jsonable(item, key=key) for item in seq[:MAX_LIST_LENGTH]]
-        if len(seq) > MAX_LIST_LENGTH:
-            out.append({"_truncated_items": len(seq) - MAX_LIST_LENGTH})
-        return out
-    return _clip_text(str(value))
+def _bounded_jsonable(value: Any, *, key: str = "", depth: int = 0) -> Any:
+    try:
+        if depth > 12:
+            return {"_bounded_json_error": "depth_limit", "diagnostic_only": True}
+        key_l = str(key or "").lower()
+        if key_l in _SENSITIVE_PATH_KEYS:
+            return "<redacted:local_operator_path>"
+        if key_l in _LARGE_PAYLOAD_KEYS:
+            return "<redacted:large_runtime_payload>"
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, str):
+            return _clip_text(value)
+        if isinstance(value, dict):
+            out: dict[str, Any] = {}
+            for idx, (item_key, item_value) in enumerate(value.items()):
+                if idx >= MAX_LIST_LENGTH:
+                    out["_truncated_keys"] = max(0, len(value) - MAX_LIST_LENGTH)
+                    break
+                try:
+                    out[str(item_key)] = _bounded_jsonable(
+                        item_value,
+                        key=str(item_key),
+                        depth=depth + 1,
+                    )
+                except Exception as exc:
+                    out[str(item_key)] = {
+                        "_bounded_json_error": type(exc).__name__,
+                        "diagnostic_only": True,
+                    }
+            return out
+        if isinstance(value, (list, tuple, set)):
+            seq = list(value)
+            out = [
+                _bounded_jsonable(item, key=key, depth=depth + 1)
+                for item in seq[:MAX_LIST_LENGTH]
+            ]
+            if len(seq) > MAX_LIST_LENGTH:
+                out.append({"_truncated_items": len(seq) - MAX_LIST_LENGTH})
+            return out
+        return _clip_text(str(value))
+    except Exception as exc:
+        return {
+            "_bounded_json_error": type(exc).__name__,
+            "diagnostic_only": True,
+            "key": str(key or "")[:120],
+        }
 
 
 def _json_roundtrip(value: dict[str, Any]) -> dict[str, Any]:
-    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str))
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str))
+    except (TypeError, ValueError, RecursionError) as exc:
+        return {
+            "schema": SCHEMA,
+            "diagnostic_only": True,
+            "runtime_debug_packet_error": {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+        }
 
 
 def _decision_summary(decision: dict[str, Any]) -> dict[str, Any]:

@@ -6,6 +6,15 @@ from typing import Any
 
 from ...infrastructure.result_compaction import compact
 from ..prompt.context_windows import compact_prompt_context_window_item
+from ..shared.diagnostics import diagnostic_row, safe_text
+from ..shared.payload_metadata import compact_value
+
+
+def _keep_value(value: Any) -> bool:
+    try:
+        return value not in (None, "", [], {})
+    except Exception:
+        return True
 
 
 def compact_list_preview(value: Any, *, limit: int = 120) -> tuple[list[Any], int]:
@@ -77,7 +86,9 @@ def python_static_evidence(path: str, content: str) -> dict[str, Any]:
 
 
 def summary_from_result(result: dict[str, Any]) -> str:
-    tool = str(result.get("tool") or "")
+    if not isinstance(result, dict):
+        return "invalid tool result: not a dictionary"
+    tool = safe_text(result.get("tool"), limit=160)
     if tool == "repo_tree":
         return (
             f"repo_tree path={result.get('path')} count={result.get('count')} "
@@ -117,7 +128,10 @@ def summary_from_result(result: dict[str, Any]) -> str:
         value = result.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
-    return compact(result, 2000)
+    try:
+        return compact(result, 2000)
+    except Exception as exc:
+        return safe_text(diagnostic_row("result_summary_compaction_failed", exc=exc), limit=2000)
 
 
 def compact_tool_result_for_planner(
@@ -127,11 +141,33 @@ def compact_tool_result_for_planner(
     result_compact_chars: int,
 ) -> dict[str, Any]:
     """Return a planner-safe digest, never the full raw tool result."""
+    if not isinstance(result, dict):
+        return {
+            "tool": tool,
+            "ok": False,
+            "summary": "invalid tool result: not a dictionary",
+            "result_diagnostics": [
+                diagnostic_row(
+                    "tool_result_not_object",
+                    schema="tool_result_compaction_diagnostic.v1",
+                    received_type=type(result).__name__,
+                )
+            ],
+        }
+    try:
+        summary = summary_from_result(result)[:result_compact_chars]
+    except Exception as exc:
+        summary = "tool result summary unavailable"
+        summary_diagnostic = diagnostic_row("tool_result_summary_failed", schema="tool_result_compaction_diagnostic.v1", exc=exc)
+    else:
+        summary_diagnostic = {}
     payload: dict[str, Any] = {
         "tool": tool,
         "ok": bool(result.get("ok")),
-        "summary": summary_from_result(result)[:result_compact_chars],
+        "summary": summary,
     }
+    if summary_diagnostic:
+        payload["result_diagnostics"] = [summary_diagnostic]
 
     if tool == "repo_propose_code_edit":
         for key in (
@@ -184,19 +220,17 @@ def compact_tool_result_for_planner(
             payload[key] = value
         elif isinstance(value, list):
             preview, total = compact_list_preview(value, limit=120)
+            preview = compact_value(preview, text_limit=700, list_limit=120)
             payload[key] = preview
             payload[f"{key}_total"] = total
         elif isinstance(value, dict):
-            payload[key] = {
-                str(k): (str(v)[:700] if isinstance(v, str) else v)
-                for k, v in value.items()
-                if v not in (None, "", [], {})
-            }
+            payload[key] = compact_value(value, text_limit=700, list_limit=8)
 
     for key in ("entries", "matches", "files", "paths"):
         value = result.get(key)
         if isinstance(value, list):
             preview, total = compact_list_preview(value, limit=120)
+            preview = compact_value(preview, text_limit=700, list_limit=120)
             payload[f"{key}_preview"] = preview
             payload[f"{key}_total"] = total
 
@@ -204,11 +238,17 @@ def compact_tool_result_for_planner(
         items = result.get("items", [])
         compact_items: list[dict[str, Any]] = []
         python_evidence: list[dict[str, Any]] = []
-        for item in items[:120]:
+        for item_index, item in enumerate(items[:120]):
             if not isinstance(item, dict):
+                compact_items.append(diagnostic_row(
+                    "tool_result_item_not_object",
+                    schema="tool_result_compaction_diagnostic.v1",
+                    item_index=item_index,
+                    received_type=type(item).__name__,
+                ))
                 continue
-            path = str(item.get("path") or "")
-            content = str(item.get("content") or "")
+            path = safe_text(item.get("path"), limit=1000)
+            content = safe_text(item.get("content"), limit=1_000_000)
             compact_item = {
                 "ok": item.get("ok"),
                 "id": item.get("id"),
@@ -223,12 +263,21 @@ def compact_tool_result_for_planner(
             }
             if content:
                 compact_item["content_preview"] = content[:700]
-            text = str(item.get("text") or "")
+            text = safe_text(item.get("text"), limit=1_000_000)
             if text:
                 compact_item["text_preview"] = text[:700]
-            compact_items.append({k: v for k, v in compact_item.items() if v not in (None, "", [], {})})
+            compact_items.append({k: v for k, v in compact_item.items() if _keep_value(v)})
             if path.endswith(".py") and item.get("ok"):
-                python_evidence.append(python_static_evidence(path, content))
+                try:
+                    python_evidence.append(python_static_evidence(path, content))
+                except Exception as exc:
+                    python_evidence.append(diagnostic_row(
+                        "python_static_evidence_failed",
+                        schema="tool_result_compaction_diagnostic.v1",
+                        exc=exc,
+                        item_index=item_index,
+                        path=path,
+                    ))
         payload["items"] = compact_items
         payload["items_total"] = len(items)
         if python_evidence:

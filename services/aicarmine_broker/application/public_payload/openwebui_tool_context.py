@@ -71,10 +71,45 @@ class OpenWebUIPayloadBuilder:
         terminal_decision = result.get("planner_decision") if isinstance(result.get("planner_decision"), dict) else {}
         goal = str(state.get("goal") or "")
         planner_memory = state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else None
-        diagnostics = self._agent_flow_diagnostics(goal, history, planner_memory)
+        context_build_errors: list[dict[str, Any]] = []
+
+        def build_section(name: str, default: Any, builder: Callable[[], Any]) -> Any:
+            try:
+                return builder()
+            except Exception as exc:
+                context_build_errors.append({
+                    "section": name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                })
+                return default
+
+        diagnostics = build_section(
+            "agent_flow_diagnostics",
+            {
+                "schema": "agent_flow_diagnostics.v1",
+                "diagnostic_unavailable": True,
+            },
+            lambda: self._agent_flow_diagnostics(goal, history, planner_memory),
+        )
+        diagnostics = diagnostics if isinstance(diagnostics, dict) else {
+            "schema": "agent_flow_diagnostics.v1",
+            "diagnostic_unavailable": True,
+            "received_type": type(diagnostics).__name__,
+        }
         result = dict(result)
-        partial_products = self._partial_products_for_30b(history)
-        best_partial_product = self._best_partial_product_for_30b(history)
+        partial_products = build_section(
+            "partial_products_for_30b",
+            [],
+            lambda: self._partial_products_for_30b(history),
+        )
+        partial_products = partial_products if isinstance(partial_products, list) else []
+        best_partial_product = build_section(
+            "best_partial_product_for_30b",
+            {},
+            lambda: self._best_partial_product_for_30b(history),
+        )
+        best_partial_product = best_partial_product if isinstance(best_partial_product, dict) else {}
         if partial_products:
             result["partial_products_for_30b"] = partial_products
         if best_partial_product:
@@ -84,21 +119,50 @@ class OpenWebUIPayloadBuilder:
             diagnostics["controller_memory_records_written"] = 1 if controller_memory.get("ok") else 0
             diagnostics["controller_memory_target_key"] = controller_memory.get("target_key")
         result["agent_flow_diagnostics"] = diagnostics
-        job_root = self._job_root_for_id(job_id)
-        evidence_digest = self._execution_evidence_digest_text(result)
-        evidence_view = self._repo_read_content_views(history)
-        next_action = self._next_action_for_openwebui(status, result)
+        job_root = build_section(
+            "job_root",
+            "",
+            lambda: self._job_root_for_id(job_id),
+        )
+        evidence_digest = build_section(
+            "evidence_digest_for_30b",
+            "",
+            lambda: self._execution_evidence_digest_text(result),
+        )
+        evidence_digest = str(evidence_digest or "")
+        evidence_view = build_section(
+            "evidence_view_for_30b",
+            [],
+            lambda: self._repo_read_content_views(history),
+        )
+        evidence_view = evidence_view if isinstance(evidence_view, list) else []
+        next_action = build_section(
+            "next_action_for_30b",
+            {},
+            lambda: self._next_action_for_openwebui(status, result),
+        )
+        next_action = next_action if isinstance(next_action, dict) else {}
         initial_orientation = (
             state.get("initial_orientation_surface")
             if isinstance(state.get("initial_orientation_surface"), dict)
-            else self._initial_orientation_surface_from_history(
-                history,
-                state.get("initial_orientation_skipped")
-                if isinstance(state.get("initial_orientation_skipped"), list)
-                else [],
+            else build_section(
+                "initial_orientation_surface",
+                {},
+                lambda: self._initial_orientation_surface_from_history(
+                    history,
+                    state.get("initial_orientation_skipped")
+                    if isinstance(state.get("initial_orientation_skipped"), list)
+                    else [],
+                ),
             )
         )
-        decisions = self._planner_decision_rows(history)
+        initial_orientation = initial_orientation if isinstance(initial_orientation, dict) else {}
+        decisions = build_section(
+            "planner_decision_rows",
+            [],
+            lambda: self._planner_decision_rows(history),
+        )
+        decisions = decisions if isinstance(decisions, list) else []
         if terminal_decision:
             decisions.append({
                 "step": terminal_decision.get("step"),
@@ -108,17 +172,75 @@ class OpenWebUIPayloadBuilder:
                 "final_answer_preview": str(terminal_decision.get("final_answer") or "")[:700],
                 "terminal": True,
             })
-        validation_rejections = self._validation_rejection_rows(history)
-        executed_tools = self._executed_tool_rows(history)
-        turn_memory = self._planner_turn_memory(history, terminal_decision)
-        result_digest = self._compact_final_state_result(result)
-        artifacts = self._public_tool_artifact_rows(history)
-        evidence_contract = self._planner_evidence_contract(goal, history)
-        coverage_status = coverage_status_from_contract(evidence_contract)
-        evidence_contract_summary = compact_evidence_contract_summary(
-            evidence_contract,
-            schema="planner_evidence_contract_public_summary.v1",
+        validation_rejections = build_section(
+            "validation_rejection_rows",
+            [],
+            lambda: self._validation_rejection_rows(history),
         )
+        validation_rejections = validation_rejections if isinstance(validation_rejections, list) else []
+        executed_tools = build_section(
+            "executed_tool_rows",
+            [],
+            lambda: self._executed_tool_rows(history),
+        )
+        executed_tools = executed_tools if isinstance(executed_tools, list) else []
+        turn_memory = build_section(
+            "turn_memory",
+            {},
+            lambda: self._planner_turn_memory(history, terminal_decision),
+        )
+        turn_memory = turn_memory if isinstance(turn_memory, dict) else {}
+        result_digest = build_section(
+            "result_digest",
+            {},
+            lambda: self._compact_final_state_result(result),
+        )
+        result_digest = result_digest if isinstance(result_digest, dict) else {}
+        artifacts = build_section(
+            "artifacts",
+            [],
+            lambda: self._public_tool_artifact_rows(history),
+        )
+        artifacts = artifacts if isinstance(artifacts, list) else []
+        evidence_contract = build_section(
+            "evidence_contract",
+            {},
+            lambda: self._planner_evidence_contract(goal, history),
+        )
+        evidence_contract = evidence_contract if isinstance(evidence_contract, dict) else {}
+        coverage_status = build_section(
+            "coverage_status",
+            {},
+            lambda: coverage_status_from_contract(evidence_contract),
+        )
+        coverage_status = coverage_status if isinstance(coverage_status, dict) else {}
+        evidence_contract_summary = build_section(
+            "evidence_contract_summary",
+            {},
+            lambda: compact_evidence_contract_summary(
+                evidence_contract,
+                schema="planner_evidence_contract_public_summary.v1",
+            ),
+        )
+        evidence_contract_summary = evidence_contract_summary if isinstance(evidence_contract_summary, dict) else {}
+        history_ledger = build_section(
+            "history_ledger",
+            [],
+            lambda: self._planner_history_ledger(history),
+        )
+        history_ledger = history_ledger if isinstance(history_ledger, list) else []
+        limits = build_section(
+            "limits",
+            [],
+            lambda: self._public_tool_context_limits(artifacts),
+        )
+        limits = limits if isinstance(limits, list) else []
+        context_build_diagnostics = {
+            "schema": "openwebui_tool_context_build_diagnostics.v1",
+            "ok": not context_build_errors,
+            "errors": context_build_errors,
+            "partial_context": bool(context_build_errors),
+        }
         context = {
             "type": "agentic_loop_complete_structured_context",
             "contract_type": "agentic_loop_complete_structured_context",
@@ -159,7 +281,7 @@ class OpenWebUIPayloadBuilder:
             "artifacts": artifacts,
             "partial_products_for_30b": partial_products,
             "best_partial_product_for_30b": best_partial_product,
-            "limits": self._public_tool_context_limits(artifacts),
+            "limits": limits,
             "evidence_digest_for_30b": evidence_digest,
             "evidence_view_for_30b": evidence_view,
             "initial_orientation_surface": initial_orientation,
@@ -186,9 +308,10 @@ class OpenWebUIPayloadBuilder:
             "planner_memory": state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else {},
             "controller_memory": controller_memory,
             "agent_flow_diagnostics": diagnostics,
+            "context_build_diagnostics": context_build_diagnostics,
             "executed_tools": executed_tools,
             "history_count": len(history),
-            "history": self._planner_history_ledger(history),
+            "history": history_ledger,
             "result_digest": result_digest,
             "planner_decision": result.get("planner_decision") if isinstance(result.get("planner_decision"), dict) else None,
             "blocked_by": result.get("blocked_by"),

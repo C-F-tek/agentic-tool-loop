@@ -7,6 +7,7 @@ from typing import Any
 from ...tool_contract import normalize_tool_name
 from ..code_product.state import code_product_action_has_complete_payload
 from ..evidence.goal_classifier import goal_requests_apply
+from ..shared.diagnostics import diagnostic_row, safe_text
 from .candidate_actions import (
     candidate_action_args,
     candidate_action_is_build_state_read,
@@ -109,7 +110,7 @@ class ToolSurfacePolicy:
             return self._ordered(names)
 
         semantic = contract.get("semantic_goal_classification") if isinstance(contract.get("semantic_goal_classification"), dict) else {}
-        goal_class = str(semantic.get("class") or "").strip()
+        goal_class = safe_text(semantic.get("class"), limit=160).strip()
         code_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
         code_product_required = bool(code_contract.get("required"))
         apply_required = bool(contract.get("goal_requests_apply")) or goal_requests_apply(goal)
@@ -131,13 +132,26 @@ class ToolSurfacePolicy:
     def apply(self, contract: dict[str, Any]) -> dict[str, Any]:
         """Keep candidate actions and native tools aligned with required progress."""
         if not isinstance(contract, dict):
-            return contract
+            return diagnostic_row(
+                "tool_surface_contract_not_object",
+                schema="turn_tool_surface_policy_diagnostic.v1",
+                received_type=type(contract).__name__,
+                received_preview=safe_text(contract, limit=300),
+            )
+        surface_diagnostics: list[dict[str, Any]] = []
+        raw_actions = contract.get("candidate_next_actions")
+        if raw_actions not in (None, "", [], {}) and not isinstance(raw_actions, list):
+            surface_diagnostics.append(diagnostic_row(
+                "candidate_next_actions_not_list",
+                schema="turn_tool_surface_policy_diagnostic.v1",
+                received_type=type(raw_actions).__name__,
+            ))
         actions = (
             contract.get("candidate_next_actions")
             if isinstance(contract.get("candidate_next_actions"), list)
             else []
         )
-        progress = str(contract.get("required_next_progress") or "").strip().lower()
+        progress = safe_text(contract.get("required_next_progress"), limit=4000).strip().lower()
         strict_code_product_payload = any(
             token in progress
             for token in (
@@ -157,6 +171,8 @@ class ToolSurfacePolicy:
             "allowed_tool_names": [],
             "candidate_actions_filtered": False,
         }
+        if surface_diagnostics:
+            policy["tool_surface_diagnostics"] = surface_diagnostics
         required = (
             contract.get("required_next_tool_call")
             if isinstance(contract.get("required_next_tool_call"), dict)
@@ -192,16 +208,16 @@ class ToolSurfacePolicy:
             contract["turn_tool_surface_policy"] = policy
             return contract
 
-        required_tool = normalize_tool_name(str(required.get("tool") or ""))
+        required_tool = normalize_tool_name(safe_text(required.get("tool"), limit=160))
         if required_tool in self._REPO_DISCOVERY_TOOLS:
             arguments = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
-            reason = str(required.get("reason") or progress or "required_next_tool_call").strip()
+            reason = safe_text(required.get("reason") or progress or "required_next_tool_call", limit=900).strip()
             action = {
                 "action_id": "required_next_tool_call:" + required_tool,
                 "tool": required_tool,
                 "arguments": arguments,
                 "reason": reason,
-                "source": str(required.get("source") or "required_next_tool_call"),
+                "source": safe_text(required.get("source") or "required_next_tool_call", limit=160),
                 "independent_read_only": True,
             }
             contract["candidate_next_actions"] = [action]
@@ -509,7 +525,7 @@ class ToolSurfacePolicy:
         actions = contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else []
         for action in actions:
             if isinstance(action, dict):
-                name = normalize_tool_name(str(action.get("tool") or ""))
+                name = normalize_tool_name(safe_text(action.get("tool"), limit=160))
                 if name:
                     names.add(name)
         return names
@@ -583,14 +599,14 @@ class ToolSurfacePolicy:
 
     def _ordered(self, names: set[str]) -> list[str]:
         return self._order_tool_names({
-            normalize_tool_name(str(name))
+            normalize_tool_name(safe_text(name, limit=160))
             for name in names
-            if normalize_tool_name(str(name))
+            if normalize_tool_name(safe_text(name, limit=160))
         })
 
     def _continuation_tool_only(self, continuation: dict[str, Any] | None) -> list[str] | None:
         continuation = continuation if isinstance(continuation, dict) else {}
-        tool = normalize_tool_name(str(continuation.get("tool") or ""))
+        tool = normalize_tool_name(safe_text(continuation.get("tool"), limit=160))
         if tool == "planner_scratchpad_read":
             return ["planner_scratchpad_read"]
         if tool in self._REPO_DISCOVERY_TOOLS:
@@ -607,9 +623,9 @@ class ToolSurfacePolicy:
         if not isinstance(policy_allowed, list):
             return None
         if surface_policy.get("required_scratchpad_read_continuation"):
-            return self._ordered({str(name) for name in policy_allowed})
+            return self._ordered({safe_text(name, limit=160) for name in policy_allowed})
         if policy_allowed or surface_policy.get("locked_empty_tool_surface") or self._contract_final_required_now(contract):
-            names = {str(name) for name in policy_allowed}
+            names = {safe_text(name, limit=160) for name in policy_allowed}
             if self._contract_final_required_now(contract):
                 names.update(self._ALWAYS_AVAILABLE_SUPPORT_TOOLS)
             elif not surface_policy.get("suppress_non_terminal_support_expansion"):
@@ -651,7 +667,7 @@ class ToolSurfacePolicy:
         return names
 
     def _add_keyword_tools(self, names: set[str], goal: str) -> None:
-        goal_low = str(goal or "").lower()
+        goal_low = safe_text(goal, limit=4000).lower()
         if any(token in goal_low for token in ("json", "payload", "schema", "openapi")):
             names.add("repo_jq_query")
         if any(token in goal_low for token in ("security", "sicurezza", "vulnerability", "vulnerabil", "sast", "semgrep")):
@@ -675,7 +691,7 @@ class ToolSurfacePolicy:
         explicit = intrinsic_context.get("explicit_request_context")
         if not isinstance(explicit, dict):
             return
-        target = normalize_tool_name(str(explicit.get("target_internal_tool") or ""))
+        target = normalize_tool_name(safe_text(explicit.get("target_internal_tool"), limit=160))
         if target:
             names.add(target)
 
@@ -756,14 +772,14 @@ class ToolSurfacePolicy:
         allowed_names: set[str],
     ) -> None:
         current = {
-            normalize_tool_name(str(name))
+            normalize_tool_name(safe_text(name, limit=160))
             for name in policy.get("allowed_tool_names", [])
-            if normalize_tool_name(str(name))
+            if normalize_tool_name(safe_text(name, limit=160))
         }
         current.update({
-            normalize_tool_name(str(name))
+            normalize_tool_name(safe_text(name, limit=160))
             for name in allowed_names
-            if normalize_tool_name(str(name))
+            if normalize_tool_name(safe_text(name, limit=160))
         })
         policy["allowed_tool_names"] = self._ordered(current)
         contract["turn_tool_surface_policy"] = policy
