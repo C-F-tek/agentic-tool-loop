@@ -540,7 +540,7 @@ def main() -> int:
         "warnings": warnings,
         "action": action,
         "rag_index_ready": rag_index_ready,
-        "resource_lane": "ollama_embedding_gpu1",
+        "resource_lane": f"ollama_embedding:{args.embedding_endpoint}",
         "ollama_embedding_performed": bool((not args.skip_embeddings) and missing_before),
         "embedding_provider_role": "rag_index_embedding_not_provider_planning",
         "providers_not_started_reason": "" if rag_index_ready else "startup_rag_index_not_ready",
