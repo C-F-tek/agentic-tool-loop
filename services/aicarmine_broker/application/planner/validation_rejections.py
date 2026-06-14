@@ -10,6 +10,24 @@ from ..shared.path_tokens import repo_rel_token
 from ..prompt.values import prompt_clip_text, text_hash
 
 
+def _json_hash_or_diagnostic(value: Any) -> tuple[str, dict[str, Any]]:
+    try:
+        return (
+            text_hash(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)),
+            {},
+        )
+    except (TypeError, ValueError, RecursionError) as exc:
+        fallback = prompt_clip_text(repr(value), 2000)
+        return (
+            text_hash(fallback),
+            {
+                "serialization_error_type": type(exc).__name__,
+                "serialization_fallback": "repr_clip",
+                "serialization_fallback_chars": len(fallback),
+            },
+        )
+
+
 def canonical_invalid_code_product_decision_signature(
     decision: dict[str, Any],
     violations: list[Any] | tuple[Any, ...] | None = None,
@@ -49,6 +67,12 @@ def canonical_invalid_code_product_decision_signature(
     if not (target and edit_kind and payload_class):
         return {}
 
+    structured_operations_sha256 = ""
+    structured_operations_diagnostic: dict[str, Any] = {}
+    if args.get("structured_operations") is not None:
+        structured_operations_sha256, structured_operations_diagnostic = _json_hash_or_diagnostic(
+            args.get("structured_operations")
+        )
     normalized_args = {
         "target_file": target,
         "edit_kind": edit_kind,
@@ -56,20 +80,24 @@ def canonical_invalid_code_product_decision_signature(
         "old_text": prompt_clip_text(args.get("old_text"), 500),
         "new_text": prompt_clip_text(args.get("new_text"), 500),
         "unified_diff_sha256": text_hash(str(args.get("unified_diff") or "")) if args.get("unified_diff") else "",
-        "structured_operations_sha256": (
-            text_hash(json.dumps(args.get("structured_operations"), ensure_ascii=False, sort_keys=True, default=str))
-            if args.get("structured_operations") is not None else ""
-        ),
+        "structured_operations_sha256": structured_operations_sha256,
         "rationale": prompt_clip_text(args.get("rationale"), 500),
     }
-    args_sha256 = text_hash(json.dumps(normalized_args, ensure_ascii=False, sort_keys=True, default=str))
-    return {
+    args_sha256, args_diagnostic = _json_hash_or_diagnostic(normalized_args)
+    signature = {
         "tool": "repo_propose_code_edit",
         "target_file": target,
         "edit_kind": edit_kind,
         "payload_class": payload_class,
         "args_sha256": args_sha256,
     }
+    if structured_operations_diagnostic or args_diagnostic:
+        signature["signature_diagnostics"] = {
+            "schema": "invalid_decision_signature_diagnostics.v1",
+            "structured_operations": structured_operations_diagnostic,
+            "normalized_args": args_diagnostic,
+        }
+    return signature
 
 
 def invalid_decision_signature_key(signature: dict[str, Any]) -> str:

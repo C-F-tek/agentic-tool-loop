@@ -7,11 +7,13 @@ contradictory so consumers can inspect them explicitly.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 
 SCHEMA = "memory_conflict_report.v1"
+logger = logging.getLogger(__name__)
 
 
 def _records_from(surface_or_records: Any) -> list[dict[str, Any]]:
@@ -77,20 +79,55 @@ def _path_hashes(record: dict[str, Any]) -> dict[str, str]:
 
 
 def _is_under_repo(root: Path, rel: str) -> bool:
-    candidate = (root / rel).resolve(strict=False)
     try:
+        candidate = (root / rel).resolve(strict=False)
         candidate.relative_to(root.resolve(strict=False))
-    except ValueError:
+    except (OSError, RuntimeError, ValueError):
         return False
     return True
 
 
+def _path_status(root: Path, rel: str) -> dict[str, Any]:
+    details: dict[str, Any] = {"path": rel}
+    if not _is_under_repo(root, rel):
+        return {**details, "path_status": "outside_repo"}
+    try:
+        candidate = (root / rel).resolve(strict=False)
+        details["resolved_path"] = str(candidate)
+        if not candidate.exists():
+            return {**details, "path_status": "missing"}
+        if not candidate.is_file() and not candidate.is_dir():
+            return {**details, "path_status": "not_regular_path"}
+        return {**details, "path_status": "exists"}
+    except PermissionError as exc:
+        logger.debug("Memory conflict path permission denied. path=%s", rel)
+        return {
+            **details,
+            "path_status": "permission_denied",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }
+    except OSError as exc:
+        return {
+            **details,
+            "path_status": "filesystem_error",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }
+
+
 def _ignore(record: dict[str, Any], *, reason: str, severity: str = "medium", details: dict[str, Any] | None = None) -> dict[str, Any]:
+    detail_payload = details or {}
+    path_status = str(detail_payload.get("path_status") or "")
+    error_type = str(detail_payload.get("error_type") or "")
     return {
         "record_id": _record_id(record),
         "reason": reason,
         "severity": severity,
-        "details": details or {},
+        "details": detail_payload,
+        "path_status": path_status or None,
+        "error_type": error_type or None,
+        "is_false_positive": path_status in {"missing", "permission_denied"},
         "diagnostic_only": True,
     }
 
@@ -124,19 +161,30 @@ def detect_memory_conflicts(
 
         missing_path = ""
         out_of_repo_path = ""
+        path_details: dict[str, Any] = {}
         if root is not None:
             for rel in _referenced_paths(record):
-                if not _is_under_repo(root, rel):
+                status = _path_status(root, rel)
+                if status.get("path_status") == "outside_repo":
                     out_of_repo_path = rel
+                    path_details = status
                     break
-                if not (root / rel).exists():
+                if status.get("path_status") in {"missing", "permission_denied", "filesystem_error"}:
                     missing_path = rel
+                    path_details = status
                     break
         if out_of_repo_path:
-            ignored.append(_ignore(record, reason="referenced_path_outside_repo", severity="high", details={"path": out_of_repo_path}))
+            ignored.append(_ignore(record, reason="referenced_path_outside_repo", severity="high", details=path_details or {"path": out_of_repo_path}))
             continue
         if missing_path:
-            ignored.append(_ignore(record, reason="referenced_path_no_longer_exists", details={"path": missing_path}))
+            reason = (
+                "referenced_path_permission_denied"
+                if path_details.get("path_status") == "permission_denied"
+                else "referenced_path_filesystem_error"
+                if path_details.get("path_status") == "filesystem_error"
+                else "referenced_path_no_longer_exists"
+            )
+            ignored.append(_ignore(record, reason=reason, details=path_details or {"path": missing_path}))
             continue
 
         hash_mismatch = ""
@@ -151,13 +199,18 @@ def detect_memory_conflicts(
                         "path": rel,
                         "remembered_hash": remembered_hash,
                         "current_hash": current_hash,
+                        "current_hash_source": "current_file_hashes",
                         "severity": "medium",
                         "diagnostic_only": True,
                     }
                 )
                 break
         if hash_mismatch:
-            ignored.append(_ignore(record, reason="referenced_file_hash_mismatch", details={"path": hash_mismatch}))
+            ignored.append(_ignore(
+                record,
+                reason="referenced_file_hash_mismatch",
+                details={"path": hash_mismatch, "path_status": "hash_mismatch"},
+            ))
             continue
 
         usable.append(record)

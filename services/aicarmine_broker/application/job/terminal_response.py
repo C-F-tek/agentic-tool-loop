@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
@@ -49,21 +50,66 @@ _PUBLIC_JSON_POINTER_KEYS = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+
 def _load_job_json_pointer(value: Any, *, job_root: Path | None) -> Any:
     if job_root is None or not isinstance(value, str) or not value.strip():
         return None
+    pointer_text = value.strip()
     try:
-        pointer = Path(value)
+        pointer = Path(pointer_text)
         if not pointer.is_absolute():
             pointer = job_root / pointer
         resolved_pointer = pointer.resolve()
         resolved_root = job_root.resolve()
         if not str(resolved_pointer).lower().startswith(str(resolved_root).lower()):
+            logger.warning(
+                "Ignoring job JSON pointer outside job root. pointer=%s job_root=%s",
+                pointer_text,
+                str(job_root),
+            )
             return None
         if not resolved_pointer.is_file():
+            if resolved_pointer.exists():
+                logger.debug(
+                    "Ignoring job JSON pointer that is not a file. pointer=%s",
+                    str(resolved_pointer),
+                )
+            else:
+                logger.debug(
+                    "Ignoring missing job JSON pointer. pointer=%s",
+                    str(resolved_pointer),
+                )
             return None
         loaded = json.loads(resolved_pointer.read_text(encoding="utf-8", errors="replace"))
+    except PermissionError as exc:
+        logger.warning(
+            "Permission denied reading job JSON pointer. pointer=%s error=%s",
+            pointer_text,
+            str(exc)[:500],
+        )
+        return None
+    except FileNotFoundError:
+        logger.debug("Job JSON pointer disappeared before read. pointer=%s", pointer_text)
+        return None
+    except IsADirectoryError:
+        logger.debug("Job JSON pointer is a directory. pointer=%s", pointer_text)
+        return None
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "Invalid JSON in job JSON pointer. pointer=%s line=%s column=%s",
+            pointer_text,
+            exc.lineno,
+            exc.colno,
+        )
+        return None
     except Exception:
+        logger.warning(
+            "Failed to load job JSON pointer. pointer=%s",
+            pointer_text,
+            exc_info=True,
+        )
         return None
     if loaded in ({}, []):
         return None
