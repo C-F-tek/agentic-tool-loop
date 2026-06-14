@@ -25,6 +25,27 @@ def _has_successful_inline_evidence(result: dict[str, Any]) -> bool:
     return False
 
 
+def _coverage_missing(result: dict[str, Any]) -> tuple[bool, list[str]]:
+    contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
+    coverage = (
+        contract.get("minimum_read_coverage")
+        if isinstance(contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    if coverage:
+        coverage_satisfied = coverage.get("coverage_satisfied")
+        raw_missing = coverage.get("missing_owner_paths")
+    else:
+        coverage_satisfied = result.get("coverage_satisfied")
+        if coverage_satisfied is None:
+            coverage_satisfied = contract.get("coverage_satisfied")
+        raw_missing = result.get("missing_owner_paths")
+        if raw_missing in (None, "", [], {}):
+            raw_missing = contract.get("missing_owner_paths")
+    missing = [str(path) for path in raw_missing] if isinstance(raw_missing, list) else []
+    return coverage_satisfied is False, missing
+
+
 def _terminal_evidence_first_text(
     status_text: str,
     summary: str,
@@ -70,6 +91,12 @@ def answer_for_openwebui(
     if status_text == "blocked_needs_attention":
         blocked_by = str(result.get("blocked_by") or "unknown")
         extra: list[str] = []
+        coverage_gap, missing_paths = _coverage_missing(result)
+        if coverage_gap:
+            extra.append(
+                "Coverage non soddisfatta: coverage_satisfied=false; "
+                f"missing_owner_paths={missing_paths[:20]}"
+            )
         partial_answer = partial_product_answer_text(result)
         if partial_answer:
             extra.append(partial_answer)
@@ -137,8 +164,13 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
     result = result if isinstance(result, dict) else {}
     status_text = str(status or "unknown")
     action = "answer_user_from_evidence_guide_for_30b"
+    coverage_gap, missing_paths = _coverage_missing(result)
+    if coverage_gap:
+        action = "report_coverage_required_with_missing_owner_paths"
     if status_text == "blocked_needs_attention":
-        if _has_successful_inline_evidence(result):
+        if coverage_gap:
+            action = "report_coverage_required_with_missing_owner_paths"
+        elif _has_successful_inline_evidence(result):
             action = "answer_user_from_inline_evidence_with_explicit_limits"
         else:
             action = "report_blocker_and_use_structured_context_for_diagnosis"
@@ -153,6 +185,8 @@ def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dic
         "action": action,
         "status": status_text,
         "blocked_by": result.get("blocked_by"),
+        "coverage_satisfied": False if coverage_gap else None,
+        "missing_owner_paths": missing_paths if coverage_gap else None,
         "do_not": [
             "do_not_ignore_evidence_guide_for_30b",
             "do_not_treat_job_url_as_the_only_result",

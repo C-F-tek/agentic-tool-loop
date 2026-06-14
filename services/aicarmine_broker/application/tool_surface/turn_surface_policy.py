@@ -88,6 +88,11 @@ class ToolSurfacePolicy:
         if required_tools is not None:
             return self._ordered(set(required_tools))
 
+        if self._contract_coverage_required(contract) and not self._contract_coverage_satisfied(contract):
+            names = set(self._REPO_DISCOVERY_TOOLS)
+            names.update(self._NON_TERMINAL_SUPPORT_TOOLS)
+            return self._ordered(names)
+
         if self._terminal_policy_locks_surface(contract):
             terminal_policy_tools = self._policy_declared_tools(contract)
             if terminal_policy_tools is not None:
@@ -166,6 +171,31 @@ class ToolSurfacePolicy:
                     "required_next_tool_call": contract.get("required_next_tool_call"),
                     "required_scratchpad_read_continuation": True,
                 }
+            )
+            contract["turn_tool_surface_policy"] = policy
+            return contract
+
+        if self._contract_coverage_required(contract) and not self._contract_coverage_satisfied(contract):
+            coverage_actions = [
+                item for item in actions
+                if candidate_action_tool(item) in self._REPO_DISCOVERY_TOOLS
+            ]
+            reason = "minimum_read_coverage_required"
+            if coverage_actions:
+                self._set_actions(contract, policy, coverage_actions, reason)
+                self._add_allowed_tools(contract, policy, set(self._REPO_DISCOVERY_TOOLS))
+            else:
+                self._set_surface_only(contract, policy, set(self._REPO_DISCOVERY_TOOLS), reason)
+            coverage = (
+                contract.get("minimum_read_coverage")
+                if isinstance(contract.get("minimum_read_coverage"), dict)
+                else {}
+            )
+            missing = coverage.get("missing_owner_paths") or contract.get("missing_owner_paths") or []
+            contract["required_next_progress"] = (
+                "coverage_required: minimum_read_coverage.coverage_satisfied=false. "
+                "Choose a selective repo_read/repo_search/repo_list_files action for missing_owner_paths "
+                f"{missing[:12] if isinstance(missing, list) else missing}, or return a typed block."
             )
             contract["turn_tool_surface_policy"] = policy
             return contract
@@ -410,6 +440,8 @@ class ToolSurfacePolicy:
     @classmethod
     def _contract_final_required_now(cls, contract: dict[str, Any]) -> bool:
         contract = contract if isinstance(contract, dict) else {}
+        if not cls._contract_coverage_satisfied(contract):
+            return False
         final_contract = (
             contract.get("finalization_contract")
             if isinstance(contract.get("finalization_contract"), dict)
@@ -429,6 +461,30 @@ class ToolSurfacePolicy:
         )
         next_instruction = str(operational.get("next_instruction") or "").strip().lower()
         return "produce action=final" in next_instruction
+
+    @classmethod
+    def _contract_coverage_required(cls, contract: dict[str, Any]) -> bool:
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = (
+            contract.get("minimum_read_coverage")
+            if isinstance(contract.get("minimum_read_coverage"), dict)
+            else {}
+        )
+        if coverage:
+            return coverage.get("required") is True
+        return contract.get("coverage_satisfied") is not True
+
+    @classmethod
+    def _contract_coverage_satisfied(cls, contract: dict[str, Any]) -> bool:
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = (
+            contract.get("minimum_read_coverage")
+            if isinstance(contract.get("minimum_read_coverage"), dict)
+            else {}
+        )
+        if coverage:
+            return coverage.get("coverage_satisfied") is True
+        return contract.get("coverage_satisfied") is True
 
     @classmethod
     def _intrinsic_context_declares_selective_memory_gap(cls, intrinsic_context: dict[str, Any]) -> bool:

@@ -128,6 +128,52 @@ def validate_planner_decision_against_evidence(
             contract,
             prompt_context_continuation_required,
         )
+
+    def _minimum_read_coverage_contract() -> dict[str, Any]:
+        coverage = contract.get("minimum_read_coverage")
+        if isinstance(coverage, dict):
+            return coverage
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        coverage = final_contract.get("minimum_read_coverage")
+        return coverage if isinstance(coverage, dict) else {}
+
+    def _minimum_read_coverage_required() -> bool:
+        coverage = _minimum_read_coverage_contract()
+        if coverage:
+            return coverage.get("required") is True
+        return contract.get("coverage_satisfied") is not True
+
+    def _minimum_read_coverage_satisfied() -> bool:
+        coverage = _minimum_read_coverage_contract()
+        if coverage:
+            return coverage.get("coverage_satisfied") is True
+        return contract.get("coverage_satisfied") is True
+
+    def _minimum_read_coverage_missing_owner_paths() -> list[str]:
+        coverage = _minimum_read_coverage_contract()
+        raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
+        return [str(path) for path in raw] if isinstance(raw, list) else []
+
+    def _final_answer_declares_missing_coverage(text: str) -> bool:
+        low = str(text or "").lower()
+        return any(
+            needle in low
+            for needle in (
+                "coverage_satisfied=false",
+                "coverage_satisfied: false",
+                '"coverage_satisfied": false',
+                "missing_owner_paths",
+                "missing coverage",
+                "insufficient coverage",
+                "copertura mancante",
+                "mancanza di copertura",
+            )
+        )
+
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
         return {
@@ -276,6 +322,29 @@ def validate_planner_decision_against_evidence(
                 "final_after_write_without_validation"
             )
         final_answer = str(decision.get("final_answer") or decision.get("answer") or decision.get("summary") or "")
+        coverage_required = _minimum_read_coverage_required()
+        coverage_satisfied = _minimum_read_coverage_satisfied()
+        missing_owner_paths = _minimum_read_coverage_missing_owner_paths()
+        if coverage_required and not coverage_satisfied:
+            violations.append("final_without_minimum_read_coverage")
+            contract["required_next_progress"] = (
+                "coverage_required: minimum_read_coverage.coverage_satisfied=false. "
+                "Read/search the missing owner/core paths or return a typed block; do not final."
+            )
+            contract["coverage_block"] = {
+                "schema": "minimum_read_coverage.block.v1",
+                "coverage_satisfied": False,
+                "missing_owner_paths": missing_owner_paths,
+            }
+            if isinstance(final_contract, dict):
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["coverage_satisfied"] = False
+                final_contract["missing_owner_paths"] = missing_owner_paths
+                contract["finalization_contract"] = final_contract
+            contract["planner_may_choose_final"] = False
+        if _final_answer_declares_missing_coverage(final_answer):
+            violations.append("final_declares_missing_read_coverage")
         code_product_contract = contract.get("code_product_contract") if isinstance(contract.get("code_product_contract"), dict) else {}
         action_plan_candidate = ""
         if code_product_contract.get("required"):
@@ -348,6 +417,8 @@ def validate_planner_decision_against_evidence(
             "violations": violations,
             "evidence_contract": contract,
             "quality_gate_internal_inconsistency": internal_inconsistencies,
+            "coverage_satisfied": _minimum_read_coverage_satisfied(),
+            "missing_owner_paths": _minimum_read_coverage_missing_owner_paths(),
         }
         if action_plan_candidate:
             result["action_plan_candidate"] = action_plan_candidate

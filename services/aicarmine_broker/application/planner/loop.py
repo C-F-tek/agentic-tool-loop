@@ -287,6 +287,32 @@ def run_agentic_planner_job(
             rows.append(digest)
         return rows[-max(1, int(limit or 1)):]
 
+    def _coverage_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = contract.get("minimum_read_coverage")
+        if isinstance(coverage, dict):
+            return coverage
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        coverage = final_contract.get("minimum_read_coverage")
+        return coverage if isinstance(coverage, dict) else {}
+
+    def _coverage_satisfied(contract: dict[str, Any] | None) -> bool:
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = _coverage_contract(contract)
+        if coverage:
+            return coverage.get("coverage_satisfied") is True
+        return contract.get("coverage_satisfied") is True
+
+    def _missing_owner_paths(contract: dict[str, Any] | None) -> list[str]:
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = _coverage_contract(contract)
+        raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
+        return [str(path) for path in raw] if isinstance(raw, list) else []
+
     def enrich_repeated_tool_guard_feedback(
         guard_result: dict[str, Any],
         planner_decision: dict[str, Any],
@@ -315,6 +341,35 @@ def run_agentic_planner_job(
                 guard_result["planner_may_choose_final"] = False
                 evidence_contract["required_next_progress"] = next_instruction
                 evidence_contract["planner_may_choose_final"] = False
+                operational = evidence_contract.get("operational_notes")
+                operational = operational if isinstance(operational, dict) else {}
+                operational["next_instruction"] = next_instruction
+                evidence_contract["operational_notes"] = operational
+                return
+            if not _coverage_satisfied(evidence_contract):
+                missing_paths = _missing_owner_paths(evidence_contract)
+                next_instruction = (
+                    "coverage_required_after_repeated_tool_result: minimum_read_coverage.coverage_satisfied=false. "
+                    "Do not final from the repeated tool result. Choose a different selective evidence-bound "
+                    f"read/search for missing_owner_paths {missing_paths[:12]}, or return a typed block."
+                )
+                guard_result["next_instruction"] = next_instruction
+                guard_result["required_next_progress"] = "coverage_required_after_repeated_tool_result"
+                guard_result["planner_may_choose_final"] = False
+                guard_result["coverage_satisfied"] = False
+                guard_result["missing_owner_paths"] = missing_paths
+                evidence_contract["required_next_progress"] = next_instruction
+                evidence_contract["planner_may_choose_final"] = False
+                final_contract = (
+                    evidence_contract.get("finalization_contract")
+                    if isinstance(evidence_contract.get("finalization_contract"), dict)
+                    else {}
+                )
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["coverage_satisfied"] = False
+                final_contract["missing_owner_paths"] = missing_paths
+                evidence_contract["finalization_contract"] = final_contract
                 operational = evidence_contract.get("operational_notes")
                 operational = operational if isinstance(operational, dict) else {}
                 operational["next_instruction"] = next_instruction
@@ -2160,8 +2215,39 @@ def run_agentic_planner_job(
         # No controller_auto_final here: the next planner step must inspect the
         # structured evidence and decide whether to continue, read more, or final.
 
+    terminal_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
+    if not _coverage_satisfied(terminal_contract):
+        missing_paths = _missing_owner_paths(terminal_contract)
+        return finalize_agentic_job(
+            job_id,
+            state,
+            "blocked_needs_attention",
+            (
+                f"coverage_required: max_steps reached ({max_steps}) before minimum "
+                "owner/core read coverage was satisfied."
+            ),
+            {
+                "history": history,
+                "blocked_by": "coverage_required",
+                "coverage_satisfied": False,
+                "missing_owner_paths": missing_paths,
+                "evidence_contract": terminal_contract,
+            },
+        )
     return finalize_agentic_job(
-        job_id, state, "max_steps_reached",
-        f"Max steps reached ({max_steps}) before planner produced a final answer.",
-        {"history": history},
+        job_id,
+        state,
+        "blocked_needs_attention",
+        (
+            f"planner_failed_to_finalize_with_coverage: max_steps reached ({max_steps}) "
+            "after minimum owner/core coverage was satisfied, but planner did not produce "
+            "a validator-accepted final/block decision."
+        ),
+        {
+            "history": history,
+            "blocked_by": "planner_failed_to_finalize_with_coverage",
+            "coverage_satisfied": True,
+            "missing_owner_paths": [],
+            "evidence_contract": terminal_contract,
+        },
     )

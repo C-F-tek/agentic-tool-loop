@@ -17,6 +17,39 @@ ResultToDict = Callable[[dict[str, Any]], dict[str, Any]]
 ValueCleaner = Callable[[Any], Any]
 
 
+def _coverage_status_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    contract = contract if isinstance(contract, dict) else {}
+    coverage = (
+        contract.get("minimum_read_coverage")
+        if isinstance(contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    return {
+        "schema": "minimum_read_coverage.public_status.v1",
+        "coverage_satisfied": (
+            coverage.get("coverage_satisfied")
+            if coverage else contract.get("coverage_satisfied")
+        ),
+        "required": coverage.get("required") if coverage else None,
+        "target_kind": coverage.get("target_kind") if coverage else None,
+        "required_count": coverage.get("required_count") if coverage else None,
+        "covered_count": coverage.get("covered_count") if coverage else None,
+        "missing_owner_paths": (
+            coverage.get("missing_owner_paths")
+            if coverage else contract.get("missing_owner_paths")
+        ) or [],
+        "covered_owner_paths": (
+            coverage.get("covered_owner_paths")
+            if coverage else contract.get("covered_owner_paths")
+        ) or [],
+        "candidate_owner_paths": (
+            coverage.get("candidate_owner_paths")
+            if coverage else contract.get("candidate_owner_paths")
+        ) or [],
+        "minimum_read_coverage": coverage,
+    }
+
+
 @dataclass(frozen=True)
 class OpenWebUIPayloadBuilder:
     """Owner for OpenWebUI-visible structured terminal context."""
@@ -110,6 +143,7 @@ class OpenWebUIPayloadBuilder:
         result_digest = self._compact_final_state_result(result)
         artifacts = self._public_tool_artifact_rows(history)
         evidence_contract = self._planner_evidence_contract(goal, history)
+        coverage_status = _coverage_status_from_contract(evidence_contract)
         context = {
             "type": "agentic_loop_complete_structured_context",
             "contract_type": "agentic_loop_complete_structured_context",
@@ -169,6 +203,8 @@ class OpenWebUIPayloadBuilder:
             "failed_tool_turns": turn_memory.get("failed_tool_turns", []),
             "evidence_contract_at_finish": evidence_contract,
             "evidence_contract_at_terminal": evidence_contract,
+            "coverage_status": coverage_status,
+            "minimum_read_coverage": coverage_status.get("minimum_read_coverage"),
             "planner_memory": state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else {},
             "controller_memory": controller_memory,
             "agent_flow_diagnostics": diagnostics,

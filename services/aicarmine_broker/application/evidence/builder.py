@@ -1031,6 +1031,152 @@ class EvidenceBuilder:
                 ):
                     candidates.insert(0, code_candidate)
 
+        def _append_owner_path(seq: list[str], raw_path: Any) -> None:
+            p = _repo_rel_token(raw_path)
+            if p and p != "." and p not in seq:
+                seq.append(p)
+
+        def _owner_core_readable_path(raw_path: Any) -> str:
+            p = _repo_rel_token(raw_path)
+            if (
+                not p
+                or p == "."
+                or _repo_doc_or_config(p)
+                or _low_signal_top_dir(p)
+                or not _path_exists_repo_relative(p)
+                or not _repo_readable_evidence_file(p)
+            ):
+                return ""
+            return p
+
+        owner_candidate_paths: list[str] = []
+        covered_owner_paths: list[str] = []
+        coverage_reason = "minimum owner/core read coverage satisfied"
+        coverage_required = not _input_error_goal(goal)
+        coverage_required_count = 1
+        coverage_target_kind = "generic"
+
+        if target_kind == "file" and target_file:
+            coverage_target_kind = "file"
+            _append_owner_path(owner_candidate_paths, target_file)
+            if target_file in verified_read_path_set:
+                _append_owner_path(covered_owner_paths, target_file)
+            coverage_reason = f"direct requested file coverage required for {target_file}"
+        elif target_scope:
+            coverage_target_kind = "scope"
+            coverage_required_count = max(1, int(scope_required_read_count or 1))
+            for path in scope_available_read_candidates:
+                _append_owner_path(owner_candidate_paths, path)
+            for path in scope_content_reads:
+                _append_owner_path(covered_owner_paths, path)
+            coverage_reason = (
+                f"scoped owner/core coverage requires {coverage_required_count} verified reads under {target_scope}"
+            )
+        elif code_security_coverage_required:
+            coverage_target_kind = "code_security"
+            coverage_required_count = max(1, int(code_security_read_required or 1))
+            for path in code_available_read_candidates:
+                _append_owner_path(owner_candidate_paths, path)
+            for path in code_reads:
+                _append_owner_path(covered_owner_paths, path)
+            coverage_reason = (
+                "code/security coverage requires verified source-code reads before final verdict"
+            )
+        elif goal_requests_apply_value and apply_target_files:
+            coverage_target_kind = "apply_targets"
+            coverage_required_count = max(1, len(apply_target_files))
+            for path in apply_target_files:
+                _append_owner_path(owner_candidate_paths, path)
+            for path in apply_verified_target_reads:
+                _append_owner_path(covered_owner_paths, path)
+            coverage_reason = "apply/write coverage requires verified reads of every concrete apply target"
+        elif repo_goal:
+            coverage_target_kind = "repo_owner_core"
+            coverage_required_count = 1 if orientative_repo_final_goal else max(1, min(repo_required_read_count, 10))
+            for raw_path in [
+                *repo_available_read_candidates,
+                *ranked_preplanner_paths,
+                *selected_preplanner_paths,
+                *all_listed_paths,
+            ]:
+                p = _owner_core_readable_path(raw_path)
+                if p:
+                    _append_owner_path(owner_candidate_paths, p)
+            for item in core_discovery_candidates:
+                if isinstance(item, dict):
+                    p = _owner_core_readable_path(item.get("path"))
+                    if p:
+                        _append_owner_path(owner_candidate_paths, p)
+            for path in meaningful_content_reads:
+                _append_owner_path(covered_owner_paths, path)
+            coverage_reason = (
+                "repository final coverage requires verified owner/core reads; preseed docs/config alone do not count"
+            )
+        else:
+            coverage_target_kind = "tool_evidence"
+            for path in [*verified_read_paths, *read_ok]:
+                _append_owner_path(owner_candidate_paths, path)
+            for path in verified_read_paths:
+                _append_owner_path(covered_owner_paths, path)
+            coverage_reason = "non-repository final coverage requires at least one verified concrete evidence read"
+
+        if not owner_candidate_paths:
+            for path in [*explicit_request_read_paths, *validator_admissible_read_paths]:
+                p = _owner_core_readable_path(path) or _repo_rel_token(path)
+                if p and p != ".":
+                    _append_owner_path(owner_candidate_paths, p)
+
+        covered_owner_set = set(covered_owner_paths)
+        missing_owner_paths = [
+            path for path in owner_candidate_paths
+            if path not in covered_owner_set
+        ][: max(1, int(coverage_required_count or 1))]
+        if len(covered_owner_paths) >= int(coverage_required_count or 0):
+            missing_owner_paths = []
+        coverage_satisfied = bool(
+            not coverage_required
+            or len(covered_owner_paths) >= int(coverage_required_count or 0)
+        )
+        preseed_read_paths = [
+            path for path in verified_read_paths
+            if path in set(ranked_preplanner_paths) or path in set(selected_preplanner_paths)
+        ]
+        minimum_read_coverage = {
+            "schema": "minimum_read_coverage.v1",
+            "owner": "application.evidence.builder",
+            "required": coverage_required,
+            "coverage_satisfied": coverage_satisfied,
+            "target_kind": coverage_target_kind,
+            "required_count": int(coverage_required_count or 0),
+            "covered_count": len(covered_owner_paths),
+            "covered_owner_paths": covered_owner_paths[:120],
+            "missing_owner_paths": missing_owner_paths[:120],
+            "candidate_owner_paths": owner_candidate_paths[:160],
+            "reason": coverage_reason,
+            "preseed_final_coverage_auto": False,
+            "initial_evidence": {
+                "ranked_preplanner_paths": ranked_preplanner_paths[:80],
+                "selected_preplanner_paths": selected_preplanner_paths[:80],
+                "preseed_read_paths": preseed_read_paths[:80],
+                "preseed_covered_owner_paths": [
+                    path for path in preseed_read_paths
+                    if path in covered_owner_set
+                ][:80],
+                "preseed_may_contribute_only_when_owner_core": True,
+            },
+            "non_covering_sources": {
+                "answer_chunk_satisfies_coverage": False,
+                "memory_write_satisfies_coverage": False,
+                "native_history_transport_satisfies_coverage": False,
+            },
+        }
+        if coverage_required and not coverage_satisfied:
+            final_allowed = False
+            final_reason = (
+                "coverage_required: minimum_read_coverage.coverage_satisfied=false; "
+                + coverage_reason
+            )
+
         validation_rejections: list[dict[str, Any]] = []
         for item in history if isinstance(history, list) else []:
             result = item.get("tool_result") if isinstance(item, dict) and isinstance(item.get("tool_result"), dict) else {}
@@ -1156,6 +1302,11 @@ class EvidenceBuilder:
             "ranked_core_candidate_dirs": core_candidates,
             "candidate_next_actions": candidates,
             "disallowed_next_decision_signatures": disallowed_invalid_decision_signatures,
+            "minimum_read_coverage": minimum_read_coverage,
+            "coverage_satisfied": coverage_satisfied,
+            "covered_owner_paths": covered_owner_paths[:120],
+            "missing_owner_paths": missing_owner_paths[:120],
+            "candidate_owner_paths": owner_candidate_paths[:160],
             "planner_may_choose_final": final_allowed,
             "read_admissible_paths": validator_admissible_read_paths[:400],
             "validator_admissible_repo_read_paths": validator_admissible_read_paths[:400],
@@ -1205,6 +1356,10 @@ class EvidenceBuilder:
                 "final_allowed": final_allowed,
                 "reason": final_reason,
                 "planner_may_choose_final": final_allowed,
+                "coverage_satisfied": coverage_satisfied,
+                "minimum_read_coverage": minimum_read_coverage,
+                "missing_owner_paths": missing_owner_paths[:120],
+                "covered_owner_paths": covered_owner_paths[:120],
                 "controller_must_not_auto_final": True,
                 "final_is_not_required": True,
                 "verified_content_read_count": len(verified_read_rows),
@@ -1248,6 +1403,10 @@ class EvidenceBuilder:
                 "code_reads": code_reads[:80],
                 "code_security_coverage_required": code_security_coverage_required,
                 "code_security_verdict_allowed": code_security_coverage_sufficient,
+                "coverage_satisfied": coverage_satisfied,
+                "minimum_read_coverage": minimum_read_coverage,
+                "missing_owner_paths": missing_owner_paths[:80],
+                "covered_owner_paths": covered_owner_paths[:80],
                 "meaningful_non_root_list_count": len(meaningful_lists),
                 "meaningful_non_root_lists": meaningful_lists[:20],
                 "ranked_meaningful_content_reads": ranked_meaningful_content_reads[:40],
@@ -1615,6 +1774,12 @@ class EvidenceBuilder:
                 "Structured explicit_request_context target is pending. Planner must call "
                 f"{explicit_request_tool} with target_arguments from explicit_request_context, or return a typed "
                 "block/unavailable result if that tool cannot be run. Do not produce final before this target is covered."
+            )
+        elif coverage_required and not coverage_satisfied:
+            contract["required_next_progress"] = (
+                "coverage_required: minimum_read_coverage.coverage_satisfied=false. "
+                "Planner must choose selective repo_read/repo_search/repo_list_files progress for "
+                f"missing_owner_paths={missing_owner_paths[:20]}, or return a typed block. Do not final."
             )
         elif final_allowed:
             contract["required_next_progress"] = (

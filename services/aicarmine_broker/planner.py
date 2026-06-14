@@ -544,6 +544,10 @@ def _windowed_evidence_contract_for_prompt(
             "resolved_goal_scope",
             "successful_repo_read_count",
             "verified_content_read_count",
+            "minimum_read_coverage",
+            "coverage_satisfied",
+            "covered_owner_paths",
+            "missing_owner_paths",
             "planner_may_choose_final",
             "required_next_progress",
         ):
@@ -868,49 +872,50 @@ def _optional_context_for_prompt(
     if not compact_mode:
         return optional
     tool_payload_windows: list[dict[str, Any]] = []
-    for row in reversed(history if isinstance(history, list) else []):
-        result = _history_tool_result(row)
-        if not result.get("ok"):
-            continue
-        if result.get("tool") == "controller_guard":
-            continue
-        raw_payload = _same_tool_artifact_payload(result)
-        if not isinstance(raw_payload, dict):
-            continue
-        raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
-        if not raw_text.strip():
-            continue
-        window = _store_prompt_text_window(
-            root,
-            section=f"tool_result:{row.get('step')}:{result.get('tool')}",
-            text=raw_text,
-            query=goal,
-            max_chars=window_chars,
-            metadata={
-                "kind": "successful_tool_result_payload",
+    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+        for row in reversed(history if isinstance(history, list) else []):
+            result = _history_tool_result(row)
+            if not result.get("ok"):
+                continue
+            if result.get("tool") == "controller_guard":
+                continue
+            raw_payload = _same_tool_artifact_payload(result)
+            if not isinstance(raw_payload, dict):
+                continue
+            raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
+            if not raw_text.strip():
+                continue
+            window = _store_prompt_text_window(
+                root,
+                section=f"tool_result:{row.get('step')}:{result.get('tool')}",
+                text=raw_text,
+                query=goal,
+                max_chars=window_chars,
+                metadata={
+                    "kind": "successful_tool_result_payload",
+                    "step": row.get("step"),
+                    "tool": result.get("tool"),
+                    "format": "json",
+                },
+            )
+            item = {
                 "step": row.get("step"),
                 "tool": result.get("tool"),
-                "format": "json",
-            },
-        )
-        item = {
-            "step": row.get("step"),
-            "tool": result.get("tool"),
-            "window": window,
-        }
-        if window.get("document_id") and window.get("has_more_after") is True:
-            item["planner_can_request_more"] = {
-                "tool": "planner_scratchpad_read",
-                "arguments": {
-                    "kind": "prompt_context_window",
-                    "document_id": window.get("document_id"),
-                    "offset": window.get("window_end"),
-                    "max_chars": window_chars,
-                },
+                "window": window,
             }
-        tool_payload_windows.append(item)
-        if len(tool_payload_windows) >= 4:
-            break
+            if window.get("document_id") and window.get("has_more_after") is True:
+                item["planner_can_request_more"] = {
+                    "tool": "planner_scratchpad_read",
+                    "arguments": {
+                        "kind": "prompt_context_window",
+                        "document_id": window.get("document_id"),
+                        "offset": window.get("window_end"),
+                        "max_chars": window_chars,
+                    },
+                }
+            tool_payload_windows.append(item)
+            if len(tool_payload_windows) >= 4:
+                break
     if tool_payload_windows:
         optional["successful_tool_payload_windows"] = list(reversed(tool_payload_windows))
     return {
@@ -3488,6 +3493,10 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
         "resolved_goal_scope",
         "successful_repo_read_count",
         "verified_content_read_count",
+        "minimum_read_coverage",
+        "coverage_satisfied",
+        "covered_owner_paths",
+        "missing_owner_paths",
         "planner_may_choose_final",
         "required_next_progress",
     ):

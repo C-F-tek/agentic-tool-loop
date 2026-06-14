@@ -462,6 +462,16 @@ def controller_preplanner_rag_query_plan(
     }
     if not _env_bool("AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_ENABLED", True):
         return {**report, "status": "failed", "reason": "semantic_intent_preplanner_disabled"}
+    query_planner_num_ctx = _env_int_optional(
+        "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_CTX",
+        minimum=2048,
+    )
+    report["planner_num_ctx"] = query_planner_num_ctx
+    report["planner_num_ctx_source"] = (
+        "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_CTX"
+        if query_planner_num_ctx is not None
+        else "ollama_default_or_modelfile"
+    )
 
     static_goal_class_hint = _preplanner_goal_class(goal)
     focus = [
@@ -617,6 +627,17 @@ def controller_preplanner_rag_query_plan(
                     "keyword fallbacks. Resolve contradictions from meaning."
                 ),
             }
+        options: dict[str, Any] = {
+            "temperature": 0,
+            "num_predict": _env_int(
+                "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_PREDICT",
+                512,
+                minimum=128,
+                maximum=2048,
+            ),
+        }
+        if query_planner_num_ctx is not None:
+            options["num_ctx"] = query_planner_num_ctx
         return {
             "model": planner_model,
             "stream": False,
@@ -627,16 +648,7 @@ def controller_preplanner_rag_query_plan(
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(request_payload, ensure_ascii=False, indent=2)},
             ],
-            "options": {
-                "temperature": 0,
-                "num_ctx": max(2048, min(int(num_ctx or 4096), 8192)),
-                "num_predict": _env_int(
-                    "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_PREDICT",
-                    512,
-                    minimum=128,
-                    maximum=2048,
-                ),
-            },
+            "options": options,
         }
 
     attempts = _env_int(
@@ -810,6 +822,17 @@ def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
     except Exception:
         return default
     return max(minimum, min(maximum, value))
+
+
+def _env_int_optional(name: str, *, minimum: int) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = int(raw)
+    except Exception:
+        return None
+    return max(minimum, value)
 
 
 def _env_float(name: str, default: float, *, minimum: float, maximum: float) -> float:

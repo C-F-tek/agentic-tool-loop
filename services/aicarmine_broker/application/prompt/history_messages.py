@@ -140,6 +140,7 @@ def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[
     contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
     rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
     operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
+    coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
     content = rejected.get("content")
     payload: dict[str, Any] = {
         "schema": "planner_controller_guard_history.v1",
@@ -155,11 +156,64 @@ def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[
         "rejected_content_keys": list(content.keys()) if isinstance(content, dict) else None,
         "required_next_progress": contract.get("required_next_progress"),
         "planner_may_choose_final": contract.get("planner_may_choose_final"),
+        "coverage_satisfied": contract.get("coverage_satisfied"),
+        "missing_owner_paths": contract.get("missing_owner_paths"),
+        "covered_owner_paths": contract.get("covered_owner_paths"),
+        "minimum_read_coverage": {
+            "required": coverage.get("required"),
+            "coverage_satisfied": coverage.get("coverage_satisfied"),
+            "target_kind": coverage.get("target_kind"),
+            "required_count": coverage.get("required_count"),
+            "covered_count": coverage.get("covered_count"),
+            "missing_owner_paths": coverage.get("missing_owner_paths"),
+            "covered_owner_paths": coverage.get("covered_owner_paths"),
+            "reason": coverage.get("reason"),
+        } if coverage else None,
         "next_instruction": result.get("next_instruction") or operational.get("next_instruction"),
         "successful_repo_read_count": contract.get("successful_repo_read_count"),
         "verified_content_read_count": contract.get("verified_content_read_count"),
     }
     return drop_empty_dict_values(clean_planner_history_value(payload))
+
+
+def planner_repo_read_history_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    items = result.get("items") if isinstance(result.get("items"), list) else []
+    successful_items = [
+        row
+        for row in items
+        if isinstance(row, dict) and row.get("ok") and row.get("path") not in (None, "")
+    ]
+    read_items = [
+        drop_empty_dict_values(
+            {
+                "path": row.get("path"),
+                "line_count": row.get("line_count"),
+                "truncated": row.get("truncated"),
+            }
+        )
+        for row in successful_items[:80]
+    ]
+    payload: dict[str, Any] = {
+        "schema": "planner_repo_read_history_digest.v1",
+        "step": item.get("step"),
+        "substep": item.get("substep"),
+        "tool": "repo_read",
+        "ok": result.get("ok"),
+        "reason": planner_history_reason(item, result),
+        "arguments": planner_history_arguments(item, result),
+        "count": result.get("count", len(items)),
+        "success_count": result.get("success_count", len(successful_items)),
+        "failed_count": result.get("failed_count"),
+        "read_items": read_items,
+        "content_transport": {
+            "full_content_not_repeated_in_history": True,
+            "primary_context": "required_working_set.repo_reads",
+            "history_contains_path_listing_only": True,
+            "planner_can_use_required_working_set_or_read_selectively": True,
+            "artifact_payload_available": bool(result.get("artifact")),
+        },
+    }
+    return drop_empty_dict_values(payload)
 
 
 def planner_history_evidence_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -199,6 +253,8 @@ def planner_tool_result_message_payload(
         if isinstance(decision.get("arguments"), dict):
             direct_payload["arguments"] = decision.get("arguments")
         return direct_payload
+    if tool == "repo_read":
+        return planner_repo_read_history_payload(item, result)
     if tool == "controller_guard":
         return planner_controller_guard_history_payload(item, result)
     raw_payload = planner_history_evidence_payload(item, result)

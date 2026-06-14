@@ -17,6 +17,13 @@ def _dict_from_mapping(value: Any) -> dict[str, Any]:
     return {str(key): item for key, item in value.items()}
 
 
+def _contract_coverage_satisfied(contract: dict[str, Any]) -> bool:
+    coverage = _dict_from_mapping(contract.get("minimum_read_coverage"))
+    if coverage:
+        return coverage.get("coverage_satisfied") is True
+    return contract.get("coverage_satisfied") is True
+
+
 def _planner_step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str, Any]:
     guidance = state.get("planner_step_budget_guidance")
     if not isinstance(guidance, dict):
@@ -37,7 +44,8 @@ def _apply_step_budget_guidance_to_contract(
 
     out = _dict_from_mapping(contract)
     final_contract = _dict_from_mapping(out.get("finalization_contract"))
-    final_allowed = final_contract.get("final_allowed") is True
+    coverage_satisfied = _contract_coverage_satisfied(out)
+    final_allowed = final_contract.get("final_allowed") is True and coverage_satisfied
     mode = str(guidance.get("mode") or "")
     guidance_payload = {
         "schema": "planner_step_budget_guidance.v1",
@@ -46,6 +54,8 @@ def _apply_step_budget_guidance_to_contract(
         "max_steps": guidance.get("max_steps"),
         "remaining_steps": guidance.get("remaining_steps"),
         "final_allowed_by_evidence_contract": final_allowed,
+        "coverage_satisfied": coverage_satisfied,
+        "missing_owner_paths": out.get("missing_owner_paths"),
         "controller_does_not_auto_final": True,
     }
     out["planner_step_budget_guidance"] = guidance_payload
@@ -93,6 +103,10 @@ def _apply_step_budget_guidance_to_contract(
     final_contract["tool_calls_disallowed_by_step_budget"] = True
     final_contract["planner_may_choose_final"] = final_allowed
     final_contract["planner_may_choose_block"] = True
+    final_contract["coverage_satisfied"] = coverage_satisfied
+    if not coverage_satisfied:
+        final_contract["final_allowed"] = False
+        final_contract["missing_owner_paths"] = out.get("missing_owner_paths")
     out["finalization_contract"] = final_contract
     out["planner_may_choose_block"] = True
     out["planner_may_choose_final"] = final_allowed
@@ -107,6 +121,12 @@ def _apply_step_budget_guidance_to_contract(
             "If a robust conclusion is impossible from the available evidence, produce "
             "action=block with final_answer explaining the evidence gaps and the exact next "
             "proof needed. Do not call another tool."
+        )
+    elif not coverage_satisfied:
+        required_next_progress = (
+            "coverage_required: step budget is exhausted before max_steps_reached, "
+            "but minimum_read_coverage.coverage_satisfied=false. Produce action=block "
+            "with missing_owner_paths and the exact selective read/search needed; do not final."
         )
     else:
         required_next_progress = (

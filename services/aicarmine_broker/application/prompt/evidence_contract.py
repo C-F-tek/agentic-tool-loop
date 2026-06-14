@@ -25,6 +25,11 @@ EVIDENCE_PROMPT_KEEP_KEYS = (
     "initial_orientation_surface",
     "candidate_next_actions",
     "micro_batch_contract",
+    "minimum_read_coverage",
+    "coverage_satisfied",
+    "covered_owner_paths",
+    "missing_owner_paths",
+    "candidate_owner_paths",
     "planner_may_choose_final",
     "code_product_contract",
     "finalization_contract",
@@ -140,6 +145,10 @@ def hard_budget_evidence_contract_summary(
         "resolved_goal_scope",
         "successful_repo_read_count",
         "verified_content_read_count",
+        "minimum_read_coverage",
+        "coverage_satisfied",
+        "covered_owner_paths",
+        "missing_owner_paths",
         "planner_may_choose_final",
         "required_next_progress",
     ):
@@ -150,7 +159,13 @@ def hard_budget_evidence_contract_summary(
     if isinstance(final_contract, dict):
         compact["finalization_contract"] = {
             key: prompt_clip_value(final_contract.get(key), text_limit=260, list_limit=4)
-            for key in ("final_allowed", "planner_may_choose_final", "reason")
+            for key in (
+                "final_allowed",
+                "planner_may_choose_final",
+                "coverage_satisfied",
+                "missing_owner_paths",
+                "reason",
+            )
             if final_contract.get(key) not in (None, "", [], {})
         }
     code_contract = contract.get("code_product_contract")

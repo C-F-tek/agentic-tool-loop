@@ -10,6 +10,7 @@ Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt 
 Non usare tag o formati notebook/cella come <JupyterNotebookCell>, blocchi Python, notebook nativi o pseudo-tool non elencati: il runtime accetta solo un oggetto JSON puro.
 Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.
 Azioni consentite: tool, final, block.
+Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths oppure action=block tipizzato. Native history transport e memoria non decidono mai coverage.
 Se evidence_contract.finalization_contract.final_allowed=true devi preferire action=final, ma solo dopo avere letto almeno un file concreto nell'area core che stai descrivendo.
 Un final valido per analisi repository deve usare evidence_contract.operational_notes.read_notes e file_memory:
 - workflow/canonical entry;

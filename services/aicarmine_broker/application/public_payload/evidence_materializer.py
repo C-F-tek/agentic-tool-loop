@@ -210,6 +210,43 @@ def _partial_priority_items(tool_context: dict[str, Any]) -> list[dict[str, Any]
     return out
 
 
+def _coverage_priority_item(tool_context: dict[str, Any]) -> dict[str, Any]:
+    coverage = _as_dict(tool_context.get("coverage_status"))
+    if not coverage:
+        contract = _as_dict(
+            tool_context.get("evidence_contract_at_terminal")
+            or tool_context.get("evidence_contract_at_finish")
+        )
+        coverage = _as_dict(contract.get("minimum_read_coverage"))
+        if not coverage and contract:
+            coverage = {
+                "coverage_satisfied": contract.get("coverage_satisfied"),
+                "missing_owner_paths": contract.get("missing_owner_paths"),
+                "covered_owner_paths": contract.get("covered_owner_paths"),
+            }
+    if not coverage or coverage.get("coverage_satisfied") is not False:
+        return {}
+    return _clean({
+        "kind": "coverage_gap",
+        "payload_type": "coverage_status",
+        "payload_is_complete": False,
+        "validator_accepted": False,
+        "coverage_satisfied": False,
+        "required": coverage.get("required"),
+        "target_kind": coverage.get("target_kind"),
+        "required_count": coverage.get("required_count"),
+        "covered_count": coverage.get("covered_count"),
+        "missing_owner_paths": coverage.get("missing_owner_paths"),
+        "covered_owner_paths": coverage.get("covered_owner_paths"),
+        "candidate_owner_paths": coverage.get("candidate_owner_paths"),
+        "minimum_read_coverage": coverage.get("minimum_read_coverage") or coverage,
+        "role": (
+            "gap di copertura: non trattare questo payload come completato; "
+            "serve una lettura/search selettiva o un block tipizzato"
+        ),
+    })
+
+
 def _context_location(tool_context: dict[str, Any], item: dict[str, Any]) -> str:
     kind = str(item.get("kind") or "")
     target_file = str(item.get("target_file") or "")
@@ -341,6 +378,19 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
                 "l'artifact indicato senza richiamare il tool"
             ),
         })
+    if kind == "coverage_gap":
+        return _clean({
+            "kind": "partial_coverage_gap",
+            "payload_type": "coverage_status",
+            "payload_is_complete": False,
+            "validator_accepted": False,
+            "coverage_satisfied": False,
+            "primary_location": f"{base}.missing_owner_paths",
+            "full_context_location": base,
+            "missing_owner_paths": item.get("missing_owner_paths"),
+            "covered_owner_paths": item.get("covered_owner_paths"),
+            "role": "coverage_satisfied=false: non trasformare in completed",
+        })
     return {}
 
 
@@ -415,6 +465,8 @@ def _owner_for_priority_item(item: dict[str, Any], row: dict[str, Any] | None = 
         return "application.code_product", "code_product"
     if kind.startswith("partial_"):
         return "application.public_payload", "partial_terminal_payload"
+    if kind == "coverage_gap":
+        return "application.evidence", "minimum_read_coverage"
     if kind == "tool_result_inline":
         return "application.tool_surface", "tool_result"
     return "application.public_payload", "generic_payload"
@@ -518,8 +570,10 @@ class PublicEvidenceMaterializer:
         internal_job_status: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         context = _as_dict(tool_context)
-        priority = self._priority_evidence(context, evidence_guide, completed=completed)
-        payload_index = self._payload_index(priority, context, completed=completed)
+        coverage_missing = bool(_coverage_priority_item(context))
+        effective_completed = bool(completed and not coverage_missing)
+        priority = self._priority_evidence(context, evidence_guide, completed=effective_completed)
+        payload_index = self._payload_index(priority, context, completed=effective_completed)
         if isinstance(internal_job_status, dict) and internal_job_status:
             payload_index["internal_job_status"] = _clean(internal_job_status)
         primary_payload = _primary_payload_descriptor(priority, payload_index)
@@ -558,8 +612,11 @@ class PublicEvidenceMaterializer:
             if item
         ]
         partial_items = _partial_priority_items(tool_context)
+        coverage_item = _coverage_priority_item(tool_context)
         analysis_item = _analysis_priority_item(tool_context, evidence_guide)
         items: list[dict[str, Any]] = []
+        if coverage_item:
+            items.append(coverage_item)
         if completed:
             items.extend(artifact_items)
             items.extend(generic_artifact_items)
