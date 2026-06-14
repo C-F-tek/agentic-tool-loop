@@ -138,6 +138,12 @@ def planner_history_reason(item: dict[str, Any], result: dict[str, Any]) -> str:
 
 def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
+    if not contract:
+        contract = (
+            result.get("evidence_contract_summary")
+            if isinstance(result.get("evidence_contract_summary"), dict)
+            else {}
+        )
     rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
     operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
     coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}

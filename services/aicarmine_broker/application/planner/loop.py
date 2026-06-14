@@ -7,6 +7,10 @@ import traceback
 from typing import Any, Mapping
 
 from .state import PlannerLoopState
+from ..shared.evidence_contract_summary import (
+    evidence_contract_summary_triplet,
+    validation_without_full_evidence_contract,
+)
 from ..tool_surface.batch_contract import canonical_batch_args as _canonical_batch_args
 from ..tool_surface.batch_contract import canonical_batch_call_key
 
@@ -328,6 +332,12 @@ def run_agentic_planner_job(
         internal_args = sanitize_tool_args(tool, dict(raw_args), original_args, public_tool_name)
         prior_results = successful_prior_tool_results_for_feedback(tool, internal_args)
         evidence_contract = guard_result.get("evidence_contract")
+        if not isinstance(evidence_contract, dict):
+            evidence_contract = (
+                validation.get("evidence_contract")
+                if isinstance(validation.get("evidence_contract"), dict)
+                else {}
+            )
         if isinstance(evidence_contract, dict):
             required = _dict_field(evidence_contract, "required_next_tool_call")
             if required.get("tool") == "planner_scratchpad_read":
@@ -853,13 +863,70 @@ def run_agentic_planner_job(
             "limit": 12,
             "target_key": _controller_memory_target_key(goal_text, contract_snapshot),
         }, root)
+        successful_paths = (
+            contract_snapshot.get("successful_repo_read_paths")
+            if isinstance(contract_snapshot.get("successful_repo_read_paths"), list)
+            else []
+        )
+        candidate_actions = (
+            contract_snapshot.get("candidate_next_actions")
+            if isinstance(contract_snapshot.get("candidate_next_actions"), list)
+            else []
+        )
+        file_memory = (
+            contract_snapshot.get("file_memory")
+            if isinstance(contract_snapshot.get("file_memory"), list)
+            else []
+        )
+        rejections_tail = (
+            contract_snapshot.get("validation_rejections_tail")
+            if isinstance(contract_snapshot.get("validation_rejections_tail"), list)
+            else []
+        )
+        candidate_action_preview = []
+        for action in candidate_actions[:6]:
+            if not isinstance(action, dict):
+                continue
+            candidate_action_preview.append({
+                key: action.get(key)
+                for key in ("action_id", "tool", "arguments", "reason")
+                if action.get(key) not in (None, "", [], {})
+            })
+        planner_memory_records = memory_snapshot.get("records") if isinstance(memory_snapshot.get("records"), list) else []
+        operational_notes = (
+            contract_snapshot.get("operational_notes")
+            if isinstance(contract_snapshot.get("operational_notes"), dict)
+            else {}
+        )
+        operational_notes_compact = {
+            key: (
+                str(operational_notes.get(key))[:900]
+                if isinstance(operational_notes.get(key), str)
+                else operational_notes.get(key)
+            )
+            for key in (
+                "final_allowed",
+                "next_instruction",
+                "required_next_progress",
+                "step_budget_hint",
+            )
+            if operational_notes.get(key) not in (None, "", [], {})
+        }
+        contract_snapshot_summary, contract_snapshot_chars, contract_snapshot_sha256 = (
+            evidence_contract_summary_triplet(
+                contract_snapshot,
+                schema="planner_evidence_contract_history_summary.v1",
+            )
+        )
         state.update({
             "current_step": step,
             "semantic_step": semantic_step,
             "support_subturns_used": support_subturns_used,
             "support_semantic_turns_used": support_semantic_turns_used,
             "status_message": "planning next action",
-            "evidence_contract": contract_snapshot,
+            "evidence_contract": contract_snapshot_summary,
+            "evidence_contract_chars": contract_snapshot_chars,
+            "evidence_contract_sha256": contract_snapshot_sha256,
             "planner_memory_surface": memory_snapshot,
             "working_memory_for_30b": {
                 "schema": "agentic_loop_operational_memory.v1",
@@ -867,15 +934,29 @@ def run_agentic_planner_job(
                 "physical_step": step,
                 "semantic_step": semantic_step,
                 "history_count": len(history),
-                "successful_repo_read_paths": contract_snapshot.get("successful_repo_read_paths", []),
+                "successful_repo_read_paths": successful_paths[-24:],
+                "successful_repo_read_path_count": len(successful_paths),
                 "latest_repo_list_path": (contract_snapshot.get("repo_list_files_evidence") or [{}])[-1].get("path") if contract_snapshot.get("repo_list_files_evidence") else None,
-                "candidate_next_actions": contract_snapshot.get("candidate_next_actions", []),
-                "file_memory": contract_snapshot.get("file_memory", []),
-                "operational_notes": contract_snapshot.get("operational_notes", {}),
-                "planner_memory": memory_snapshot,
+                "candidate_next_actions": candidate_action_preview,
+                "candidate_next_action_count": len(candidate_actions),
+                "file_memory_count": len(file_memory),
+                "file_memory_paths": [
+                    row.get("path")
+                    for row in file_memory[:20]
+                    if isinstance(row, dict) and row.get("path") not in (None, "")
+                ],
+                "operational_notes": operational_notes_compact,
+                "planner_memory": {
+                    "schema": memory_snapshot.get("schema"),
+                    "available": bool(memory_snapshot),
+                    "record_count": len(planner_memory_records),
+                    "target_key": memory_snapshot.get("target_key"),
+                    "records_omitted_from_working_memory": True,
+                },
                 "finalization_contract": contract_snapshot.get("finalization_contract", {}),
                 "codex_quality": contract_snapshot.get("agentic_codex_quality", {}),
-                "rejections_tail": contract_snapshot.get("validation_rejections_tail", []),
+                "rejection_count": len(rejections_tail),
+                "rejections_tail": rejections_tail[-6:],
                 "planner_step_budget_guidance": step_budget_guidance,
             },
         })
@@ -1224,6 +1305,11 @@ def run_agentic_planner_job(
                                 repair_result["repaired_decision"]
                             )
                             if _native_required_repaired_tool_decision_disallowed(repaired_decision):
+                                validation_for_debug = validation_without_full_evidence_contract({
+                                    "ok": False,
+                                    "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
+                                    "evidence_contract": validation_i.get("evidence_contract"),
+                                })
                                 batch_guard = {
                                     "tool": "controller_guard",
                                     "ok": True,
@@ -1231,15 +1317,14 @@ def run_agentic_planner_job(
                                     "summary": "vulkan_repair_tool_decision_disallowed_in_native_mode",
                                     "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
                                     "rejected_decision": call_decision,
+                                    "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
+                                    "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
+                                    "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
                                     "runtime_debug_packet": runtime_debug_packet(
                                         step_number=step,
                                         phase="CONTROLLER_GUARD",
                                         planner_decision=call_decision,
-                                        validation={
-                                            "ok": False,
-                                            "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
-                                            "evidence_contract": validation_i.get("evidence_contract"),
-                                        },
+                                        validation=validation_for_debug,
                                         extra={"repaired_decision_disallowed": True},
                                     ),
                                     "vulkan_repair": repair_result,
@@ -1520,6 +1605,7 @@ def run_agentic_planner_job(
                 and _planner_incomprehensible_retry_count(history) < int(retry_limit)
             ):
                 retry_count = _planner_incomprehensible_retry_count(history)
+                validation_for_debug = validation_without_full_evidence_contract(validation)
                 guard_result = {
                     "tool": "controller_guard",
                     "ok": True,
@@ -1545,12 +1631,14 @@ def run_agentic_planner_job(
                         for k in ("action", "tool", "arguments", "reason", "final_answer")
                         if decision.get(k) not in (None, "", [], {})
                     },
-                    "evidence_contract": validation.get("evidence_contract"),
+                    "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
+                    "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
+                    "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
                     "runtime_debug_packet": runtime_debug_packet(
                         step_number=step,
                         phase="CONTROLLER_GUARD",
                         planner_decision=decision,
-                        validation=validation,
+                        validation=validation_for_debug,
                         extra={"guard_type": "planner_memory_false_unavailable_claim"},
                     ),
                 }
@@ -1585,6 +1673,7 @@ def run_agentic_planner_job(
             ):
                 output_classification = _raw_planner_text_classification(raw_planner_text)
                 retry_count = _planner_incomprehensible_retry_count(history)
+                validation_for_debug = validation_without_full_evidence_contract(validation)
                 guard_result = {
                     "tool": "controller_guard",
                     "ok": True,
@@ -1605,12 +1694,14 @@ def run_agentic_planner_job(
                         for k in ("action", "tool", "arguments", "reason", "final_answer")
                         if decision.get(k) not in (None, "", [], {})
                     },
-                    "evidence_contract": validation.get("evidence_contract"),
+                    "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
+                    "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
+                    "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
                     "runtime_debug_packet": runtime_debug_packet(
                         step_number=step,
                         phase="CONTROLLER_GUARD",
                         planner_decision=decision,
-                        validation=validation,
+                        validation=validation_for_debug,
                         extra={"guard_type": "planner_retry_required"},
                     ),
                 }
@@ -1979,6 +2070,7 @@ def run_agentic_planner_job(
                     },
                     step=step,
                 )
+                validation_for_debug = validation_without_full_evidence_contract(validation)
                 row = {
                     "step": step,
                     "decision": {
@@ -1996,12 +2088,14 @@ def run_agentic_planner_job(
                         "guard_type": "vulkan_decision_repair",
                         "summary": "vulkan_gpu0_11435_repaired_invalid_planner_emission",
                         "violations": validation.get("violations"),
-                        "evidence_contract": validation.get("evidence_contract"),
+                        "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
+                        "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
+                        "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
                         "runtime_debug_packet": runtime_debug_packet(
                             step_number=step,
                             phase="CONTROLLER_GUARD",
                             planner_decision=decision,
-                            validation=validation,
+                            validation=validation_for_debug,
                             extra={"guard_type": "vulkan_decision_repair"},
                         ),
                         "vulkan_repair": {

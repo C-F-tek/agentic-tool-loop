@@ -51,7 +51,9 @@ def validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, A
                 "step": item.get("step"),
                 "violations": result.get("violations"),
                 "rejected_decision": result.get("rejected_decision"),
-                "evidence_contract": result.get("evidence_contract"),
+                "evidence_contract_summary": result.get("evidence_contract_summary"),
+                "evidence_contract_sha256": result.get("evidence_contract_sha256"),
+                "evidence_contract_chars": result.get("evidence_contract_chars"),
                 "summary": result.get("summary"),
             }.items()
             if value not in (None, "", [], {})

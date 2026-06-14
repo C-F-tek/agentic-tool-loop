@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .response_values import compact_text, event_digest, strip_narrative_duplicates_from_context
+from ..shared.evidence_contract_summary import compact_evidence_contract_summary
 from ..public_payload.history_ledger import build_public_result_digest
 from ..public_payload.evidence_materializer import materialize_public_evidence
 from ..public_payload.field_names import normalize_public_payload_field_names
@@ -216,7 +217,11 @@ def _build_evidence_guide_for_30b(
     lines = [
         "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
         "Il testo sintetico non e' una risposta sostitutiva: usalo come indice per leggere il payload.",
-        "Per rispondere in modo dettagliato usa prima payload_index_for_30b e priority_evidence_for_30b, poi tool_context_for_30b.",
+        (
+            "Ordine di lettura: primary_payload_for_30b.primary_location, "
+            "payload_index_for_30b.concrete_results, poi "
+            "tool_context_for_30b.artifacts[*].artifact per il payload completo."
+        ),
         f"status={status}; artifacts={len(artifacts)}; history_rows={len(history)}",
         f"richiesta_utente={str(goal or '').strip()}",
     ]
@@ -242,7 +247,7 @@ def _build_evidence_guide_for_30b(
         lines.extend(["", "Sommario/risposta del planner da usare come guida:", str(answer).strip()])
     elif summary:
         lines.extend(["", "Sommario terminale da usare come guida:", str(summary).strip()])
-    if evidence_digest and not terminal_has_evidence:
+    if evidence_digest and not terminal_has_evidence and status != "completed":
         lines.extend(["", "Evidenza eseguita inline:", evidence_digest])
     return public_terminal_sanitize_text(compact_text("\n".join(lines), limit))
 
@@ -418,7 +423,7 @@ def build_compact_terminal_response(
                 "evidence_guide_for_30b",
                 "primary_payload_for_30b.primary_location",
                 "payload_index_for_30b.concrete_results",
-                "priority_evidence_for_30b.items[0].content",
+                "payload_index_for_30b.concrete_results[*].primary_location",
                 "tool_context_for_30b.artifacts[*].artifact",
             ],
             "primary_payload_field": "primary_payload_for_30b",
@@ -432,7 +437,7 @@ def build_compact_terminal_response(
                 "OpenWebUI cannot read local filesystem paths. Start from "
                 "evidence_guide_for_30b, then primary_payload_for_30b for the "
                 "owner-selected useful inline field, then payload_index_for_30b "
-                "and priority_evidence_for_30b. Only after that use "
+                "and the metadata in priority_evidence_for_30b. Only after that use "
                 "tool_context_for_30b.artifacts[*].artifact as the full mirror. "
                 "The guide and primary descriptor are navigation, not substitutes "
                 "for the referenced concrete payload."
@@ -475,6 +480,10 @@ def build_compact_terminal_response(
     )
     if not isinstance(evidence_contract, dict):
         evidence_contract = {}
+    evidence_contract = compact_evidence_contract_summary(
+        evidence_contract,
+        schema="planner_evidence_contract_terminal_summary.v1",
+    )
     planner_emission_interpreter = (
         state.get("planner_emission_interpreter")
         or final_data.get("planner_emission_interpreter")
@@ -539,6 +548,7 @@ def build_compact_terminal_response(
         "full_result_hint": full_result_hint,
         "final_path_verification": public_final_path_verification,
         "evidence_guide_for_30b": evidence_guide,
+        "primary_payload_for_30b": materialized["primary_payload_for_30b"],
         "payload_index_for_30b": materialized["payload_index_for_30b"],
         "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
         "materialization_report": materialized["materialization_report"],

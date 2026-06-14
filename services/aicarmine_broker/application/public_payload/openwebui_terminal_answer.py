@@ -42,6 +42,8 @@ def _coverage_missing(result: dict[str, Any]) -> tuple[bool, list[str]]:
         raw_missing = result.get("missing_owner_paths")
         if raw_missing in (None, "", [], {}):
             raw_missing = contract.get("missing_owner_paths")
+    if isinstance(raw_missing, dict) and isinstance(raw_missing.get("items"), list):
+        raw_missing = raw_missing.get("items")
     missing = [str(path) for path in raw_missing] if isinstance(raw_missing, list) else []
     return coverage_satisfied is False, missing
 
@@ -84,10 +86,8 @@ def answer_for_openwebui(
     if status_text == "completed":
         code_product_answer = code_product_answer_text(result)
         if code_product_answer:
-            evidence = execution_evidence_digest_text(result)
-            return code_product_answer if not evidence else code_product_answer + "\n\n" + evidence
-        evidence = execution_evidence_digest_text(result)
-        return summary if not evidence else summary + "\n\n" + evidence
+            return code_product_answer
+        return summary
     if status_text == "blocked_needs_attention":
         blocked_by = str(result.get("blocked_by") or "unknown")
         extra: list[str] = []

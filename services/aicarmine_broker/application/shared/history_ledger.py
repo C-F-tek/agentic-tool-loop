@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from .clean_values import drop_empty_dict_values
+from .evidence_contract_summary import compact_evidence_contract_summary
 from .history_queries import history_tool_result
 from ..prompt.context_windows import compact_prompt_context_window_item
 
@@ -136,8 +137,16 @@ def planner_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]
         if isinstance(result.get("python_static_evidence"), list):
             row["python_static_evidence"] = result.get("python_static_evidence")[:120]
             row["python_static_evidence_total"] = result.get("python_static_evidence_total")
-        if isinstance(result.get("evidence_contract"), dict):
-            row["evidence_contract"] = result.get("evidence_contract")
+        if isinstance(result.get("evidence_contract_summary"), dict):
+            row["evidence_contract_summary"] = result.get("evidence_contract_summary")
+        elif isinstance(result.get("evidence_contract"), dict):
+            row["evidence_contract_summary"] = compact_evidence_contract_summary(
+                result.get("evidence_contract") or {},
+                schema="planner_evidence_contract_history_summary.v1",
+            )
+        for key in ("evidence_contract_sha256", "evidence_contract_chars"):
+            if result.get(key) not in (None, "", [], {}):
+                row[key] = result.get(key)
         if isinstance(result.get("vulkan_repair"), dict):
             repair = result.get("vulkan_repair") or {}
             row["vulkan_repair"] = {

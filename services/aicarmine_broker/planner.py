@@ -132,7 +132,9 @@ from .application.evidence.execution_digest import (
     repo_read_content_views as _repo_read_content_views_impl,
 )
 from .application.evidence.final_quality import (
+    repo_analysis_final_answer_model_quality_request as _repo_analysis_final_answer_model_quality_request,
     repo_analysis_final_answer_quality as _repo_analysis_final_answer_quality,
+    sanitize_repo_analysis_final_model_quality as _sanitize_repo_analysis_final_model_quality,
 )
 from .application.evidence.initial_orientation import (
     initial_orientation_surface_from_history as _initial_orientation_surface_from_history_impl,
@@ -229,6 +231,7 @@ from .application.code_product.history import (
 from .application.evidence.goal_classifier import (
     final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
     goal_requires_code_security_coverage,
+    goal_operational_intent_text as _goal_operational_intent_text,
     goal_requests_apply,
     goal_requests_code_product,
     has_any as _has_any,
@@ -247,6 +250,9 @@ from .application.shared.history_queries import (
     history_has_tool,
 )
 from .application.shared.clean_values import drop_empty_dict_values as _drop_empty_dict_values_impl
+from .application.shared.evidence_contract_summary import (
+    evidence_contract_summary_triplet as _evidence_contract_summary_triplet_impl,
+)
 from .application.shared.history_ledger import (
     history_item_ollama_turn as _history_item_ollama_turn_impl,
     planner_history_ledger as _planner_history_ledger_impl,
@@ -1951,25 +1957,30 @@ def failed_repo_read_paths(history: list[dict[str, Any]]) -> list[str]:
 
 
 def _repo_reference_mentioned(low: str) -> bool:
-    return any(term in low for term in ("repo", "repository", "progetto", "project"))
+    return any(term in low for term in (
+        "repo", "repository", "progetto", "project", "workspace", "codebase",
+        "codice corrente", "current code", "codice nel workspace",
+    ))
 
 
 def _repo_analysis_intent_mentioned(low: str) -> bool:
     return any(term in low for term in (
         "analizza", "anlizza", "analisi", "analyze", "analyse", "analysis",
         "inspect", "inspection", "esplora", "scansiona", "struttura", "structure",
-        "overview", "mappa",
+        "overview", "mappa", "review", "audit", "ispeziona", "trova", "trovare",
+        "cerca", "ricerca",
     ))
 
 
 def _repo_analysis_goal(goal: str) -> bool:
-    low = _semantic_goal_low(goal)
+    low = _goal_operational_intent_text(goal).lower()
     repo_terms = (
         "analyze the repository", "analizza la repo", "analizza il repo",
         "anlizza la repo", "anlizza il repo", "anlizza la repository",
         "repository structure", "repo structure", "struttura repo",
         "analyze repo", "analisi repo", "structure and content",
-        "project inspection", "local project evidence",
+        "project inspection", "local project evidence", "workspace code",
+        "codice corrente", "current code", "codebase",
         "documentation", "documentazione", "docs", "examples", "diagrams",
         "gpu coordination", "heap pointer", "recovery turns",
         "deferred evidence", "packet_review_only", "gpu1", "gpu0",
@@ -1979,8 +1990,7 @@ def _repo_analysis_goal(goal: str) -> bool:
         "analyze the ", "analyse the ", "analizza ", "analisi ",
         "directory", "cartella", "folder", "path",
     )
-    write_terms = ("patch", "fix", "modifica", "correggi", "apply", "write", "edit")
-    if any(t in low for t in write_terms):
+    if goal_has_write_intent(goal):
         return False
     if _input_error_goal(goal):
         return False
@@ -2554,8 +2564,9 @@ def _build_operational_notebook(goal: str, contract: dict[str, Any]) -> dict[str
         "goal": goal,
         "final_allowed": final_allowed,
         "next_instruction": (
-            "Quality gate is satisfied. Stop navigation/listing and produce final from read_notes, "
-            "mentioned_paths, core_candidates, workflow/problems evidence, and limits."
+            "Quality gate is satisfied and final is allowed, not required. Prefer final from read_notes, "
+            "mentioned_paths, core_candidates, workflow/problems evidence, and limits when no concrete "
+            "evidence gap remains; otherwise name the gap and choose one selective evidence-bound tool."
             if final_allowed else
             "Continue only with one evidence-bound unread doc/code candidate. Do not repeat prior tool calls."
         ),
@@ -2777,7 +2788,7 @@ def _agentic_v2_read_has_window(args: dict[str, Any]) -> bool:
     return any(k in args for k in (
         "start", "start_line", "end", "end_line", "offset", "limit",
         "line", "line_start", "line_count", "before", "after",
-        "max_chars", "window", "chunk", "range",
+        "window", "chunk", "range",
     ))
 
 
@@ -3091,6 +3102,74 @@ def _apply_unverified_old_text_replan_contract(
     return contract
 
 
+def _repo_analysis_final_answer_model_quality(
+    final_answer: str,
+    contract: dict[str, Any],
+    *,
+    goal: str,
+) -> dict[str, Any]:
+    request = _repo_analysis_final_answer_model_quality_request(
+        final_answer,
+        contract,
+        goal=goal,
+    )
+    user_payload = _dict_or_empty(request.get("user_payload"))
+    options = {
+        "temperature": 0,
+        "num_predict": 1000,
+        "num_ctx": max(
+            4096,
+            min(int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192), int(AGENTIC_PLANNER_NUM_CTX or 8192)),
+        ),
+    }
+    payload = {
+        "model": PLANNER_MODEL,
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "think": False,
+        "format": "json",
+        "messages": [
+            {"role": "system", "content": str(request.get("system") or "")},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, default=str)},
+        ],
+        "options": options,
+    }
+    timeout_seconds = min(90, max(20, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
+    response = post_json(PLANNER_URL, payload, timeout_seconds)
+    if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+        quality = _sanitize_repo_analysis_final_model_quality(None)
+        quality.update({
+            "violations": ["repo_analysis_final_model_quality_unavailable"],
+            "required_next_progress": (
+                "Final answer rejected because the model final-quality judge was unavailable. "
+                "Retry final-quality evaluation; do not accept the final through deterministic heuristics."
+            ),
+            "planner_model": PLANNER_MODEL,
+            "planner_url": PLANNER_URL,
+            "timeout_seconds": timeout_seconds,
+            "backend_error": response.get("error") or response.get("error_type") or "planner_backend_error",
+        })
+        return quality
+
+    message = _dict_or_empty(response.get("message"))
+    raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
+    decoded = _parse_strict_json_object(raw_text)
+    quality = _sanitize_repo_analysis_final_model_quality(decoded)
+    quality.update({
+        "planner_model": PLANNER_MODEL,
+        "planner_url": PLANNER_URL,
+        "timeout_seconds": timeout_seconds,
+    })
+    if not quality.get("model_decision_available"):
+        quality["raw_response_preview"] = raw_text[:2000]
+        quality["violations"] = ["repo_analysis_final_model_quality_invalid"]
+        quality["required_next_progress"] = (
+            "Final answer rejected because the model final-quality judge did not return valid JSON. "
+            "Retry final-quality evaluation; do not accept the final through deterministic heuristics."
+        )
+    return quality
+
+
 def validate_planner_decision_against_evidence(
     goal: str,
     decision: dict[str, Any],
@@ -3127,6 +3206,7 @@ def validate_planner_decision_against_evidence(
             ),
             "final_answer_is_action_plan_without_code_product": _final_answer_is_action_plan_without_code_product,
             "final_composition_tool_names_from_candidates": _final_composition_tool_names_from_candidates,
+            "repo_analysis_final_answer_model_quality": _repo_analysis_final_answer_model_quality,
             "repo_analysis_final_answer_quality": _repo_analysis_final_answer_quality,
             "goal_requires_code_product_report": goal_requires_code_product_report,
             "invalid_code_product_decision_signature_count": _invalid_code_product_decision_signature_count,
@@ -3539,6 +3619,13 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
     return _prompt_clip_value(compact, text_limit=500, list_limit=16)
 
 
+def _evidence_contract_storage_summary(contract: dict[str, Any]) -> tuple[dict[str, Any], int, str]:
+    return _evidence_contract_summary_triplet_impl(
+        contract,
+        schema="planner_evidence_contract_storage_summary.v1",
+    )
+
+
 _PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS = {
     "repo_apply_patch_missing_path_or_paths",
     "repo_apply_patch_old_text_not_from_verified_read",
@@ -3912,6 +3999,7 @@ def controller_guard_result_for_validation(
         )
         validation = dict(validation)
         validation["evidence_contract"] = contract
+    contract_summary, contract_chars, contract_sha256 = _evidence_contract_storage_summary(contract)
     guard = {
         "tool": "controller_guard",
         "ok": True,
@@ -3921,7 +4009,9 @@ def controller_guard_result_for_validation(
             if violations else "planner_decision_validation_failed"
         ),
         "violations": violations,
-        "evidence_contract": contract,
+        "evidence_contract_summary": contract_summary,
+        "evidence_contract_chars": contract_chars,
+        "evidence_contract_sha256": contract_sha256,
         "rejected_decision": {
             k: (
                 _prompt_clip_text(decision.get(k), 12000)
@@ -3944,6 +4034,10 @@ def controller_guard_result_for_validation(
     required_next_progress = str(contract.get("required_next_progress") or "").strip()
     if required_next_progress:
         guard["next_instruction"] = required_next_progress
+    required_next_tool_call = _dict_or_empty(contract.get("required_next_tool_call"))
+    if required_next_tool_call:
+        guard["required_next_tool_call"] = required_next_tool_call
+        guard["planner_may_choose_final"] = False
     candidate_next_actions = _list_or_empty(contract.get("candidate_next_actions"))
     if candidate_next_actions:
         guard["candidate_next_actions"] = candidate_next_actions[:6]
@@ -3976,7 +4070,7 @@ def controller_guard_result_for_validation(
         goal=goal,
         decision=decision,
         validator_result=validation,
-        evidence_contract=contract,
+        evidence_contract=contract_summary,
         extra=runtime_debug_extra or None,
     )
     return guard
@@ -4137,13 +4231,63 @@ def _repo_read_content_views(
     )
 
 
-def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 180000) -> str:
+def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 12000) -> str:
     return _execution_evidence_digest_text_impl(
         result,
         repo_read_item_full_content=_repo_read_item_full_content,
         extract_key_lines=_extract_key_lines,
         limit=limit,
     )
+
+
+def _compact_evidence_guide_for_30b(
+    *,
+    goal: Any,
+    status: str,
+    answer: str,
+    tool_context: dict[str, Any],
+    limit: int = 12000,
+) -> str:
+    artifacts = tool_context.get("artifacts") if isinstance(tool_context.get("artifacts"), list) else []
+    artifact_rows: list[str] = []
+    for index, row in enumerate(artifacts[:12]):
+        if not isinstance(row, dict):
+            continue
+        artifact = row.get("artifact") if isinstance(row.get("artifact"), dict) else {}
+        label = str(artifact.get("kind") or row.get("tool") or "tool_result")
+        path = artifact.get("repo_path") or artifact.get("target_file")
+        if path:
+            label += f":{path}"
+        artifact_rows.append(f"{index}:{label}")
+    digest = str(tool_context.get("evidence_digest_for_30b") or "").strip()
+    answer_text = str(answer or "").strip()
+    lines = [
+        "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
+        "Guida compatta: non duplica file, diff o digest estesi.",
+        (
+            "Ordine di lettura: primary_payload_for_30b.primary_location; "
+            "payload_index_for_30b.concrete_results; "
+            "tool_context_for_30b.artifacts[*].artifact."
+        ),
+        f"status={status}; artifacts={len(artifacts)}",
+        f"richiesta_utente={str(goal or '').strip()}",
+    ]
+    if artifact_rows:
+        suffix = f" (+{len(artifacts) - len(artifact_rows)} altri)" if len(artifacts) > len(artifact_rows) else ""
+        lines.append("artifact_order=" + ", ".join(artifact_rows) + suffix)
+    if answer_text:
+        lines.extend([
+            "",
+            "Sommario/risposta del planner da usare come guida:",
+            _prompt_clip_text(answer_text, 6000),
+        ])
+    if status != "completed" and digest and digest not in answer_text:
+        lines.extend([
+            "",
+            "Evidenza eseguita inline breve:",
+            _prompt_clip_text(digest, 4000),
+        ])
+    return _public_terminal_sanitize_text(_prompt_clip_text("\n".join(lines), limit))
 
 
 def _latest_code_product_payload(history: list[dict[str, Any]]) -> dict[str, Any]:
@@ -4350,18 +4494,11 @@ def finalize_agentic_job(
         result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
     public_result = _public_terminal_result_for_30b(result)
     answer = answer_for_openwebui(status, final_summary_with_turns, result)
-    evidence_guide = "\n".join(
-        part
-        for part in (
-            "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
-            "Questo e' l'unico testo guida globale; il payload utile e' in tool_context_for_30b.",
-            f"status={status}; richiesta_utente={state.get('goal') or ''}",
-            "Sommario/risposta del planner da usare come guida:",
-            str(answer or "").strip(),
-            "Evidenza concreta inline:",
-            str(tool_context.get("evidence_digest_for_30b") or "").strip(),
-        )
-        if str(part or "").strip()
+    evidence_guide = _compact_evidence_guide_for_30b(
+        goal=state.get("goal"),
+        status=status,
+        answer=answer,
+        tool_context=tool_context,
     )
     public_final_summary = (
         answer
@@ -4388,6 +4525,7 @@ def finalize_agentic_job(
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
         "evidence_guide_for_30b": evidence_guide,
+        "primary_payload_for_30b": materialized["primary_payload_for_30b"],
         "payload_index_for_30b": materialized["payload_index_for_30b"],
         "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
         "materialization_report": materialized["materialization_report"],
@@ -4410,6 +4548,7 @@ def finalize_agentic_job(
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
         "evidence_guide_for_30b": evidence_guide,
+        "primary_payload_for_30b": materialized["primary_payload_for_30b"],
         "payload_index_for_30b": materialized["payload_index_for_30b"],
         "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
         "materialization_report": materialized["materialization_report"],

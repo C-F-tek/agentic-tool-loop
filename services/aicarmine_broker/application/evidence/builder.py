@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from aicarmine_broker.application.evidence.coverage_scorer import score_evidence_coverage
+from aicarmine_broker.application.evidence.goal_classifier import effective_repo_analysis_goal
 from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
 from aicarmine_broker.application.tool_surface.candidate_action_gate import gate_candidate_actions
 from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
@@ -515,6 +516,15 @@ class EvidenceBuilder:
             )
             if _repo_rel_token(path)
         ]
+        semantic_preplanner_target_paths = [
+            _repo_rel_token(path)
+            for path in (
+                preplanner_rag.get("semantic_target_paths")
+                if isinstance(preplanner_rag.get("semantic_target_paths"), list)
+                else []
+            )
+            if _repo_rel_token(path)
+        ]
         ranked_orientation_done = bool(
             str(preplanner_rag.get("schema") or "") == "agentic_loop_preplanner_rag_preseed.v1"
             and preplanner_rag.get("selected_paths") not in (None, "", [], {})
@@ -544,15 +554,38 @@ class EvidenceBuilder:
         ranked_meaningful_content_reads = [
             p for p in verified_read_paths
             if p in ranked_preplanner_paths
+            and (not semantic_preplanner_target_paths or p in semantic_preplanner_target_paths)
             and not _repo_doc_or_config(p)
             and not _low_signal_top_dir(p)
             and _repo_readable_evidence_file(p)
         ]
+        semantic_target_read_paths = [
+            p for p in verified_read_paths
+            if p in semantic_preplanner_target_paths
+            and _repo_readable_evidence_file(p)
+        ]
         meaningful_content_reads: list[str] = []
-        for p in [*area_scoped_meaningful_content_reads, *ranked_meaningful_content_reads]:
+        for p in [
+            *semantic_target_read_paths,
+            *area_scoped_meaningful_content_reads,
+            *ranked_meaningful_content_reads,
+        ]:
             if p not in meaningful_content_reads:
                 meaningful_content_reads.append(p)
-        meaningful_evidence_available = bool(meaningful_lists or ranked_meaningful_content_reads)
+        meaningful_evidence_available = bool(
+            meaningful_lists
+            or ranked_meaningful_content_reads
+            or semantic_target_read_paths
+        )
+        semantic_target_required_count = (
+            min(2, len(semantic_preplanner_target_paths))
+            if semantic_preplanner_target_paths
+            else 0
+        )
+        semantic_target_coverage_satisfied = bool(
+            not semantic_preplanner_target_paths
+            or len(semantic_target_read_paths) >= semantic_target_required_count
+        )
         repo_available_read_candidates = _meaningful_read_candidates_from_evidence(list_rows)
         code_available_read_candidates = [
             p for p in repo_available_read_candidates
@@ -563,7 +596,11 @@ class EvidenceBuilder:
             if p and _repo_code_file(p) and p not in code_available_read_candidates:
                 code_available_read_candidates.append(p)
         repo_required_read_count = _repo_required_read_count(repo_available_read_candidates)
-        repo_goal = _repo_analysis_goal(goal)
+        repo_goal = effective_repo_analysis_goal(
+            goal,
+            semantic_classification,
+            repo_analysis_goal=_repo_analysis_goal,
+        )
         code_security_coverage_required = bool(repo_goal and goal_requires_code_security_coverage(goal))
         code_security_read_required = (
             min(5, len(code_available_read_candidates))
@@ -575,11 +612,34 @@ class EvidenceBuilder:
             or len(code_reads) >= code_security_read_required
         )
         repo_goal_class = str(semantic_classification.get("class") or "")
+        goal_low_for_audit = str(goal or "").lower()
+        deep_repo_audit_goal = bool(
+            any(
+                token in goal_low_for_audit
+                for token in (
+                    "approfond",
+                    "duplicate",
+                    "duplicat",
+                    "clone",
+                    "clonate",
+                    "regress",
+                    "incongruen",
+                    "semant",
+                    "drift",
+                    "final_quality",
+                    "validator",
+                    "controller",
+                    "tool-surface",
+                    "tool_surface",
+                )
+            )
+        )
         orientative_repo_final_goal = (
             repo_goal
             and repo_goal_class in {"analysis_only", "action_plan_only"}
             and not bool(semantic_classification.get("must_produce_code_product"))
             and not goal_requests_apply_value
+            and not deep_repo_audit_goal
         )
         repo_final_required_read_count = (
             min(repo_required_read_count, 10)
@@ -649,6 +709,7 @@ class EvidenceBuilder:
                 orientation_surface_done
                 and doc_baseline_sufficient
                 and meaningful_evidence_available
+                and semantic_target_coverage_satisfied
                 and len(meaningful_content_reads) >= repo_required_read_count
             )
             analysis_repo_evidence_sufficient = bool(
@@ -656,6 +717,7 @@ class EvidenceBuilder:
                 and orientation_surface_done
                 and doc_baseline_sufficient
                 and meaningful_evidence_available
+                and semantic_target_coverage_satisfied
                 and len(meaningful_content_reads) >= 1
                 and len(verified_read_rows) >= repo_final_required_read_count
             )
@@ -666,18 +728,21 @@ class EvidenceBuilder:
                     f"one meaningful non-infra/code area/read set, "
                     f"{len(meaningful_content_reads)} verified reads "
                     f"inside meaningful areas, and {len(verified_read_rows)}/{repo_final_required_read_count} "
-                    "total verified content reads. The 20-read target remains orientative, not a hard final gate."
+                    "total verified content reads. The 20-read target remains orientative, not a hard final gate. "
+                    f"Semantic owner target coverage: {len(semantic_target_read_paths)}/{semantic_target_required_count}."
                 )
                 if analysis_repo_evidence_sufficient and not strict_repo_evidence_sufficient else
                 (
                     "Codex-quality repository evidence exists: root/ranked orientation, baseline docs/config reads, "
                     f"one meaningful non-infra/code area/read set, and {len(meaningful_content_reads)}/"
-                    f"{repo_required_read_count} verified concrete readable reads inside meaningful areas."
+                    f"{repo_required_read_count} verified concrete readable reads inside meaningful areas. "
+                    f"Semantic owner target coverage: {len(semantic_target_read_paths)}/{semantic_target_required_count}."
                 )
                 if final_allowed else
                 (
                     "Need root/ranked orientation + baseline markdown/config reads + one meaningful non-infra/code area/read set "
                     f"+ {len(meaningful_content_reads)}/{repo_final_required_read_count} verified concrete readable reads "
+                    f"+ semantic owner target coverage {len(semantic_target_read_paths)}/{semantic_target_required_count} "
                     "for analysis/action-plan finalization "
                     f"(target {REPO_CONCRETE_READ_TARGET} remains orientative and bounded by discovered candidates)."
                 )
@@ -1092,8 +1157,12 @@ class EvidenceBuilder:
             coverage_reason = "apply/write coverage requires verified reads of every concrete apply target"
         elif repo_goal:
             coverage_target_kind = "repo_owner_core"
-            coverage_required_count = 1 if orientative_repo_final_goal else max(1, min(repo_required_read_count, 10))
+            coverage_required_count = max(
+                1 if orientative_repo_final_goal else max(1, min(repo_required_read_count, 10)),
+                semantic_target_required_count,
+            )
             for raw_path in [
+                *semantic_preplanner_target_paths,
                 *repo_available_read_candidates,
                 *ranked_preplanner_paths,
                 *selected_preplanner_paths,
@@ -1107,10 +1176,11 @@ class EvidenceBuilder:
                     p = _owner_core_readable_path(item.get("path"))
                     if p:
                         _append_owner_path(owner_candidate_paths, p)
-            for path in meaningful_content_reads:
+            for path in [*semantic_target_read_paths, *meaningful_content_reads]:
                 _append_owner_path(covered_owner_paths, path)
             coverage_reason = (
-                "repository final coverage requires verified owner/core reads; preseed docs/config alone do not count"
+                "repository final coverage requires verified owner/core reads; preseed docs/config alone do not count. "
+                "When semantic owner targets are known, they must be covered before final."
             )
         else:
             coverage_target_kind = "tool_evidence"
@@ -1158,6 +1228,9 @@ class EvidenceBuilder:
                 "ranked_preplanner_paths": ranked_preplanner_paths[:80],
                 "selected_preplanner_paths": selected_preplanner_paths[:80],
                 "preseed_read_paths": preseed_read_paths[:80],
+                "semantic_preplanner_target_paths": semantic_preplanner_target_paths[:80],
+                "semantic_target_read_paths": semantic_target_read_paths[:80],
+                "semantic_target_required_count": semantic_target_required_count,
                 "preseed_covered_owner_paths": [
                     path for path in preseed_read_paths
                     if path in covered_owner_set
@@ -1188,6 +1261,11 @@ class EvidenceBuilder:
                     "classification": result.get("classification"),
                     "semantic_goal_classification": result.get("semantic_goal_classification"),
                     "next_instruction": result.get("next_instruction"),
+                    "required_next_tool_call": (
+                        result.get("required_next_tool_call")
+                        if isinstance(result.get("required_next_tool_call"), dict)
+                        else {}
+                    ),
                     "action_plan_candidate": result.get("action_plan_candidate"),
                     "raw_planner_text_preview": result.get("raw_planner_text_preview"),
                     "violations": result.get("violations") or [],
@@ -1217,10 +1295,17 @@ class EvidenceBuilder:
                     )
                     validation_rejections.append(failed_code_edit_row)
         action_plan_candidate = ""
+        latest_required_next_tool_call: dict[str, Any] = {}
+        latest_required_next_progress = ""
         for row in reversed(validation_rejections):
+            required_call = row.get("required_next_tool_call")
+            if isinstance(required_call, dict) and required_call and not latest_required_next_tool_call:
+                latest_required_next_tool_call = required_call
+                latest_required_next_progress = str(row.get("next_instruction") or "").strip()
             candidate = str(row.get("action_plan_candidate") or "").strip()
             if candidate:
                 action_plan_candidate = candidate
+            if action_plan_candidate and latest_required_next_tool_call:
                 break
         disallowed_invalid_decision_signatures = _disallowed_invalid_code_product_signatures(
             validation_rejections
@@ -1345,6 +1430,7 @@ class EvidenceBuilder:
                 "disallowed_next_decision_signatures": disallowed_invalid_decision_signatures,
             },
             "validation_rejections_tail": _compact_validation_rejections_tail(validation_rejections, limit=5),
+            "required_next_tool_call": latest_required_next_tool_call,
             "project_powershell_access": {
                 "tool": "terminal_run_command_wait",
                 "cwd": str(LAB_REPO),
@@ -1430,6 +1516,16 @@ class EvidenceBuilder:
             },
             "initial_orientation_surface": initial_orientation_surface,
         }
+        if latest_required_next_tool_call:
+            contract["planner_may_choose_final"] = False
+            contract["required_next_progress"] = latest_required_next_progress or str(
+                latest_required_next_tool_call.get("reason") or ""
+            )
+            final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "required_next_tool_call_from_previous_guard"
+            contract["finalization_contract"] = final_contract
         contract = _agentic_v2_enrich_evidence_contract(contract, goal, history)
         contract["operational_notes"] = _build_operational_notebook(goal, contract)
         if code_product_blocks_final:
@@ -1783,9 +1879,10 @@ class EvidenceBuilder:
             )
         elif final_allowed:
             contract["required_next_progress"] = (
-                "Quality gate is satisfied. Planner must produce action=final using operational_notes.read_notes, "
-                "workflow/problems/core evidence, cited concrete paths, and explicit limits. Do not call repo_tree/list/read again "
-                "unless a brand-new evidence gap is named."
+                "Quality gate is satisfied and final is allowed, not required. Planner may return final using "
+                "operational_notes.read_notes, workflow/problems/core evidence, cited concrete paths, and explicit "
+                "limits. If a brand-new evidence gap is named, choose one selective evidence-bound repo/read/search "
+                "tool instead of broad navigation."
             )
         elif candidates:
             contract["required_next_progress"] = (

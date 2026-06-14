@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ..shared.evidence_contract_summary import (
+    compact_evidence_contract_summary,
+    coverage_status_from_contract,
+)
 from .tool_context import slim_public_tool_context
 
 
@@ -15,39 +19,6 @@ EvidenceContractBuilder = Callable[[str, list[dict[str, Any]]], dict[str, Any]]
 ResultToText = Callable[[dict[str, Any]], str]
 ResultToDict = Callable[[dict[str, Any]], dict[str, Any]]
 ValueCleaner = Callable[[Any], Any]
-
-
-def _coverage_status_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
-    contract = contract if isinstance(contract, dict) else {}
-    coverage = (
-        contract.get("minimum_read_coverage")
-        if isinstance(contract.get("minimum_read_coverage"), dict)
-        else {}
-    )
-    return {
-        "schema": "minimum_read_coverage.public_status.v1",
-        "coverage_satisfied": (
-            coverage.get("coverage_satisfied")
-            if coverage else contract.get("coverage_satisfied")
-        ),
-        "required": coverage.get("required") if coverage else None,
-        "target_kind": coverage.get("target_kind") if coverage else None,
-        "required_count": coverage.get("required_count") if coverage else None,
-        "covered_count": coverage.get("covered_count") if coverage else None,
-        "missing_owner_paths": (
-            coverage.get("missing_owner_paths")
-            if coverage else contract.get("missing_owner_paths")
-        ) or [],
-        "covered_owner_paths": (
-            coverage.get("covered_owner_paths")
-            if coverage else contract.get("covered_owner_paths")
-        ) or [],
-        "candidate_owner_paths": (
-            coverage.get("candidate_owner_paths")
-            if coverage else contract.get("candidate_owner_paths")
-        ) or [],
-        "minimum_read_coverage": coverage,
-    }
 
 
 @dataclass(frozen=True)
@@ -143,7 +114,11 @@ class OpenWebUIPayloadBuilder:
         result_digest = self._compact_final_state_result(result)
         artifacts = self._public_tool_artifact_rows(history)
         evidence_contract = self._planner_evidence_contract(goal, history)
-        coverage_status = _coverage_status_from_contract(evidence_contract)
+        coverage_status = coverage_status_from_contract(evidence_contract)
+        evidence_contract_summary = compact_evidence_contract_summary(
+            evidence_contract,
+            schema="planner_evidence_contract_public_summary.v1",
+        )
         context = {
             "type": "agentic_loop_complete_structured_context",
             "contract_type": "agentic_loop_complete_structured_context",
@@ -201,8 +176,11 @@ class OpenWebUIPayloadBuilder:
             "ollama_turns": turn_memory.get("ollama_turns", []),
             "successful_tool_turns": turn_memory.get("successful_tool_turns", []),
             "failed_tool_turns": turn_memory.get("failed_tool_turns", []),
-            "evidence_contract_at_finish": evidence_contract,
-            "evidence_contract_at_terminal": evidence_contract,
+            "evidence_contract_summary": evidence_contract_summary,
+            "evidence_contract_at_finish": evidence_contract_summary,
+            "evidence_contract_at_terminal": evidence_contract_summary,
+            "evidence_contract_sha256": evidence_contract_summary.get("evidence_contract_sha256"),
+            "evidence_contract_chars": evidence_contract_summary.get("evidence_contract_chars"),
             "coverage_status": coverage_status,
             "minimum_read_coverage": coverage_status.get("minimum_read_coverage"),
             "planner_memory": state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else {},

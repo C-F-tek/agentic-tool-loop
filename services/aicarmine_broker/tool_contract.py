@@ -154,6 +154,33 @@ def sanitize_tool_args(
         if bad_path(args.get("path")):
             args["path"] = "."
         args["max_results"] = max(1, min(int(args.get("max_results") or 80), 120))
+    elif tool_name == "repo_rg_search":
+        if not str(args.get("pattern") or args.get("query") or "").strip():
+            query = (
+                original_args.get("query")
+                or original_args.get("pattern")
+                or original_args.get("request")
+                or original_args.get("task")
+                or original_args.get("context")
+            )
+            if query not in (None, ""):
+                args["query"] = str(query)
+        if bad_path(args.get("path")):
+            args["path"] = "."
+        args["max_results"] = max(1, min(int(args.get("max_results") or args.get("limit") or 80), 1000))
+    elif tool_name == "repo_semantic_search":
+        query = args.get("query")
+        if query in (None, ""):
+            query = (
+                original_args.get("query")
+                or original_args.get("request")
+                or original_args.get("task")
+                or original_args.get("context")
+            )
+        if query not in (None, ""):
+            args["query"] = str(query)
+        if bad_path(args.get("path")):
+            args["path"] = "."
     elif tool_name == "repo_read":
         if not args.get("paths") and not args.get("path"):
             item_paths = _paths_from_items(args.get("items") or args.get("item"))

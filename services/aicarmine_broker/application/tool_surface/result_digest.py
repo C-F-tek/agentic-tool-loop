@@ -78,8 +78,12 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
     if isinstance(result.get("python_static_evidence"), list):
         digest["python_static_evidence"] = result.get("python_static_evidence")[:120]
         digest["python_static_evidence_total"] = result.get("python_static_evidence_total")
-    if isinstance(result.get("evidence_contract"), dict):
-        digest["evidence_contract"] = result.get("evidence_contract")
+    if isinstance(result.get("evidence_contract_summary"), dict):
+        digest["evidence_contract_summary"] = result.get("evidence_contract_summary")
+    if result.get("evidence_contract_sha256") not in (None, "", [], {}):
+        digest["evidence_contract_sha256"] = result.get("evidence_contract_sha256")
+    if result.get("evidence_contract_chars") not in (None, "", [], {}):
+        digest["evidence_contract_chars"] = result.get("evidence_contract_chars")
     if isinstance(result.get("vulkan_repair"), dict):
         repair = result.get("vulkan_repair") or {}
         digest["vulkan_repair"] = {

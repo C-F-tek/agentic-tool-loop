@@ -45,7 +45,7 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                     "request_type": {"type": "string"},
                     "primary_location": {
                         "type": "string",
-                        "example": "priority_evidence.items[0].content",
+                        "example": "tool_context.artifacts[0].artifact.content",
                     },
                     "payload_is_complete": {"type": "boolean"},
                     "content_not_duplicated_here": {"type": "boolean"},
@@ -88,7 +88,7 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
                                 "payload_is_complete": {"type": "boolean"},
                                 "primary_location": {
                                     "type": "string",
-                                    "description": "Exact top-level field path, for example priority_evidence.items[0].unified_diff.",
+                                    "description": "Exact top-level field path, for example tool_context.artifacts[0].artifact.unified_diff.",
                                 },
                                 "full_context_location": {
                                     "type": "string",
@@ -115,7 +115,7 @@ def vulkan_helper_completed_response_schema() -> dict[str, Any]:
             },
             "priority_evidence": {
                 "type": "object",
-                "description": "High-priority inline concrete payloads. Code proposals expose unified_diff or structured_operations here.",
+                "description": "High-priority metadata for concrete payloads; large content is referenced by location instead of duplicated here.",
                 "additionalProperties": True,
             },
             "tool_context": {
@@ -165,8 +165,9 @@ def annotate_vulkan_helper_openapi_response(schema: dict[str, Any]) -> None:
         "read `evidence_guide` as the guide, then `payload_index`. "
         "`evidence_guide` is the single top-level narrative guide; "
         "`payload_index.concrete_results[*].primary_location` points to exact useful payload fields "
-        "such as `priority_evidence.items[*].unified_diff`; "
-        "for file content, prefer `priority_evidence.items[0].content`; "
+        "such as `tool_context.artifacts[*].artifact.unified_diff`; "
+        "for file content, prefer `primary_payload.primary_location` or "
+        "`payload_index.concrete_results[*].primary_location`; "
         "only after that inspect `tool_context.artifacts[*].artifact`; "
         "`descriptive_only` and `suggestions_or_review_metadata_only` are not the concrete result. "
         "If OpenWebUI later exposes this same tool result as `_file://.../agent-tool-context.txt` "

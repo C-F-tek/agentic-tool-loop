@@ -182,6 +182,11 @@ def compact_validation_rejections_tail(
             "classification": item.get("classification"),
             "semantic_goal_classification": item.get("semantic_goal_classification"),
             "next_instruction": item.get("next_instruction"),
+            "required_next_tool_call": (
+                item.get("required_next_tool_call")
+                if isinstance(item.get("required_next_tool_call"), dict)
+                else {}
+            ),
             "action_plan_candidate": prompt_clip_text(item.get("action_plan_candidate"), 4000),
             "raw_planner_text_preview": str(item.get("raw_planner_text_preview") or "")[:700],
             "violations": item.get("violations") or [],

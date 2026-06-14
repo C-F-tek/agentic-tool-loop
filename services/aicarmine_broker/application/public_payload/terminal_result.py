@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from ..shared.history_queries import history_tool_result
+from ..shared.payload_metadata import sha256_text
 from ..prompt.context_windows import compact_prompt_context_window_item
-from ..prompt.values import prompt_clip_text, text_hash
+from ..prompt.values import prompt_clip_text
 from .terminal_sanitizer import (
     public_terminal_sanitize_text,
     public_terminal_sanitize_value,
@@ -64,7 +65,7 @@ def public_terminal_history_ledger(
                     "line_count": sub.get("line_count"),
                     "truncated": sub.get("truncated"),
                     "content_chars": len(content) if content else None,
-                    "content_sha256": text_hash(content) if content else None,
+                    "content_sha256": sha256_text(content) if content else None,
                     "error": sub.get("error"),
                 })
             row["items"] = read_items

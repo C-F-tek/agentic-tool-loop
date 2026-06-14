@@ -453,6 +453,94 @@ def _read_broker_process_metadata(root: Path, port: int) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _broker_source_files(root: Path) -> list[Path]:
+    services_root = _services_root(root)
+    candidates: list[Path] = [services_root / "aicarmine_vulkan_tool_broker.py"]
+    for relative in (
+        "aicarmine_broker",
+        "vulkan_bridge",
+    ):
+        base = services_root / relative
+        if base.is_dir():
+            candidates.extend(base.rglob("*.py"))
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        try:
+            resolved = path.resolve(strict=False)
+        except Exception:
+            resolved = path
+        key = str(resolved).lower()
+        if key in seen or not path.is_file():
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _broker_source_freshness(root: Path, port: int) -> dict[str, Any]:
+    metadata = _read_broker_process_metadata(root, port)
+    if not metadata:
+        return {
+            "ok": True,
+            "checked": False,
+            "reason": "broker_process_metadata_missing",
+            "metadata_path": str(_broker_process_metadata_path(root, port)),
+        }
+    if bool(metadata.get("reload")):
+        return {
+            "ok": True,
+            "checked": True,
+            "reload": True,
+            "metadata": metadata,
+        }
+    try:
+        started_at = float(metadata.get("started_at_unix") or 0.0)
+    except (TypeError, ValueError):
+        started_at = 0.0
+    if started_at <= 0:
+        return {
+            "ok": True,
+            "checked": False,
+            "reason": "broker_started_at_missing",
+            "metadata": metadata,
+        }
+    newest_path = ""
+    newest_mtime = 0.0
+    checked = 0
+    for path in _broker_source_files(root):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        checked += 1
+        if mtime > newest_mtime:
+            newest_mtime = mtime
+            newest_path = str(path)
+    stale = bool(newest_mtime > started_at + 1.0)
+    return {
+        "ok": not stale,
+        "checked": True,
+        "reload": False,
+        "started_at_unix": started_at,
+        "newest_source_mtime_unix": newest_mtime,
+        "newest_source_path": newest_path,
+        "checked_source_file_count": checked,
+        "metadata": metadata,
+        **(
+            {
+                "error": "broker_stale_code_possible",
+                "fix": (
+                    "Restart the dedicated broker with restart=true, "
+                    f"confirm_restart_broker={CONFIRM_RESTART}, and reload=true when code freshness is required."
+                ),
+            }
+            if stale
+            else {}
+        ),
+    }
+
+
 def _write_broker_process_metadata(
     root: Path,
     *,
@@ -1651,8 +1739,9 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return payload_problem
     require_root_match = _safe_bool(args.get("require_broker_repo_root_match"), True)
     broker_root_check: dict[str, Any] = {"ok": None, "skipped": True}
+    broker_ensure: dict[str, Any] | None = None
     reranker_ensure: dict[str, Any] | None = None
-    ensure_broker = _safe_bool(args.get("ensure_broker"), False)
+    ensure_broker = _safe_bool(args.get("ensure_broker"), False) or _safe_bool(args.get("restart"), False)
     if _safe_bool(args.get("ensure_reranker"), False) and not ensure_broker:
         reranker_ensure = _ensure_reranker(args, root)
         if reranker_ensure.get("ok") is not True:
@@ -1669,6 +1758,7 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             ensure_args = dict(args)
             ensure_args["port"] = port
             ensure = _ensure_broker(ensure_args, root)
+            broker_ensure = ensure
             if isinstance(ensure.get("reranker_ensure"), dict):
                 reranker_ensure = ensure["reranker_ensure"]
             if ensure.get("ok") is not True:
@@ -1715,6 +1805,22 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "fix": f"Avvia il broker dedicato Codex su 127.0.0.1:{port} con AICARMINE_LAB_REPO uguale alla root Codex oppure usa ensure_broker quando la porta e' libera.",
             }
     assert payload is not None
+    freshness = _broker_source_freshness(root, port)
+    if freshness.get("ok") is False:
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_run",
+            "error": freshness.get("error") or "broker_stale_code_possible",
+            "agentic_loop_called": False,
+            "broker_health_probe_called": bool(require_root_match),
+            "root_check": broker_root_check,
+            "broker_source_freshness": freshness,
+            "broker_ensure": broker_ensure,
+            "endpoint": endpoint,
+            "port": port,
+            "codex_mcp_repo_root": str(root),
+            "fix": freshness.get("fix"),
+        }
     requested_timeout_seconds = _safe_int(args.get("timeout_seconds"), 120, 15, 900)
     wait_budget_seconds = _safe_int(payload.get("wait_seconds"), 30, 1, 600)
     timeout_seconds = max(requested_timeout_seconds, min(900, wait_budget_seconds + 30))
@@ -1731,6 +1837,8 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "endpoint": endpoint,
             "port": port,
             "codex_mcp_repo_root": str(root),
+            "broker_source_freshness": freshness,
+            **({"broker_ensure": broker_ensure} if broker_ensure is not None else {}),
             **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
             "request": {
                 "return_mode": payload.get("return_mode"),

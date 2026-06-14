@@ -133,6 +133,7 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "confirmation_tokens": {
             "run": agentic_loop_client.CONFIRM_RUN,
             "ensure_broker": agentic_loop_client.CONFIRM_ENSURE,
+            "restart_broker": agentic_loop_client.CONFIRM_RESTART,
             "ensure_reranker": agentic_loop_client.CONFIRM_RERANKER,
         },
         "codex_app_subagents_inherited": False,
@@ -228,6 +229,9 @@ def _tools() -> dict[str, ToolSpec]:
                 "append_codex_final_contract": boolean_prop(True),
                 "ensure_broker": boolean_prop(False),
                 "confirm_ensure_broker": string_prop(),
+                "restart": boolean_prop(False),
+                "confirm_restart_broker": string_prop(),
+                "reload": boolean_prop(False),
                 "ensure_reranker": boolean_prop(False),
                 "confirm_ensure_reranker": string_prop(),
                 "require_broker_repo_root_match": boolean_prop(True),

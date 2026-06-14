@@ -175,6 +175,46 @@ class ToolSurfacePolicy:
             contract["turn_tool_surface_policy"] = policy
             return contract
 
+        required_tool = normalize_tool_name(str(required.get("tool") or ""))
+        if required_tool in self._REPO_DISCOVERY_TOOLS:
+            arguments = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
+            reason = str(required.get("reason") or progress or "required_next_tool_call").strip()
+            action = {
+                "action_id": "required_next_tool_call:" + required_tool,
+                "tool": required_tool,
+                "arguments": arguments,
+                "reason": reason,
+                "source": str(required.get("source") or "required_next_tool_call"),
+                "independent_read_only": True,
+            }
+            contract["candidate_next_actions"] = [action]
+            contract["required_next_tool_call"] = {
+                "tool": required_tool,
+                "arguments": arguments,
+                "reason": reason,
+                "source": action["source"],
+            }
+            contract["planner_may_choose_final"] = False
+            final_contract = (
+                contract.get("finalization_contract")
+                if isinstance(contract.get("finalization_contract"), dict)
+                else {}
+            )
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "required_next_tool_call_pending"
+            contract["finalization_contract"] = final_contract
+            policy.update(
+                {
+                    "reason": "required_next_tool_call_pending",
+                    "allowed_tool_names": [required_tool],
+                    "candidate_actions_filtered": True,
+                    "required_next_tool_call": contract.get("required_next_tool_call"),
+                }
+            )
+            contract["turn_tool_surface_policy"] = policy
+            return contract
+
         if self._contract_coverage_required(contract) and not self._contract_coverage_satisfied(contract):
             coverage_actions = [
                 item for item in actions
@@ -449,18 +489,24 @@ class ToolSurfacePolicy:
         )
         if final_contract.get("final_allowed") is not True:
             return False
-        progress = str(contract.get("required_next_progress") or "").strip().lower()
-        if "produce action=final" in progress:
-            return True
-        if "quality gate is satisfied" in progress and "final" in progress:
-            return True
-        operational = (
-            contract.get("operational_notes")
-            if isinstance(contract.get("operational_notes"), dict)
+        terminal_guidance = (
+            contract.get("terminal_decision_guidance")
+            if isinstance(contract.get("terminal_decision_guidance"), dict)
             else {}
         )
-        next_instruction = str(operational.get("next_instruction") or "").strip().lower()
-        return "produce action=final" in next_instruction
+        if (
+            terminal_guidance.get("terminal_decision_required") is True
+            and terminal_guidance.get("tool_calls_allowed") is False
+        ):
+            return True
+        if (
+            final_contract.get("terminal_decision_required_by_step_budget") is True
+            and final_contract.get("tool_calls_disallowed_by_step_budget") is True
+        ):
+            return True
+        if final_contract.get("final_required") is True:
+            return True
+        return False
 
     @classmethod
     def _contract_coverage_required(cls, contract: dict[str, Any]) -> bool:
@@ -507,8 +553,11 @@ class ToolSurfacePolicy:
 
     def _continuation_tool_only(self, continuation: dict[str, Any] | None) -> list[str] | None:
         continuation = continuation if isinstance(continuation, dict) else {}
-        if continuation.get("tool") == "planner_scratchpad_read":
+        tool = normalize_tool_name(str(continuation.get("tool") or ""))
+        if tool == "planner_scratchpad_read":
             return ["planner_scratchpad_read"]
+        if tool in self._REPO_DISCOVERY_TOOLS:
+            return [tool]
         return None
 
     def _policy_declared_tools(self, contract: dict[str, Any]) -> list[str] | None:

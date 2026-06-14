@@ -70,6 +70,64 @@ _CODE_SECURITY_EXPANSION_TERMS = (
     "client", "database", "security", "auth",
 )
 
+_SEMANTIC_OWNER_TARGETS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        ("final_quality", "final quality", "final-quality", "quality gate"),
+        (
+            "services/aicarmine_broker/application/evidence/final_quality.py",
+            "services/aicarmine_broker/application/evidence/builder.py",
+        ),
+    ),
+    (
+        ("validator", "validation", "finalization gate"),
+        ("services/aicarmine_broker/application/planner/validator.py",),
+    ),
+    (
+        ("evidence_contract", "evidence contract", "coverage", "final_allowed", "final allowed"),
+        (
+            "services/aicarmine_broker/application/evidence/builder.py",
+            "services/aicarmine_broker/application/prompt/evidence_contract.py",
+        ),
+    ),
+    (
+        ("tool-surface", "tool_surface", "tool surface", "required_next_tool_call"),
+        (
+            "services/aicarmine_broker/application/tool_surface/turn_surface_policy.py",
+            "services/aicarmine_broker/application/tool_surface/candidate_actions.py",
+        ),
+    ),
+    (
+        ("history", "history_ledger", "ledger"),
+        ("services/aicarmine_broker/application/shared/history_ledger.py",),
+    ),
+    (
+        ("prompt contract", "prompt_contract", "available_tools", "tool_contract"),
+        (
+            "services/aicarmine_broker/application/prompt/tool_contract.py",
+            "services/aicarmine_broker/application/prompt/pack_builder.py",
+        ),
+    ),
+    (
+        ("planner", "final_required", "step budget"),
+        (
+            "services/aicarmine_broker/planner.py",
+            "services/aicarmine_broker/application/planner/turn.py",
+            "services/aicarmine_broker/application/planner/loop.py",
+        ),
+    ),
+    (
+        ("controller", "preplanner", "rag preseed", "preseed"),
+        ("services/aicarmine_broker/application/controller/rag_preseed.py",),
+    ),
+    (
+        ("public payload", "openwebui", "terminal response", "vulkan_bridge"),
+        (
+            "services/aicarmine_broker/application/job/terminal_response.py",
+            "services/vulkan_bridge/app.py",
+        ),
+    ),
+)
+
 
 def _low_signal_ranked_path(path: str) -> bool:
     low = repo_rel_token(path).lower()
@@ -1012,6 +1070,51 @@ def _indexed_literal_request_paths(
     return selected, diagnostics
 
 
+def _semantic_owner_target_paths(
+    *,
+    goal: str,
+    query_plan: Mapping[str, Any] | None,
+    repo_root: Path,
+    safe_rel_path: SafeRelPath,
+    generic_readable_suffixes: Sequence[str],
+    limit: int,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    texts = "\n".join(_explicit_path_texts(goal, query_plan)).lower().replace("\\", "/")
+    if not texts:
+        return [], []
+    selected: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
+    for aliases, paths in _SEMANTIC_OWNER_TARGETS:
+        if not any(alias in texts for alias in aliases):
+            continue
+        for raw_path in paths:
+            path = repo_rel_token(raw_path)
+            if not path or path in selected:
+                continue
+            if not repo_existing_file(path, repo_root=repo_root, safe_rel_path=safe_rel_path):
+                diagnostics.append({
+                    "stage": "semantic_owner_target_lookup",
+                    "candidate": path,
+                    "reason": "semantic_owner_target_not_existing_file",
+                })
+                continue
+            if not repo_readable_evidence_file(
+                path,
+                repo_root=repo_root,
+                generic_readable_suffixes=generic_readable_suffixes,
+            ):
+                diagnostics.append({
+                    "stage": "semantic_owner_target_lookup",
+                    "candidate": path,
+                    "reason": "semantic_owner_target_not_readable_evidence_file",
+                })
+                continue
+            selected.append(path)
+            if len(selected) >= limit:
+                return selected, diagnostics
+    return selected, diagnostics
+
+
 def _http_json_post(url: str, payload: Mapping[str, Any], *, timeout_seconds: float) -> Any:
     body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
     request = urllib.request.Request(
@@ -1418,9 +1521,18 @@ def controller_preplanner_rag_preseed_plan(
         limit=read_path_limit,
     )
     skipped.extend(literal_target_skipped)
+    semantic_target_paths, semantic_target_skipped = _semantic_owner_target_paths(
+        goal=goal,
+        query_plan=sanitized_query_plan or query_plan,
+        repo_root=repo_root,
+        safe_rel_path=safe_rel_path,
+        generic_readable_suffixes=generic_readable_suffixes,
+        limit=read_path_limit,
+    )
+    skipped.extend(semantic_target_skipped)
 
     selected_paths: list[str] = []
-    for path in literal_target_paths:
+    for path in [*literal_target_paths, *semantic_target_paths]:
         if path not in selected_paths:
             selected_paths.append(path)
     anchor_paths: list[str] = []
@@ -1450,6 +1562,7 @@ def controller_preplanner_rag_preseed_plan(
         "ranking": ranking,
         "selected_paths": selected_paths,
         "literal_target_paths": literal_target_paths,
+        "semantic_target_paths": semantic_target_paths,
         "anchor_paths": anchor_paths,
         "ranked_preplanner_paths": ranked_preplanner_paths,
         "selected_path_count": len(selected_paths),
@@ -1477,6 +1590,7 @@ def controller_preplanner_rag_preseed_plan(
             "ranking": ranking,
             "selected_paths": selected_paths,
             "literal_target_paths": literal_target_paths,
+            "semantic_target_paths": semantic_target_paths,
             "anchor_paths": anchor_paths,
             "ranked_preplanner_paths": ranked_preplanner_paths,
             "ranked_items": ranked_items[:read_path_limit],

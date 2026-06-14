@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
+from aicarmine_broker.application.evidence.goal_classifier import effective_repo_analysis_goal
+
 
 def validate_planner_decision_against_evidence(
     goal: str,
@@ -48,6 +50,7 @@ def validate_planner_decision_against_evidence(
     ]
     _final_answer_is_action_plan_without_code_product = deps["final_answer_is_action_plan_without_code_product"]
     _final_composition_tool_names_from_candidates = deps["final_composition_tool_names_from_candidates"]
+    _repo_analysis_final_answer_model_quality = deps.get("repo_analysis_final_answer_model_quality")
     _repo_analysis_final_answer_quality = deps["repo_analysis_final_answer_quality"]
     _invalid_code_product_decision_signature_count = deps["invalid_code_product_decision_signature_count"]
     _invalid_decision_signature_key = deps["invalid_decision_signature_key"]
@@ -81,6 +84,16 @@ def validate_planner_decision_against_evidence(
     tool = _normalize_tool_name(str(decision.get("tool") or ""))
     args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
     contract = planner_evidence_contract(goal, history)
+    semantic_contract = (
+        contract.get("semantic_goal_classification")
+        if isinstance(contract.get("semantic_goal_classification"), dict)
+        else {}
+    )
+    effective_repo_goal = effective_repo_analysis_goal(
+        goal,
+        semantic_contract,
+        repo_analysis_goal=_repo_analysis_goal,
+    )
     violations: list[str] = []
 
     def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
@@ -174,6 +187,46 @@ def validate_planner_decision_against_evidence(
             )
         )
 
+    def _apply_final_quality_route(quality: dict[str, Any]) -> None:
+        required_next_progress = str(quality.get("required_next_progress") or "").strip()
+        if required_next_progress:
+            contract["required_next_progress"] = required_next_progress
+        required_next_tool_call = (
+            quality.get("required_next_tool_call")
+            if isinstance(quality.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if required_next_tool_call:
+            contract["required_next_tool_call"] = required_next_tool_call
+            tool_name = str(required_next_tool_call.get("tool") or "").strip()
+            arguments = (
+                required_next_tool_call.get("arguments")
+                if isinstance(required_next_tool_call.get("arguments"), dict)
+                else {}
+            )
+            action = {
+                "action_id": "repo_analysis_final_quality:" + tool_name,
+                "tool": tool_name,
+                "arguments": arguments,
+                "reason": required_next_tool_call.get("reason") or required_next_progress,
+                "source": "repo_analysis_final_model_quality",
+                "independent_read_only": True,
+            }
+            existing = contract.get("candidate_next_actions") if isinstance(contract.get("candidate_next_actions"), list) else []
+            contract["candidate_next_actions"] = [action] + [
+                item for item in existing if isinstance(item, dict) and item != action
+            ][:12]
+        contract["planner_may_choose_final"] = False
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["reason"] = "repo_analysis_final_model_quality_rejected"
+        contract["finalization_contract"] = final_contract
+
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
         return {
@@ -215,8 +268,8 @@ def validate_planner_decision_against_evidence(
                 violations.append("native_tool_not_in_turn_surface")
             contract["required_next_progress"] = (
                 "The tool call was not in the planner tool surface for this turn. "
-                "Use only the current turn tool surface; if the quality gate is satisfied, "
-                "produce action=final instead of calling another tool."
+                "Use only the current turn tool surface; if final is allowed and no named "
+                "evidence gap remains, return final instead of calling an unavailable tool."
             )
     if action == "tool" and tool == "planner_scratchpad_read":
         requested_kind = str(args.get("kind") or "").strip()
@@ -387,19 +440,36 @@ def validate_planner_decision_against_evidence(
                 violations.append(f"final_without_in_scope_tree_or_list:{target_scope}")
             if not scope_reads and not final_allowed:
                 violations.append(f"final_without_in_scope_concrete_read:{target_scope}")
-        if _repo_analysis_goal(goal) and not final_answer.strip():
+        if effective_repo_goal and not final_answer.strip():
             violations.append("final_empty_answer")
-        elif _repo_analysis_goal(goal):
-            quality = _repo_analysis_final_answer_quality(final_answer, contract)
+        elif effective_repo_goal:
+            if callable(_repo_analysis_final_answer_model_quality):
+                quality = _repo_analysis_final_answer_model_quality(
+                    final_answer,
+                    contract,
+                    goal=goal,
+                )
+            else:
+                quality = {
+                    "schema": "repo_analysis_final_model_quality.v1",
+                    "model_decision_available": False,
+                    "ok": False,
+                    "decision": "invalid",
+                    "violations": ["repo_analysis_final_model_quality_dependency_missing"],
+                    "required_next_progress": (
+                        "Final answer rejected because repo-analysis final quality has no model judge dependency. "
+                        "Do not accept this final through deterministic heuristics."
+                    ),
+                }
             quality_violations = (
                 quality.get("violations")
                 if isinstance(quality.get("violations"), list)
                 else []
             )
+            contract["repo_analysis_final_quality"] = quality
             if quality_violations:
                 violations.extend(str(v) for v in quality_violations)
-                contract["repo_analysis_final_quality"] = quality
-                contract["required_next_progress"] = quality.get("required_next_progress")
+                _apply_final_quality_route(quality if isinstance(quality, dict) else {})
         if review_goal and not read_ok:
             violations.append("final_without_successful_repo_read_for_python_review")
         if review_goal and target_scope and any(not _path_under_scope(p, target_scope) for p in read_ok):
@@ -423,6 +493,8 @@ def validate_planner_decision_against_evidence(
         if action_plan_candidate:
             result["action_plan_candidate"] = action_plan_candidate
             result["semantic_goal_classification"] = contract.get("semantic_goal_classification")
+        if isinstance(contract.get("required_next_tool_call"), dict):
+            result["required_next_tool_call"] = contract["required_next_tool_call"]
         return result
 
     if action in {"block", "blocked", "need_user", "needs_user"}:

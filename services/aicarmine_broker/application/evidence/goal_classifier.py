@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Mapping
 from typing import Any
+
+
+REPO_ANALYSIS_PREPLANNER_CLASSES = frozenset({
+    "repo_analysis",
+    "code_security_analysis",
+})
 
 
 def semantic_goal_text(goal: str) -> str:
@@ -57,12 +64,12 @@ def has_any(text: str, needles: tuple[str, ...]) -> bool:
 
 _NEGATED_OPERATION_RE = re.compile(
     r"\b("
-    r"do\s+not\s+(?:actually\s+)?(?:apply|modify|change|edit|write|fix)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
-    r"don't\s+(?:apply|modify|change|edit|write|fix)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
+    r"do\s+not\s+(?:actually\s+)?(?:apply|modify|change|edit|write|fix|patch)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
+    r"don't\s+(?:apply|modify|change|edit|write|fix|patch)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
     r"without\s+(?:actually\s+)?(?:applying|modifying|changing|editing|writing)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
     r"no\s+(?:apply|changes?)(?:\s+[a-z0-9_.@+/-]+){0,5}|"
-    r"non\s+(?:devi\s+|deve\s+)?(?:usare|usa|applicare|applica|modificare|modifica|cambiare|cambia|editare|edita|scrivere|scrivi|correggere|correggi)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
-    r"senza\s+(?:usare|applicare|modificare|cambiare|editare|scrivere|correggere)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
+    r"non\s+(?:devi\s+|deve\s+)?(?:usare|usa|applicare|applica|modificare|modifica|cambiare|cambia|editare|edita|scrivere|scrivi|correggere|correggi|patchare|patcha|patch|fixare|fixa)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
+    r"senza\s+(?:usare|applicare|modificare|cambiare|editare|scrivere|correggere|patchare|patch|fixare)(?:\s+[a-z0-9_.@+/-]+){0,6}|"
     r"read[-\s]?only|"
     r"solo\s+lettura"
     r")\b",
@@ -223,12 +230,14 @@ def goal_requests_apply(goal: str) -> bool:
         r"\bdo\s+not\s+edit\b",
         r"\bdo\s+not\s+write\b",
         r"\bdo\s+not\s+fix\b",
+        r"\bdo\s+not\s+patch\b",
         r"\bdon't\s+apply\b",
         r"\bdon't\s+modify\b",
         r"\bdon't\s+change\b",
         r"\bdon't\s+edit\b",
         r"\bdon't\s+write\b",
         r"\bdon't\s+fix\b",
+        r"\bdon't\s+patch\b",
         r"\bwithout\s+applying\b",
         r"\bwithout\s+applying\s+changes?\b",
         r"\bwithout\s+actually\s+applying(?:\s+changes?)?\b",
@@ -245,11 +254,17 @@ def goal_requests_apply(goal: str) -> bool:
         r"\bnon\s+editare(?:\s+nulla)?\b",
         r"\bnon\s+scrivere(?:\s+nulla)?\b",
         r"\bnon\s+correggere(?:\s+nulla)?\b",
+        r"\bnon\s+patchare(?:\s+nulla)?\b",
+        r"\bnon\s+patch(?:\s+nulla)?\b",
+        r"\bnon\s+fixare(?:\s+nulla)?\b",
         r"\bsenza\s+applicare\b",
         r"\bsenza\s+modificare\b",
         r"\bsenza\s+cambiare\b",
         r"\bsenza\s+editare\b",
         r"\bsenza\s+scrivere\b",
+        r"\bsenza\s+patchare\b",
+        r"\bsenza\s+patch\b",
+        r"\bsenza\s+fixare\b",
         r"\bnon\s+applica(?:re)?\b",
         r"\breport[-\s]?only\b",
     ):
@@ -384,3 +399,20 @@ def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> d
         "negative_write_constraints_present": bool(negative_constraints),
         "operational_intent_text_changed": bool(intent_text != text),
     }
+
+
+def effective_repo_analysis_goal(
+    goal: str,
+    semantic_classification: Mapping[str, Any] | None,
+    *,
+    repo_analysis_goal: Callable[[str], bool],
+) -> bool:
+    """Return the repository-analysis gate decision from the canonical semantics."""
+    semantic = semantic_classification if isinstance(semantic_classification, Mapping) else {}
+    preplanner_goal_class = str(semantic.get("preplanner_goal_class") or "").strip()
+    requested_deliverable = str(semantic.get("requested_deliverable") or "").strip().lower()
+    return bool(
+        repo_analysis_goal(goal)
+        or preplanner_goal_class in REPO_ANALYSIS_PREPLANNER_CLASSES
+        or "repository analysis" in requested_deliverable
+    )

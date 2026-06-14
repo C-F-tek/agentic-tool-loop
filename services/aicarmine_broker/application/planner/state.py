@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..shared.evidence_contract_summary import evidence_contract_summary_triplet
+
 
 HistoryLedgerBuilder = Callable[[list[dict[str, Any]]], Any]
 EvidenceBuilder = Callable[[list[dict[str, Any]]], dict[str, Any]]
@@ -28,7 +30,13 @@ class PlannerLoopState:
         self._state["history"] = self._history_ledger(self._history)
         self._state["history_count"] = len(self._history)
         if update_evidence:
-            self._state["evidence_contract"] = self._evidence_builder(self._history)
+            contract_summary, contract_chars, contract_sha256 = evidence_contract_summary_triplet(
+                self._evidence_builder(self._history),
+                schema="planner_evidence_contract_state_summary.v1",
+            )
+            self._state["evidence_contract"] = contract_summary
+            self._state["evidence_contract_chars"] = contract_chars
+            self._state["evidence_contract_sha256"] = contract_sha256
 
     def snapshot(self) -> dict[str, Any]:
         return {
