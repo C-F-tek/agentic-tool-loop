@@ -6,11 +6,20 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from aicarmine_broker.application.evidence.coverage_scorer import score_evidence_coverage
+from aicarmine_broker.application.evidence.audit_guidance import (
+    goal_requests_semantic_audit,
+    role_guidance_for_goal,
+    role_guidance_text,
+)
 from aicarmine_broker.application.evidence.goal_classifier import effective_repo_analysis_goal
 from aicarmine_broker.application.planner.required_progress import required_next_progress_from_text
 from aicarmine_broker.application.tool_surface.candidate_action_gate import gate_candidate_actions
 from aicarmine_broker.application.tool_surface.action_proof_ledger import attach_action_proof
 from aicarmine_broker.application.tool_surface.batch_contract import canonical_batch_call_key
+from aicarmine_broker.application.tool_surface.required_tool_call import (
+    append_stale_required_call_marker,
+    required_next_tool_call_satisfaction,
+)
 from aicarmine_broker.planner_core.cache import CACHEABLE_READ_TOOLS
 
 
@@ -237,6 +246,19 @@ def _tool_result_paths(result: dict[str, Any], *, repo_rel_token: Callable[[Any]
     return paths
 
 
+def _goal_mentions_repo_path(goal_low: str, path: str) -> bool:
+    normalized = str(path or "").replace("\\", "/").strip("/").lower()
+    if not normalized:
+        return False
+    basename = normalized.rsplit("/", 1)[-1]
+    stem = basename.rsplit(".", 1)[0] if "." in basename else basename
+    return bool(
+        normalized in goal_low
+        or (basename and basename in goal_low)
+        or (stem and len(stem) >= 6 and stem in goal_low)
+    )
+
+
 def _path_covers_target(path: str, target: str) -> bool:
     path = str(path or "").strip().strip("/")
     target = str(target or "").strip().strip("/")
@@ -415,10 +437,12 @@ class EvidenceBuilder:
         _paths_from_list_rows = deps["paths_from_list_rows"]
         _paths_from_result = deps["paths_from_result"]
         _rank_core_candidates = deps["rank_core_candidates"]
+        _planner_scratchpad_window_signature = deps["planner_scratchpad_window_signature"]
         _repo_analysis_goal = deps["repo_analysis_goal"]
         _repo_code_file = deps["repo_code_file"]
         _repo_doc_or_config = deps["repo_doc_or_config"]
         _repo_list_evidence = deps["repo_list_evidence"]
+        _repo_read_window_signature = deps["repo_read_window_signature"]
         _repo_readable_evidence_file = deps["repo_readable_evidence_file"]
         _repo_rel_token = deps["repo_rel_token"]
         _repo_required_read_count = deps["repo_required_read_count"]
@@ -434,6 +458,7 @@ class EvidenceBuilder:
         latest_file_list_result = deps["latest_file_list_result"]
         requested_file_limit_from_goal = deps["requested_file_limit_from_goal"]
         semantic_goal_classification = deps["semantic_goal_classification"]
+        _successful_window_signatures = deps["successful_window_signatures"]
         successful_repo_read_paths = deps["successful_repo_read_paths"]
         failed_repo_read_paths = deps["failed_repo_read_paths"]
         failed_repo_list_files_paths = deps["failed_repo_list_files_paths"]
@@ -613,27 +638,7 @@ class EvidenceBuilder:
         )
         repo_goal_class = str(semantic_classification.get("class") or "")
         goal_low_for_audit = str(goal or "").lower()
-        deep_repo_audit_goal = bool(
-            any(
-                token in goal_low_for_audit
-                for token in (
-                    "approfond",
-                    "duplicate",
-                    "duplicat",
-                    "clone",
-                    "clonate",
-                    "regress",
-                    "incongruen",
-                    "semant",
-                    "drift",
-                    "final_quality",
-                    "validator",
-                    "controller",
-                    "tool-surface",
-                    "tool_surface",
-                )
-            )
-        )
+        deep_repo_audit_goal = goal_requests_semantic_audit(goal)
         orientative_repo_final_goal = (
             repo_goal
             and repo_goal_class in {"analysis_only", "action_plan_only"}
@@ -1024,9 +1029,38 @@ class EvidenceBuilder:
         code_product_blocks_final = code_product_required and bool(latest_code_product_violations)
         code_product_candidate_target = ""
         code_product_candidate_line_count = 0
+        code_product_requested_target_files: list[str] = []
+
+        def add_code_product_requested_target(raw_path: Any, *, explicit: bool = False) -> None:
+            p = _repo_rel_token(raw_path)
+            if (
+                p
+                and p != "."
+                and p not in code_product_requested_target_files
+                and _repo_code_file(p)
+                and _path_exists_repo_relative(p)
+                and _repo_readable_evidence_file(p)
+                and (explicit or _goal_mentions_repo_path(goal_low, p))
+            ):
+                code_product_requested_target_files.append(p)
+
+        add_code_product_requested_target(target_file, explicit=bool(target_file))
+        for raw_path in [
+            *semantic_preplanner_target_paths,
+            *ranked_preplanner_paths,
+            *selected_preplanner_paths,
+            *semantic_search_paths,
+            *code_available_read_candidates,
+            *code_reads,
+            *verified_read_paths,
+        ]:
+            add_code_product_requested_target(raw_path)
         code_product_build_state: dict[str, Any] = {}
+        code_product_replan_guidance = role_guidance_text("code_product_replan", goal)
         if code_product_blocks_final:
-            candidate_paths = [target_file]
+            candidate_paths = list(code_product_requested_target_files)
+            if target_file and target_file not in candidate_paths:
+                candidate_paths.append(target_file)
             ranked_code_reads = sorted(
                 [
                     row for row in verified_read_rows
@@ -1297,11 +1331,25 @@ class EvidenceBuilder:
         action_plan_candidate = ""
         latest_required_next_tool_call: dict[str, Any] = {}
         latest_required_next_progress = ""
+        stale_required_next_tool_calls: list[dict[str, Any]] = []
         for row in reversed(validation_rejections):
             required_call = row.get("required_next_tool_call")
             if isinstance(required_call, dict) and required_call and not latest_required_next_tool_call:
-                latest_required_next_tool_call = required_call
-                latest_required_next_progress = str(row.get("next_instruction") or "").strip()
+                satisfaction = required_next_tool_call_satisfaction(
+                    required_call,
+                    history,
+                    successful_repo_read_paths=successful_repo_read_paths,
+                    successful_window_signatures=_successful_window_signatures,
+                    repo_read_window_signature=_repo_read_window_signature,
+                    planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
+                    decision_paths=lambda call_args: _agentic_v2_decision_paths("repo_read", call_args),
+                )
+                if satisfaction.get("satisfied") is True:
+                    row["required_next_tool_call_satisfied"] = satisfaction
+                    stale_required_next_tool_calls.append(satisfaction)
+                else:
+                    latest_required_next_tool_call = required_call
+                    latest_required_next_progress = str(row.get("next_instruction") or "").strip()
             candidate = str(row.get("action_plan_candidate") or "").strip()
             if candidate:
                 action_plan_candidate = candidate
@@ -1402,6 +1450,13 @@ class EvidenceBuilder:
                 "latest_target_file": latest_code_product.get("target_file") if latest_code_product else None,
                 "candidate_target_file": code_product_candidate_target or None,
                 "candidate_target_line_count": code_product_candidate_line_count or None,
+                "requested_target_files": code_product_requested_target_files[:24],
+                "requested_target_file_count": len(code_product_requested_target_files),
+                "multi_target_request": len(code_product_requested_target_files) > 1,
+                "replan_role_guidance": (
+                    role_guidance_for_goal("code_product_replan", goal)
+                    if code_product_required else None
+                ),
                 "candidate_payload_must_be_generated_from_required_working_set": bool(
                     code_product_candidate_target
                     and not (_goal_exact_text_block(goal, "old_text") and _goal_exact_text_block(goal, "new_text"))
@@ -1516,6 +1571,14 @@ class EvidenceBuilder:
             },
             "initial_orientation_surface": initial_orientation_surface,
         }
+        for stale_status in stale_required_next_tool_calls:
+            append_stale_required_call_marker(contract, stale_status)
+        if stale_required_next_tool_calls and not latest_required_next_tool_call and not contract.get("required_next_progress"):
+            contract["required_next_progress"] = (
+                "A previous required_next_tool_call is already satisfied by successful tool history. "
+                "Do not repeat that tool call. Use verified evidence to return action=final when "
+                "coverage is satisfied, or choose a different concrete read/search gap."
+            )
         if latest_required_next_tool_call:
             contract["planner_may_choose_final"] = False
             contract["required_next_progress"] = latest_required_next_progress or str(
@@ -1670,8 +1733,8 @@ class EvidenceBuilder:
                         "Route shift required after invalid repo_propose_code_edit payload, but no new source "
                         "window is available for this target. Change decision now: use verified_content_reads / "
                         "required_working_set to call repo_propose_code_edit with a complete unified_diff or "
-                        "complete old_text/new_text, write code_product_build_state with real progress only, "
-                        "or return a typed block if the diff cannot be built. Do not repeat repo_read."
+                        "complete old_text/new_text, or return a typed block if the diff cannot be built. "
+                        + code_product_replan_guidance
                     )
             elif build_state_status == "collecting_source" and code_product_build_state.get("payload_loaded") is True:
                 build_state_progress_handled = True
@@ -1694,19 +1757,13 @@ class EvidenceBuilder:
                         }
                     )
                 ]
-                progress_write_action = _code_product_build_state_write_action(
-                    build_state_target or code_product_candidate_target,
-                    history,
-                )
-                contract["candidate_next_actions"] = (
-                    ([progress_write_action] if progress_write_action else []) + existing_candidates[:15]
-                )
+                contract["candidate_next_actions"] = existing_candidates[:15]
                 contract["required_next_progress"] = (
                     "Internal code_product_build_state is collecting_source but not ready and has no remaining "
                     "state window to read. Advance with one real step only: call repo_propose_code_edit with a "
-                    "complete unified_diff or complete old_text/new_text, write code_product_build_state with "
-                    "new real progress, or return a typed block if the diff cannot be built. Empty "
-                    "collecting_source writes are rejected."
+                    "complete unified_diff or complete old_text/new_text, or return a typed block if the diff "
+                    "cannot be built. "
+                    + code_product_replan_guidance
                 )
             elif code_product_candidate_target and code_product_candidate_target in successful_read_path_set:
                 build_state_progress_handled = True
@@ -1813,7 +1870,8 @@ class EvidenceBuilder:
                         "Route shift required after invalid repo_propose_code_edit payload, but no unread source "
                         "window remains for the target. Do not call repo_read for that target again. Use the "
                         "existing source evidence to produce a complete inline repo_propose_code_edit payload, "
-                        "write code_product_build_state with real progress, or return a typed block."
+                        "or return a typed block. "
+                        + code_product_replan_guidance
                     )
             elif not build_state_progress_handled and code_product_candidate_target:
                 contract["required_next_progress"] = (

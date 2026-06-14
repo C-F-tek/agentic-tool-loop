@@ -5,6 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from aicarmine_broker.application.evidence.audit_guidance import (
+    audit_guidance_for_goal,
+    final_audit_red_flags,
+    goal_requests_semantic_audit,
+    pending_read_or_search_actions,
+    role_guidance_for_goal,
+)
+
 
 def _append_unique(values: list[str], value: Any) -> None:
     text = str(value or "").strip()
@@ -142,6 +150,21 @@ def _final_quality_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
         "missing_owner_paths": _compact_list(contract.get("missing_owner_paths"), limit=24),
         "candidate_owner_paths": _compact_list(contract.get("candidate_owner_paths"), limit=24),
         "required_next_progress": _clip_text(contract.get("required_next_progress"), 800),
+        "required_next_tool_call": _compact_mapping(
+            contract.get("required_next_tool_call"),
+            text_limit=260,
+            list_limit=6,
+        ),
+        "required_next_tool_call_satisfied": _compact_mapping(
+            contract.get("required_next_tool_call_satisfied"),
+            text_limit=260,
+            list_limit=6,
+        ),
+        "stale_required_next_tool_calls": _compact_mapping(
+            contract.get("stale_required_next_tool_calls"),
+            text_limit=360,
+            list_limit=8,
+        ),
         "rag_tool_surface": _final_quality_rag_tool_surface(contract),
         "validation_rejections_tail": _compact_mapping(
             contract.get("validation_rejections_tail"),
@@ -183,6 +206,79 @@ def _evidence_paths(contract: dict[str, Any]) -> list[str]:
 def _path_hit_count(final_answer: str, paths: list[str]) -> int:
     text = str(final_answer or "")
     return sum(1 for path in paths if path and path in text)
+
+
+_FINAL_PATH_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_.@/\\:-])"
+    r"(?:[A-Za-z0-9_.@+-]+[\\/])+"
+    r"[A-Za-z0-9_.@+-]+(?:\.[A-Za-z0-9_+-]+|[\\/])?"
+    r"(?![A-Za-z0-9_.@/\\:-])",
+    re.IGNORECASE,
+)
+
+
+def _repoish_path_token(value: Any) -> str:
+    text = str(value or "").strip().strip("`'\".,;:)]}")
+    text = text.replace("\\", "/").strip("/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    if not text or text in {".", ".."}:
+        return ""
+    return text
+
+
+def _final_path_tokens(final_answer: str) -> list[str]:
+    tokens: list[str] = []
+    for match in _FINAL_PATH_TOKEN_RE.finditer(str(final_answer or "")):
+        token = _repoish_path_token(match.group(0))
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def _known_path_tokens(contract: dict[str, Any], paths: list[str], core_paths: list[str]) -> set[str]:
+    known: set[str] = set()
+
+    def add(raw: Any) -> None:
+        token = _repoish_path_token(raw)
+        if not token:
+            return
+        known.add(token.lower())
+        parts = token.split("/")
+        for index in range(1, len(parts)):
+            known.add("/".join(parts[:index]).lower())
+
+    for path in [*paths, *core_paths]:
+        add(path)
+    for key in (
+        "candidate_owner_paths",
+        "missing_owner_paths",
+        "read_admissible_paths",
+        "validator_admissible_repo_read_paths",
+        "successful_repo_read_paths",
+    ):
+        values = contract.get(key) if isinstance(contract, dict) else []
+        for path in values if isinstance(values, list) else []:
+            add(path)
+    return known
+
+
+def _unverified_final_path_tokens(
+    final_answer: str,
+    contract: dict[str, Any],
+    *,
+    paths: list[str],
+    core_paths: list[str],
+) -> list[str]:
+    known = _known_path_tokens(contract, paths, core_paths)
+    unresolved: list[str] = []
+    for token in _final_path_tokens(final_answer):
+        low = token.lower()
+        if low in {"services", "tools", "cache"}:
+            continue
+        if low not in known:
+            unresolved.append(token)
+    return unresolved
 
 
 def _concept_present(text_low: str, patterns: tuple[str, ...]) -> bool:
@@ -317,6 +413,33 @@ def repo_analysis_final_answer_quality(
     )
     if any(phrase in text_low for phrase in generic_phrases) and len(stripped) < 3200:
         violations.append("repo_analysis_final_generic_template_language")
+    red_flags = final_audit_red_flags(stripped)
+    if red_flags.get("follow_up_invitations"):
+        violations.append("repo_analysis_final_follow_up_invitation_instead_of_answer")
+    if red_flags.get("speculative_terms"):
+        violations.append("repo_analysis_final_speculative_claims_without_evidence")
+    if red_flags.get("generic_no_issue_phrases") and len(rows) < 8:
+        violations.append("repo_analysis_final_generic_no_issue_claim_with_shallow_evidence")
+    unverified_path_tokens = _unverified_final_path_tokens(
+        stripped,
+        contract if isinstance(contract, dict) else {},
+        paths=paths,
+        core_paths=core_paths,
+    )
+    if unverified_path_tokens:
+        violations.append("repo_analysis_final_mentions_unverified_paths:" + ",".join(unverified_path_tokens[:4]))
+    pending_actions = pending_read_or_search_actions(contract if isinstance(contract, dict) else {})
+    hard_pending_actions = [
+        action for action in pending_actions
+        if (
+            action.get("required") is True
+            or str(action.get("source") or "") == "repo_analysis_final_model_quality"
+            or str(action.get("action_id") or "").startswith("repo_analysis_final_quality:")
+            or "required" in str(action.get("reason") or "").lower()
+        )
+    ]
+    if hard_pending_actions and not _declares_partial_or_limited_coverage(text_low):
+        violations.append("repo_analysis_final_ignores_required_read_or_search_route")
     if _declares_partial_or_limited_coverage(text_low) and _claims_deep_or_complete_review(text_low):
         violations.append("repo_analysis_final_claims_complete_despite_declared_limits")
     if _declares_partial_or_limited_coverage(text_low) and _absolute_repo_no_issue_claim(text_low):
@@ -346,6 +469,9 @@ def repo_analysis_final_answer_quality(
             "core_candidate_paths": core_paths[:8],
             "evidence_path_count": len(paths),
             "read_note_count": len(rows),
+            "unverified_path_tokens": unverified_path_tokens[:8],
+            "final_audit_red_flags": red_flags,
+            "hard_pending_read_or_search_actions": hard_pending_actions[:4],
         },
         "required_next_progress": (
             "Final answer rejected as too shallow for repository analysis. Return action=final "
@@ -417,11 +543,20 @@ def repo_analysis_final_answer_model_quality_request(
             "goal": str(goal or ""),
             "final_answer": _clip_text(final_answer, 16000),
             "contract_summary": _final_quality_contract_summary(contract),
+            "semantic_audit_guidance": audit_guidance_for_goal(goal),
+            "final_quality_judge_role_guidance": role_guidance_for_goal("final_quality_judge", goal),
+            "goal_requests_semantic_audit": goal_requests_semantic_audit(goal),
             "decision_rules": [
                 "Accept only if the final answer is grounded in verified repo evidence and answers the goal.",
                 "Reject if it declares unread/truncated/missing files that are needed to answer the goal.",
                 "Reject if it claims complete analysis while naming unresolved coverage limits.",
+                "Reject if it says no duplication, no semantic drift, or no regression risk from shallow owner reads.",
+                "Reject if it uses speculative language such as probably/probabilmente for concrete code ownership claims.",
+                "Reject if it asks the user whether to generate a final, diff, or patch instead of answering the current request.",
+                "Reject if it cites repo-relative paths that are not present in verified reads, admissible read paths, or owner candidates.",
+                "Reject if candidate_next_actions or required_next_tool_call still names a required repo_read/repo_semantic_search route and the final does not explicitly state a bounded limitation.",
                 "Reject if it reports global RAG missing only because intrinsic_context had no retrieved_rag_chunks; repo_semantic_search is the planner RAG tool.",
+                "Do not choose required_next_tool_call for a repo_read/search route already present in verified_content_reads, successful_repo_read_paths, or stale_required_next_tool_calls.",
                 "If broad discovery is still needed, choose required_next_tool_call.tool=repo_semantic_search with a concrete query.",
                 "If specific unread/truncated paths are named, choose required_next_tool_call.tool=repo_read for those paths or a focused window.",
                 "If enough evidence exists but the prose is inconsistent, reject and require a corrected final without a tool call.",

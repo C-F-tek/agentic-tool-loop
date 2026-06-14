@@ -7,6 +7,7 @@ from typing import Any, Callable
 from ...tool_contract import normalize_tool_name
 from ..code_product.state import CODE_PRODUCT_BUILD_STATE_KIND
 from .batch_contract import canonical_batch_call_key
+from .required_tool_call import canonical_required_tool_call_key
 
 
 def candidate_action_tool(action: Any) -> str:
@@ -511,6 +512,17 @@ def preserve_required_next_tool_call_for_prompt(
             required = required_next_tool_call_from_action(candidates[0])
     if not required:
         return
+    if _required_call_marked_satisfied(previous_evidence_contract, required):
+        evidence["required_next_tool_call_satisfied"] = (
+            previous_evidence_contract.get("required_next_tool_call_satisfied")
+            if isinstance(previous_evidence_contract.get("required_next_tool_call_satisfied"), dict)
+            else {}
+        )
+        stale = previous_evidence_contract.get("stale_required_next_tool_calls")
+        if isinstance(stale, list) and stale:
+            evidence["stale_required_next_tool_calls"] = stale[:8]
+        payload["evidence_contract"] = evidence
+        return
     evidence["required_next_tool_call"] = required
     payload["required_next_tool_call"] = required
     for key in ("forbidden_repeated_tool_calls",):
@@ -573,3 +585,31 @@ def preserve_required_next_tool_call_for_prompt(
         evidence["planner_may_choose_final"] = False
     evidence["finalization_contract"] = final_contract
     payload["evidence_contract"] = evidence
+
+
+def _required_call_marked_satisfied(contract: dict[str, Any], required: dict[str, Any]) -> bool:
+    if not isinstance(contract, dict) or not isinstance(required, dict) or not required:
+        return False
+    key = canonical_required_tool_call_key(required.get("tool"), required.get("arguments"))
+    current = (
+        contract.get("required_next_tool_call_satisfied")
+        if isinstance(contract.get("required_next_tool_call_satisfied"), dict)
+        else {}
+    )
+    current_key = current.get("key") or canonical_required_tool_call_key(
+        current.get("tool"),
+        current.get("arguments"),
+    )
+    if current.get("satisfied") is True and current_key == key:
+        return True
+    stale = contract.get("stale_required_next_tool_calls")
+    for item in stale if isinstance(stale, list) else []:
+        if not isinstance(item, dict):
+            continue
+        item_key = item.get("key") or canonical_required_tool_call_key(
+            item.get("tool"),
+            item.get("arguments"),
+        )
+        if item.get("satisfied") is True and item_key == key:
+            return True
+    return False

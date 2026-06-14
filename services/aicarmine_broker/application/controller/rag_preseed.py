@@ -18,6 +18,11 @@ from ..evidence.goal_classifier import (
     goal_operational_intent_text,
     semantic_goal_classification,
 )
+from ..evidence.audit_guidance import (
+    audit_guidance_for_goal,
+    audit_owner_targets,
+    role_guidance_for_goal,
+)
 from ..evidence.repo_path_policy import (
     repo_doc_or_config,
     repo_existing_file,
@@ -69,65 +74,6 @@ _CODE_SECURITY_EXPANSION_TERMS = (
     "error", "exception", "request", "response", "service", "provider",
     "client", "database", "security", "auth",
 )
-
-_SEMANTIC_OWNER_TARGETS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
-    (
-        ("final_quality", "final quality", "final-quality", "quality gate"),
-        (
-            "services/aicarmine_broker/application/evidence/final_quality.py",
-            "services/aicarmine_broker/application/evidence/builder.py",
-        ),
-    ),
-    (
-        ("validator", "validation", "finalization gate"),
-        ("services/aicarmine_broker/application/planner/validator.py",),
-    ),
-    (
-        ("evidence_contract", "evidence contract", "coverage", "final_allowed", "final allowed"),
-        (
-            "services/aicarmine_broker/application/evidence/builder.py",
-            "services/aicarmine_broker/application/prompt/evidence_contract.py",
-        ),
-    ),
-    (
-        ("tool-surface", "tool_surface", "tool surface", "required_next_tool_call"),
-        (
-            "services/aicarmine_broker/application/tool_surface/turn_surface_policy.py",
-            "services/aicarmine_broker/application/tool_surface/candidate_actions.py",
-        ),
-    ),
-    (
-        ("history", "history_ledger", "ledger"),
-        ("services/aicarmine_broker/application/shared/history_ledger.py",),
-    ),
-    (
-        ("prompt contract", "prompt_contract", "available_tools", "tool_contract"),
-        (
-            "services/aicarmine_broker/application/prompt/tool_contract.py",
-            "services/aicarmine_broker/application/prompt/pack_builder.py",
-        ),
-    ),
-    (
-        ("planner", "final_required", "step budget"),
-        (
-            "services/aicarmine_broker/planner.py",
-            "services/aicarmine_broker/application/planner/turn.py",
-            "services/aicarmine_broker/application/planner/loop.py",
-        ),
-    ),
-    (
-        ("controller", "preplanner", "rag preseed", "preseed"),
-        ("services/aicarmine_broker/application/controller/rag_preseed.py",),
-    ),
-    (
-        ("public payload", "openwebui", "terminal response", "vulkan_bridge"),
-        (
-            "services/aicarmine_broker/application/job/terminal_response.py",
-            "services/vulkan_bridge/app.py",
-        ),
-    ),
-)
-
 
 def _low_signal_ranked_path(path: str) -> bool:
     low = repo_rel_token(path).lower()
@@ -583,11 +529,13 @@ def controller_preplanner_rag_query_plan(
             "small target-candidate queries for a ranker",
         ],
     }
+    semantic_audit_guidance = audit_guidance_for_goal(goal)
     semantic_audit_search_contract = {
         "trigger": (
             "When the goal asks about semantic inconsistencies, regression risk, duplicate logic, "
             "layer drift, hidden guards, or repeated local implementations."
         ),
+        "shared_guidance": semantic_audit_guidance,
         "required_targets": [
             "current owner source modules for the loop or feature under review",
             "validator/controller/tool-surface/prompt/public-payload modules when planner semantics are involved",
@@ -622,6 +570,8 @@ def controller_preplanner_rag_query_plan(
             "focus": focus,
             "avoid": avoid,
             "strategy_by_semantic_intent": strategy_by_semantic_intent,
+            "semantic_audit_guidance": semantic_audit_guidance,
+            "preplanner_role_guidance": role_guidance_for_goal("preplanner", goal),
             "semantic_audit_search_contract": semantic_audit_search_contract,
             "semantic_intent_classes": [
                 "analysis_only",
@@ -1084,7 +1034,7 @@ def _semantic_owner_target_paths(
         return [], []
     selected: list[str] = []
     diagnostics: list[dict[str, Any]] = []
-    for aliases, paths in _SEMANTIC_OWNER_TARGETS:
+    for aliases, paths in audit_owner_targets():
         if not any(alias in texts for alias in aliases):
             continue
         for raw_path in paths:

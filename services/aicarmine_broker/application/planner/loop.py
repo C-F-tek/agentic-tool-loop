@@ -13,6 +13,7 @@ from ..shared.evidence_contract_summary import (
 )
 from ..tool_surface.batch_contract import canonical_batch_args as _canonical_batch_args
 from ..tool_surface.batch_contract import canonical_batch_call_key
+from ..tool_surface.required_tool_call import canonical_required_tool_call_key
 
 
 def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
@@ -64,6 +65,7 @@ def run_agentic_planner_job(
     planner_cuda_rewrite_target = deps["planner_cuda_rewrite_target"]
     _planner_incomprehensible_retry_count = deps["planner_incomprehensible_retry_count"]
     _planner_memory_false_unavailable_claim = deps["planner_memory_false_unavailable_claim"]
+    _planner_replan_specialist_for_validation = deps["planner_replan_specialist_for_validation"]
     _raw_planner_text_classification = deps["raw_planner_text_classification"]
     _should_attempt_vulkan_repair = deps["should_attempt_vulkan_repair"]
     _should_retry_incomprehensible_planner_output = deps["should_retry_incomprehensible_planner_output"]
@@ -213,6 +215,102 @@ def run_agentic_planner_job(
             history,
         )
 
+    def enrich_validation_with_replan_specialist(
+        step_number: int,
+        planner_decision_row: dict[str, Any],
+        validation_row: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            replan = _planner_replan_specialist_for_validation(
+                goal=str(state.get("goal") or ""),
+                decision=planner_decision_row,
+                validation=validation_row,
+            )
+        except Exception as exc:  # pragma: no cover - defensive around model sidecar
+            replan = {
+                "schema": "planner_replan_specialist_result.v1",
+                "available": False,
+                "ok": False,
+                "decision": "exception",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            }
+        if not replan:
+            return validation_row
+        append_agent_event(
+            job_id,
+            "planner_replan_specialist",
+            "Planner replan specialist evaluated validator rejection.",
+            replan,
+            step=step_number,
+        )
+        enriched = dict(validation_row)
+        enriched["planner_replan_specialist"] = replan
+        if not replan.get("ok"):
+            return enriched
+        contract = (
+            dict(enriched.get("evidence_contract"))
+            if isinstance(enriched.get("evidence_contract"), dict)
+            else {}
+        )
+        required_next_progress = str(replan.get("required_next_progress") or "").strip()
+        if required_next_progress:
+            if contract.get("required_next_progress") not in (None, "", [], {}):
+                contract["required_next_progress_deterministic"] = contract.get("required_next_progress")
+            contract["required_next_progress"] = required_next_progress
+            contract["required_next_progress_model"] = replan
+        required_next_tool_call = (
+            replan.get("required_next_tool_call")
+            if isinstance(replan.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if required_next_tool_call:
+            violations = {str(item) for item in _list_field(validation_row, "violations")}
+            duplicate_route = any(
+                item == "repo_read_window_already_successful_without_progress"
+                or item == "planner_scratchpad_window_already_successful_without_progress"
+                or item.startswith("repo_read_already_successful:")
+                for item in violations
+            )
+            planner_tool = str(planner_decision_row.get("tool") or "")
+            planner_args = _dict_field(planner_decision_row, "arguments")
+            replan_key = canonical_required_tool_call_key(
+                required_next_tool_call.get("tool"),
+                required_next_tool_call.get("arguments"),
+            )
+            planner_key = canonical_required_tool_call_key(planner_tool, planner_args)
+            if duplicate_route and replan_key == planner_key:
+                stale_marker = {
+                    "satisfied": True,
+                    "tool": required_next_tool_call.get("tool"),
+                    "arguments": (
+                        required_next_tool_call.get("arguments")
+                        if isinstance(required_next_tool_call.get("arguments"), dict)
+                        else {}
+                    ),
+                    "reason": "replan_specialist_repeated_already_successful_route",
+                    "key": replan_key,
+                }
+                stale = contract.get("stale_required_next_tool_calls")
+                stale = stale if isinstance(stale, list) else []
+                stale.insert(0, stale_marker)
+                contract["stale_required_next_tool_calls"] = stale[:8]
+                contract["required_next_tool_call_satisfied"] = stale_marker
+            else:
+                contract["required_next_tool_call"] = required_next_tool_call
+                contract["planner_may_choose_final"] = False
+                final_contract = (
+                    dict(contract.get("finalization_contract"))
+                    if isinstance(contract.get("finalization_contract"), dict)
+                    else {}
+                )
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["reason"] = "required_next_tool_call_from_replan_specialist"
+                contract["finalization_contract"] = final_contract
+        enriched["evidence_contract"] = contract
+        return enriched
+
     def append_cached_tool_result(step_number: int, planner_decision: dict[str, Any], cached: dict[str, Any]) -> None:
         cached_result = _dict_field(cached, "result")
         support_subturn = support_subturn_decision(planner_decision)
@@ -323,7 +421,14 @@ def run_agentic_planner_job(
         validation: dict[str, Any],
     ) -> None:
         violations = _list_field(validation, "violations")
-        if "repeated_same_tool_arguments_without_progress" not in {str(item) for item in violations}:
+        repeat_violations = {str(item) for item in violations}
+        if not any(
+            item == "repeated_same_tool_arguments_without_progress"
+            or item == "repo_read_window_already_successful_without_progress"
+            or item == "planner_scratchpad_window_already_successful_without_progress"
+            or item.startswith("repo_read_already_successful:")
+            for item in repeat_violations
+        ):
             return
         tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
         if not tool:
@@ -340,6 +445,25 @@ def run_agentic_planner_job(
             )
         if isinstance(evidence_contract, dict):
             required = _dict_field(evidence_contract, "required_next_tool_call")
+            required_key = canonical_required_tool_call_key(required.get("tool"), required.get("arguments"))
+            decision_key = canonical_required_tool_call_key(tool, internal_args)
+            if required and normalize_tool_name(str(required.get("tool") or "")) == tool and required_key == decision_key:
+                stale_marker = {
+                    "satisfied": True,
+                    "tool": tool,
+                    "arguments": _dict_field(required, "arguments"),
+                    "reason": "required_next_tool_call_rejected_as_already_successful",
+                    "key": required_key,
+                }
+                stale = evidence_contract.get("stale_required_next_tool_calls")
+                stale = stale if isinstance(stale, list) else []
+                stale.insert(0, stale_marker)
+                evidence_contract["stale_required_next_tool_calls"] = stale[:8]
+                evidence_contract["required_next_tool_call_satisfied"] = stale_marker
+                evidence_contract.pop("required_next_tool_call", None)
+                guard_result["stale_required_next_tool_call"] = stale_marker
+                guard_result.pop("required_next_tool_call", None)
+                required = {}
             if required.get("tool") == "planner_scratchpad_read":
                 next_instruction = str(
                     evidence_contract.get("required_next_progress")
@@ -1458,6 +1582,7 @@ def run_agentic_planner_job(
                         ),
                     },
                 )
+            validation = enrich_validation_with_replan_specialist(step, decision, validation)
             raw_planner_text = _decision_raw_planner_text(decision)
             retry_limit = (
                 AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES

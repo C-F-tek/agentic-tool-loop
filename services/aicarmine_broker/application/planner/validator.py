@@ -6,6 +6,10 @@ import json
 from typing import Any, Mapping
 
 from aicarmine_broker.application.evidence.goal_classifier import effective_repo_analysis_goal
+from aicarmine_broker.application.tool_surface.required_tool_call import (
+    append_stale_required_call_marker,
+    required_next_tool_call_satisfaction,
+)
 
 
 def validate_planner_decision_against_evidence(
@@ -196,6 +200,26 @@ def validate_planner_decision_against_evidence(
             if isinstance(quality.get("required_next_tool_call"), dict)
             else {}
         )
+        if required_next_tool_call:
+            satisfaction = required_next_tool_call_satisfaction(
+                required_next_tool_call,
+                history,
+                successful_repo_read_paths=_agentic_v2_successful_read_paths,
+                successful_window_signatures=_successful_window_signatures,
+                repo_read_window_signature=_repo_read_window_signature,
+                planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
+                decision_paths=_decision_paths,
+            )
+            if satisfaction.get("satisfied") is True:
+                append_stale_required_call_marker(contract, satisfaction)
+                contract.pop("required_next_tool_call", None)
+                contract["required_next_progress"] = (
+                    "Final-quality requested an evidence route that is already satisfied in "
+                    "verified tool history. Do not call the same tool with the same arguments. "
+                    "Rewrite action=final from existing verified evidence, or choose a different "
+                    "concrete evidence gap only if one is still missing."
+                )
+                required_next_tool_call = {}
         if required_next_tool_call:
             contract["required_next_tool_call"] = required_next_tool_call
             tool_name = str(required_next_tool_call.get("tool") or "").strip()
