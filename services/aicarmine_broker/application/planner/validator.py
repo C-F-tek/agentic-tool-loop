@@ -193,8 +193,10 @@ def validate_planner_decision_against_evidence(
             )
         )
 
-    def _coalesce_required_next_missing_paths(values: list[Any]) -> list[str]:
+    def _coalesce_required_next_missing_paths(values: Any) -> list[str]:
         out: list[str] = []
+        if not isinstance(values, (list, tuple, set)):
+            return out
         for value in values:
             token = _repo_rel_token(value)
             if token and token not in out:
@@ -243,9 +245,10 @@ def validate_planner_decision_against_evidence(
                 return True
         return False
 
-    def _required_next_tool_from_missing_evidences(values: list[Any], allow_if_missing: bool) -> dict[str, Any]:
+    def _required_next_tool_from_missing_evidences(values: Any, allow_if_missing: bool) -> dict[str, Any]:
+        iterable_values = values if isinstance(values, (list, tuple, set)) else []
         paths = _coalesce_required_next_missing_paths(
-            [value for value in values if isinstance(value, str)]
+            [value for value in iterable_values if isinstance(value, str)]
         )
         if not paths:
             return {}
@@ -359,10 +362,13 @@ def validate_planner_decision_against_evidence(
                 if str(item).strip()
             ]
 
+        raw_existing_required_missing = contract.get("required_next_missing_evidences")
         existing_required_missing = [
             path
             for path in _coalesce_required_next_missing_paths(
-                contract.get("required_next_missing_evidences")
+                raw_existing_required_missing
+                if isinstance(raw_existing_required_missing, (list, tuple, set))
+                else []
             )
             if path
         ]
@@ -382,9 +388,15 @@ def validate_planner_decision_against_evidence(
             if isinstance(quality.get("required_next_tool_call"), dict)
             else {}
         )
-        if not required_next_tool_call and contract.get("required_next_missing_evidences"):
+        raw_contract_missing = contract.get("required_next_missing_evidences")
+        contract_missing = (
+            raw_contract_missing
+            if isinstance(raw_contract_missing, (list, tuple, set))
+            else []
+        )
+        if not required_next_tool_call and contract_missing:
             required_next_tool_call = _required_next_tool_from_missing_evidences(
-                contract.get("required_next_missing_evidences"),
+                contract_missing,
                 allow_if_missing=True,
             )
         if required_next_tool_call:
