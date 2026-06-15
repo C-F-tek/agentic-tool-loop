@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # vulkan_bridge Module Reference
 
-Updated: 2026-06-05
+Updated: 2026-06-15
 
 `vulkan_bridge` is the 3571 OpenWebUI-facing bridge. It must expose a stable
 public helper surface and hide internal 3572 implementation details. Its core
@@ -68,8 +68,9 @@ For terminal jobs returned to OpenWebUI:
   `called_by_30b` are internal/routing metadata and must not be promoted as
   primary OpenWebUI top-level result fields.
 - `payload_index_for_30b`: first navigation surface for concrete payload fields.
-- `priority_evidence_for_30b`: high-priority inline concrete payloads and
-  compact analysis evidence.
+- `priority_evidence_for_30b`: pointer-first high-priority navigation metadata
+  and compact analysis evidence. It must not duplicate large concrete payloads
+  already present under `tool_context_for_30b.artifacts[*].artifact`.
 - `materialization_report`: diagnostic-only report with schema
   `public_evidence_materialization.v1`. It states whether inline JSON evidence
   was materialized, whether `tool_context_for_30b` is JSON-object parseable and
@@ -92,10 +93,11 @@ For terminal jobs returned to OpenWebUI:
   public ledger schema instead of being inlined as raw transport history.
 - Public terminal `result.history` is a bounded
   `agentic_terminal_public_history_ledger.v1`, not raw controller audit history.
-  Keep complete file/diff payloads first in `priority_evidence_for_30b` and
-  `payload_index_for_30b`, with `tool_context_for_30b.artifacts[*].artifact`
-  only as the artifact mirror. Do not expose local job paths, SQLite document
-  ids or artifact paths as locations OpenWebUI must open.
+  Keep complete file/diff payloads canonical in
+  `tool_context_for_30b.artifacts[*].artifact`; `priority_evidence_for_30b`
+  and `payload_index_for_30b` should point to those fields instead of copying
+  them. Do not expose local job paths, SQLite document ids or artifact paths as
+  locations OpenWebUI must open.
 - `completed`, `max_steps_reached`, `blocked_needs_attention`,
   `blocked_needs_consent`, `failed`, `failed_tool_error`,
   `failed_planner_error` and `cancelled` must use the same top-level public
@@ -212,9 +214,10 @@ limits, summaries or artifact references.
   `summary` or local artifact paths are never substitutes for the complete
   inline `unified_diff` or `structured_operations`.
 - `priority_evidence_for_30b` is a model-navigation index over complete
-  successful artifacts. It may expose complete `unified_diff`,
-  `structured_operations`, full file `content` and compact analysis evidence,
-  but it does not replace `tool_context_for_30b`.
+  successful artifacts. It may expose compact analysis evidence, hashes,
+  lengths, line counts and primary payload locations, but large concrete fields
+  such as `unified_diff`, `structured_operations` and full file `content`
+  remain canonical under `tool_context_for_30b.artifacts[*].artifact`.
 - Do not synthesize successful evidence for failed, rejected, blocked or guard
   entries. If a non-completed job contains useful rejected planner output,
   repair text or code-product attempts, expose them only as explicit partial

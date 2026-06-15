@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # codex_bridge Module Reference
 
-Updated: 2026-06-13
+Updated: 2026-06-15
 
 `codex_bridge` contains optional Codex-facing integration services. These are
 not the OpenWebUI 3571 public bridge and are not planner-native 3572 tools.
@@ -48,6 +48,10 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 - `mcp_server.py` direct-dispatches the allowlisted Codex MCP tools without
   calling 3571, `/vulkan/agent`, or an HTTP broker tool loop. Imports of broker
   registry/dispatcher helpers must remain lazy and function-scoped.
+- Direct MCP dispatch must stay auditable without opening extra capabilities:
+  blocked responses and logs should include `requested_tool`, `internal_tool`,
+  `effect_classes` and `block_reason`, while command execution remains disabled
+  unless a dedicated confirmed tool owns it.
 - Codex root selection is process-local. `AICARMINE_CODEX_MCP_REPO_ROOT`,
   Codex workspace env and the MCP cwd take precedence over any inherited
   broker `AICARMINE_LAB_REPO`; once resolved, the MCP process rewrites its own
@@ -114,11 +118,17 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
   so jobs launched through the 3579 client remain inspectable without HTTP.
 - Normal RAG indexing should run as delta. Full mode is for schema changes or
   cleanup after a previously noisy index build.
+- Memory/RAG read paths are best-effort per section. A corrupt or locked memory
+  DB, reranker timeout or invalid reranker response should produce bounded
+  diagnostics and preserve any valid read-only data already available.
 - The RAG MCP reranker path uses an FTS candidate pool default of `80`, a
   reranker input default of `12`, `AICARMINE_RAG_RERANK_DOC_CHARS` default
   `2500` and `AICARMINE_RAG_RERANK_TIMEOUT_SECONDS` default `30.0`, so the
   shared BGE reranker can improve precision without turning every search into
   a large blocking request.
+- RAG reranker timeouts are reported with requested/effective timeout metadata.
+  When reranking is unavailable or returns no usable scores, FTS results remain
+  valid orientation evidence with `rerank_score=None`.
 - If Codex bridge behavior appears stale, verify which wrapper path launched it:
   `aicarmine_codex_mcp_server.py`, `aicarmine_codex_ollama_responses_bridge.py`
   or a package module directly.

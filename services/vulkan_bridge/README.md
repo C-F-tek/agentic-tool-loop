@@ -93,3 +93,10 @@ payload source and is not an acceptable reason to omit successful artifacts from
 3571. If final OpenWebUI evidence is incomplete, verify the 3572 persistent
 `history` and raw `tool-results` rehydration path before changing the public
 schema.
+
+`tool_context_for_30b.artifacts[*].artifact` is the canonical complete payload
+location. `priority_evidence_for_30b` and `payload_index_for_30b` are
+pointer-first navigation surfaces over those artifacts; they should carry
+metadata, hashes, locations and bounded summaries, not duplicate large file
+content or diffs. 3571 may lint and rehydrate 3572 materialization, but it
+should preserve `materialization_report owner=3572_broker` when present.

@@ -99,6 +99,20 @@ Core code entry points:
 - [jsonrpc.py](jsonrpc.py), [responses_proxy.py](responses_proxy.py), [storage.py](storage.py)
   - Compatibility facades for historical import paths.
 
+## Current MCP Boundaries
+
+The Codex MCP layer is an operator/tooling surface, not an alternate 3572
+planner registry. RAG/search MCPs are for orientation and must be followed by
+real file reads before patching. The local subagent facade delegates bounded
+read-only work through the dedicated 3579 client; it must not call 3571, 3572,
+OpenWebUI, `vulkan_helper` or Ollama directly.
+
+Direct dispatch diagnostics should report requested/internal tool names,
+effect classes and block reasons while keeping `allow_command=false` and the
+existing confirmation policies. RAG reranking remains best-effort: timeout and
+invalid-response metadata explain the fallback, while FTS candidates stay
+available with `rerank_score=None`.
+
 ## Test/Smoke Guardrail
 
 Codex bridge changes must not add, restore, run or document test/smoke flows
