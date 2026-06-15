@@ -5,11 +5,173 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from aicarmine_broker.application.evidence.audit_guidance import (
+    audit_guidance_for_goal,
+    final_audit_red_flags,
+    goal_requests_semantic_audit,
+    pending_read_or_search_actions,
+    role_guidance_for_goal,
+)
+
 
 def _append_unique(values: list[str], value: Any) -> None:
     text = str(value or "").strip()
     if text and text not in values:
         values.append(text)
+
+
+def _clip_text(value: Any, limit: int) -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit)] + f"\n...[truncated {len(text) - limit} chars]"
+
+
+def _compact_list(values: Any, *, limit: int = 12) -> list[Any]:
+    if not isinstance(values, list):
+        return []
+    return values[: max(0, int(limit or 0))]
+
+
+def _compact_mapping(value: Any, *, text_limit: int = 500, list_limit: int = 8) -> Any:
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            if item in (None, "", [], {}):
+                continue
+            out[str(key)] = _compact_mapping(item, text_limit=text_limit, list_limit=list_limit)
+        return out
+    if isinstance(value, list):
+        return [_compact_mapping(item, text_limit=text_limit, list_limit=list_limit) for item in value[:list_limit]]
+    if isinstance(value, str):
+        return _clip_text(value, text_limit)
+    return value
+
+
+def _verified_read_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    rows = contract.get("verified_content_reads") if isinstance(contract, dict) else []
+    rows = rows if isinstance(rows, list) else []
+    compact_rows: list[dict[str, Any]] = []
+    truncated_paths: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get("path") or row.get("repo_path") or "").strip()
+        if row.get("truncated") or row.get("preview_only"):
+            _append_unique(truncated_paths, path)
+        item = {
+            key: row.get(key)
+            for key in (
+                "path",
+                "repo_path",
+                "line_count",
+                "content_chars",
+                "truncated",
+                "preview_only",
+                "complete",
+                "sha256",
+                "source",
+            )
+            if row.get(key) not in (None, "", [], {})
+        }
+        if item:
+            compact_rows.append(item)
+    return {
+        "count": len(rows),
+        "top": compact_rows[:12],
+        "omitted_count": max(0, len(compact_rows) - 12),
+        "truncated_paths": truncated_paths[:12],
+    }
+
+
+def _final_quality_rag_tool_surface(contract: dict[str, Any]) -> dict[str, Any]:
+    core_status = (
+        contract.get("core_discovery_status")
+        if isinstance(contract, dict) and isinstance(contract.get("core_discovery_status"), dict)
+        else {}
+    )
+    semantic_paths: list[str] = []
+    for path in contract.get("validator_admissible_repo_read_paths") or []:
+        if isinstance(path, str):
+            _append_unique(semantic_paths, path)
+    return {
+        "repo_semantic_search_available_as_planner_tool": True,
+        "hidden_preplanner_rag_must_not_be_called_by_final_quality": True,
+        "route_rule": (
+            "If more semantic discovery is needed, request required_next_tool_call.tool="
+            "repo_semantic_search with a concrete query; then read returned paths with repo_read."
+        ),
+        "core_discovery_status": {
+            key: core_status.get(key)
+            for key in (
+                "schema",
+                "source",
+                "intrinsic_context_rag_status",
+                "intrinsic_context_rag_status_scope",
+                "rag_status_scope",
+                "rag_item_count",
+                "repo_semantic_search_available_as_planner_tool",
+            )
+            if core_status.get(key) not in (None, "", [], {})
+        },
+        "admissible_repo_read_paths_top": semantic_paths[:12],
+    }
+
+
+def _final_quality_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    contract = contract if isinstance(contract, dict) else {}
+    final_contract = (
+        contract.get("finalization_contract")
+        if isinstance(contract.get("finalization_contract"), dict)
+        else {}
+    )
+    coverage = (
+        contract.get("minimum_read_coverage")
+        if isinstance(contract.get("minimum_read_coverage"), dict)
+        else final_contract.get("minimum_read_coverage")
+        if isinstance(final_contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    return {
+        "semantic_goal_classification": _compact_mapping(
+            contract.get("semantic_goal_classification"), text_limit=300, list_limit=6
+        ),
+        "finalization_contract": _compact_mapping(final_contract, text_limit=360, list_limit=8),
+        "minimum_read_coverage": _compact_mapping(coverage, text_limit=360, list_limit=12),
+        "successful_repo_read_paths": _compact_list(contract.get("successful_repo_read_paths"), limit=24),
+        "verified_content_reads": _verified_read_summary(contract),
+        "file_memory_paths": [
+            row.get("path")
+            for row in _read_note_rows(contract)
+            if isinstance(row, dict) and row.get("path")
+        ][:24],
+        "candidate_next_actions": _compact_mapping(contract.get("candidate_next_actions"), text_limit=420, list_limit=8),
+        "core_discovery_candidates": _compact_mapping(contract.get("core_discovery_candidates"), text_limit=300, list_limit=10),
+        "missing_owner_paths": _compact_list(contract.get("missing_owner_paths"), limit=24),
+        "candidate_owner_paths": _compact_list(contract.get("candidate_owner_paths"), limit=24),
+        "required_next_progress": _clip_text(contract.get("required_next_progress"), 800),
+        "required_next_tool_call": _compact_mapping(
+            contract.get("required_next_tool_call"),
+            text_limit=260,
+            list_limit=6,
+        ),
+        "required_next_tool_call_satisfied": _compact_mapping(
+            contract.get("required_next_tool_call_satisfied"),
+            text_limit=260,
+            list_limit=6,
+        ),
+        "stale_required_next_tool_calls": _compact_mapping(
+            contract.get("stale_required_next_tool_calls"),
+            text_limit=360,
+            list_limit=8,
+        ),
+        "rag_tool_surface": _final_quality_rag_tool_surface(contract),
+        "validation_rejections_tail": _compact_mapping(
+            contract.get("validation_rejections_tail"),
+            text_limit=500,
+            list_limit=6,
+        ),
+    }
 
 
 def _read_note_rows(contract: dict[str, Any]) -> list[dict[str, Any]]:
@@ -46,6 +208,79 @@ def _path_hit_count(final_answer: str, paths: list[str]) -> int:
     return sum(1 for path in paths if path and path in text)
 
 
+_FINAL_PATH_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_.@/\\:-])"
+    r"(?:[A-Za-z0-9_.@+-]+[\\/])+"
+    r"[A-Za-z0-9_.@+-]+(?:\.[A-Za-z0-9_+-]+|[\\/])?"
+    r"(?![A-Za-z0-9_.@/\\:-])",
+    re.IGNORECASE,
+)
+
+
+def _repoish_path_token(value: Any) -> str:
+    text = str(value or "").strip().strip("`'\".,;:)]}")
+    text = text.replace("\\", "/").strip("/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    if not text or text in {".", ".."}:
+        return ""
+    return text
+
+
+def _final_path_tokens(final_answer: str) -> list[str]:
+    tokens: list[str] = []
+    for match in _FINAL_PATH_TOKEN_RE.finditer(str(final_answer or "")):
+        token = _repoish_path_token(match.group(0))
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def _known_path_tokens(contract: dict[str, Any], paths: list[str], core_paths: list[str]) -> set[str]:
+    known: set[str] = set()
+
+    def add(raw: Any) -> None:
+        token = _repoish_path_token(raw)
+        if not token:
+            return
+        known.add(token.lower())
+        parts = token.split("/")
+        for index in range(1, len(parts)):
+            known.add("/".join(parts[:index]).lower())
+
+    for path in [*paths, *core_paths]:
+        add(path)
+    for key in (
+        "candidate_owner_paths",
+        "missing_owner_paths",
+        "read_admissible_paths",
+        "validator_admissible_repo_read_paths",
+        "successful_repo_read_paths",
+    ):
+        values = contract.get(key) if isinstance(contract, dict) else []
+        for path in values if isinstance(values, list) else []:
+            add(path)
+    return known
+
+
+def _unverified_final_path_tokens(
+    final_answer: str,
+    contract: dict[str, Any],
+    *,
+    paths: list[str],
+    core_paths: list[str],
+) -> list[str]:
+    known = _known_path_tokens(contract, paths, core_paths)
+    unresolved: list[str] = []
+    for token in _final_path_tokens(final_answer):
+        low = token.lower()
+        if low in {"services", "tools", "cache"}:
+            continue
+        if low not in known:
+            unresolved.append(token)
+    return unresolved
+
+
 def _concept_present(text_low: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, text_low) for pattern in patterns)
 
@@ -62,6 +297,43 @@ def _absolute_no_issue_claim(text_low: str) -> bool:
         r"\brepository\s+(?:is\s+)?secure\b",
         r"\bintrinsecamente\s+sicur",
         r"\bassenza\s+di\s+(?:critic|vulnerabil)",
+    )
+    return _concept_present(text_low, patterns)
+
+
+def _absolute_repo_no_issue_claim(text_low: str) -> bool:
+    patterns = (
+        r"\bno\s+(?:semantic\s+)?(?:drift|duplication|duplicate\s+logic|regression\s+risk)\b",
+        r"\bno\s+critical\s+(?:semantic\s+)?(?:issues|findings|risks)\b",
+        r"\bnessun[ae]?\s+(?:incongruenza|duplicazione|regressione|drift|rischio)\b",
+        r"\bnessun[ae]?\s+critic",
+        r"\bniente\s+(?:drift|duplicazioni|incongruenze|cloni)\b",
+        r"\bno\s+drift\b",
+    )
+    return _concept_present(text_low, patterns)
+
+
+def _declares_partial_or_limited_coverage(text_low: str) -> bool:
+    patterns = (
+        r"\breview\s+parzial",
+        r"\bcopertura\s+parzial",
+        r"\blimiti?\s+della\s+copertura\b",
+        r"\blimits?\s+of\s+coverage\b",
+        r"\bnon\s+ancora\s+(?:esaminat|esplorat|lett)",
+        r"\bnot\s+yet\s+(?:examined|explored|read)\b",
+        r"\btruncat[oaie]?\b",
+        r"\btruncated\b",
+    )
+    return _concept_present(text_low, patterns)
+
+
+def _claims_deep_or_complete_review(text_low: str) -> bool:
+    patterns = (
+        r"\breview\s+(?:locale\s+)?(?:read-only\s+)?approfondit",
+        r"\bho\s+completato\s+la\s+review\b",
+        r"\breview\s+complet",
+        r"\baudit\s+complet",
+        r"\bsufficiente\s+per\s+dichiarare\b",
     )
     return _concept_present(text_low, patterns)
 
@@ -141,6 +413,55 @@ def repo_analysis_final_answer_quality(
     )
     if any(phrase in text_low for phrase in generic_phrases) and len(stripped) < 3200:
         violations.append("repo_analysis_final_generic_template_language")
+    red_flags = final_audit_red_flags(stripped)
+    if red_flags.get("follow_up_invitations"):
+        violations.append("repo_analysis_final_follow_up_invitation_instead_of_answer")
+    if red_flags.get("speculative_terms"):
+        violations.append("repo_analysis_final_speculative_claims_without_evidence")
+    if red_flags.get("generic_no_issue_phrases") and len(rows) < 8:
+        violations.append("repo_analysis_final_generic_no_issue_claim_with_shallow_evidence")
+    unverified_path_tokens = _unverified_final_path_tokens(
+        stripped,
+        contract if isinstance(contract, dict) else {},
+        paths=paths,
+        core_paths=core_paths,
+    )
+    if unverified_path_tokens:
+        violations.append("repo_analysis_final_mentions_unverified_paths:" + ",".join(unverified_path_tokens[:4]))
+    pending_actions = pending_read_or_search_actions(contract if isinstance(contract, dict) else {})
+    hard_pending_actions = [
+        action for action in pending_actions
+        if (
+            action.get("required") is True
+            or str(action.get("source") or "") == "repo_analysis_final_model_quality"
+            or str(action.get("action_id") or "").startswith("repo_analysis_final_quality:")
+            or "required" in str(action.get("reason") or "").lower()
+        )
+    ]
+    if hard_pending_actions and not _declares_partial_or_limited_coverage(text_low):
+        violations.append("repo_analysis_final_ignores_required_read_or_search_route")
+    if _declares_partial_or_limited_coverage(text_low) and _claims_deep_or_complete_review(text_low):
+        violations.append("repo_analysis_final_claims_complete_despite_declared_limits")
+    if _declares_partial_or_limited_coverage(text_low) and _absolute_repo_no_issue_claim(text_low):
+        violations.append("repo_analysis_final_absolute_no_issue_claim_with_partial_coverage")
+    core_status = (
+        contract.get("core_discovery_status")
+        if isinstance(contract, dict) and isinstance(contract.get("core_discovery_status"), dict)
+        else {}
+    )
+    rag_reported_missing = "rag" in text_low and any(
+        term in text_low
+        for term in (
+            "missing",
+            "mancant",
+            "assent",
+            "non disponibile",
+            "not available",
+            "unavailable",
+        )
+    )
+    if rag_reported_missing and core_status.get("repo_semantic_search_available_as_planner_tool") is True:
+        violations.append("repo_analysis_final_confuses_intrinsic_rag_missing_with_planner_rag")
 
     code_security_coverage = (
         contract.get("code_security_coverage")
@@ -166,6 +487,9 @@ def repo_analysis_final_answer_quality(
             "core_candidate_paths": core_paths[:8],
             "evidence_path_count": len(paths),
             "read_note_count": len(rows),
+            "unverified_path_tokens": unverified_path_tokens[:8],
+            "final_audit_red_flags": red_flags,
+            "hard_pending_read_or_search_actions": hard_pending_actions[:4],
         },
         "required_next_progress": (
             "Final answer rejected as too shallow for repository analysis. Return action=final "
@@ -175,6 +499,199 @@ def repo_analysis_final_answer_quality(
             "evidence gap is named."
         ),
     }
+
+
+_ALLOWED_FINAL_QUALITY_ROUTE_TOOLS = {
+    "repo_read",
+    "repo_semantic_search",
+    "repo_rg_search",
+    "repo_search",
+    "repo_list_files",
+}
+
+_ALLOWED_FINAL_QUALITY_ROUTE_ARGS = {
+    "repo_read": {
+        "path",
+        "paths",
+        "line",
+        "line_start",
+        "line_count",
+        "start_line",
+        "end_line",
+        "before",
+        "after",
+        "max_chars",
+    },
+    "repo_semantic_search": {
+        "query",
+        "path",
+        "limit",
+        "top_k",
+        "max_results",
+        "candidate_limit",
+        "rerank",
+        "reindex",
+        "max_chunk_chars",
+    },
+    "repo_rg_search": {"query", "pattern", "path", "max_results", "context"},
+    "repo_search": {"query", "pattern", "symbol", "path", "max_results"},
+    "repo_list_files": {"path", "limit", "suffix", "glob", "max_files"},
+}
+
+
+def repo_analysis_final_answer_model_quality_request(
+    final_answer: str,
+    contract: dict[str, Any],
+    *,
+    goal: str,
+) -> dict[str, Any]:
+    """Build the LLM judge request for repo-analysis final validation."""
+    return {
+        "system": (
+            "You are the final-quality judge for a repository-analysis agentic loop. "
+            "Return strict JSON only. You decide whether the proposed final answer is acceptable "
+            "or whether the planner must continue. The controller will only enforce your JSON. "
+            "Do not call hidden preplanner RAG. If more semantic discovery is needed, route to "
+            "the normal planner tool repo_semantic_search. If a concrete file/window is missing, "
+            "route to repo_read. Do not invent reads or claim coverage not present in the contract."
+        ),
+        "user_payload": {
+            "schema": "repo_analysis_final_model_quality_request.v1",
+            "task": "judge_repo_analysis_final_answer_or_route_next_tool",
+            "goal": str(goal or ""),
+            "final_answer": _clip_text(final_answer, 16000),
+            "contract_summary": _final_quality_contract_summary(contract),
+            "semantic_audit_guidance": audit_guidance_for_goal(goal),
+            "final_quality_judge_role_guidance": role_guidance_for_goal("final_quality_judge", goal),
+            "goal_requests_semantic_audit": goal_requests_semantic_audit(goal),
+            "decision_rules": [
+                "Accept only if the final answer is grounded in verified repo evidence and answers the goal.",
+                "Reject if it declares unread/truncated/missing files that are needed to answer the goal.",
+                "Reject if it claims complete analysis while naming unresolved coverage limits.",
+                "Reject if it says no duplication, no semantic drift, or no regression risk from shallow owner reads.",
+                "Reject if it uses speculative language such as probably/probabilmente for concrete code ownership claims.",
+                "Reject if it asks the user whether to generate a final, diff, or patch instead of answering the current request.",
+                "Reject if it cites repo-relative paths that are not present in verified reads, admissible read paths, or owner candidates.",
+                "Reject if candidate_next_actions or required_next_tool_call still names a required repo_read/repo_semantic_search route and the final does not explicitly state a bounded limitation.",
+                "Reject if it reports global RAG missing only because intrinsic_context had no retrieved_rag_chunks; repo_semantic_search is the planner RAG tool.",
+                "Do not choose required_next_tool_call for a repo_read/search route already present in verified_content_reads, successful_repo_read_paths, or stale_required_next_tool_calls.",
+                "If broad discovery is still needed, choose required_next_tool_call.tool=repo_semantic_search with a concrete query.",
+                "If specific unread/truncated paths are named, choose required_next_tool_call.tool=repo_read for those paths or a focused window.",
+                "If enough evidence exists but the prose is inconsistent, reject and require a corrected final without a tool call.",
+            ],
+            "allowed_required_next_tools": sorted(_ALLOWED_FINAL_QUALITY_ROUTE_TOOLS),
+            "required_json_shape": {
+                "decision": "accept | reject | continue_required",
+                "ok": True,
+                "violations": [{"code": "short_machine_code", "reason": "human reason"}],
+                "required_next_progress": "short instruction for the next planner turn",
+                "required_next_tool_call": {
+                    "tool": "repo_semantic_search | repo_read | repo_rg_search | repo_search | repo_list_files",
+                    "arguments": {"query": "concrete query or path args"},
+                    "reason": "why this tool is the next needed step",
+                },
+                "confidence": 0.0,
+            },
+        },
+    }
+
+
+def _violation_code(value: Any) -> str:
+    if isinstance(value, dict):
+        raw = value.get("code") or value.get("violation") or value.get("reason")
+    else:
+        raw = value
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"[^a-zA-Z0-9_:-]+", "_", text).strip("_").lower()
+    return text[:120]
+
+
+def _sanitize_required_next_tool_call(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    tool = str(value.get("tool") or "").strip()
+    if tool not in _ALLOWED_FINAL_QUALITY_ROUTE_TOOLS:
+        return {}
+    raw_args = value.get("arguments") if isinstance(value.get("arguments"), dict) else {}
+    allowed_args = _ALLOWED_FINAL_QUALITY_ROUTE_ARGS.get(tool, set())
+    args = {
+        key: raw_args.get(key)
+        for key in allowed_args
+        if raw_args.get(key) not in (None, "", [], {})
+    }
+    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"} and not (
+        args.get("query") or args.get("pattern") or args.get("symbol")
+    ):
+        return {}
+    if tool == "repo_read" and not (args.get("path") or args.get("paths")):
+        return {}
+    if tool == "repo_list_files" and not args.get("path"):
+        args["path"] = "."
+    out = {
+        "tool": tool,
+        "arguments": args,
+    }
+    reason = str(value.get("reason") or "").strip()
+    if reason:
+        out["reason"] = _clip_text(reason, 500)
+    out["source"] = "repo_analysis_final_model_quality"
+    return out
+
+
+def sanitize_repo_analysis_final_model_quality(
+    value: Any,
+) -> dict[str, Any]:
+    """Normalize the model judge response; invalid model output rejects final."""
+    base = {
+        "schema": "repo_analysis_final_model_quality.v1",
+        "model_decision_available": False,
+        "ok": False,
+        "decision": "invalid",
+        "violations": ["repo_analysis_final_model_quality_invalid"],
+        "required_next_progress": (
+            "Final answer quality requires a valid model judge decision. Retry final quality "
+            "or continue with an evidence-bound repo_semantic_search/repo_read if a concrete gap is known."
+        ),
+    }
+    if not isinstance(value, dict):
+        return base
+    decision = str(value.get("decision") or "").strip().lower()
+    if decision not in {"accept", "reject", "continue_required"}:
+        return {**base, "raw_decision": _compact_mapping(value, text_limit=500, list_limit=6)}
+
+    raw_violations = value.get("violations")
+    violation_items = raw_violations if isinstance(raw_violations, list) else []
+    violations = [code for code in (_violation_code(item) for item in violation_items) if code]
+    ok = decision == "accept" and value.get("ok") is not False
+    if not ok and not violations:
+        violations = ["repo_analysis_final_model_rejected"]
+    if ok:
+        violations = []
+    required_next_progress = str(value.get("required_next_progress") or "").strip()
+    required_next_tool_call = _sanitize_required_next_tool_call(value.get("required_next_tool_call"))
+    if not ok and not required_next_progress:
+        required_next_progress = (
+            "Model final-quality judge rejected the final answer. Continue with the "
+            "required_next_tool_call if present; otherwise rewrite the final answer from verified evidence."
+        )
+    if required_next_tool_call and not required_next_progress:
+        required_next_progress = str(required_next_tool_call.get("reason") or "")
+    out = {
+        "schema": "repo_analysis_final_model_quality.v1",
+        "model_decision_available": True,
+        "ok": ok,
+        "decision": decision,
+        "violations": violations,
+        "required_next_progress": _clip_text(required_next_progress, 1000),
+        "required_next_tool_call": required_next_tool_call,
+        "confidence": value.get("confidence"),
+        "raw_decision": _compact_mapping(value, text_limit=500, list_limit=6),
+    }
+    if not required_next_tool_call:
+        out.pop("required_next_tool_call", None)
+    return out
 
 
 def repo_analysis_final_answer_too_shallow(

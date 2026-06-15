@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
+from ..shared.payload_metadata import sha256_text
+
 
 RepoReadContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
 KeyLineExtractor = Callable[[str], list[str]]
@@ -19,7 +21,7 @@ def repo_read_content_views(
     per_item_limit: int = 60000,
     total_limit: int = 180000,
 ) -> list[dict[str, Any]]:
-    """Load concrete repo_read content views from tool-result artifacts."""
+    """Return repo_read payload metadata without duplicating file content."""
     views: list[dict[str, Any]] = []
     used = 0
     seen: set[tuple[str, str]] = set()
@@ -58,21 +60,23 @@ def repo_read_content_views(
             if key in seen:
                 continue
             seen.add(key)
-            remaining = max(0, total_limit - used)
-            if remaining <= 0:
-                break
-            item_limit = max(1, min(per_item_limit, remaining))
-            content_view = content[:item_limit]
-            used += len(content_view)
-            views.append({
+            view = {
                 "path": path,
                 "line_count": read_item.get("line_count"),
                 "tool_truncated": bool(read_item.get("truncated")),
                 "content_chars": len(content),
-                "content_view_chars": len(content_view),
-                "content_view_truncated_by_wrapper": len(content_view) < len(content),
-                "content_view": content_view,
-            })
+                "content_sha256": sha256_text(content),
+                "content_not_duplicated_here": True,
+                "content_location": (
+                    "tool_context_for_30b.artifacts[*].artifact.content "
+                    "matching this path and content_sha256"
+                ),
+            }
+            metadata_chars = len(json.dumps(view, ensure_ascii=False, default=str))
+            if total_limit > 0 and used + metadata_chars > total_limit:
+                break
+            used += metadata_chars
+            views.append(view)
         if used >= total_limit:
             break
     return views
@@ -83,7 +87,7 @@ def execution_evidence_digest_text(
     *,
     repo_read_item_full_content: RepoReadContentLoader,
     extract_key_lines: KeyLineExtractor,
-    limit: int = 180000,
+    limit: int = 12000,
 ) -> str:
     """Human-visible evidence from the actual executed loop."""
     result = result if isinstance(result, dict) else {}
@@ -178,20 +182,16 @@ def execution_evidence_digest_text(
         for note in read_notes[:10]:
             parts.append("  - " + note)
     if content_views:
-        parts.append("- repo_read content_view:")
+        parts.append("- repo_read payload metadata:")
         for view in content_views:
             meta = (
                 f"path={view.get('path')} lines={view.get('line_count')} "
-                f"chars={view.get('content_chars')}"
+                f"chars={view.get('content_chars')} sha256={view.get('content_sha256')}"
             )
             if view.get("tool_truncated"):
                 meta += " tool_truncated=true"
-            if view.get("content_view_truncated_by_wrapper"):
-                meta += " content_view_truncated_by_wrapper=true"
+            meta += " content_not_duplicated_here=true"
             parts.append("  - " + meta)
-            parts.append("````text")
-            parts.append(str(view.get("content_view") or ""))
-            parts.append("````")
     if guards:
         parts.append("- controller_guard events: " + "; ".join(guards[:5]))
     if repairs:

@@ -4,7 +4,10 @@ import json
 import re
 from typing import Any
 
-from aicarmine_broker.planner_core.json_io import _parse_strict_json_object
+from aicarmine_broker.planner_core.json_io import (
+    _parse_strict_json_object,
+    parse_strict_json_object_diagnostics,
+)
 
 
 def _single_embedded_json_decision(text: str) -> dict[str, Any]:
@@ -171,7 +174,8 @@ def _normalize_terminal_planner_decision(decision: dict[str, Any]) -> dict[str, 
 def normalize_planner_decision(
     raw_text: str, goal: str, step: int, state: dict[str, Any]
 ) -> dict[str, Any]:
-    decoded = _parse_strict_json_object(raw_text)
+    diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    decoded = diagnostics.get("decoded") if diagnostics.get("ok") is True else {}
     if decoded:
         normalized = _normalize_terminal_planner_decision(decoded)
         if str(normalized.get("action") or "tool").strip().lower() == "tool" and not normalized.get("tool"):
@@ -181,7 +185,8 @@ def normalize_planner_decision(
                     break
         return normalized
 
-    return {
+    raw_response = str(raw_text or "")
+    invalid_decision = {
         "action": "block",
         "reason": "INVALID_PLANNER_OUTPUT_NON_JSON_PURE",
         "final_answer": (
@@ -193,5 +198,12 @@ def normalize_planner_decision(
             "JSON or recognizable invalid tool calls are eligible for Vulkan/GPU0 "
             "11435 repair."
         ),
-        "raw_planner_text": str(raw_text or "")[:12000],
+        "raw_planner_text": raw_response[:12000],
+        "json_parse_error_type": diagnostics.get("error_type"),
+        "raw_response_chars": diagnostics.get("raw_response_chars", len(raw_response)),
+        "raw_response_preview": raw_response[:1000],
     }
+    for key in ("error", "line", "column", "position", "trailing_preview", "start_preview", "decoded_type"):
+        if diagnostics.get(key) not in (None, "", [], {}):
+            invalid_decision[key if key.startswith("json_") else f"json_parse_{key}"] = diagnostics.get(key)
+    return invalid_decision

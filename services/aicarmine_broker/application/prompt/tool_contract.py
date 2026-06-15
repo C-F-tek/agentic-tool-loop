@@ -19,15 +19,18 @@ def available_tools_for_user_payload(
 ) -> Any:
     if not native_tools:
         return compact_tools
-    return [
-        {
-            "name": row.get("name"),
-            "transport": "message.tool_calls",
-            "schema_source": "ollama_request.tools",
-        }
+    tool_names = [
+        str(row.get("name"))
         for row in compact_tools
         if isinstance(row, dict) and row.get("name")
     ]
+    return {
+        "schema": "planner_available_tools_index.v1",
+        "transport": "message.tool_calls",
+        "schema_source": "ollama_request.tools",
+        "tool_count": len(tool_names),
+        "tool_names": tool_names,
+    }
 
 
 def tool_shape_examples_for_prompt(

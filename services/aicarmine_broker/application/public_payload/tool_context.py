@@ -88,6 +88,17 @@ def slim_public_tool_context(tool_context: Any) -> dict[str, Any]:
         "next_action_for_30b": tool_context.get("next_action_for_30b")
         if isinstance(tool_context.get("next_action_for_30b"), dict)
         else {},
+        "coverage_status": tool_context.get("coverage_status")
+        if isinstance(tool_context.get("coverage_status"), dict)
+        else {},
+        "context_build_diagnostics": tool_context.get("context_build_diagnostics")
+        if isinstance(tool_context.get("context_build_diagnostics"), dict)
+        else {},
+        "evidence_contract_summary": tool_context.get("evidence_contract_summary")
+        if isinstance(tool_context.get("evidence_contract_summary"), dict)
+        else {},
+        "evidence_contract_sha256": tool_context.get("evidence_contract_sha256"),
+        "evidence_contract_chars": tool_context.get("evidence_contract_chars"),
     }
     return drop_empty_dict_values(slim)
 

@@ -7,6 +7,32 @@ templates, and documentation needed to run the local tool bridge and broker.
 Machine-local data, generated artifacts, model binaries, virtual environments,
 OpenWebUI data, and job outputs are intentionally excluded from Git.
 
+## Current Verified Runtime Highlights
+
+As of 2026-06-15, the core loop has four distinct model-assisted lanes around
+the validator-only controller:
+
+- controller preplanner RAG query planning runs before the first planner turn;
+  malformed JSON is repaired by the same planner model and backend timeout is a
+  typed non-blocking fallback to deterministic preseed only;
+- final-quality judge runs for repository and semantic-audit final candidates;
+  malformed judge JSON is repaired before the validator decides accept/reject
+  or `continue_required`;
+- planner replan specialist runs after selected validator rejections and can
+  repair malformed specialist JSON before returning the next required route;
+- Vulkan/GPU0 repair remains only an explicit repair lane for malformed planner
+  emissions or invalid non-code-product tool proposals. It must not mask
+  code-product contract failures.
+
+The 11434 stream transport now guards both phases: waiting for HTTP response
+headers and reading stream frames. If headers never arrive, the job records a
+typed planner stream timeout instead of silently leaving an empty step stream.
+
+Public OpenWebUI payloads are pointer-first and inline-evidence-first:
+`tool_context_for_30b.artifacts[*].artifact` is the canonical complete payload
+location, while `priority_evidence_for_30b` and `payload_index_for_30b` are
+bounded navigation/index surfaces rather than duplicate large content stores.
+
 ## Initial Reading Index
 
 Start from these documents before changing runtime behavior:

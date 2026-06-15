@@ -22,6 +22,19 @@ import shutil
 import tempfile
 from pathlib import Path
 
+
+def _normalize_template_params(params):
+    """Keep Jinja rendering stable when optional CLI values are not supplied."""
+    normalized = {}
+    for key, value in params.items():
+        normalized[key] = "" if value is None else value
+    return normalized
+
+
+def _render_template(template, **params):
+    return template.render(**_normalize_template_params(params))
+
+
 def add_common_arguments(parser):
     parser.add_argument('--model_repository_path', required=False, default='models', help='Where the model should be exported to', dest='model_repository_path')
     parser.add_argument('--source_model', required=True, help='HF model name or path to the local folder with PyTorch or OpenVINO model', dest='source_model')
@@ -450,7 +463,7 @@ def export_text_generation_model(model_repository_path, source_model, model_name
     os.makedirs(os.path.join(model_repository_path, model_name), exist_ok=True)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(text_generation_graph_template)
     print("task_parameters", task_parameters)
-    graph_content = gtemplate.render(model_path=model_path, draft_model_dir_name=draft_model_dir_name, **task_parameters)
+    graph_content = _render_template(gtemplate, model_path=model_path, draft_model_dir_name=draft_model_dir_name, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -471,7 +484,7 @@ def export_embeddings_model_ov(model_repository_path, source_model, model_name, 
         if (os.system(convert_tokenizer_command)):
             raise ValueError("Failed to export tokenizer model", source_model)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(embedding_graph_ov_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -485,7 +498,7 @@ def export_text2speech_model(model_repository_path, source_model, model_name, pr
         if os.system(optimum_command):
             raise ValueError("Failed to export text2speech model", source_model)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(t2s_graph_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -499,7 +512,7 @@ def export_speech2text_model(model_repository_path, source_model, model_name, pr
         if os.system(optimum_command):
             raise ValueError("Failed to export speech2text model", source_model)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(s2t_graph_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -515,7 +528,7 @@ def export_rerank_model_ov(model_repository_path, source_model, model_name, prec
         print("Exporting tokenizer to ", destination_path)
         export_rerank_tokenizer(source_model, destination_path, max_doc_length)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(rerank_graph_ov_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -551,12 +564,12 @@ def export_rerank_model(model_repository_path, source_model, model_name, precisi
                 shutil.move(os.path.join(tmpdirname, 'openvino_tokenizer.xml'), os.path.join(tokenizer_path, 'model.xml'))
                 shutil.move(os.path.join(tmpdirname, 'openvino_tokenizer.bin'), os.path.join(tokenizer_path, 'model.bin'))
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(rerank_graph_template)
-    graph_content = gtemplate.render(model_name=model_name, **task_parameters)
+    graph_content = _render_template(gtemplate, model_name=model_name, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
     stemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(rerank_subconfig_template)
-    subconfig_content = stemplate.render(model_name=model_name, **task_parameters)
+    subconfig_content = _render_template(stemplate, model_name=model_name, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'subconfig.json'), 'w') as f:
         f.write(subconfig_content)
     print("Created subconfig {}".format(os.path.join(model_repository_path, model_name, 'subconfig.json')))
@@ -598,7 +611,7 @@ def export_image_generation_model(model_repository_path, source_model, model_nam
             task_parameters[param] = '{}x{}'.format(int(width), int(height))
 
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(image_generation_graph_template)
-    graph_content = gtemplate.render(model_path=model_path, **task_parameters)
+    graph_content = _render_template(gtemplate, model_path=model_path, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
          f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))

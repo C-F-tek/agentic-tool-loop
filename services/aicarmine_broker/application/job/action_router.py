@@ -1,6 +1,8 @@
 """Public agent payload action router."""
 from __future__ import annotations
 
+import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -20,6 +22,9 @@ CompactTerminalResponse = Callable[..., dict[str, Any]]
 LoadState = Callable[[str], dict[str, Any]]
 WriteState = Callable[[dict[str, Any]], None]
 AppendEvent = Callable[..., None]
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -100,15 +105,31 @@ class AgentJobActionRouter:
         payload: dict[str, Any],
         original_args: dict[str, Any],
     ) -> int:
+        raw_timeout = None
+        raw_source = "default"
+        for source, container in (("payload", payload), ("arguments", original_args)):
+            value = container.get("timeout_seconds") if isinstance(container, dict) else None
+            if value not in (None, ""):
+                raw_timeout = value
+                raw_source = source
+                break
+        if raw_timeout in (None, ""):
+            return 120
         try:
-            timeout_seconds = int(
-                payload.get("timeout_seconds")
-                or original_args.get("timeout_seconds")
-                or 120
+            timeout_seconds = float(str(raw_timeout).strip())
+            if not math.isfinite(timeout_seconds):
+                raise ValueError("timeout_seconds is not finite")
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Invalid timeout_seconds from %s; using default timeout. "
+                "received_type=%s received_preview=%r error_type=%s",
+                raw_source,
+                type(raw_timeout).__name__,
+                str(raw_timeout)[:120],
+                type(exc).__name__,
             )
-        except Exception:
-            timeout_seconds = 120
-        return max(15, min(timeout_seconds, 240))
+            timeout_seconds = 120.0
+        return int(max(15.0, min(timeout_seconds, 240.0)))
 
     @staticmethod
     def _job_action(

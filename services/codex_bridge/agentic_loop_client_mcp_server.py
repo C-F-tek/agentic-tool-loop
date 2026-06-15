@@ -261,6 +261,7 @@ def _get_health(endpoint: str, *, timeout_seconds: int) -> dict[str, Any]:
 def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict[str, Any]:
     started = time.monotonic()
     marker = "aicarmine_codex_mcp_reranker_functional_probe"
+    effective_timeout = _safe_int(timeout_seconds, 30, 1, 60)
     payload = {
         "model": DEFAULT_RERANKER_MODEL,
         "query": f"{marker} planner validator tool surface",
@@ -273,7 +274,7 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
         method="POST",
         url=rerank_url,
         payload=payload,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=effective_timeout,
     )
     elapsed_ms = round((time.monotonic() - started) * 1000, 1)
     if response.get("ok") is not True:
@@ -281,6 +282,8 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
             "ok": False,
             "error": "reranker_functional_probe_failed",
             "elapsed_ms": elapsed_ms,
+            "timeout_requested": timeout_seconds,
+            "timeout_used": effective_timeout,
             "response": response,
         }
     payload_value = response.get("payload") if isinstance(response.get("payload"), dict) else {}
@@ -290,11 +293,15 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
             "ok": False,
             "error": "reranker_functional_probe_no_scores",
             "elapsed_ms": elapsed_ms,
+            "timeout_requested": timeout_seconds,
+            "timeout_used": effective_timeout,
             "response": response,
         }
     return {
         "ok": True,
         "elapsed_ms": elapsed_ms,
+        "timeout_requested": timeout_seconds,
+        "timeout_used": effective_timeout,
         "input_count": len(payload["documents"]),
         "returned_scores": len(results),
         "first_result": results[0],
@@ -453,6 +460,94 @@ def _read_broker_process_metadata(root: Path, port: int) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _broker_source_files(root: Path) -> list[Path]:
+    services_root = _services_root(root)
+    candidates: list[Path] = [services_root / "aicarmine_vulkan_tool_broker.py"]
+    for relative in (
+        "aicarmine_broker",
+        "vulkan_bridge",
+    ):
+        base = services_root / relative
+        if base.is_dir():
+            candidates.extend(base.rglob("*.py"))
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        try:
+            resolved = path.resolve(strict=False)
+        except Exception:
+            resolved = path
+        key = str(resolved).lower()
+        if key in seen or not path.is_file():
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _broker_source_freshness(root: Path, port: int) -> dict[str, Any]:
+    metadata = _read_broker_process_metadata(root, port)
+    if not metadata:
+        return {
+            "ok": True,
+            "checked": False,
+            "reason": "broker_process_metadata_missing",
+            "metadata_path": str(_broker_process_metadata_path(root, port)),
+        }
+    if bool(metadata.get("reload")):
+        return {
+            "ok": True,
+            "checked": True,
+            "reload": True,
+            "metadata": metadata,
+        }
+    try:
+        started_at = float(metadata.get("started_at_unix") or 0.0)
+    except (TypeError, ValueError):
+        started_at = 0.0
+    if started_at <= 0:
+        return {
+            "ok": True,
+            "checked": False,
+            "reason": "broker_started_at_missing",
+            "metadata": metadata,
+        }
+    newest_path = ""
+    newest_mtime = 0.0
+    checked = 0
+    for path in _broker_source_files(root):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        checked += 1
+        if mtime > newest_mtime:
+            newest_mtime = mtime
+            newest_path = str(path)
+    stale = bool(newest_mtime > started_at + 1.0)
+    return {
+        "ok": not stale,
+        "checked": True,
+        "reload": False,
+        "started_at_unix": started_at,
+        "newest_source_mtime_unix": newest_mtime,
+        "newest_source_path": newest_path,
+        "checked_source_file_count": checked,
+        "metadata": metadata,
+        **(
+            {
+                "error": "broker_stale_code_possible",
+                "fix": (
+                    "Restart the dedicated broker with restart=true, "
+                    f"confirm_restart_broker={CONFIRM_RESTART}, and reload=true when code freshness is required."
+                ),
+            }
+            if stale
+            else {}
+        ),
+    }
+
+
 def _write_broker_process_metadata(
     root: Path,
     *,
@@ -574,9 +669,31 @@ def _broker_restart_candidates(root: Path, port: int, *, trust_port_owner: bool)
 
 
 def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds: int) -> dict[str, Any]:
-    unique_pids = sorted({int(pid) for pid in pids if int(pid) > 0 and int(pid) != os.getpid()})
+    invalid_pids: list[dict[str, Any]] = []
+    normalized_pids: set[int] = set()
+    for raw_pid in pids:
+        try:
+            pid = int(raw_pid)
+        except (TypeError, ValueError) as exc:
+            invalid_pids.append(
+                {
+                    "raw_pid": str(raw_pid),
+                    "error": "invalid_pid",
+                    "error_type": type(exc).__name__,
+                }
+            )
+            continue
+        if pid > 0 and pid != os.getpid():
+            normalized_pids.add(pid)
+    unique_pids = sorted(normalized_pids)
     if not unique_pids:
-        return {"ok": False, "error": "no_broker_process_candidates", "port": port, "terminated_pids": []}
+        return {
+            "ok": False,
+            "error": "no_broker_process_candidates",
+            "port": port,
+            "terminated_pids": [],
+            "invalid_pids": invalid_pids,
+        }
     attempts: list[dict[str, Any]] = []
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     for pid in unique_pids:
@@ -600,10 +717,68 @@ def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds:
                     "returncode": completed.returncode,
                     "stdout": completed.stdout[-1200:],
                     "stderr": completed.stderr[-1200:],
+                    **(
+                        {
+                            "error": "termination_command_returned_nonzero",
+                            "error_type": "CompletedProcess",
+                        }
+                        if completed.returncode != 0
+                        else {}
+                    ),
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_command_timeout",
+                    "error_type": type(exc).__name__,
+                    "timeout_seconds": max(3, timeout_seconds),
+                    "stdout": (exc.stdout or "")[-1200:] if isinstance(exc.stdout, str) else "",
+                    "stderr": (exc.stderr or "")[-1200:] if isinstance(exc.stderr, str) else "",
+                }
+            )
+        except FileNotFoundError as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_command_not_found",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            )
+        except PermissionError as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_permission_denied",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            )
+        except OSError as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_os_error",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
                 }
             )
         except Exception as exc:
-            attempts.append({"pid": pid, "command": command, "error": type(exc).__name__, "message": str(exc)})
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_unexpected_error",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            )
 
     deadline = time.monotonic() + max(1, timeout_seconds)
     while time.monotonic() < deadline:
@@ -613,15 +788,19 @@ def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds:
                 "port_released": True,
                 "port": port,
                 "terminated_pids": unique_pids,
+                "invalid_pids": invalid_pids,
                 "attempts": attempts,
             }
         time.sleep(0.25)
+    port_owner_pids_after = _port_owner_pids(port)
     return {
         "ok": False,
         "error": "broker_port_still_listening_after_termination",
         "port_released": False,
         "port": port,
         "terminated_pids": unique_pids,
+        "invalid_pids": invalid_pids,
+        "port_owner_pids_after": port_owner_pids_after,
         "attempts": attempts,
     }
 
@@ -1651,8 +1830,9 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return payload_problem
     require_root_match = _safe_bool(args.get("require_broker_repo_root_match"), True)
     broker_root_check: dict[str, Any] = {"ok": None, "skipped": True}
+    broker_ensure: dict[str, Any] | None = None
     reranker_ensure: dict[str, Any] | None = None
-    ensure_broker = _safe_bool(args.get("ensure_broker"), False)
+    ensure_broker = _safe_bool(args.get("ensure_broker"), False) or _safe_bool(args.get("restart"), False)
     if _safe_bool(args.get("ensure_reranker"), False) and not ensure_broker:
         reranker_ensure = _ensure_reranker(args, root)
         if reranker_ensure.get("ok") is not True:
@@ -1669,6 +1849,7 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             ensure_args = dict(args)
             ensure_args["port"] = port
             ensure = _ensure_broker(ensure_args, root)
+            broker_ensure = ensure
             if isinstance(ensure.get("reranker_ensure"), dict):
                 reranker_ensure = ensure["reranker_ensure"]
             if ensure.get("ok") is not True:
@@ -1715,6 +1896,22 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "fix": f"Avvia il broker dedicato Codex su 127.0.0.1:{port} con AICARMINE_LAB_REPO uguale alla root Codex oppure usa ensure_broker quando la porta e' libera.",
             }
     assert payload is not None
+    freshness = _broker_source_freshness(root, port)
+    if freshness.get("ok") is False:
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_run",
+            "error": freshness.get("error") or "broker_stale_code_possible",
+            "agentic_loop_called": False,
+            "broker_health_probe_called": bool(require_root_match),
+            "root_check": broker_root_check,
+            "broker_source_freshness": freshness,
+            "broker_ensure": broker_ensure,
+            "endpoint": endpoint,
+            "port": port,
+            "codex_mcp_repo_root": str(root),
+            "fix": freshness.get("fix"),
+        }
     requested_timeout_seconds = _safe_int(args.get("timeout_seconds"), 120, 15, 900)
     wait_budget_seconds = _safe_int(payload.get("wait_seconds"), 30, 1, 600)
     timeout_seconds = max(requested_timeout_seconds, min(900, wait_budget_seconds + 30))
@@ -1731,6 +1928,8 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "endpoint": endpoint,
             "port": port,
             "codex_mcp_repo_root": str(root),
+            "broker_source_freshness": freshness,
+            **({"broker_ensure": broker_ensure} if broker_ensure is not None else {}),
             **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
             "request": {
                 "return_mode": payload.get("return_mode"),

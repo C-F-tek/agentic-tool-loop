@@ -138,6 +138,12 @@ def planner_history_reason(item: dict[str, Any], result: dict[str, Any]) -> str:
 
 def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
+    if not contract:
+        contract = (
+            result.get("evidence_contract_summary")
+            if isinstance(result.get("evidence_contract_summary"), dict)
+            else {}
+        )
     rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
     operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
     coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
@@ -372,12 +378,18 @@ def planner_history_messages_for_ollama(
     code_product_build_state_kind: str,
     store_prompt_text_window: StorePromptTextWindow,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    history_items = history if isinstance(history, list) else []
     if max_chars <= 0:
         return [], {
             "schema": "planner_history_messages.v1",
             "enabled": bool(native_tools_enabled),
             "included_history_items": 0,
-            "skipped_history_items": len(history if isinstance(history, list) else []),
+            "skipped_history_items": len(history_items),
+            "considered_history_items": len(history_items),
+            "transportable_history_items": 0,
+            "empty_history_items": 0,
+            "oversized_history_items": 0,
+            "candidate_message_chars": 0,
             "message_chars": 0,
             "max_chars": max_chars,
         }
@@ -385,7 +397,11 @@ def planner_history_messages_for_ollama(
     total_chars = 0
     included = 0
     skipped = 0
-    for item in reversed(history if isinstance(history, list) else []):
+    empty = 0
+    oversized = 0
+    transportable = 0
+    candidate_message_chars = 0
+    for item in reversed(history_items):
         item_messages = planner_history_item_messages(
             item,
             root=root,
@@ -395,13 +411,18 @@ def planner_history_messages_for_ollama(
             store_prompt_text_window=store_prompt_text_window,
         )
         if not item_messages:
+            empty += 1
             continue
+        transportable += 1
         item_chars = json_char_len(item_messages)
+        candidate_message_chars += item_chars
         if selected_reversed and total_chars + item_chars > max_chars:
             skipped += 1
+            oversized += 1
             continue
         if total_chars + item_chars > max_chars:
             skipped += 1
+            oversized += 1
             continue
         selected_reversed.append(item_messages)
         total_chars += item_chars
@@ -414,6 +435,12 @@ def planner_history_messages_for_ollama(
         "enabled": bool(native_tools_enabled),
         "included_history_items": included,
         "skipped_history_items": skipped,
+        "considered_history_items": len(history_items),
+        "transportable_history_items": transportable,
+        "empty_history_items": empty,
+        "oversized_history_items": oversized,
+        "candidate_message_chars": candidate_message_chars,
+        "omitted_history_items": max(0, transportable - included),
         "message_count": len(messages),
         "message_chars": json_char_len(messages),
         "max_chars": max_chars,

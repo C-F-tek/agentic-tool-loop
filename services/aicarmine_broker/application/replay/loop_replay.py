@@ -30,13 +30,32 @@ Validator = Callable[[str, dict[str, Any], list[dict[str, Any]]], dict[str, Any]
 
 def _read_json(path: Path, default: Any) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        return json.loads(raw)
     except FileNotFoundError:
         return default
+    except PermissionError as exc:
+        return {
+            "_read_error": "permission_denied",
+            "path": str(path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }
     except json.JSONDecodeError as exc:
-        return {"_read_error": "invalid_json", "path": str(path), "error": str(exc)}
+        return {
+            "_read_error": "invalid_json",
+            "path": str(path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "payload_preview": raw[:500] if "raw" in locals() else "",
+        }
     except OSError as exc:
-        return {"_read_error": "read_failed", "path": str(path), "error": str(exc)}
+        return {
+            "_read_error": "read_failed",
+            "path": str(path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }
 
 
 def _read_ndjson(path: Path) -> list[dict[str, Any]]:
@@ -44,20 +63,47 @@ def _read_ndjson(path: Path) -> list[dict[str, Any]]:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except FileNotFoundError:
+        # Missing events.ndjson must remain an empty list so SQLite fallback can recover.
         return rows
+    except PermissionError as exc:
+        return [{
+            "_read_error": "permission_denied",
+            "path": str(path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }]
     except OSError as exc:
-        return [{"_read_error": "read_failed", "path": str(path), "error": str(exc)}]
-    for line in lines:
+        return [{
+            "_read_error": "os_error",
+            "path": str(path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        }]
+    for line_number, line in enumerate(lines, start=1):
         text = line.strip()
         if not text:
             continue
         try:
             row = json.loads(text)
-        except json.JSONDecodeError:
-            rows.append({"_read_error": "invalid_ndjson_line", "line_preview": text[:500]})
+        except json.JSONDecodeError as exc:
+            rows.append({
+                "_read_error": "invalid_ndjson_line",
+                "path": str(path),
+                "line_number": line_number,
+                "line_preview": text[:500],
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            })
             continue
         if isinstance(row, dict):
             rows.append(row)
+        else:
+            rows.append({
+                "_read_error": "non_object_ndjson_line",
+                "path": str(path),
+                "line_number": line_number,
+                "decoded_type": type(row).__name__,
+            })
     return rows
 
 
@@ -83,6 +129,7 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
         return [], {
             "available": False,
             "reason": "config_import_failed",
+            "error_stage": "config_import",
             "error_type": type(exc).__name__,
             "error": str(exc)[:1000],
         }
@@ -94,26 +141,57 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
             "db_path": str(db_path),
         }
     uri = "file:" + str(db_path).replace("\\", "/") + "?mode=ro"
+    db: sqlite3.Connection | None = None
     try:
-        with sqlite3.connect(uri, uri=True) as db:
-            db.row_factory = sqlite3.Row
-            rows = db.execute(
-                """
-                SELECT id, job_id, ts, step, event_type, message, payload_json
-                FROM events
-                WHERE job_id = ?
-                ORDER BY id
-                """,
-                (job_id,),
-            ).fetchall()
-    except Exception as exc:
+        db = sqlite3.connect(uri, uri=True)
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """
+            SELECT id, job_id, ts, step, event_type, message, payload_json
+            FROM events
+            WHERE job_id = ?
+            ORDER BY id
+            """,
+            (job_id,),
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
         return [], {
             "available": False,
-            "reason": "sqlite_event_read_failed",
+            "reason": "sqlite_operational_error",
             "db_path": str(db_path),
             "error_type": type(exc).__name__,
             "error": str(exc)[:1000],
         }
+    except sqlite3.DatabaseError as exc:
+        return [], {
+            "available": False,
+            "reason": "sqlite_database_error",
+            "db_path": str(db_path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:1000],
+        }
+    except OSError as exc:
+        return [], {
+            "available": False,
+            "reason": "sqlite_os_error",
+            "db_path": str(db_path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:1000],
+        }
+    except Exception as exc:
+        return [], {
+            "available": False,
+            "reason": "sqlite_read_failed",
+            "db_path": str(db_path),
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:1000],
+        }
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except sqlite3.Error:
+                pass
     events: list[dict[str, Any]] = []
     for row in rows:
         payload: dict[str, Any] = {}
@@ -122,9 +200,18 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
             try:
                 parsed = json.loads(raw_payload)
                 payload = parsed if isinstance(parsed, dict) else {}
-            except Exception:
+            except json.JSONDecodeError as exc:
                 payload = {
                     "_read_error": "invalid_sqlite_event_payload_json",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                    "payload_preview": raw_payload[:500],
+                }
+            except Exception as exc:
+                payload = {
+                    "_read_error": "sqlite_event_payload_parse_failed",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
                     "payload_preview": raw_payload[:500],
                 }
         events.append({

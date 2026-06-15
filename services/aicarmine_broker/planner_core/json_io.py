@@ -6,9 +6,12 @@ parsing. The functions here do not dispatch tools or mutate source files.
 from __future__ import annotations
 
 import json
+import queue
 import re
 import socket
+import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -31,12 +34,37 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
-    except Exception as exc:
+    except (socket.timeout, TimeoutError) as exc:
         return {
             "ok": False,
-            "backend_unreachable": True,
+            "backend_timeout": True,
+            "backend_unreachable": False,
             "error_type": type(exc).__name__,
             "error": str(exc),
+            "timeout_seconds": int(timeout or 0),
+        }
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", None)
+        reason_text = str(reason or exc)
+        is_timeout = isinstance(reason, (socket.timeout, TimeoutError)) or "timed out" in reason_text.lower()
+        return {
+            "ok": False,
+            "backend_timeout": is_timeout,
+            "backend_unreachable": not is_timeout,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "network_reason_type": type(reason).__name__ if reason is not None else None,
+            "timeout_seconds": int(timeout or 0),
+        }
+    except OSError as exc:
+        is_timeout = "timed out" in str(exc).lower()
+        return {
+            "ok": False,
+            "backend_timeout": is_timeout,
+            "backend_unreachable": not is_timeout,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "timeout_seconds": int(timeout or 0),
         }
     try:
         decoded = json.loads(raw)
@@ -269,8 +297,95 @@ def post_json_stream_to_file(
                            "allow_plain_text_without_json": allow_plain_text_without_json,
                        }, step=step)
 
+    response_queue: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
+    response_abandoned = threading.Event()
+
+    def open_response() -> None:
+        try:
+            response = urllib.request.urlopen(req, timeout=timeout)
+            if response_abandoned.is_set():
+                try:
+                    response.close()
+                except Exception:
+                    pass
+                return
+            response_queue.put(("response", response), block=False)
+        except Exception as exc:  # pragma: no cover - transported to caller thread
+            if response_abandoned.is_set():
+                return
+            response_queue.put(("exception", exc), block=False)
+
+    opener = threading.Thread(
+        target=open_response,
+        name=f"aicarmine-planner-stream-open-{job_id}-step-{step}",
+        daemon=True,
+    )
+    opener.start()
+    response_kind = ""
+    response_value: Any = None
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            response_abandoned.set()
+            append_agent_event(
+                job_id,
+                "planner_stream_header_timeout",
+                f"Planner stream did not return HTTP headers within {timeout}s.",
+                {
+                    "elapsed_seconds": round(time.time() - started, 3),
+                    "timeout_seconds": timeout,
+                    "stream_path": str(stream_path),
+                    "phase": "awaiting_response_headers",
+                },
+                step=step,
+            )
+            return {
+                "ok": False,
+                "backend_timeout": True,
+                "backend_unreachable": False,
+                "error_type": "PlannerStreamHeaderTimeout",
+                "error": f"planner stream did not return HTTP headers within {timeout}s",
+                "partial_content": "",
+                "stream_path": str(stream_path),
+                "elapsed_seconds": round(time.time() - started, 3),
+                "timeout_phase": "awaiting_response_headers",
+            }
+        try:
+            response_kind, response_value = response_queue.get(timeout=min(5.0, max(0.1, remaining)))
+            break
+        except queue.Empty:
+            now_ts = time.time()
+            if now_ts - last_waiting_at >= 5:
+                last_waiting_at = now_ts
+                append_agent_event(
+                    job_id,
+                    "planner_stream_waiting",
+                    "Waiting for planner HTTP headers.",
+                    {
+                        "elapsed_seconds": round(now_ts - started, 3),
+                        "timeout_seconds": timeout,
+                        "stream_path": str(stream_path),
+                        "phase": "awaiting_response_headers",
+                    },
+                    step=step,
+                )
+    if response_kind == "exception":
+        exc = response_value
+        return {
+            "ok": False,
+            "backend_timeout": "timed out" in str(exc).lower() or isinstance(exc, (socket.timeout, TimeoutError)),
+            "backend_unreachable": "timed out" not in str(exc).lower(),
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "partial_content": "",
+            "stream_path": str(stream_path),
+            "elapsed_seconds": round(time.time() - started, 3),
+            "timeout_phase": "awaiting_response_headers",
+        }
+
+    response = response_value
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with response:
             while True:
                 if time.time() >= deadline:
                     return {
@@ -461,6 +576,62 @@ def post_json_stream_to_file(
 # ---------------------------------------------------------------------------
 
 
+def parse_strict_json_object_diagnostics(text: str) -> dict[str, Any]:
+    """Return diagnostics for the strict planner JSON parser."""
+    raw_input = str(text or "")
+    raw = raw_input.strip()
+    diagnostics: dict[str, Any] = {
+        "schema": "strict_json_object_parse_diagnostics.v1",
+        "ok": False,
+        "raw_response_chars": len(raw_input),
+        "stripped_chars": len(raw),
+    }
+    if not raw:
+        diagnostics["error_type"] = "empty"
+        return diagnostics
+    if not raw.startswith("{"):
+        diagnostics.update({
+            "error_type": "not_json_object",
+            "start_preview": raw[:80],
+        })
+        return diagnostics
+    try:
+        decoder = json.JSONDecoder()
+        decoded, end = decoder.raw_decode(raw)
+    except json.JSONDecodeError as exc:
+        diagnostics.update({
+            "error_type": "json_decode_error",
+            "error": str(exc)[:500],
+            "line": exc.lineno,
+            "column": exc.colno,
+            "position": exc.pos,
+        })
+        return diagnostics
+    except Exception as exc:
+        diagnostics.update({
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+        })
+        return diagnostics
+    trailing = raw[end:].strip()
+    if trailing:
+        diagnostics.update({
+            "error_type": "trailing_content",
+            "trailing_preview": trailing[:200],
+            "json_end": end,
+        })
+        return diagnostics
+    if not isinstance(decoded, dict):
+        diagnostics.update({
+            "error_type": "not_json_object",
+            "decoded_type": type(decoded).__name__,
+        })
+        return diagnostics
+    diagnostics["ok"] = True
+    diagnostics["decoded"] = decoded
+    return diagnostics
+
+
 def _parse_strict_json_object(text: str) -> dict[str, Any]:
     """Parse only one complete JSON object.
 
@@ -472,14 +643,6 @@ def _parse_strict_json_object(text: str) -> dict[str, Any]:
     Markdown fences, prose before/after the object, embedded snippets, multiple
     objects, and partial JSON recovered from a degenerate stream remain invalid.
     """
-    raw = str(text or "").strip()
-    if not raw or not raw.startswith("{") or not raw.endswith("}"):
-        return {}
-    try:
-        decoder = json.JSONDecoder()
-        decoded, end = decoder.raw_decode(raw)
-        if raw[end:].strip():
-            return {}
-        return decoded if isinstance(decoded, dict) else {}
-    except Exception:
-        return {}
+    diagnostics = parse_strict_json_object_diagnostics(text)
+    decoded = diagnostics.get("decoded") if diagnostics.get("ok") is True else {}
+    return decoded if isinstance(decoded, dict) else {}

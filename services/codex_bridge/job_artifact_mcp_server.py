@@ -22,6 +22,7 @@ from repo_mcp_common import (
 SERVER_NAME = "aicarmine-job-artifact-mcp"
 SERVER_VERSION = "0.1.0"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+MAX_JOB_ID_CHARS = 100
 SUPPORT_SUBTURN_TOOLS = frozenset(
     {
         "planner_scratchpad_read",
@@ -107,9 +108,15 @@ def _job_roots(root: Path) -> list[Path]:
 def _safe_job_id(value: Any) -> str:
     job_id = str(value or "").strip()
     if not job_id:
-        raise ValueError("missing job_id")
+        raise ValueError("missing job_id; expected non-empty job id matching pattern " + JOB_ID_RE.pattern)
+    if len(job_id) > MAX_JOB_ID_CHARS:
+        raise ValueError(f"job_id too long: {len(job_id)} chars (max {MAX_JOB_ID_CHARS})")
     if not JOB_ID_RE.fullmatch(job_id):
-        raise ValueError(f"invalid job_id: {job_id}")
+        preview = job_id[:120]
+        raise ValueError(
+            "invalid job_id: "
+            f"{preview}; allowed_pattern={JOB_ID_RE.pattern}; example_valid=abc-123_def.456"
+        )
     return job_id
 
 

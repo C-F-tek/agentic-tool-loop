@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from .env_loader import EnvMapping, env_bool, env_first, env_float, env_int, env_int_any, env_str
+from .env_loader import EnvMapping, env_bool, env_error_context, env_first, env_float, env_int, env_int_any, env_str
 
 
 @dataclass(frozen=True)
@@ -76,8 +77,23 @@ class BrokerConfig:
     v6_marker: str
 
 
-def _resolved_path(value: str) -> Path:
-    return Path(value).resolve(strict=False)
+def _resolved_path(value: Any, *, env_name: str) -> Path:
+    try:
+        raw = str(value).strip()
+    except Exception as exc:
+        context = env_error_context(env_name, expected="filesystem path", value=value, exc=exc)
+        raise ValueError(
+            f"{env_name} path is not stringifiable; "
+            f"received_type={context['received_type']}; error_type={context.get('error_type')}"
+        ) from exc
+    if not raw:
+        raise ValueError(f"{env_name} path must not be empty")
+    try:
+        return Path(raw).resolve(strict=False)
+    except PermissionError as exc:
+        raise PermissionError(f"{env_name} permission denied while resolving path {raw!r}: {exc}") from exc
+    except OSError as exc:
+        raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
 
 DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding"
@@ -103,17 +119,20 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         else num_ctx_requested
     )
     real_repo = _resolved_path(
-        env_str("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project", env)
+        env_str("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project", env),
+        env_name="AICARMINE_REAL_REPO",
     )
     workspace = _resolved_path(
         env_str(
             "AICARMINE_VULKAN_WORKSPACE",
             r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker",
             env,
-        )
+        ),
+        env_name="AICARMINE_VULKAN_WORKSPACE",
     )
     agent_job_root = _resolved_path(
-        env_str("AICARMINE_AGENT_JOB_ROOT", str(workspace / "agent-jobs"), env)
+        env_str("AICARMINE_AGENT_JOB_ROOT", str(workspace / "agent-jobs"), env),
+        env_name="AICARMINE_AGENT_JOB_ROOT",
     )
     return BrokerConfig(
         service_name=env_str("AICARMINE_BROKER_SERVICE_NAME", "aicarmine-vulkan-tool-broker", env),
@@ -207,20 +226,23 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
                 "AICARMINE_LAB_REPO",
                 r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab",
                 env,
-            )
+            ),
+            env_name="AICARMINE_LAB_REPO",
         ),
         real_repo=real_repo,
         workspace=workspace,
         agent_job_root=agent_job_root,
         agent_job_db=_resolved_path(
-            env_str("AICARMINE_AGENT_JOB_DB", str(agent_job_root / "agent_jobs.sqlite3"), env)
+            env_str("AICARMINE_AGENT_JOB_DB", str(agent_job_root / "agent_jobs.sqlite3"), env),
+            env_name="AICARMINE_AGENT_JOB_DB",
         ),
         planner_memory_db=_resolved_path(
             env_first(
                 ("AICARMINE_PLANNER_MEMORY_DB", "AICARMINE_PERSISTENT_MEMORY_DB"),
                 str(real_repo / "indexAI" / "agent_memory" / "agent_memory.sqlite"),
                 env,
-            )
+            ),
+            env_name="AICARMINE_PLANNER_MEMORY_DB",
         ),
         planner_memory_retention_days=env_int("AICARMINE_PLANNER_MEMORY_RETENTION_DAYS", 2, env),
         planner_rag_db=_resolved_path(
@@ -228,7 +250,8 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
                 "AICARMINE_PLANNER_RAG_DB",
                 str(real_repo / "output" / "ai_runtime_memory" / "rag" / "rag.sqlite"),
                 env,
-            )
+            ),
+            env_name="AICARMINE_PLANNER_RAG_DB",
         ),
         planner_intrinsic_context_max_chars=env_int("AICARMINE_PLANNER_INTRINSIC_CONTEXT_MAX_CHARS", 10000, env),
         planner_intrinsic_rag_top_k=env_int("AICARMINE_PLANNER_INTRINSIC_RAG_TOP_K", 6, env),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,6 +13,7 @@ from aicarmine_broker.config.env_loader import EnvMapping, env_bool, env_float, 
 
 
 HttpPost = Callable[[str, dict[str, Any], float], dict[str, Any]]
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -18,7 +21,7 @@ class NpuPhiClientConfig:
     enabled: bool
     base_url: str = "http://127.0.0.1:3551"
     mode: str = "best_effort"
-    timeout_s: float = 0.15
+    timeout_s: float = 1.0
 
     @classmethod
     def from_env(cls, env: EnvMapping | None = None) -> "NpuPhiClientConfig":
@@ -26,12 +29,12 @@ class NpuPhiClientConfig:
             enabled=env_bool("ENABLE_NPU_PHI_BROKER_DIAGNOSTICS", False, env),
             base_url=env_str("NPU_PHI_BASE_URL", "http://127.0.0.1:3551", env).rstrip("/"),
             mode=env_str("NPU_PHI_BROKER_MODE", "best_effort", env),
-            timeout_s=max(0.01, env_float("NPU_PHI_CLIENT_TIMEOUT_SEC", 0.15, env)),
+            timeout_s=max(0.5, env_float("NPU_PHI_CLIENT_TIMEOUT_SEC", 1.0, env)),
         )
 
 
 def _httpx_post(url: str, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
-    timeout = httpx.Timeout(timeout_s, connect=min(timeout_s, 0.05))
+    timeout = httpx.Timeout(timeout_s, connect=min(timeout_s, 0.5))
     with httpx.Client(timeout=timeout) as client:
         response = client.post(url, json=payload)
         response.raise_for_status()
@@ -58,6 +61,7 @@ def enqueue_scene_spec_best_effort(
         "enabled": resolved.enabled,
         "mode": resolved.mode,
         "base_url": resolved.base_url,
+        "timeout_s": resolved.timeout_s,
         "elapsed_ms": 0,
     }
     if not resolved.enabled:
@@ -80,6 +84,72 @@ def enqueue_scene_spec_best_effort(
     try:
         post = http_post or _httpx_post
         response = post(f"{resolved.base_url}/v1/jobs/scene-spec", payload, resolved.timeout_s)
+        if not isinstance(response, dict):
+            raise ValueError("NPU Phi response is not a JSON object")
+    except httpx.TimeoutException as exc:
+        logger.warning(
+            "NPU Phi broker call timed out after %.3fs error_type=%s",
+            resolved.timeout_s,
+            type(exc).__name__,
+        )
+        return {
+            **base,
+            "attempted": True,
+            "status": "timeout",
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
+        }
+    except httpx.HTTPStatusError as exc:
+        response_preview = ""
+        status_code = None
+        reason = ""
+        if exc.response is not None:
+            status_code = exc.response.status_code
+            reason = exc.response.reason_phrase
+            response_preview = exc.response.text[:500]
+        return {
+            **base,
+            "attempted": True,
+            "status": "http_error",
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "http_status": status_code,
+            "http_reason": reason,
+            "response_preview": response_preview,
+            "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
+        }
+    except httpx.RequestError as exc:
+        return {
+            **base,
+            "attempted": True,
+            "status": "network_error",
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
+        }
+    except json.JSONDecodeError as exc:
+        return {
+            **base,
+            "attempted": True,
+            "status": "invalid_json",
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
+        }
+    except ValueError as exc:
+        return {
+            **base,
+            "attempted": True,
+            "status": "response_shape_error",
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "elapsed_ms": round((time.perf_counter() - start) * 1000, 3),
+        }
     except Exception as exc:
         return {
             **base,

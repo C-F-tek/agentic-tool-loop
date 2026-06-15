@@ -120,6 +120,17 @@ def _compact_text(value: Any, limit: int = MAX_TEXT) -> str:
     return text[: max(0, limit - 180)].rstrip() + "\n\n...[truncated by aicarmine_codex_app_mcp]"
 
 
+def _diagnostic_preview(value: Any, limit: int = 500) -> str:
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        try:
+            text = str(value)
+        except Exception:
+            text = f"<unprintable {type(value).__name__}>"
+    return text[:limit]
+
+
 def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": _compact_text(value)}], "isError": is_error}
 
@@ -237,17 +248,36 @@ def _codex_selected_project_root() -> Path:
     for name in _CODEX_ROOT_ENV_NAMES:
         root = _env_existing_root(name)
         if root is not None:
+            _log(f"selected project root from {name}: {root}")
             return root
 
     cwd_git_root = _path_git_root(cwd)
     if cwd_git_root is not None:
+        _log(f"selected project root from cwd git root: {cwd_git_root}")
         return cwd_git_root
 
     legacy_lab_root = _env_existing_root("AICARMINE_LAB_REPO")
     if legacy_lab_root is not None:
+        _log(f"selected project root from legacy AICARMINE_LAB_REPO: {legacy_lab_root}")
         return legacy_lab_root
 
-    return cwd.resolve()
+    resolved = cwd.resolve()
+    _log(f"using cwd as fallback root: {resolved}")
+    return resolved
+
+
+def _codex_root_source(root: Path) -> str:
+    for name in _CODEX_ROOT_ENV_NAMES:
+        env_root = _env_existing_root(name)
+        if env_root is not None and env_root == root:
+            return name
+    cwd_git_root = _path_git_root(Path.cwd())
+    if cwd_git_root is not None and cwd_git_root == root:
+        return "cwd_git_root"
+    legacy_lab_root = _env_existing_root("AICARMINE_LAB_REPO")
+    if legacy_lab_root is not None and legacy_lab_root == root:
+        return "AICARMINE_LAB_REPO"
+    return "cwd_fallback"
 
 
 def _repo_root() -> Path:
@@ -403,6 +433,59 @@ def _load_broker_registry_capability_map() -> Any | None:
     return capability_map
 
 
+def _registry_payload() -> dict[str, Any]:
+    registry_loader = _load_broker_registry_capability_map()
+    if registry_loader is None:
+        return {}
+    try:
+        value = registry_loader()
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _effect_classes_for_internal_tool(internal_tool: str, registry: dict[str, Any] | None = None) -> list[str]:
+    registry = registry if isinstance(registry, dict) else _registry_payload()
+    surfaces = registry.get("surfaces") if isinstance(registry.get("surfaces"), dict) else {}
+    classes: list[str] = []
+    for class_name in ("pure_read", "state_mutating", "command_exec", "write_guarded"):
+        values = surfaces.get(class_name)
+        if isinstance(values, list) and internal_tool in {str(item) for item in values}:
+            classes.append(class_name)
+    if not classes:
+        legacy_read_only = surfaces.get("read_only")
+        if isinstance(legacy_read_only, list) and internal_tool in {str(item) for item in legacy_read_only}:
+            classes.append("read_only")
+    return classes
+
+
+def _internal_tool_for_requested(name: str) -> str:
+    blocked_internal_map = {
+        "aicarmine_repo_apply_patch": "repo_apply_patch",
+        "aicarmine_repo_command": "repo_command",
+        "aicarmine_repo_write_file": "repo_write_file",
+        "aicarmine_vulkan_helper": "vulkan_helper",
+        "runtime_sqlite_memory_cleanup": "runtime_sqlite_memory_cleanup",
+        "terminal_run_command_wait": "terminal_run_command_wait",
+        "repo_command": "repo_command",
+        "repo_write_file": "repo_write_file",
+        "vulkan_helper": "vulkan_helper",
+    }
+    return INTERNAL_TOOL_MAP.get(name) or blocked_internal_map.get(name, name)
+
+
+def _blocked_tool_diagnostic(name: str, registry: dict[str, Any] | None = None) -> dict[str, Any]:
+    internal_tool = _internal_tool_for_requested(name)
+    return {
+        "requested_tool": name,
+        "internal_tool": internal_tool,
+        "effect_classes": _effect_classes_for_internal_tool(internal_tool, registry),
+        "block_reason": "blocked_by_codex_mcp_direct_policy",
+        "allow_command": False,
+        "user_consent": "",
+    }
+
+
 def _load_dispatcher() -> Any:
     global _DIRECT_DISPATCHER, _DISPATCH_REQUEST_CLASS
 
@@ -426,18 +509,34 @@ def _direct_dispatch(internal_tool: str, args: dict[str, Any]) -> Any:
 
     No HTTP call. No 3571. No 3572/vulkan/agent. No agentic loop.
     """
-    dispatcher = _load_dispatcher()
-    request_class = _DISPATCH_REQUEST_CLASS
-    if request_class is None:
-        raise RuntimeError("dispatcher request class not loaded")
-    request = request_class(
-        name=internal_tool,
-        args=dict(args or {}),
-        root=_repo_root(),
-        allow_command=False,
-        user_consent="",
+    effect_classes = _effect_classes_for_internal_tool(internal_tool)
+    _log(
+        "direct_dispatch_start "
+        f"tool={internal_tool} effect_classes={effect_classes} allow_command=False "
+        f"args_keys={sorted(dict(args or {}).keys())[:40]}"
     )
-    return dispatcher.dispatch(request)
+    try:
+        dispatcher = _load_dispatcher()
+        request_class = _DISPATCH_REQUEST_CLASS
+        if request_class is None:
+            raise RuntimeError("dispatcher request class not loaded")
+        request = request_class(
+            name=internal_tool,
+            args=dict(args or {}),
+            root=_repo_root(),
+            allow_command=False,
+            user_consent="",
+        )
+        result = dispatcher.dispatch(request)
+        _log(f"direct_dispatch_done tool={internal_tool} effect_classes={effect_classes} result_type={type(result).__name__}")
+        return result
+    except Exception as exc:
+        _log(
+            "direct_dispatch_failed "
+            f"tool={internal_tool} effect_classes={effect_classes} "
+            f"error_type={type(exc).__name__} message={_diagnostic_preview(exc, 300)}"
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -456,20 +555,37 @@ def _default_persistent_db() -> Path:
     )
 
 
-def _read_memory_table(db_path: Path, table: str, limit: int = 50, query: str = "") -> list[dict[str, Any]]:
+def _memory_read_diagnostic(db_path: Path, table: str, stage: str, error: str, exc: Exception | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "db_path": str(db_path),
+        "table": table,
+        "stage": stage,
+        "error": error,
+    }
+    if exc is not None:
+        payload.update(
+            {
+                "error_type": type(exc).__name__,
+                "message_preview": _diagnostic_preview(exc, 500),
+            }
+        )
+    return payload
+
+
+def _read_memory_table(db_path: Path, table: str, limit: int = 50, query: str = "") -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     import sqlite3
 
     if not db_path.exists():
-        return []
+        return [], _memory_read_diagnostic(db_path, table, "open", "memory_db_not_found")
 
     limit = _safe_int(limit, 50, low=1, high=200)
-    conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-
+    conn: sqlite3.Connection | None = None
     try:
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
         if table not in tables:
-            return []
+            return [], _memory_read_diagnostic(db_path, table, "schema", "memory_table_not_found")
 
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         order = "updated_at DESC" if "updated_at" in cols else "rowid DESC"
@@ -497,15 +613,25 @@ def _read_memory_table(db_path: Path, table: str, limit: int = 50, query: str = 
                 if key in item:
                     try:
                         item[key[:-5] if key.endswith("_json") else key] = json.loads(item.get(key) or "{}")
-                    except Exception:
+                    except json.JSONDecodeError as exc:
                         item[key + "_parse_error"] = True
+                        item[key + "_parse_error_type"] = type(exc).__name__
             if "content" in item and len(str(item["content"])) > 2400:
                 item["content_preview"] = str(item["content"])[:2400]
                 item.pop("content", None)
             out.append(item)
-        return out
+        return out, None
+    except sqlite3.OperationalError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "sqlite", "sqlite_operational_error", exc)
+    except sqlite3.DatabaseError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "sqlite", "sqlite_database_error", exc)
+    except PermissionError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "open", "permission_denied", exc)
+    except OSError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "filesystem", "os_error", exc)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def _memory_report(args: dict[str, Any]) -> dict[str, Any]:
@@ -513,7 +639,20 @@ def _memory_report(args: dict[str, Any]) -> dict[str, Any]:
     query = str(args.get("query") or "").strip()
     operational_db = Path(args.get("operational_db") or _default_operational_db()).expanduser()
     persistent_db = Path(args.get("persistent_db") or _default_persistent_db()).expanduser()
-    return {
+    operational_records, operational_diag = _read_memory_table(
+        operational_db,
+        "operational_memory_records",
+        limit=limit,
+        query=query,
+    )
+    persistent_records, persistent_diag = _read_memory_table(
+        persistent_db,
+        "memory_records",
+        limit=limit,
+        query=query,
+    )
+    diagnostics = [item for item in (operational_diag, persistent_diag) if item is not None]
+    payload = {
         "ok": True,
         "tool": "aicarmine_memory_report",
         "mode": "read_only_sqlite",
@@ -522,9 +661,12 @@ def _memory_report(args: dict[str, Any]) -> dict[str, Any]:
         "persistent_db": str(persistent_db),
         "operational_exists": operational_db.exists(),
         "persistent_exists": persistent_db.exists(),
-        "operational_records": _read_memory_table(operational_db, "operational_memory_records", limit=limit, query=query),
-        "persistent_records": _read_memory_table(persistent_db, "memory_records", limit=limit, query=query),
+        "operational_records": operational_records,
+        "persistent_records": persistent_records,
     }
+    if diagnostics:
+        payload["memory_read_diagnostics"] = diagnostics
+    return payload
 
 
 def _memory_state_packet(args: dict[str, Any]) -> dict[str, Any]:
@@ -1010,15 +1152,16 @@ BLOCKED_TOOLS = {
 # ---------------------------------------------------------------------------
 
 def _health() -> dict[str, Any]:
-    registry_loader = _load_broker_registry_capability_map()
-    registry = registry_loader() if registry_loader else {}
+    registry = _registry_payload()
+    root = _repo_root()
     return {
         "ok": True,
         "server": SERVER_NAME,
         "version": SERVER_VERSION,
         "mode": "codex_app_direct_dispatch_no_agentic_loop",
         "process_cwd": str(Path.cwd()),
-        "resolved_project_root": str(_repo_root()),
+        "resolved_project_root": str(root),
+        "root_source": _codex_root_source(root),
         "root_context": {k: str(v) for k, v in _root_context().items()},
         "server_script": str(Path(__file__).resolve()),
         "python_executable": sys.executable,
@@ -1030,6 +1173,7 @@ def _health() -> dict[str, Any]:
         "registry": registry,
         "tools_count": len(TOOL_SCHEMAS),
         "tools": [tool["name"] for tool in TOOL_SCHEMAS],
+        "blocked_tool_diagnostics": [_blocked_tool_diagnostic(name, registry) for name in sorted(BLOCKED_TOOLS)],
         "env_seen": {
             "AICARMINE_LAB_REPO": os.environ.get("AICARMINE_LAB_REPO"),
             "AICARMINE_USEFUL_TOOLS_ROOT": os.environ.get("AICARMINE_USEFUL_TOOLS_ROOT"),
@@ -1048,7 +1192,14 @@ def _handle_tools_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     arguments = arguments if isinstance(arguments, dict) else {}
 
     if name in BLOCKED_TOOLS:
-        return _tool_content({"ok": False, "error": f"tool blocked by MCP policy: {name}"}, is_error=True)
+        return _tool_content(
+            {
+                "ok": False,
+                "error": f"tool blocked by MCP policy: {name}",
+                **_blocked_tool_diagnostic(name),
+            },
+            is_error=True,
+        )
 
     if name == "aicarmine_bridge_health":
         return _tool_content(_health())

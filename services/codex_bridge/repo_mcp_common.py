@@ -120,6 +120,25 @@ def selected_repo_root() -> Path:
     return cwd.resolve()
 
 
+def selected_repo_root_source(root: Path | None = None) -> str:
+    resolved = root or selected_repo_root()
+    for name in CODEX_ROOT_ENV_NAMES:
+        env_root = env_existing_root(name)
+        if env_root is not None and env_root == resolved:
+            return name
+
+    cwd = Path(os.getcwd())
+    cwd_git_root = path_git_root(cwd)
+    if cwd_git_root is not None and cwd_git_root == resolved:
+        return "cwd_git_root"
+
+    legacy_lab_root = env_existing_root("AICARMINE_LAB_REPO")
+    if legacy_lab_root is not None and legacy_lab_root == resolved:
+        return "AICARMINE_LAB_REPO"
+
+    return "cwd_fallback"
+
+
 def sync_broker_import_root() -> Path:
     root = selected_repo_root()
     root_text = str(root)
@@ -170,6 +189,7 @@ def health_payload(server_name: str, tool_names: list[str]) -> dict[str, Any]:
         "python_executable": sys.executable,
         "python_version": sys.version,
         "repo_root": str(root),
+        "root_source": selected_repo_root_source(root),
         "cwd": str(Path.cwd()),
         "aicarmine_lab_repo": os.environ.get("AICARMINE_LAB_REPO", ""),
         "initial_aicarmine_lab_repo": INITIAL_AICARMINE_LAB_REPO,

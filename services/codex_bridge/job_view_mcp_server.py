@@ -187,8 +187,34 @@ def _truncate_text(value: str, limit: int) -> tuple[str, bool]:
     return value[: max(0, limit - len(suffix))].rstrip() + suffix, True
 
 
+def _diagnostic_preview(value: Any, limit: int = 500) -> str:
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        try:
+            text = str(value)
+        except Exception:
+            text = f"<unprintable {type(value).__name__}>"
+    return text[:limit]
+
+
+def _json_pretty_result(value: Any) -> tuple[str, dict[str, Any] | None]:
+    try:
+        return json.dumps(value, ensure_ascii=False, indent=2, default=str), None
+    except (TypeError, ValueError, RecursionError) as exc:
+        diagnostic = {
+            "diagnostic_only": True,
+            "error": "json_serialization_failed",
+            "error_type": type(exc).__name__,
+            "message_preview": _diagnostic_preview(exc, 500),
+            "value_type": type(value).__name__,
+        }
+        return json.dumps(diagnostic, ensure_ascii=False, indent=2, default=str), diagnostic
+
+
 def _json_pretty(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    text, _diagnostic = _json_pretty_result(value)
+    return text
 
 
 def _compact_ws(value: str, limit: int = 180) -> str:
@@ -397,6 +423,30 @@ def _render_html(view: str, args: dict[str, Any], root: Path) -> tuple[str, dict
     raise ValueError(f"unsupported view: {view}")
 
 
+def _render_failure(tool: str, args: dict[str, Any], root: Path, exc: Exception) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "ok": False,
+        "tool": tool,
+        "read_only": True,
+        "mode": "local_renderer_no_http",
+        "error": "job_view_render_failed",
+        "error_type": type(exc).__name__,
+        "message_preview": _diagnostic_preview(exc, 500),
+        "view": str(args.get("view") or ""),
+        "job_id": str(args.get("job_id") or ""),
+    }
+    try:
+        paths = _patch_broker_modules(root)
+        payload["job_root"] = str(paths["job_root"])
+    except Exception as root_exc:
+        payload["job_root_diagnostic"] = {
+            "error": "job_root_resolution_failed",
+            "error_type": type(root_exc).__name__,
+            "message_preview": _diagnostic_preview(root_exc, 500),
+        }
+    return payload
+
+
 def _list_views(args: dict[str, Any], root: Path) -> dict[str, Any]:
     paths = _patch_broker_modules(root)
     return {
@@ -438,8 +488,11 @@ def _list_views(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _render(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_render", args, root, exc)
     max_chars = _safe_int(args.get("max_chars"), 50000, 1000, 500000)
     include_html = _safe_bool(args.get("include_html"), True)
     include_outline = _safe_bool(args.get("include_outline"), True)
@@ -471,12 +524,18 @@ def _render_section(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    job_html, _job_planner_lab, paths = _load_renderers(root)
-    job_id = _safe_job_id(args.get("job_id"))
+    try:
+        job_html, _job_planner_lab, paths = _load_renderers(root)
+        job_id = _safe_job_id(args.get("job_id"))
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_ia_payload", args, root, exc)
     include_heavy = _safe_bool(args.get("include_heavy"), False)
     max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 1000000)
-    payload = job_html.agent_job_ia_view_payload(job_id, include_heavy=include_heavy)
-    payload_text = _json_pretty(payload)
+    try:
+        payload = job_html.agent_job_ia_view_payload(job_id, include_heavy=include_heavy)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_ia_payload", {**args, "job_id": job_id}, root, exc)
+    payload_text, payload_diagnostic = _json_pretty_result(payload)
     compact_payload_text, truncated = _truncate_text(payload_text, max_chars)
     result: dict[str, Any] = {
         "ok": bool(isinstance(payload, dict) and payload.get("ok") is not False),
@@ -489,7 +548,9 @@ def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "payload_chars": len(payload_text),
         "payload_truncated": truncated,
     }
-    if not truncated:
+    if payload_diagnostic is not None:
+        result["payload_serialization_diagnostics"] = payload_diagnostic
+    if not truncated and payload_diagnostic is None:
         result["payload"] = payload
     else:
         result["payload_json"] = compact_payload_text
@@ -497,8 +558,11 @@ def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _outline(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_outline", args, root, exc)
     return {
         "ok": True,
         "tool": "aicarmine_job_view_outline",
@@ -509,9 +573,12 @@ def _outline(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _links(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
-    outline = _html_outline(html_text)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+        outline = _html_outline(html_text)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_links", args, root, exc)
     return {
         "ok": True,
         "tool": "aicarmine_job_view_links",
@@ -522,13 +589,17 @@ def _links(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _validate_html(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+        validation = _validate_html_text(html_text)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_validate_html", args, root, exc)
     return {
         "ok": True,
         "tool": "aicarmine_job_view_validate_html",
         **meta,
-        "validation": _validate_html_text(html_text),
+        "validation": validation,
     }
 
 

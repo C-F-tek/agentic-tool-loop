@@ -63,15 +63,10 @@ def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tu
 
 def _path_is_under(child: Path, parent: Path) -> bool:
     try:
-        child.resolve().relative_to(parent.resolve())
+        child.resolve(strict=False).relative_to(parent.resolve(strict=False))
         return True
-    except ValueError:
-        pass
-    except OSError:
+    except (OSError, RuntimeError, ValueError):
         return False
-    child_text = str(child.resolve()).lower().rstrip("\\/")
-    parent_text = str(parent.resolve()).lower().rstrip("\\/")
-    return child_text == parent_text or child_text.startswith(parent_text + "\\") or child_text.startswith(parent_text + "/")
 
 
 def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None]:
@@ -83,8 +78,22 @@ def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None
         candidate = root / candidate
     try:
         resolved = candidate.resolve()
-    except OSError as exc:
-        return None, {"ok": False, "error": "path_resolve_failed", "path": text, "message": str(exc)}
+    except PermissionError as exc:
+        return None, {
+            "ok": False,
+            "error": "path_permission_denied",
+            "path": text,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+    except (OSError, RuntimeError) as exc:
+        return None, {
+            "ok": False,
+            "error": "path_resolve_failed",
+            "path": text,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
     if not _path_is_under(resolved, root):
         return None, {"ok": False, "error": "path_not_under_repo", "path": text, "resolved": str(resolved), "repo_root": str(root)}
     try:
@@ -94,14 +103,66 @@ def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None
 
 
 def _run_git(root: Path, args: list[str], *, timeout_seconds: int, max_chars: int) -> dict[str, Any]:
-    proc = subprocess.run(
-        ["git", "-C", str(root), *args],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    command = ["git", "-C", str(root), *args]
+    try:
+        proc = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout, stdout_truncated = _compact_text(exc.stdout or "", max_chars) if isinstance(exc.stdout, str) else ("", False)
+        stderr, stderr_truncated = _compact_text(exc.stderr or "", max_chars) if isinstance(exc.stderr, str) else ("", False)
+        return {
+            "returncode": -1,
+            "stdout": stdout,
+            "stderr": stderr,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_command_timeout",
+            "error_type": type(exc).__name__,
+        }
+    except FileNotFoundError as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc)[:max_chars],
+            "stdout_truncated": False,
+            "stderr_truncated": len(str(exc)) > max_chars,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_executable_not_found",
+            "error_type": type(exc).__name__,
+        }
+    except PermissionError as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc)[:max_chars],
+            "stdout_truncated": False,
+            "stderr_truncated": len(str(exc)) > max_chars,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_permission_denied",
+            "error_type": type(exc).__name__,
+        }
+    except OSError as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc)[:max_chars],
+            "stdout_truncated": False,
+            "stderr_truncated": len(str(exc)) > max_chars,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_os_error",
+            "error_type": type(exc).__name__,
+        }
     stdout, stdout_truncated = _compact_text(proc.stdout, max_chars)
     stderr, stderr_truncated = _compact_text(proc.stderr, max_chars)
     return {
@@ -110,7 +171,17 @@ def _run_git(root: Path, args: list[str], *, timeout_seconds: int, max_chars: in
         "stderr": stderr,
         "stdout_truncated": stdout_truncated,
         "stderr_truncated": stderr_truncated,
-        "command": ["git", "-C", str(root), *args],
+        "command": command,
+        "timeout_seconds": timeout_seconds,
+        **(
+            {
+                "error": f"git_command_failed_rc{proc.returncode}",
+                "error_type": "CalledProcessError",
+                "stderr_preview": (proc.stderr or "")[:500],
+            }
+            if proc.returncode != 0
+            else {}
+        ),
     }
 
 

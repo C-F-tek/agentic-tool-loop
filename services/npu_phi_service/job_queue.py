@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -11,6 +12,9 @@ from collections.abc import Callable
 from typing import Any
 
 from .pipeline import PipelineManager
+
+
+logger = logging.getLogger(__name__)
 
 
 def _stable_hash(payload: dict[str, Any]) -> str:
@@ -83,11 +87,20 @@ class NpuPhiJobQueue:
     async def stop(self) -> None:
         if self.worker_task is None:
             return
+        if not self.queue.empty():
+            try:
+                await asyncio.wait_for(self.queue.join(), timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.warning("NPU Phi worker shutdown with queued jobs still pending: queue_depth=%s", self.queue.qsize())
         self.worker_task.cancel()
         try:
-            await self.worker_task
+            await asyncio.wait_for(self.worker_task, timeout=5.0)
         except asyncio.CancelledError:
-            pass
+            logger.debug("NPU Phi worker task cancelled during shutdown")
+        except asyncio.TimeoutError:
+            logger.warning("NPU Phi worker did not stop within shutdown timeout")
+        except Exception as exc:
+            logger.error("NPU Phi worker shutdown failed: %s", exc)
         self.worker_task = None
 
     def make_dedup_key(self, payload: dict[str, Any]) -> str:

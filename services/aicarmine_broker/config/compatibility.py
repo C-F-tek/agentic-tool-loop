@@ -5,7 +5,10 @@ import threading
 from .env_loader import env_bool, env_float, env_int, env_int_any, parse_bool  # noqa: F401
 from .models import BrokerConfig, load_broker_config_from_env
 from ..tool_registry import (
+    COMMAND_EXEC_TOOLS,  # noqa: F401
     HELPER_PUBLIC_ALIASES,  # noqa: F401
+    PURE_READ_TOOLS,  # noqa: F401
+    STATE_MUTATING_TOOLS,  # noqa: F401
     VALID_INTERNAL_TOOLS,  # noqa: F401
     VALID_INTERNAL_TOOLS_LIST,
     VALID_INTERNAL_TOOLS_LIST_EXCLUDING_VULKAN,

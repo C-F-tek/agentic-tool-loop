@@ -26,6 +26,7 @@ SERVER_NAME = "aicarmine-sqlite-readonly-mcp"
 SERVER_VERSION = "0.1.0"
 
 DB_SUFFIXES = {".sqlite", ".sqlite3", ".db"}
+MAX_SQL_CHARS = 5000
 BLOCKED_SQL_RE = re.compile(
     r"\b("
     r"attach|alter|analyze|begin|commit|create|delete|detach|drop|insert|load_extension|"
@@ -176,18 +177,32 @@ def _connect_readonly(path: Path, *, timeout_seconds: int) -> sqlite3.Connection
 
 def _validate_select_sql(sql: Any) -> tuple[str | None, dict[str, Any] | None]:
     text = str(sql or "").strip()
+    preview = text[:100]
     if not text:
-        return None, {"ok": False, "error": "missing_sql"}
+        return None, {"ok": False, "error": "missing_sql", "sql_preview": preview}
+    if len(text) > MAX_SQL_CHARS:
+        return None, {
+            "ok": False,
+            "error": "sql_too_long",
+            "length": len(text),
+            "max_length": MAX_SQL_CHARS,
+            "sql_preview": preview,
+        }
     lowered = text.lower().lstrip()
     if not (lowered.startswith("select") or lowered.startswith("with")):
-        return None, {"ok": False, "error": "only_select_or_with_allowed"}
+        return None, {"ok": False, "error": "only_select_or_with_allowed", "sql_preview": preview}
     if ";" in text:
-        return None, {"ok": False, "error": "multiple_statements_forbidden"}
+        return None, {"ok": False, "error": "multiple_statements_forbidden", "sql_preview": preview}
     if "--" in text or "/*" in text or "*/" in text:
-        return None, {"ok": False, "error": "sql_comments_forbidden"}
+        return None, {"ok": False, "error": "sql_comments_forbidden", "sql_preview": preview}
     blocked = BLOCKED_SQL_RE.search(text)
     if blocked:
-        return None, {"ok": False, "error": "blocked_sql_keyword", "keyword": blocked.group(1).lower()}
+        return None, {
+            "ok": False,
+            "error": "blocked_sql_keyword",
+            "keyword": blocked.group(1).lower(),
+            "sql_preview": preview,
+        }
     return text, None
 
 

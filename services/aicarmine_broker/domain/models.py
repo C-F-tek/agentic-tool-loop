@@ -15,9 +15,35 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # From config.py (1 dataclass)
 # ---------------------------------------------------------------------------
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
+
+
+def _missing_text(value: Any) -> bool:
+    try:
+        return not str(value or "").strip()
+    except Exception:
+        return True
+
+
+def _diagnostic_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def mapping_field_diagnostics(field_name: str, value: Any) -> tuple[str, ...]:
+    """Return bounded diagnostics for optional mapping-like model fields."""
+    if isinstance(value, MappingABC):
+        return ()
+    if value is None:
+        return (f"{field_name}:missing_mapping",)
+    return (f"{field_name}:invalid_mapping_type:{type(value).__name__}",)
 
 
 @dataclass(frozen=True)
@@ -34,6 +60,35 @@ class PlannerRuntimeConfig:
     prompt_char_budget: int
     prompt_compact_threshold_chars: int
     generation_headroom_reserve_chars: int
+
+    def validation_diagnostics(self) -> tuple[str, ...]:
+        """Return opt-in diagnostics without enforcing constructor validation."""
+        diagnostics: list[str] = []
+        for field_name in ("planner_url", "planner_model", "task_url", "task_model"):
+            if _missing_text(getattr(self, field_name)):
+                diagnostics.append(f"{field_name}:missing")
+        positive_fields = (
+            "num_ctx_requested",
+            "num_ctx_cap",
+            "num_ctx_effective",
+            "prompt_char_budget",
+            "prompt_compact_threshold_chars",
+            "generation_headroom_reserve_chars",
+        )
+        numeric_values: dict[str, int] = {}
+        for field_name in positive_fields:
+            value = _diagnostic_int(getattr(self, field_name))
+            if value is None:
+                diagnostics.append(f"{field_name}:invalid_integer")
+                continue
+            numeric_values[field_name] = value
+            if value <= 0:
+                diagnostics.append(f"{field_name}:not_positive")
+        effective = numeric_values.get("num_ctx_effective")
+        cap = numeric_values.get("num_ctx_cap")
+        if effective is not None and cap is not None and effective > cap:
+            diagnostics.append("num_ctx_effective:exceeds_num_ctx_cap")
+        return tuple(diagnostics)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +238,7 @@ class ToolSpec:
 
 
 __all__: list[str] = [
+    "mapping_field_diagnostics",
     # config
     "PlannerRuntimeConfig",
     # decisions

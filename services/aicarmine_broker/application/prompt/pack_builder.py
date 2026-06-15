@@ -168,6 +168,23 @@ class PromptPackBuilder:
         )
 
         def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
+            required_repo_read_window_budget = None
+            required_repo_read_item_limit = None
+            if compact_mode:
+                if headroom_char_budget > 0:
+                    required_repo_read_window_budget = max(
+                        12000,
+                        min(36000, headroom_char_budget // 6),
+                    )
+                else:
+                    required_repo_read_window_budget = max(
+                        12000,
+                        min(36000, int(window_chars or 3000) * 3),
+                    )
+                required_repo_read_item_limit = max(
+                    1,
+                    min(16, required_repo_read_window_budget // 800),
+                )
             required_working_set = _required_working_set_for_prompt(
                 goal,
                 history,
@@ -175,6 +192,8 @@ class PromptPackBuilder:
                 job_root=root,
                 window_chars=window_chars,
                 compact_mode=compact_mode,
+                max_repo_read_items=required_repo_read_item_limit,
+                max_total_repo_read_window_chars=required_repo_read_window_budget,
             )
             required_chars_local = _json_char_len(required_working_set)
             required_errors_local = list(required_working_set.get("errors") or [])
@@ -236,6 +255,8 @@ class PromptPackBuilder:
                     "native_history_messages_reserve_chars": native_history_reserve_chars,
                     "required_working_set_not_truncated": True,
                     "required_working_set_uses_real_sqlite_windows_when_compacted": True,
+                    "required_working_set_repo_read_global_window_budget_chars": required_repo_read_window_budget,
+                    "required_working_set_repo_read_item_limit": required_repo_read_item_limit,
                     "optional_context_may_be_omitted_not_used_as_required_payload": True,
                     "step_budget_terminal_guidance_active": bool(step_budget_guidance),
                     "required_window_continuation_suppressed_by_step_budget": False,

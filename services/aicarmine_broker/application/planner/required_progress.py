@@ -56,7 +56,7 @@ def progress_quality_gate_final_allowed(
     return RequiredNextProgress(
         kind="quality_gate_final_allowed",
         human_text=str(human_text or "").strip(),
-        must_choose_one_of=("final",),
+        must_choose_one_of=("final", "selective_evidence_tool_with_named_gap"),
         metadata=_metadata(metadata, **extra),
     )
 
