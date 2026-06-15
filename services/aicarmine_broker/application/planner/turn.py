@@ -290,6 +290,27 @@ def _degenerate_output_block_decision(
     return decision
 
 
+def _post_final_reject_turn_tool_names(
+    evidence_contract: dict[str, Any],
+    tool_names: list[str],
+) -> list[str]:
+    if not isinstance(evidence_contract, dict):
+        return tool_names
+    rewrite_count = int(evidence_contract.get("planner_final_quality_reject_count") or 0)
+    rewrite_required = bool(evidence_contract.get("planner_cuda_rewrite_required"))
+    if not rewrite_required or rewrite_count < 1:
+        return tool_names
+    required = evidence_contract.get("required_next_tool_call")
+    required_tool = str(required.get("tool") or "").strip() if isinstance(required, dict) else ""
+    if required_tool:
+        if required_tool in tool_names:
+            return [required_tool]
+        return [required_tool]
+    if evidence_contract.get("turn_rewrite_only_after_final_reject"):
+        return []
+    return []
+
+
 def planner_decision(
     job_id: str,
     state: dict[str, Any],
@@ -415,6 +436,7 @@ def planner_decision(
         evidence_contract=evidence_contract,
         intrinsic_context=intrinsic_context,
     )
+    native_tool_names = _post_final_reject_turn_tool_names(evidence_contract, native_tool_names)
 
     def build_payload_for_native_tool_names(tool_names: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         schema = (
@@ -446,6 +468,10 @@ def planner_decision(
         evidence_contract=evidence_contract,
         intrinsic_context=intrinsic_context,
         prompt_context_continuation_required=prompt_context_continuation_required,
+    )
+    refined_native_tool_names = _post_final_reject_turn_tool_names(
+        evidence_contract,
+        refined_native_tool_names,
     )
     if AGENTIC_PLANNER_NATIVE_TOOLS and refined_native_tool_names != native_tool_names:
         native_tool_names = refined_native_tool_names

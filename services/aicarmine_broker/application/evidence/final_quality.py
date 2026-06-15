@@ -12,6 +12,7 @@ from aicarmine_broker.application.evidence.audit_guidance import (
     pending_read_or_search_actions,
     role_guidance_for_goal,
 )
+from aicarmine_broker.application.shared.path_tokens import repo_rel_token as _repo_rel_token
 
 
 def _append_unique(values: list[str], value: Any) -> None:
@@ -155,6 +156,16 @@ def _final_quality_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
             text_limit=260,
             list_limit=6,
         ),
+        "required_next_output_sections": _compact_mapping(
+            contract.get("required_next_output_sections"),
+            text_limit=260,
+            list_limit=8,
+        ),
+        "required_next_missing_evidences": _compact_mapping(
+            contract.get("required_next_missing_evidences"),
+            text_limit=260,
+            list_limit=8,
+        ),
         "required_next_tool_call_satisfied": _compact_mapping(
             contract.get("required_next_tool_call_satisfied"),
             text_limit=260,
@@ -234,6 +245,114 @@ def _final_path_tokens(final_answer: str) -> list[str]:
         if token and token not in tokens:
             tokens.append(token)
     return tokens
+
+
+def _coalesce_unique_paths(values: list[Any], *, limit: int = 10) -> list[str]:
+    out: list[str] = []
+    for raw in values:
+        token = _repo_rel_token(raw)
+        if token and token not in out:
+            out.append(token)
+    return out[:max(0, int(limit or 0))]
+
+
+def _normalize_required_next_tool_call_paths(
+    tool: str,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        return {}
+    args = dict(arguments)
+    if tool == "repo_read":
+        if "paths" in args:
+            raw_paths = args.get("paths")
+            if isinstance(raw_paths, (list, tuple)):
+                normalized = [_repo_rel_token(item) for item in raw_paths if _repo_rel_token(item)]
+                if normalized:
+                    args["paths"] = _coalesce_unique_paths(normalized, limit=12)
+                else:
+                    args.pop("paths", None)
+            elif raw_paths is not None:
+                normalized = _repo_rel_token(raw_paths)
+                if normalized:
+                    args["paths"] = [normalized]
+                else:
+                    args.pop("paths", None)
+            else:
+                args.pop("paths", None)
+            args.pop("path", None)
+        else:
+            normalized_path = _repo_rel_token(args.get("path"))
+            if normalized_path:
+                args["path"] = normalized_path
+            else:
+                args.pop("path", None)
+        return args
+
+    for key in ("path", "document_id", "target_file", "target_dir", "root"):
+        if key in args:
+            normalized = _repo_rel_token(args.get(key))
+            if normalized:
+                args[key] = normalized
+            else:
+                args.pop(key, None)
+    return args
+
+
+def _required_next_output_sections(violations: list[str], metrics: dict[str, Any]) -> list[str]:
+    sections: list[str] = []
+    if any(str(v).startswith("repo_analysis_final_missing_concrete_paths") for v in violations):
+        _append_unique(sections, "Concrete file-level evidence")
+    if any(str(v).startswith("repo_analysis_final_missing_core_candidate_paths") for v in violations):
+        _append_unique(sections, "Core ownership candidates and file roles")
+    if any("unverified_paths" in str(v) for v in violations):
+        _append_unique(sections, "Verified path mentions")
+    if any("coverage" in str(v) for v in violations) or str(metrics.get("read_note_count") or ""):
+        _append_unique(sections, "Coverage limits and verification status")
+    if any("speculative" in str(v) for v in violations):
+        _append_unique(sections, "Risk/limitations wording")
+    if any("too_short" in str(v) for v in violations):
+        _append_unique(sections, "Missing evidence depth and workflow completeness")
+    if not sections:
+        _append_unique(sections, "Actionable final-rewrite evidence checklist")
+    return sections
+
+
+def _required_next_missing_evidences(
+    violations: list[str],
+    metrics: dict[str, Any],
+    hard_pending_actions: list[dict[str, Any]],
+    contract: dict[str, Any],
+) -> list[str]:
+    missing: list[str] = []
+    if metrics.get("unverified_path_tokens"):
+        missing.extend(_coalesce_unique_paths(metrics.get("unverified_path_tokens") or [], limit=12))
+    for row in hard_pending_actions:
+        for key in ("path", "paths", "target_file", "path_hint"):
+            value = row.get(key)
+            if isinstance(value, list):
+                for item in value:
+                    _append_unique(missing, _repo_rel_token(item))
+            else:
+                _append_unique(missing, _repo_rel_token(value))
+        query = row.get("query") or row.get("pattern") or row.get("symbol")
+        if query and not missing:
+            _append_unique(missing, str(query).strip().lower()[:80])
+    read_note_paths = _evidence_paths(contract if isinstance(contract, dict) else {})
+    for path in read_note_paths[:24]:
+        _append_unique(missing, _repo_rel_token(path))
+    missing_sections = [
+        "coverage_required",
+        "read_or_search_pending",
+        "missing_core_candidate_paths",
+        "missing_unverified_file_mentions",
+    ]
+    for token in missing_sections:
+        if token in str(violations).lower():
+            _append_unique(missing, token.replace("_", " "))
+    if not missing and metrics.get("min_path_hits", 0):
+        _append_unique(missing, f"need_{metrics.get('min_path_hits', 0)}_explicit_path_mentions")
+    return missing[:24]
 
 
 def _known_path_tokens(contract: dict[str, Any], paths: list[str], core_paths: list[str]) -> set[str]:
@@ -491,6 +610,22 @@ def repo_analysis_final_answer_quality(
             "final_audit_red_flags": red_flags,
             "hard_pending_read_or_search_actions": hard_pending_actions[:4],
         },
+        "required_next_output_sections": _required_next_output_sections(violations, {
+            "read_note_count": len(rows),
+            "path_hits": path_hits,
+            "min_path_hits": min_path_hits,
+            "unverified_path_tokens": unverified_path_tokens,
+            "hard_pending_read_or_search_actions": hard_pending_actions[:4],
+        }),
+        "required_next_missing_evidences": _required_next_missing_evidences(
+            violations,
+            {
+                "unverified_path_tokens": unverified_path_tokens,
+                "read_note_count": len(rows),
+            },
+            hard_pending_actions[:4],
+            contract if isinstance(contract, dict) else {},
+        ),
         "required_next_progress": (
             "Final answer rejected as too shallow for repository analysis. Return action=final "
             "with a richer final_answer grounded in operational_notes.read_notes and file_memory: "
@@ -636,8 +771,33 @@ def _sanitize_required_next_tool_call(value: Any) -> dict[str, Any]:
     reason = str(value.get("reason") or "").strip()
     if reason:
         out["reason"] = _clip_text(reason, 500)
+    if bool(value.get("allow_only_if_missing_evidence")):
+        out["allow_only_if_missing_evidence"] = True
     out["source"] = "repo_analysis_final_model_quality"
+    out["arguments"] = _normalize_required_next_tool_call_paths(tool, args)
     return out
+
+
+def _sanitize_required_next_output_sections(value: Any) -> list[str]:
+    sections = value if isinstance(value, list) else []
+    out: list[str] = []
+    for item in sections:
+        text = str(item or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out[:12]
+
+
+def _sanitize_required_next_missing_evidences(value: Any) -> list[str]:
+    items = value if isinstance(value, list) else []
+    out: list[str] = []
+    for item in items:
+        if isinstance(item, (list, tuple, dict)):
+            continue
+        text = _repo_rel_token(item)
+        if text and text not in out:
+            out.append(text)
+    return out[:24]
 
 
 def sanitize_repo_analysis_final_model_quality(
@@ -671,6 +831,12 @@ def sanitize_repo_analysis_final_model_quality(
         violations = []
     required_next_progress = str(value.get("required_next_progress") or "").strip()
     required_next_tool_call = _sanitize_required_next_tool_call(value.get("required_next_tool_call"))
+    required_next_output_sections = _sanitize_required_next_output_sections(
+        value.get("required_next_output_sections")
+    )
+    required_next_missing_evidences = _sanitize_required_next_missing_evidences(
+        value.get("required_next_missing_evidences")
+    )
     if not ok and not required_next_progress:
         required_next_progress = (
             "Model final-quality judge rejected the final answer. Continue with the "
@@ -687,6 +853,8 @@ def sanitize_repo_analysis_final_model_quality(
         "required_next_progress": _clip_text(required_next_progress, 1000),
         "required_next_tool_call": required_next_tool_call,
         "confidence": value.get("confidence"),
+        "required_next_output_sections": required_next_output_sections,
+        "required_next_missing_evidences": required_next_missing_evidences,
         "raw_decision": _compact_mapping(value, text_limit=500, list_limit=6),
     }
     if not required_next_tool_call:
