@@ -433,6 +433,59 @@ def _load_broker_registry_capability_map() -> Any | None:
     return capability_map
 
 
+def _registry_payload() -> dict[str, Any]:
+    registry_loader = _load_broker_registry_capability_map()
+    if registry_loader is None:
+        return {}
+    try:
+        value = registry_loader()
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _effect_classes_for_internal_tool(internal_tool: str, registry: dict[str, Any] | None = None) -> list[str]:
+    registry = registry if isinstance(registry, dict) else _registry_payload()
+    surfaces = registry.get("surfaces") if isinstance(registry.get("surfaces"), dict) else {}
+    classes: list[str] = []
+    for class_name in ("pure_read", "state_mutating", "command_exec", "write_guarded"):
+        values = surfaces.get(class_name)
+        if isinstance(values, list) and internal_tool in {str(item) for item in values}:
+            classes.append(class_name)
+    if not classes:
+        legacy_read_only = surfaces.get("read_only")
+        if isinstance(legacy_read_only, list) and internal_tool in {str(item) for item in legacy_read_only}:
+            classes.append("read_only")
+    return classes
+
+
+def _internal_tool_for_requested(name: str) -> str:
+    blocked_internal_map = {
+        "aicarmine_repo_apply_patch": "repo_apply_patch",
+        "aicarmine_repo_command": "repo_command",
+        "aicarmine_repo_write_file": "repo_write_file",
+        "aicarmine_vulkan_helper": "vulkan_helper",
+        "runtime_sqlite_memory_cleanup": "runtime_sqlite_memory_cleanup",
+        "terminal_run_command_wait": "terminal_run_command_wait",
+        "repo_command": "repo_command",
+        "repo_write_file": "repo_write_file",
+        "vulkan_helper": "vulkan_helper",
+    }
+    return INTERNAL_TOOL_MAP.get(name) or blocked_internal_map.get(name, name)
+
+
+def _blocked_tool_diagnostic(name: str, registry: dict[str, Any] | None = None) -> dict[str, Any]:
+    internal_tool = _internal_tool_for_requested(name)
+    return {
+        "requested_tool": name,
+        "internal_tool": internal_tool,
+        "effect_classes": _effect_classes_for_internal_tool(internal_tool, registry),
+        "block_reason": "blocked_by_codex_mcp_direct_policy",
+        "allow_command": False,
+        "user_consent": "",
+    }
+
+
 def _load_dispatcher() -> Any:
     global _DIRECT_DISPATCHER, _DISPATCH_REQUEST_CLASS
 
@@ -456,7 +509,12 @@ def _direct_dispatch(internal_tool: str, args: dict[str, Any]) -> Any:
 
     No HTTP call. No 3571. No 3572/vulkan/agent. No agentic loop.
     """
-    _log(f"direct_dispatch_start tool={internal_tool} args_keys={sorted(dict(args or {}).keys())[:40]}")
+    effect_classes = _effect_classes_for_internal_tool(internal_tool)
+    _log(
+        "direct_dispatch_start "
+        f"tool={internal_tool} effect_classes={effect_classes} allow_command=False "
+        f"args_keys={sorted(dict(args or {}).keys())[:40]}"
+    )
     try:
         dispatcher = _load_dispatcher()
         request_class = _DISPATCH_REQUEST_CLASS
@@ -470,10 +528,14 @@ def _direct_dispatch(internal_tool: str, args: dict[str, Any]) -> Any:
             user_consent="",
         )
         result = dispatcher.dispatch(request)
-        _log(f"direct_dispatch_done tool={internal_tool} result_type={type(result).__name__}")
+        _log(f"direct_dispatch_done tool={internal_tool} effect_classes={effect_classes} result_type={type(result).__name__}")
         return result
     except Exception as exc:
-        _log(f"direct_dispatch_failed tool={internal_tool} error_type={type(exc).__name__} message={_diagnostic_preview(exc, 300)}")
+        _log(
+            "direct_dispatch_failed "
+            f"tool={internal_tool} effect_classes={effect_classes} "
+            f"error_type={type(exc).__name__} message={_diagnostic_preview(exc, 300)}"
+        )
         raise
 
 
@@ -1090,8 +1152,7 @@ BLOCKED_TOOLS = {
 # ---------------------------------------------------------------------------
 
 def _health() -> dict[str, Any]:
-    registry_loader = _load_broker_registry_capability_map()
-    registry = registry_loader() if registry_loader else {}
+    registry = _registry_payload()
     root = _repo_root()
     return {
         "ok": True,
@@ -1112,6 +1173,7 @@ def _health() -> dict[str, Any]:
         "registry": registry,
         "tools_count": len(TOOL_SCHEMAS),
         "tools": [tool["name"] for tool in TOOL_SCHEMAS],
+        "blocked_tool_diagnostics": [_blocked_tool_diagnostic(name, registry) for name in sorted(BLOCKED_TOOLS)],
         "env_seen": {
             "AICARMINE_LAB_REPO": os.environ.get("AICARMINE_LAB_REPO"),
             "AICARMINE_USEFUL_TOOLS_ROOT": os.environ.get("AICARMINE_USEFUL_TOOLS_ROOT"),
@@ -1130,7 +1192,14 @@ def _handle_tools_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     arguments = arguments if isinstance(arguments, dict) else {}
 
     if name in BLOCKED_TOOLS:
-        return _tool_content({"ok": False, "error": f"tool blocked by MCP policy: {name}"}, is_error=True)
+        return _tool_content(
+            {
+                "ok": False,
+                "error": f"tool blocked by MCP policy: {name}",
+                **_blocked_tool_diagnostic(name),
+            },
+            is_error=True,
+        )
 
     if name == "aicarmine_bridge_health":
         return _tool_content(_health())

@@ -703,8 +703,8 @@ MCP_PUBLIC_TOOLS: tuple[str, ...] = (
 )
 
 # Write-guarded tools: these change repo filesystem state (creates, overwrites,
-# patches, or runs commands that may produce output files). Does not include
-# scratchpad/memory/state writes (those are session-scoped, not repo-scoped).
+# patches, or runs commands that may produce output files). State writes are
+# classified separately so read-only does not silently include persistent writes.
 
 WRITE_GUARDED_TOOLS: frozenset[str] = frozenset(
     {
@@ -717,7 +717,40 @@ WRITE_GUARDED_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-READ_ONLY_TOOLS: frozenset[str] = frozenset(PLANNER_INTERNAL_TOOLS) - WRITE_GUARDED_TOOLS
+STATE_MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_write",
+        "runtime_sqlite_memory_cleanup",
+        # Default repo_semantic_search performs a delta RAG reindex unless
+        # the caller explicitly disables it.
+        "repo_semantic_search",
+    }
+)
+
+COMMAND_EXEC_TOOLS: frozenset[str] = frozenset(
+    {
+        "repo_command",
+        "terminal_run_command_wait",
+        "repo_ctags_symbols",
+        "repo_git_apply_check",
+        "repo_hyperfine_benchmark",
+        "repo_pyright_check",
+        "repo_pytest_run",
+        "repo_ruff_check",
+        "repo_semgrep_scan",
+        "repo_shellcheck",
+    }
+)
+
+PURE_READ_TOOLS: frozenset[str] = (
+    frozenset(PLANNER_INTERNAL_TOOLS)
+    - WRITE_GUARDED_TOOLS
+    - STATE_MUTATING_TOOLS
+    - COMMAND_EXEC_TOOLS
+)
+
+READ_ONLY_TOOLS: frozenset[str] = PURE_READ_TOOLS
 
 TOOL_ALIASES: dict[str, str] = {
     "capabilities": "repo_capabilities",
@@ -845,14 +878,18 @@ def registry_hash() -> str:
         "openwebui_public": OPENWEBUI_PUBLIC_TOOLS,
         "mcp_public": MCP_PUBLIC_TOOLS,
         "write_guarded": sorted(WRITE_GUARDED_TOOLS),
+        "pure_read": sorted(PURE_READ_TOOLS),
+        "state_mutating": sorted(STATE_MUTATING_TOOLS),
+        "command_exec": sorted(COMMAND_EXEC_TOOLS),
         "aliases": TOOL_ALIASES,
-        "schemas": TOOLS_SCHEMA,
+        "schemas": tools_schema(),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
 def capability_map() -> dict[str, Any]:
+    schemas = tools_schema()
     return {
         "registry_version": REGISTRY_VERSION,
         "registry_hash": registry_hash(),
@@ -863,6 +900,14 @@ def capability_map() -> dict[str, Any]:
             "mcp_public": list(MCP_PUBLIC_TOOLS),
             "write_guarded": sorted(WRITE_GUARDED_TOOLS),
             "read_only": sorted(READ_ONLY_TOOLS),
+            "pure_read": sorted(PURE_READ_TOOLS),
+            "state_mutating": sorted(STATE_MUTATING_TOOLS),
+            "command_exec": sorted(COMMAND_EXEC_TOOLS),
+        },
+        "tool_effect_notes": {
+            "read_only": "Compatibility alias for pure_read; excludes state-mutating memory/RAG writes.",
+            "repo_semantic_search": "Planner-internal RAG search; default reindex=true writes the RAG SQLite index.",
+            "mcp_rag": "Codex MCP RAG is exposed by services/codex_bridge/rag_mcp_server.py, not by MCP_PUBLIC_TOOLS here.",
         },
         "surface_policy": {
             "3571": "OpenWebUI public surface; forwards to 3572 and waits for the wrapped terminal result.",
@@ -872,5 +917,5 @@ def capability_map() -> dict[str, Any]:
             "terminal_tools_public_on_openwebui": False,
         },
         "module": __name__,
-        "schema_tools": [item["function"]["name"] for item in TOOLS_SCHEMA],
+        "schema_tools": [item["function"]["name"] for item in schemas],
     }

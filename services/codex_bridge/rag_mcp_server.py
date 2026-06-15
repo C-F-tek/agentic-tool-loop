@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 import traceback
@@ -303,6 +304,55 @@ def _db_inspect(db: Path) -> dict[str, Any]:
         return {"ok": True, "db": str(db), "meta": meta, "tables": tables}
     finally:
         conn.close()
+
+
+def _git_head(repo: Path) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def _safe_rag_metadata(repo: Path, db: Path, db_status: dict[str, Any]) -> dict[str, Any]:
+    meta = db_status.get("meta") if isinstance(db_status.get("meta"), dict) else {}
+    current_commit = _git_head(repo)
+    indexed_commit = str(
+        meta.get("indexed_commit")
+        or meta.get("git_commit")
+        or meta.get("commit")
+        or ""
+    ).strip()
+    indexed_repo_root = str(meta.get("repo_root") or "").strip()
+    stale_reasons: list[str] = []
+    if indexed_commit and current_commit and indexed_commit != current_commit:
+        stale_reasons.append("commit_mismatch")
+    if indexed_repo_root:
+        try:
+            if Path(indexed_repo_root).resolve(strict=False) != repo.resolve(strict=False):
+                stale_reasons.append("repo_root_mismatch")
+        except Exception:
+            stale_reasons.append("repo_root_unresolved")
+    return {
+        "repo_root": str(repo),
+        "db_path": str(db),
+        "indexed_repo_root": indexed_repo_root,
+        "current_commit": current_commit,
+        "indexed_commit": indexed_commit,
+        "indexed_at": str(meta.get("indexed_at") or ""),
+        "stale_determinable": bool(indexed_commit or indexed_repo_root),
+        "stale": bool(stale_reasons),
+        "stale_reasons": stale_reasons,
+    }
 
 
 def _fts_query(text: str) -> str:
@@ -627,11 +677,16 @@ def _index_status(args: dict[str, Any]) -> dict[str, Any]:
     db = Path(args.get("db") or _db_path()).expanduser()
     repo = _repo_root(args).resolve()
     status = _db_inspect(db)
+    rag_metadata = _safe_rag_metadata(repo, db, status)
     return {
         "ok": bool(status.get("ok")),
         "tool": "aicarmine_rag_index_status",
         "db": str(db),
         "repo_root": str(repo),
+        "rag_metadata": rag_metadata,
+        "current_commit": rag_metadata.get("current_commit", ""),
+        "indexed_commit": rag_metadata.get("indexed_commit", ""),
+        "stale": rag_metadata.get("stale", False),
         "db_status": status,
         "git_surface": _git_candidate_count(repo),
         "defaults": {
@@ -686,7 +741,21 @@ def _handle_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 
     if operation == "health":
         inspect_result = _db_inspect(db)
-        return _tool_content({"ok": bool(inspect_result.get("ok")), "db": str(db), "db_status": inspect_result, "reranker": _reranker_ready()})
+        repo = _repo_root(arguments).resolve()
+        rag_metadata = _safe_rag_metadata(repo, db, inspect_result)
+        return _tool_content(
+            {
+                "ok": bool(inspect_result.get("ok")),
+                "db": str(db),
+                "repo_root": str(repo),
+                "rag_metadata": rag_metadata,
+                "current_commit": rag_metadata.get("current_commit", ""),
+                "indexed_commit": rag_metadata.get("indexed_commit", ""),
+                "stale": rag_metadata.get("stale", False),
+                "db_status": inspect_result,
+                "reranker": _reranker_ready(),
+            }
+        )
 
     if operation == "inspect":
         return _tool_content(_db_inspect(db))
