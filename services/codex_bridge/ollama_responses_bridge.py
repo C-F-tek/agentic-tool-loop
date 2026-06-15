@@ -35,7 +35,17 @@ OLLAMA_BASE_URL = os.environ.get("AICARMINE_OLLAMA_BASE_URL", "http://127.0.0.1:
 STATEFUL = os.environ.get("AICARMINE_CODEX_BRIDGE_STATEFUL", "0").lower() in {"1", "true", "yes", "on"}
 DEFAULT_STATE_DB = Path.home() / ".aicarmine_codex_bridge" / "responses.sqlite3"
 STATE_DB = Path(os.environ.get("AICARMINE_CODEX_BRIDGE_STATE_DB", str(DEFAULT_STATE_DB))).expanduser()
-HTTP_TIMEOUT = int(os.environ.get("AICARMINE_CODEX_BRIDGE_HTTP_TIMEOUT_SECONDS", "900"))
+
+
+def _safe_int_env(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(str(os.environ.get(name, default)).strip())
+    except (TypeError, ValueError):
+        value = default
+    return max(low, min(high, value))
+
+
+HTTP_TIMEOUT = _safe_int_env("AICARMINE_CODEX_BRIDGE_HTTP_TIMEOUT_SECONDS", 900, 1, 3600)
 
 app = FastAPI(title=APP_NAME, version="1.0.0")
 
@@ -84,7 +94,7 @@ def _save_response(response_id: str, request_payload: dict[str, Any], response_p
                     _json_dumps(response_payload),
                 ),
             )
-    except Exception:
+    except (sqlite3.Error, PermissionError, OSError, TypeError, ValueError):
         # State capture must not break proxying.
         return
 
@@ -100,7 +110,7 @@ def _load_response(response_id: str) -> dict[str, Any] | None:
             if not row:
                 return None
             return dict(row)
-    except Exception:
+    except (sqlite3.Error, PermissionError, OSError, json.JSONDecodeError):
         return None
 
 
@@ -179,7 +189,25 @@ def _proxy_error(exc: Exception) -> Response:
     if isinstance(exc, urllib.error.HTTPError):
         body = exc.read()
         return Response(content=body, status_code=exc.code, media_type=exc.headers.get("Content-Type") or "application/json")
-    return JSONResponse(status_code=502, content={"error": {"message": str(exc), "type": "aicarmine_bridge_proxy_error"}})
+    category = "proxy_error"
+    details: dict[str, Any] = {
+        "message": str(exc)[:1000],
+        "type": "aicarmine_bridge_proxy_error",
+        "error_type": type(exc).__name__,
+        "target_base_url": OLLAMA_BASE_URL,
+        "timeout_seconds": HTTP_TIMEOUT,
+    }
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", "")
+        reason_text = str(reason)
+        category = "timeout" if isinstance(reason, TimeoutError) or "timed out" in reason_text.lower() else "url_error"
+        details["reason_preview"] = reason_text[:500]
+    elif isinstance(exc, TimeoutError):
+        category = "timeout"
+    elif isinstance(exc, OSError):
+        category = "os_error"
+    details["category"] = category
+    return JSONResponse(status_code=502, content={"error": details})
 
 
 def _sse_iter(res: urllib.response.addinfourl) -> Iterable[bytes]:

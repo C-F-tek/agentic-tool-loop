@@ -20,6 +20,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -396,6 +397,8 @@ def _rerank(
     timeout_seconds: float,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     warnings: list[str] = []
+    started = time.monotonic()
+    effective_timeout = _safe_float(timeout_seconds, DEFAULT_RERANK_TIMEOUT_SECONDS, low=1.0, high=60.0)
     url = os.environ.get("AICARMINE_RAG_RERANK_URL", DEFAULT_RERANK_URL).strip() or DEFAULT_RERANK_URL
     model = os.environ.get("AICARMINE_RAG_RERANK_MODEL", DEFAULT_RERANK_MODEL).strip() or DEFAULT_RERANK_MODEL
     meta: dict[str, Any] = {
@@ -405,7 +408,8 @@ def _rerank(
         "model": model,
         "candidate_limit": candidate_limit,
         "doc_chars": doc_chars,
-        "timeout_seconds": timeout_seconds,
+        "timeout_requested": timeout_seconds,
+        "timeout_seconds": effective_timeout,
     }
 
     if not enabled:
@@ -423,16 +427,57 @@ def _rerank(
     payload = {"model": model, "query": query, "documents": docs}
 
     try:
-        response = _http_json("POST", url, payload=payload, timeout=max(1, int(timeout_seconds)))
+        response = _http_json("POST", url, payload=payload, timeout=max(1, int(effective_timeout)))
         parsed = _parse_rerank_results(response)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         warnings.append(f"reranker_unavailable:{type(exc).__name__}:{exc}")
-        meta.update({"status": "unavailable", "error": type(exc).__name__, "detail": str(exc)})
+        meta.update(
+            {
+                "status": "unavailable",
+                "error": type(exc).__name__,
+                "detail": str(exc),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            }
+        )
         ranked = []
         for candidate in candidates:
             merged = dict(candidate)
             merged["rerank_score"] = None
             ranked.append(merged)
+        return ranked, warnings, meta
+
+    if not isinstance(response, (dict, list)):
+        warnings.append(f"reranker_invalid_response:{type(response).__name__}")
+        ranked = []
+        for candidate in candidates:
+            merged = dict(candidate)
+            merged["rerank_score"] = None
+            ranked.append(merged)
+        meta.update(
+            {
+                "status": "invalid_response",
+                "error": "reranker_response_not_json_shape",
+                "response_type": type(response).__name__,
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            }
+        )
+        return ranked, warnings, meta
+
+    if not parsed:
+        warnings.append("reranker_no_scores")
+        ranked = []
+        for candidate in candidates:
+            merged = dict(candidate)
+            merged["rerank_score"] = None
+            ranked.append(merged)
+        meta.update(
+            {
+                "status": "no_scores",
+                "returned_scores": 0,
+                "ranked_count": len(ranked),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            }
+        )
         return ranked, warnings, meta
 
     ranked: list[dict[str, Any]] = []
@@ -459,7 +504,14 @@ def _rerank(
         merged["rerank_score"] = None
         ranked.append(merged)
 
-    meta.update({"status": "ready", "returned_scores": len(parsed), "ranked_count": len(ranked)})
+    meta.update(
+        {
+            "status": "ready",
+            "returned_scores": len(parsed),
+            "ranked_count": len(ranked),
+            "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+        }
+    )
     return ranked, warnings, meta
 
 

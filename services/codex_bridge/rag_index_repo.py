@@ -123,8 +123,10 @@ def _iter_files(root: Path, suffixes: set[str], max_file_bytes: int, source: str
     raise ValueError(f"unsupported source: {source}")
 
 
-def _read_text(path: Path) -> str | None:
+def _read_text(path: Path, *, max_file_bytes: int | None = None) -> str | None:
     try:
+        if max_file_bytes is not None and path.stat().st_size > max_file_bytes:
+            return None
         data = path.read_bytes()
     except OSError:
         return None
@@ -271,8 +273,10 @@ def _upsert_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def _read_file_hash(path: Path) -> str | None:
+def _read_file_hash(path: Path, *, max_file_bytes: int | None = None) -> str | None:
     try:
+        if max_file_bytes is not None and path.stat().st_size > max_file_bytes:
+            return None
         data = path.read_bytes()
     except OSError:
         return None
@@ -314,18 +318,21 @@ def _index_file(
     now: int,
     chunk_lines: int,
     chunk_chars: int,
+    max_file_bytes: int | None = None,
 ) -> int:
     rel = path.relative_to(repo_root).as_posix()
     try:
         stat = path.stat()
     except OSError:
         return 0
+    if max_file_bytes is not None and stat.st_size > max_file_bytes:
+        return 0
 
-    file_hash = _read_file_hash(path)
+    file_hash = _read_file_hash(path, max_file_bytes=max_file_bytes)
     if file_hash is None:
         return 0
 
-    text = _read_text(path)
+    text = _read_text(path, max_file_bytes=max_file_bytes)
     _delete_path(conn, rel)
 
     if text is None or not text.strip():
@@ -420,6 +427,8 @@ def build_index(
                 stat = path.stat()
             except OSError:
                 continue
+            if stat.st_size > max_file_bytes:
+                continue
 
             row = conn.execute(
                 "SELECT size_bytes, mtime_ns, content_hash FROM files WHERE path = ?",
@@ -434,7 +443,15 @@ def build_index(
                 files_skipped += 1
                 continue
 
-            chunks_written += _index_file(conn, repo_root, path, now, chunk_lines, chunk_chars)
+            chunks_written += _index_file(
+                conn,
+                repo_root,
+                path,
+                now,
+                chunk_lines,
+                chunk_chars,
+                max_file_bytes=max_file_bytes,
+            )
             files_reindexed += 1
 
         conn.commit()

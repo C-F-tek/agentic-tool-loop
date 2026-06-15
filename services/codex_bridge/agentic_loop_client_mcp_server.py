@@ -261,6 +261,7 @@ def _get_health(endpoint: str, *, timeout_seconds: int) -> dict[str, Any]:
 def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict[str, Any]:
     started = time.monotonic()
     marker = "aicarmine_codex_mcp_reranker_functional_probe"
+    effective_timeout = _safe_int(timeout_seconds, 30, 1, 60)
     payload = {
         "model": DEFAULT_RERANKER_MODEL,
         "query": f"{marker} planner validator tool surface",
@@ -273,7 +274,7 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
         method="POST",
         url=rerank_url,
         payload=payload,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=effective_timeout,
     )
     elapsed_ms = round((time.monotonic() - started) * 1000, 1)
     if response.get("ok") is not True:
@@ -281,6 +282,8 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
             "ok": False,
             "error": "reranker_functional_probe_failed",
             "elapsed_ms": elapsed_ms,
+            "timeout_requested": timeout_seconds,
+            "timeout_used": effective_timeout,
             "response": response,
         }
     payload_value = response.get("payload") if isinstance(response.get("payload"), dict) else {}
@@ -290,11 +293,15 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
             "ok": False,
             "error": "reranker_functional_probe_no_scores",
             "elapsed_ms": elapsed_ms,
+            "timeout_requested": timeout_seconds,
+            "timeout_used": effective_timeout,
             "response": response,
         }
     return {
         "ok": True,
         "elapsed_ms": elapsed_ms,
+        "timeout_requested": timeout_seconds,
+        "timeout_used": effective_timeout,
         "input_count": len(payload["documents"]),
         "returned_scores": len(results),
         "first_result": results[0],
@@ -662,9 +669,31 @@ def _broker_restart_candidates(root: Path, port: int, *, trust_port_owner: bool)
 
 
 def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds: int) -> dict[str, Any]:
-    unique_pids = sorted({int(pid) for pid in pids if int(pid) > 0 and int(pid) != os.getpid()})
+    invalid_pids: list[dict[str, Any]] = []
+    normalized_pids: set[int] = set()
+    for raw_pid in pids:
+        try:
+            pid = int(raw_pid)
+        except (TypeError, ValueError) as exc:
+            invalid_pids.append(
+                {
+                    "raw_pid": str(raw_pid),
+                    "error": "invalid_pid",
+                    "error_type": type(exc).__name__,
+                }
+            )
+            continue
+        if pid > 0 and pid != os.getpid():
+            normalized_pids.add(pid)
+    unique_pids = sorted(normalized_pids)
     if not unique_pids:
-        return {"ok": False, "error": "no_broker_process_candidates", "port": port, "terminated_pids": []}
+        return {
+            "ok": False,
+            "error": "no_broker_process_candidates",
+            "port": port,
+            "terminated_pids": [],
+            "invalid_pids": invalid_pids,
+        }
     attempts: list[dict[str, Any]] = []
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     for pid in unique_pids:
@@ -688,10 +717,68 @@ def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds:
                     "returncode": completed.returncode,
                     "stdout": completed.stdout[-1200:],
                     "stderr": completed.stderr[-1200:],
+                    **(
+                        {
+                            "error": "termination_command_returned_nonzero",
+                            "error_type": "CompletedProcess",
+                        }
+                        if completed.returncode != 0
+                        else {}
+                    ),
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_command_timeout",
+                    "error_type": type(exc).__name__,
+                    "timeout_seconds": max(3, timeout_seconds),
+                    "stdout": (exc.stdout or "")[-1200:] if isinstance(exc.stdout, str) else "",
+                    "stderr": (exc.stderr or "")[-1200:] if isinstance(exc.stderr, str) else "",
+                }
+            )
+        except FileNotFoundError as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_command_not_found",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            )
+        except PermissionError as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_permission_denied",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            )
+        except OSError as exc:
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_os_error",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
                 }
             )
         except Exception as exc:
-            attempts.append({"pid": pid, "command": command, "error": type(exc).__name__, "message": str(exc)})
+            attempts.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "error": "termination_unexpected_error",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+            )
 
     deadline = time.monotonic() + max(1, timeout_seconds)
     while time.monotonic() < deadline:
@@ -701,15 +788,19 @@ def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds:
                 "port_released": True,
                 "port": port,
                 "terminated_pids": unique_pids,
+                "invalid_pids": invalid_pids,
                 "attempts": attempts,
             }
         time.sleep(0.25)
+    port_owner_pids_after = _port_owner_pids(port)
     return {
         "ok": False,
         "error": "broker_port_still_listening_after_termination",
         "port_released": False,
         "port": port,
         "terminated_pids": unique_pids,
+        "invalid_pids": invalid_pids,
+        "port_owner_pids_after": port_owner_pids_after,
         "attempts": attempts,
     }
 

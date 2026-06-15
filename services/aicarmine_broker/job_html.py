@@ -11,10 +11,41 @@ from .job_store import agent_job_root, compact_agent_status, list_agent_jobs, lo
 
 
 IA_VIEW_STEP_STRIP_LIMIT = 24
+HTML_PRETTY_TEXT_LIMIT = 300_000
 
 
-def _json_pretty(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+def _safe_text(value: Any, *, limit: int = 500) -> str:
+    try:
+        text = str(value)
+    except Exception as exc:
+        return f"<unstringifiable:{type(exc).__name__}>"
+    return text[:limit] + (f"... <truncated {len(text) - limit} chars>" if len(text) > limit else "")
+
+
+def _clip_text(text: str, *, limit: int = HTML_PRETTY_TEXT_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n... <truncated {len(text) - limit} chars>"
+
+
+def _json_pretty(value: Any, *, max_chars: int = HTML_PRETTY_TEXT_LIMIT) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    except Exception as exc:
+        text = json.dumps(
+            {
+                "schema": "job_html_json_diagnostic.v1",
+                "diagnostic_only": True,
+                "reason": "json_serialization_failed",
+                "error_type": type(exc).__name__,
+                "error": _safe_text(exc, limit=1000),
+                "value_type": type(value).__name__,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    return _clip_text(text, limit=max(0, int(max_chars or 0)))
 
 
 def _read_text_if_exists(path: Path) -> str:
@@ -349,14 +380,14 @@ def agent_job_planner_stream_text(job_id: str) -> str:
 
 def _html_pre(value: Any) -> str:
     if isinstance(value, str):
-        text = value
+        text = _clip_text(value)
     else:
         text = _json_pretty(value)
     return f"<pre>{html.escape(text)}</pre>"
 
 
 def _safe_detail_key(value: Any) -> str:
-    text = str(value or "").strip().lower()
+    text = _safe_text(value, limit=200).strip().lower()
     cleaned = "".join(ch if ch.isalnum() else "-" for ch in text)
     while "--" in cleaned:
         cleaned = cleaned.replace("--", "-")
@@ -393,13 +424,13 @@ def _html_details(title: str, value: Any, *, open_by_default: bool = False) -> s
 def _json_payload_char_count(value: Any) -> int:
     try:
         return len(_json_pretty(value))
-    except (TypeError, ValueError):
-        return len(str(value))
+    except Exception:
+        return len(_safe_text(value, limit=HTML_PRETTY_TEXT_LIMIT))
 
 
 def _json_preview(value: Any, *, max_chars: int = 220) -> str:
     if isinstance(value, dict):
-        keys = [str(key) for key in list(value.keys())[:8]]
+        keys = [_safe_text(key, limit=80) for key in list(value.keys())[:8]]
         suffix = " ..." if len(value) > len(keys) else ""
         return "keys: " + ", ".join(keys) + suffix
     if isinstance(value, list):
@@ -409,7 +440,7 @@ def _json_preview(value: Any, *, max_chars: int = 220) -> str:
     if isinstance(value, str):
         text = value.replace("\r", "\\r").replace("\n", "\\n")
     else:
-        text = str(value)
+        text = _safe_text(value, limit=max(max_chars * 2, max_chars))
     return text[:max_chars] + ("..." if len(text) > max_chars else "")
 
 
@@ -534,7 +565,7 @@ def _html_json_inline_container(value: Any) -> str:
         for key, item in value.items():
             parts.append(
                 "<span class=\"json-inline-pair\">"
-                f"<span class=\"json-key\">{html.escape(str(key))}</span>: "
+                f"<span class=\"json-key\">{html.escape(_safe_text(key, limit=120))}</span>: "
                 f"{_html_json_scalar(item)}"
                 "</span>"
             )
@@ -556,46 +587,67 @@ def _decode_structured_json_text(value: str) -> Any:
     return decoded if isinstance(decoded, (dict, list)) else None
 
 
-def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
+def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0, _seen: set[int] | None = None) -> str:
+    seen = _seen if _seen is not None else set()
+    if isinstance(value, (dict, list)):
+        marker = id(value)
+        if marker in seen:
+            return _html_pre(
+                {
+                    "schema": "job_html_json_diagnostic.v1",
+                    "diagnostic_only": True,
+                    "reason": "recursive_value_omitted",
+                    "path": path,
+                    "value_type": type(value).__name__,
+                }
+            )
+        seen.add(marker)
     if isinstance(value, str):
         decoded = _decode_structured_json_text(value)
         if decoded is not None:
             return (
                 "<div class=\"json-decoded\">"
                 "<div class=\"json-decoded-label\">decoded JSON string</div>"
-                f"{_html_json_tree(decoded, path=f'{path}.__decoded_json', depth=depth)}"
+                f"{_html_json_tree(decoded, path=f'{path}.__decoded_json', depth=depth, _seen=seen)}"
                 "</div>"
             )
     if _json_inline_container(value):
-        return _html_json_inline_container(value)
+        result = _html_json_inline_container(value)
+        if isinstance(value, (dict, list)):
+            seen.discard(id(value))
+        return result
     if isinstance(value, dict):
         if not value:
+            seen.discard(id(value))
             return _html_pre("{}")
         parts: list[str] = ["<div class=\"json-tree json-object\">"]
         for key, item in value.items():
-            item_path = f"{path}.{key}"
+            key_text = _safe_text(key, limit=120)
+            item_path = f"{path}.{key_text}"
             if not isinstance(item, (dict, list)) or _json_inline_container(item):
                 parts.append(
                     "<div class=\"json-row\">"
-                    f"<span class=\"json-key\">{html.escape(str(key))}</span>"
+                    f"<span class=\"json-key\">{html.escape(key_text)}</span>"
                     f"<span class=\"json-label\">{html.escape(_json_value_label(item))}</span>"
-                    f"<span class=\"json-value\">{_html_json_tree(item, path=item_path, depth=depth + 1)}</span>"
+                    f"<span class=\"json-value\">{_html_json_tree(item, path=item_path, depth=depth + 1, _seen=seen)}</span>"
                     "</div>"
                 )
                 continue
-            title = f"{key} ({_json_value_label(item)})"
+            title = f"{key_text} ({_json_value_label(item)})"
             parts.append(
                 _html_detail_block(
                     title,
-                    _html_json_tree(item, path=item_path, depth=depth + 1),
+                    _html_json_tree(item, path=item_path, depth=depth + 1, _seen=seen),
                     open_by_default=depth == 0 and not isinstance(item, (dict, list)),
                     detail_key=item_path,
                 )
             )
         parts.append("</div>")
+        seen.discard(id(value))
         return "".join(parts)
     if isinstance(value, list):
         if not value:
+            seen.discard(id(value))
             return _html_pre("[]")
         parts = ["<div class=\"json-tree json-array\">"]
         for index, item in enumerate(value):
@@ -605,7 +657,7 @@ def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
                     "<div class=\"json-row\">"
                     f"<span class=\"json-key\">[{index}]</span>"
                     f"<span class=\"json-label\">{html.escape(_json_value_label(item))}</span>"
-                    f"<span class=\"json-value\">{_html_json_tree(item, path=item_path, depth=depth + 1)}</span>"
+                    f"<span class=\"json-value\">{_html_json_tree(item, path=item_path, depth=depth + 1, _seen=seen)}</span>"
                     "</div>"
                 )
                 continue
@@ -613,12 +665,13 @@ def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0) -> str:
             parts.append(
                 _html_detail_block(
                     title,
-                    _html_json_tree(item, path=item_path, depth=depth + 1),
+                    _html_json_tree(item, path=item_path, depth=depth + 1, _seen=seen),
                     open_by_default=False,
                     detail_key=item_path,
                 )
             )
         parts.append("</div>")
+        seen.discard(id(value))
         return "".join(parts)
     return _html_json_scalar(value)
 

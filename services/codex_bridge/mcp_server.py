@@ -120,6 +120,17 @@ def _compact_text(value: Any, limit: int = MAX_TEXT) -> str:
     return text[: max(0, limit - 180)].rstrip() + "\n\n...[truncated by aicarmine_codex_app_mcp]"
 
 
+def _diagnostic_preview(value: Any, limit: int = 500) -> str:
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        try:
+            text = str(value)
+        except Exception:
+            text = f"<unprintable {type(value).__name__}>"
+    return text[:limit]
+
+
 def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": _compact_text(value)}], "isError": is_error}
 
@@ -237,17 +248,36 @@ def _codex_selected_project_root() -> Path:
     for name in _CODEX_ROOT_ENV_NAMES:
         root = _env_existing_root(name)
         if root is not None:
+            _log(f"selected project root from {name}: {root}")
             return root
 
     cwd_git_root = _path_git_root(cwd)
     if cwd_git_root is not None:
+        _log(f"selected project root from cwd git root: {cwd_git_root}")
         return cwd_git_root
 
     legacy_lab_root = _env_existing_root("AICARMINE_LAB_REPO")
     if legacy_lab_root is not None:
+        _log(f"selected project root from legacy AICARMINE_LAB_REPO: {legacy_lab_root}")
         return legacy_lab_root
 
-    return cwd.resolve()
+    resolved = cwd.resolve()
+    _log(f"using cwd as fallback root: {resolved}")
+    return resolved
+
+
+def _codex_root_source(root: Path) -> str:
+    for name in _CODEX_ROOT_ENV_NAMES:
+        env_root = _env_existing_root(name)
+        if env_root is not None and env_root == root:
+            return name
+    cwd_git_root = _path_git_root(Path.cwd())
+    if cwd_git_root is not None and cwd_git_root == root:
+        return "cwd_git_root"
+    legacy_lab_root = _env_existing_root("AICARMINE_LAB_REPO")
+    if legacy_lab_root is not None and legacy_lab_root == root:
+        return "AICARMINE_LAB_REPO"
+    return "cwd_fallback"
 
 
 def _repo_root() -> Path:
@@ -426,18 +456,25 @@ def _direct_dispatch(internal_tool: str, args: dict[str, Any]) -> Any:
 
     No HTTP call. No 3571. No 3572/vulkan/agent. No agentic loop.
     """
-    dispatcher = _load_dispatcher()
-    request_class = _DISPATCH_REQUEST_CLASS
-    if request_class is None:
-        raise RuntimeError("dispatcher request class not loaded")
-    request = request_class(
-        name=internal_tool,
-        args=dict(args or {}),
-        root=_repo_root(),
-        allow_command=False,
-        user_consent="",
-    )
-    return dispatcher.dispatch(request)
+    _log(f"direct_dispatch_start tool={internal_tool} args_keys={sorted(dict(args or {}).keys())[:40]}")
+    try:
+        dispatcher = _load_dispatcher()
+        request_class = _DISPATCH_REQUEST_CLASS
+        if request_class is None:
+            raise RuntimeError("dispatcher request class not loaded")
+        request = request_class(
+            name=internal_tool,
+            args=dict(args or {}),
+            root=_repo_root(),
+            allow_command=False,
+            user_consent="",
+        )
+        result = dispatcher.dispatch(request)
+        _log(f"direct_dispatch_done tool={internal_tool} result_type={type(result).__name__}")
+        return result
+    except Exception as exc:
+        _log(f"direct_dispatch_failed tool={internal_tool} error_type={type(exc).__name__} message={_diagnostic_preview(exc, 300)}")
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -456,20 +493,37 @@ def _default_persistent_db() -> Path:
     )
 
 
-def _read_memory_table(db_path: Path, table: str, limit: int = 50, query: str = "") -> list[dict[str, Any]]:
+def _memory_read_diagnostic(db_path: Path, table: str, stage: str, error: str, exc: Exception | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "db_path": str(db_path),
+        "table": table,
+        "stage": stage,
+        "error": error,
+    }
+    if exc is not None:
+        payload.update(
+            {
+                "error_type": type(exc).__name__,
+                "message_preview": _diagnostic_preview(exc, 500),
+            }
+        )
+    return payload
+
+
+def _read_memory_table(db_path: Path, table: str, limit: int = 50, query: str = "") -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     import sqlite3
 
     if not db_path.exists():
-        return []
+        return [], _memory_read_diagnostic(db_path, table, "open", "memory_db_not_found")
 
     limit = _safe_int(limit, 50, low=1, high=200)
-    conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-
+    conn: sqlite3.Connection | None = None
     try:
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
         if table not in tables:
-            return []
+            return [], _memory_read_diagnostic(db_path, table, "schema", "memory_table_not_found")
 
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         order = "updated_at DESC" if "updated_at" in cols else "rowid DESC"
@@ -497,15 +551,25 @@ def _read_memory_table(db_path: Path, table: str, limit: int = 50, query: str = 
                 if key in item:
                     try:
                         item[key[:-5] if key.endswith("_json") else key] = json.loads(item.get(key) or "{}")
-                    except Exception:
+                    except json.JSONDecodeError as exc:
                         item[key + "_parse_error"] = True
+                        item[key + "_parse_error_type"] = type(exc).__name__
             if "content" in item and len(str(item["content"])) > 2400:
                 item["content_preview"] = str(item["content"])[:2400]
                 item.pop("content", None)
             out.append(item)
-        return out
+        return out, None
+    except sqlite3.OperationalError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "sqlite", "sqlite_operational_error", exc)
+    except sqlite3.DatabaseError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "sqlite", "sqlite_database_error", exc)
+    except PermissionError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "open", "permission_denied", exc)
+    except OSError as exc:
+        return [], _memory_read_diagnostic(db_path, table, "filesystem", "os_error", exc)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def _memory_report(args: dict[str, Any]) -> dict[str, Any]:
@@ -513,7 +577,20 @@ def _memory_report(args: dict[str, Any]) -> dict[str, Any]:
     query = str(args.get("query") or "").strip()
     operational_db = Path(args.get("operational_db") or _default_operational_db()).expanduser()
     persistent_db = Path(args.get("persistent_db") or _default_persistent_db()).expanduser()
-    return {
+    operational_records, operational_diag = _read_memory_table(
+        operational_db,
+        "operational_memory_records",
+        limit=limit,
+        query=query,
+    )
+    persistent_records, persistent_diag = _read_memory_table(
+        persistent_db,
+        "memory_records",
+        limit=limit,
+        query=query,
+    )
+    diagnostics = [item for item in (operational_diag, persistent_diag) if item is not None]
+    payload = {
         "ok": True,
         "tool": "aicarmine_memory_report",
         "mode": "read_only_sqlite",
@@ -522,9 +599,12 @@ def _memory_report(args: dict[str, Any]) -> dict[str, Any]:
         "persistent_db": str(persistent_db),
         "operational_exists": operational_db.exists(),
         "persistent_exists": persistent_db.exists(),
-        "operational_records": _read_memory_table(operational_db, "operational_memory_records", limit=limit, query=query),
-        "persistent_records": _read_memory_table(persistent_db, "memory_records", limit=limit, query=query),
+        "operational_records": operational_records,
+        "persistent_records": persistent_records,
     }
+    if diagnostics:
+        payload["memory_read_diagnostics"] = diagnostics
+    return payload
 
 
 def _memory_state_packet(args: dict[str, Any]) -> dict[str, Any]:
@@ -1012,13 +1092,15 @@ BLOCKED_TOOLS = {
 def _health() -> dict[str, Any]:
     registry_loader = _load_broker_registry_capability_map()
     registry = registry_loader() if registry_loader else {}
+    root = _repo_root()
     return {
         "ok": True,
         "server": SERVER_NAME,
         "version": SERVER_VERSION,
         "mode": "codex_app_direct_dispatch_no_agentic_loop",
         "process_cwd": str(Path.cwd()),
-        "resolved_project_root": str(_repo_root()),
+        "resolved_project_root": str(root),
+        "root_source": _codex_root_source(root),
         "root_context": {k: str(v) for k, v in _root_context().items()},
         "server_script": str(Path(__file__).resolve()),
         "python_executable": sys.executable,

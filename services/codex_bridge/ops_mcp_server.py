@@ -38,6 +38,45 @@ DEFAULT_PROCESS_PATTERNS = [
 ]
 
 
+def _diagnostic_preview(value: Any, limit: int = 500) -> str:
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        try:
+            text = str(value)
+        except Exception:
+            text = f"<unprintable {type(value).__name__}>"
+    return text[:limit]
+
+
+def _safe_int_param(
+    value: Any,
+    default: int,
+    low: int,
+    high: int,
+    *,
+    name: str,
+    diagnostics: list[dict[str, Any]] | None = None,
+) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        if diagnostics is not None and value is not None:
+            diagnostics.append(
+                {
+                    "param": name,
+                    "error": "invalid_integer",
+                    "error_type": type(exc).__name__,
+                    "received_preview": _diagnostic_preview(value, 200),
+                    "default_used": default,
+                    "min": low,
+                    "max": high,
+                }
+            )
+        number = default
+    return max(low, min(high, number))
+
+
 @dataclass(frozen=True)
 class LocalMcpServer:
     script: str
@@ -442,36 +481,77 @@ def _run_powershell_json(script: str, timeout_seconds: int) -> dict[str, Any]:
         return {
             "ok": False,
             "error": "powershell_timeout",
+            "error_type": type(exc).__name__,
             "timeout_seconds": timeout_seconds,
             "stdout_tail": (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else "",
             "stderr_tail": (exc.stderr or "")[-2000:] if isinstance(exc.stderr, str) else "",
             "data": [],
         }
+    except FileNotFoundError as exc:
+        return {
+            "ok": False,
+            "error": "powershell_start_failed",
+            "error_type": type(exc).__name__,
+            "timeout_seconds": timeout_seconds,
+            "message_preview": _diagnostic_preview(exc, 500),
+            "data": [],
+        }
+    except PermissionError as exc:
+        return {
+            "ok": False,
+            "error": "powershell_permission_denied",
+            "error_type": type(exc).__name__,
+            "timeout_seconds": timeout_seconds,
+            "message_preview": _diagnostic_preview(exc, 500),
+            "data": [],
+        }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "error": "powershell_os_error",
+            "error_type": type(exc).__name__,
+            "timeout_seconds": timeout_seconds,
+            "message_preview": _diagnostic_preview(exc, 500),
+            "data": [],
+        }
 
     stdout = proc.stdout.strip()
     data: Any = []
+    json_error = ""
+    json_error_type = ""
     if stdout:
         try:
             data = json.loads(stdout)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             data = {"raw_stdout": stdout[-4000:]}
+            json_error = "powershell_json_decode_error"
+            json_error_type = type(exc).__name__
     return {
-        "ok": proc.returncode == 0,
+        "ok": proc.returncode == 0 and not json_error,
         "returncode": proc.returncode,
         "data": data,
         "stdout_tail": proc.stdout[-2000:],
         "stderr_tail": proc.stderr[-2000:],
+        "error": json_error,
+        "error_type": json_error_type,
     }
 
 
 def service_state_ports(args: dict[str, Any], root: Path) -> dict[str, Any]:
     del root
+    diagnostics: list[dict[str, Any]] = []
     raw_ports = args.get("ports")
-    ports = [int(item) for item in raw_ports] if isinstance(raw_ports, list) and raw_ports else DEFAULT_PORTS
+    if isinstance(raw_ports, list) and raw_ports:
+        ports = []
+        for index, item in enumerate(raw_ports):
+            parsed = _safe_int_param(item, 0, 0, 65535, name=f"ports[{index}]", diagnostics=diagnostics)
+            if parsed:
+                ports.append(parsed)
+    else:
+        ports = DEFAULT_PORTS
     ports = [port for port in ports if 0 < port < 65536]
     include_all = args.get("include_all_listeners") is True
-    timeout_seconds = int(args.get("timeout_seconds") or 10)
-    timeout_seconds = max(1, min(timeout_seconds, 60))
+    timeout_seconds = _safe_int_param(args.get("timeout_seconds"), 10, 1, 60, name="timeout_seconds", diagnostics=diagnostics)
     ports_json = json.dumps(ports)
     if include_all:
         script = """
@@ -510,21 +590,22 @@ ConvertTo-Json -InputObject @($Rows) -Depth 5 -Compress
         "returncode": result.get("returncode"),
         "stderr_tail": result.get("stderr_tail", ""),
         "error": result.get("error", ""),
+        "error_type": result.get("error_type", ""),
+        **({"input_diagnostics": diagnostics} if diagnostics else {}),
     }
 
 
 def service_state_processes(args: dict[str, Any], root: Path) -> dict[str, Any]:
     del root
+    diagnostics: list[dict[str, Any]] = []
     raw_patterns = args.get("patterns")
     patterns = (
         [str(item) for item in raw_patterns if str(item).strip()]
         if isinstance(raw_patterns, list) and raw_patterns
         else DEFAULT_PROCESS_PATTERNS
     )
-    limit = int(args.get("limit") or 50)
-    limit = max(1, min(limit, 200))
-    timeout_seconds = int(args.get("timeout_seconds") or 10)
-    timeout_seconds = max(1, min(timeout_seconds, 60))
+    limit = _safe_int_param(args.get("limit"), 50, 1, 200, name="limit", diagnostics=diagnostics)
+    timeout_seconds = _safe_int_param(args.get("timeout_seconds"), 10, 1, 60, name="timeout_seconds", diagnostics=diagnostics)
     patterns_json = json.dumps(patterns)
     script = f"""
 $ErrorActionPreference = "Stop"
@@ -562,6 +643,8 @@ ConvertTo-Json -InputObject @($Rows) -Depth 5 -Compress
         "returncode": result.get("returncode"),
         "stderr_tail": result.get("stderr_tail", ""),
         "error": result.get("error", ""),
+        "error_type": result.get("error_type", ""),
+        **({"input_diagnostics": diagnostics} if diagnostics else {}),
     }
 
 
@@ -595,13 +678,11 @@ def _read_tail(path: Path, max_lines: int, max_bytes: int) -> str:
 
 
 def service_state_logs(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    diagnostics: list[dict[str, Any]] = []
     raw_paths = args.get("paths")
-    max_lines = int(args.get("max_lines") or 80)
-    max_lines = max(1, min(max_lines, 500))
-    max_files = int(args.get("max_files") or 5)
-    max_files = max(1, min(max_files, 20))
-    max_bytes = int(args.get("max_bytes") or 256000)
-    max_bytes = max(1024, min(max_bytes, 1000000))
+    max_lines = _safe_int_param(args.get("max_lines"), 80, 1, 500, name="max_lines", diagnostics=diagnostics)
+    max_files = _safe_int_param(args.get("max_files"), 5, 1, 20, name="max_files", diagnostics=diagnostics)
+    max_bytes = _safe_int_param(args.get("max_bytes"), 256000, 1024, 1000000, name="max_bytes", diagnostics=diagnostics)
 
     if isinstance(raw_paths, list) and raw_paths:
         requested_paths = [Path(str(item)) for item in raw_paths if str(item).strip()]
@@ -641,6 +722,7 @@ def service_state_logs(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "missing": missing,
         "rejected": rejected,
         "read_scope": "repo_root_only",
+        **({"input_diagnostics": diagnostics} if diagnostics else {}),
     }
 
 

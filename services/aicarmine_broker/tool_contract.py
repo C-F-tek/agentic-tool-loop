@@ -117,13 +117,77 @@ def _paths_from_items(value: object) -> list[str]:
     return paths
 
 
+def _preview(value: Any, *, limit: int = 300) -> str:
+    try:
+        return str(value)[:limit]
+    except Exception as exc:
+        return f"<unstringifiable:{type(exc).__name__}>"
+
+
+def _diagnostic(
+    diagnostics: list[dict[str, Any]],
+    reason: str,
+    *,
+    field: str = "",
+    value: Any = None,
+) -> None:
+    row: dict[str, Any] = {
+        "schema": "tool_arg_diagnostic.v1",
+        "diagnostic_only": True,
+        "reason": reason,
+    }
+    if field:
+        row["field"] = field
+    if value is not None:
+        row["received_type"] = type(value).__name__
+        row["received_preview"] = _preview(value)
+    diagnostics.append(row)
+
+
+def _dict_arg(value: Any, diagnostics: list[dict[str, Any]], field: str) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if value is not None:
+        _diagnostic(diagnostics, "non_object_arguments_replaced", field=field, value=value)
+    return {}
+
+
+def _bounded_int_arg(
+    value: Any,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+    field: str,
+    diagnostics: list[dict[str, Any]],
+) -> int:
+    selected = default if value is None or (isinstance(value, str) and value == "") else value
+    try:
+        parsed = int(selected)
+    except (TypeError, ValueError, OverflowError):
+        _diagnostic(diagnostics, "invalid_integer_argument_defaulted", field=field, value=value)
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+def _attach_tool_arg_diagnostics(args: dict[str, Any], diagnostics: list[dict[str, Any]]) -> dict[str, Any]:
+    if not diagnostics:
+        return args
+    existing = args.get("tool_arg_diagnostics")
+    rows = existing if isinstance(existing, list) else []
+    args["tool_arg_diagnostics"] = [*rows, *diagnostics]
+    return args
+
+
 def sanitize_tool_args(
     tool_name: str,
     call_args: dict[str, Any],
     original_args: dict[str, Any],
     public_tool_name: str,
 ) -> dict[str, Any]:
-    args = dict(call_args or {})
+    diagnostics: list[dict[str, Any]] = []
+    args = _dict_arg(call_args, diagnostics, "call_args")
+    original = _dict_arg(original_args, diagnostics, "original_args")
 
     # Normalize aliases emitted by local models before falling back to the public
     # request text.
@@ -137,49 +201,69 @@ def sanitize_tool_args(
 
     args.setdefault("public_tool_name", public_tool_name)
     args.setdefault("public_tool_x", public_tool_name)
-    args.setdefault("original_30b_arguments", original_args)
+    args.setdefault("original_30b_arguments", original)
     if tool_name == "repo_search":
         query = args.get("query")
         if query in (None, ""):
             query = (
-                original_args.get("query")
-                or original_args.get("pattern")
-                or original_args.get("request")
-                or original_args.get("task")
-                or original_args.get("context")
+                original.get("query")
+                or original.get("pattern")
+                or original.get("request")
+                or original.get("task")
+                or original.get("context")
             )
         if query not in (None, ""):
             args["query"] = str(query)
         args["mode"] = str(args.get("mode") or "rg")
         if bad_path(args.get("path")):
+            if args.get("path") not in (None, ""):
+                _diagnostic(diagnostics, "invalid_path_defaulted", field="path", value=args.get("path"))
             args["path"] = "."
-        args["max_results"] = max(1, min(int(args.get("max_results") or 80), 120))
+        args["max_results"] = _bounded_int_arg(
+            args.get("max_results"),
+            default=80,
+            minimum=1,
+            maximum=120,
+            field="max_results",
+            diagnostics=diagnostics,
+        )
     elif tool_name == "repo_rg_search":
         if not str(args.get("pattern") or args.get("query") or "").strip():
             query = (
-                original_args.get("query")
-                or original_args.get("pattern")
-                or original_args.get("request")
-                or original_args.get("task")
-                or original_args.get("context")
+                original.get("query")
+                or original.get("pattern")
+                or original.get("request")
+                or original.get("task")
+                or original.get("context")
             )
             if query not in (None, ""):
                 args["query"] = str(query)
         if bad_path(args.get("path")):
+            if args.get("path") not in (None, ""):
+                _diagnostic(diagnostics, "invalid_path_defaulted", field="path", value=args.get("path"))
             args["path"] = "."
-        args["max_results"] = max(1, min(int(args.get("max_results") or args.get("limit") or 80), 1000))
+        args["max_results"] = _bounded_int_arg(
+            args.get("max_results") or args.get("limit"),
+            default=80,
+            minimum=1,
+            maximum=1000,
+            field="max_results",
+            diagnostics=diagnostics,
+        )
     elif tool_name == "repo_semantic_search":
         query = args.get("query")
         if query in (None, ""):
             query = (
-                original_args.get("query")
-                or original_args.get("request")
-                or original_args.get("task")
-                or original_args.get("context")
+                original.get("query")
+                or original.get("request")
+                or original.get("task")
+                or original.get("context")
             )
         if query not in (None, ""):
             args["query"] = str(query)
         if bad_path(args.get("path")):
+            if args.get("path") not in (None, ""):
+                _diagnostic(diagnostics, "invalid_path_defaulted", field="path", value=args.get("path"))
             args["path"] = "."
     elif tool_name == "repo_read":
         if not args.get("paths") and not args.get("path"):
@@ -187,29 +271,64 @@ def sanitize_tool_args(
             if item_paths:
                 args["paths"] = item_paths
         if bad_path(args.get("path")) and (not args.get("paths")):
-            if original_args.get("path") and (not bad_path(original_args.get("path"))):
-                args["path"] = original_args.get("path")
-            elif original_args.get("paths"):
-                args["paths"] = original_args.get("paths")
+            if args.get("path") not in (None, ""):
+                _diagnostic(diagnostics, "invalid_path_repaired", field="path", value=args.get("path"))
+            if original.get("path") and (not bad_path(original.get("path"))):
+                args["path"] = original.get("path")
+            elif original.get("paths"):
+                args["paths"] = original.get("paths")
             else:
-                item_paths = _paths_from_items(original_args.get("items") or original_args.get("item"))
+                item_paths = _paths_from_items(original.get("items") or original.get("item"))
                 if item_paths:
                     args["paths"] = item_paths
-        args.setdefault("max_chars", 20000)
+        args["max_chars"] = _bounded_int_arg(
+            args.get("max_chars"),
+            default=20000,
+            minimum=1,
+            maximum=200000,
+            field="max_chars",
+            diagnostics=diagnostics,
+        )
+        args["max_paths"] = _bounded_int_arg(
+            args.get("max_paths") or args.get("limit"),
+            default=200,
+            minimum=1,
+            maximum=200,
+            field="max_paths",
+            diagnostics=diagnostics,
+        )
+        args["before"] = _bounded_int_arg(
+            args.get("before"),
+            default=40,
+            minimum=0,
+            maximum=1000,
+            field="before",
+            diagnostics=diagnostics,
+        )
+        args["after"] = _bounded_int_arg(
+            args.get("after"),
+            default=120,
+            minimum=0,
+            maximum=1000,
+            field="after",
+            diagnostics=diagnostics,
+        )
     elif tool_name == "repo_apply_patch":
-        if bad_path(args.get("path")) and original_args.get("path") and (not bad_path(original_args.get("path"))):
-            args["path"] = original_args.get("path")
+        if bad_path(args.get("path")) and original.get("path") and (not bad_path(original.get("path"))):
+            _diagnostic(diagnostics, "invalid_path_repaired", field="path", value=args.get("path"))
+            args["path"] = original.get("path")
         args.setdefault("max_replacements", 1)
     elif tool_name == "repo_write_file":
-        if bad_path(args.get("path")) and original_args.get("path") and (not bad_path(original_args.get("path"))):
-            args["path"] = original_args.get("path")
+        if bad_path(args.get("path")) and original.get("path") and (not bad_path(original.get("path"))):
+            _diagnostic(diagnostics, "invalid_path_repaired", field="path", value=args.get("path"))
+            args["path"] = original.get("path")
         args.setdefault("mode", "overwrite")
         args.setdefault("encoding", "utf-8")
     elif tool_name == "repo_command":
-        if not str(args.get("command") or "").strip() and original_args.get("command"):
-            args["command"] = original_args.get("command")
+        if not str(args.get("command") or "").strip() and original.get("command"):
+            args["command"] = original.get("command")
     elif tool_name == "vulkan_helper":
-        text = original_text(original_args)
+        text = original_text(original)
         if not str(args.get("task") or "").strip() or str(args.get("task")).strip().lower() in {
             "repo",
             "repository",
@@ -217,5 +336,5 @@ def sanitize_tool_args(
         }:
             args["task"] = text or args.get("task") or ""
         args.setdefault("reason", "public tool X is generic or needs composite local evidence")
-        args.setdefault("arguments", original_args)
-    return args
+        args.setdefault("arguments", original)
+    return _attach_tool_arg_diagnostics(args, diagnostics)

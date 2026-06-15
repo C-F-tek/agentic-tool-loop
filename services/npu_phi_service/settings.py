@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 def _bool_env(value: str | None, *, default: bool = False) -> bool:
@@ -62,6 +66,11 @@ class NpuPhiSettings:
     def ensure_runtime_dirs(self) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.spool_dir.mkdir(parents=True, exist_ok=True)
+        if not self.model_dir.exists():
+            logger.warning("NPU Phi model directory does not exist: %s", self.model_dir)
+        for dir_path in (self.cache_dir, self.spool_dir):
+            if not os.access(dir_path, os.W_OK):
+                logger.warning("NPU Phi runtime directory is not writable: %s", dir_path)
 
     def model_status(self) -> dict[str, object]:
         xml_exists = self.model_xml.exists()
