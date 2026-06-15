@@ -296,17 +296,27 @@ def _post_final_reject_turn_tool_names(
 ) -> list[str]:
     if not isinstance(evidence_contract, dict):
         return tool_names
-    rewrite_count = int(evidence_contract.get("planner_final_quality_reject_count") or 0)
-    rewrite_required = bool(evidence_contract.get("planner_cuda_rewrite_required"))
-    if not rewrite_required or rewrite_count < 1:
-        return tool_names
+    final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
+    supported_latches = {
+        "rewrite_required",
+        "required_gap_only",
+        "terminal_block_required",
+    }
+    if final_rewrite_latch not in supported_latches:
+        if not bool(evidence_contract.get("planner_cuda_rewrite_required")):
+            return tool_names
+        rewrite_count = int(evidence_contract.get("planner_final_quality_reject_count") or 0)
+        if rewrite_count < 1:
+            return tool_names
+    if final_rewrite_latch == "terminal_block_required":
+        return []
     required = evidence_contract.get("required_next_tool_call")
     required_tool = str(required.get("tool") or "").strip() if isinstance(required, dict) else ""
     if required_tool:
         if required_tool in tool_names:
             return [required_tool]
         return [required_tool]
-    if evidence_contract.get("turn_rewrite_only_after_final_reject"):
+    if final_rewrite_latch in {"rewrite_required", "required_gap_only"}:
         return []
     return []
 
@@ -431,12 +441,38 @@ def planner_decision(
     evidence_contract = planner_evidence_contract(goal, history, intrinsic_context=intrinsic_context)
     evidence_contract = _apply_step_budget_guidance_to_contract(evidence_contract, state)
 
-    native_tool_names = _tool_surface_names_for_turn(
+    base_tool_names = _tool_surface_names_for_turn(
         goal=goal,
         evidence_contract=evidence_contract,
         intrinsic_context=intrinsic_context,
     )
-    native_tool_names = _post_final_reject_turn_tool_names(evidence_contract, native_tool_names)
+    native_tool_names = _post_final_reject_turn_tool_names(evidence_contract, base_tool_names)
+    final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
+    if "base_tool_surface_reason" not in evidence_contract:
+        turn_tool_surface_policy = (
+            evidence_contract.get("turn_tool_surface_policy")
+            if isinstance(evidence_contract.get("turn_tool_surface_policy"), dict)
+            else {}
+        )
+        evidence_contract["base_tool_surface_reason"] = (
+            str(
+                turn_tool_surface_policy.get("reason") or "tool_surface_policy"
+            ).strip()
+            if final_rewrite_latch == "inactive"
+            else "final_rewrite_latch"
+        )
+    evidence_contract["surface_filter_source"] = (
+        "final_rewrite_latch"
+        if final_rewrite_latch != "inactive"
+        else "tool_surface_policy"
+    )
+    planner_may_choose_final = bool(evidence_contract.get("planner_may_choose_final"))
+    planner_may_choose_block = bool(evidence_contract.get("planner_may_choose_block"))
+    surface_filter_source = (
+        "final_rewrite_latch"
+        if final_rewrite_latch != "inactive"
+        else "tool_surface_policy"
+    )
 
     def build_payload_for_native_tool_names(tool_names: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         schema = (
@@ -479,6 +515,53 @@ def planner_decision(
             native_tool_names
         )
         prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
+    runtime_roots = user_payload.get("runtime_roots") if isinstance(user_payload, dict) else {}
+
+    def _normalized_root_root(value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return ""
+        normalized = str(Path(normalized).resolve()).lower().replace("\\", "/").rstrip("/")
+        return normalized
+
+    runtime_roots_mismatch = False
+    if isinstance(runtime_roots, dict):
+        lab_root = str(runtime_roots.get("AICARMINE_LAB_REPO") or "").strip()
+        open_terminal_cwd = str(runtime_roots.get("OPEN_TERMINAL_CWD") or "").strip()
+        open_terminal_workdir = str(runtime_roots.get("AICARMINE_OPEN_TERMINAL_WORKDIR") or "").strip()
+        if open_terminal_cwd and lab_root:
+            normalized_cwd = _normalized_root_root(open_terminal_cwd)
+            normalized_lab = _normalized_root_root(lab_root)
+            runtime_roots_mismatch = not (
+                normalized_cwd == normalized_lab or normalized_cwd.startswith(f"{normalized_lab}/")
+            )
+        if not runtime_roots_mismatch and open_terminal_workdir and lab_root:
+            normalized_workdir = _normalized_root_root(open_terminal_workdir)
+            normalized_lab = _normalized_root_root(lab_root)
+            runtime_roots_mismatch = not (
+                normalized_workdir == normalized_lab or normalized_workdir.startswith(f"{normalized_lab}/")
+            )
+    evidence_contract["runtime_roots_mismatch"] = runtime_roots_mismatch
+    if runtime_roots_mismatch:
+        final_contract = (
+            evidence_contract.get("finalization_contract")
+            if isinstance(evidence_contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["planner_may_choose_block"] = True
+        final_contract["reason"] = "runtime_roots_mismatch"
+        evidence_contract["finalization_contract"] = final_contract
+        evidence_contract["planner_may_choose_final"] = False
+        evidence_contract["planner_may_choose_block"] = True
+        planner_may_choose_final = False
+        planner_may_choose_block = True
+        evidence_contract["required_next_progress"] = (
+            "Runtime root mismatch detected between lab/workdir and terminal runtime. "
+            "Return action=block with explicit root-drift diagnosis and requested alignment, "
+            "then continue after root metadata is coherent."
+        )
 
     required_errors = prompt_budget.get("required_working_set_errors") if isinstance(prompt_budget, dict) else []
     if isinstance(prompt_budget, dict):
@@ -727,8 +810,25 @@ def planner_decision(
             "prompt_over_budget": prompt_budget.get("over_budget") if isinstance(prompt_budget, dict) else None,
             "prompt_over_generation_headroom_budget": prompt_budget.get("over_generation_headroom_budget") if isinstance(prompt_budget, dict) else None,
             "required_working_set_chars": prompt_budget.get("required_working_set_chars") if isinstance(prompt_budget, dict) else None,
-            "tool_surface_names": native_tool_names,
+            "tool_surface_names": base_tool_names,
             "native_tool_surface_names": native_tool_names if AGENTIC_PLANNER_NATIVE_TOOLS else [],
+            "planner_may_choose_final": planner_may_choose_final,
+            "planner_may_choose_block": planner_may_choose_block,
+            "surface_filter_source": surface_filter_source,
+            "base_tool_surface_reason": str(evidence_contract.get("base_tool_surface_reason") or ""),
+            "surface_lock_reason": (
+                f"final_rewrite_latch:{final_rewrite_latch}"
+                if final_rewrite_latch != "inactive"
+                else ""
+            ),
+            "required_next_tool_call": (
+                evidence_contract["required_next_tool_call"]
+                if isinstance(evidence_contract.get("required_next_tool_call"), dict)
+                else {}
+            ),
+            "post_filter_applied": base_tool_names != native_tool_names,
+            "runtime_roots": runtime_roots,
+            "runtime_roots_mismatch": runtime_roots_mismatch,
             "planner_payload_capture": prompt_capture,
         },
         step=step,

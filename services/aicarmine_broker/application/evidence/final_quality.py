@@ -156,6 +156,7 @@ def _final_quality_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
             text_limit=260,
             list_limit=6,
         ),
+        "final_rewrite_latch": str(contract.get("final_rewrite_latch") or "inactive"),
         "required_next_output_sections": _compact_mapping(
             contract.get("required_next_output_sections"),
             text_limit=260,

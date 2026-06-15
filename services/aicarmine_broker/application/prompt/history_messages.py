@@ -147,14 +147,24 @@ def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[
     rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
     operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
     coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+    required_tool_call = contract.get("required_next_tool_call") if isinstance(contract.get("required_next_tool_call"), dict) else {}
     content = rejected.get("content")
     payload: dict[str, Any] = {
         "schema": "planner_controller_guard_history.v1",
+        "kind": "validator_feedback",
         "step": item.get("step"),
         "substep": item.get("substep"),
         "guard_label": "controller_guard",
         "ok": result.get("ok"),
         "guard_type": result.get("guard_type"),
+        "contract_state": {
+            "planner_cuda_rewrite_required": bool(contract.get("planner_cuda_rewrite_required")),
+            "final_rewrite_latch": contract.get("final_rewrite_latch"),
+            "planner_may_choose_final": contract.get("planner_may_choose_final"),
+            "planner_may_choose_block": contract.get("planner_may_choose_block"),
+            "required_next_progress": contract.get("required_next_progress"),
+            "required_next_tool_call": required_tool_call or None,
+        },
         "violations": result.get("violations"),
         "summary": planner_history_summary(result.get("summary")),
         "rejected_action": rejected.get("action"),
@@ -247,6 +257,8 @@ def planner_tool_result_message_payload(
     store_prompt_text_window: StorePromptTextWindow,
 ) -> dict[str, Any]:
     tool = str(result.get("tool") or (item.get("decision") or {}).get("tool") or "")
+    if tool == "controller_guard":
+        return planner_controller_guard_history_payload(item, result)
     direct_payload = bounded_prompt_context_tool_result_payload(
         result,
         code_product_build_state_kind=code_product_build_state_kind,
@@ -261,8 +273,6 @@ def planner_tool_result_message_payload(
         return direct_payload
     if tool == "repo_read":
         return planner_repo_read_history_payload(item, result)
-    if tool == "controller_guard":
-        return planner_controller_guard_history_payload(item, result)
     raw_payload = planner_history_evidence_payload(item, result)
     raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
     if len(raw_text) <= max(1200, int(window_chars or 0)):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -10,6 +11,42 @@ from typing import Any, Mapping
 def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
     value = mapping.get(key)
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _runtime_roots_payload(config: Mapping[str, Any], job_root: Any) -> dict[str, str]:
+    return {
+        "AICARMINE_LAB_REPO": str(config.get("LAB_REPO", "")),
+        "AICARMINE_REAL_REPO": str(config.get("REAL_REPO", "")),
+        "AICARMINE_AGENT_JOB_ROOT": str(job_root),
+        "agent_job_root": str(job_root),
+        "OPEN_TERMINAL_CWD": str(os.environ.get("OPEN_TERMINAL_CWD", "")),
+        "AICARMINE_OPEN_TERMINAL_WORKDIR": str(os.environ.get("AICARMINE_OPEN_TERMINAL_WORKDIR", "")),
+        "codex_root": str(os.environ.get("CODEX_ROOT", "")),
+    }
+
+
+def _base_tool_surface_reason(evidence_contract: Mapping[str, Any]) -> str:
+    final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "").strip().lower()
+    if final_rewrite_latch != "inactive":
+        return "final_rewrite_latch"
+    surface_policy = (
+        evidence_contract.get("turn_tool_surface_policy")
+        if isinstance(evidence_contract.get("turn_tool_surface_policy"), dict)
+        else {}
+    )
+    return str(surface_policy.get("reason") or "tool_surface_policy").strip() or "tool_surface_policy"
+
+
+def _allowed_actions_from_contract(evidence_contract: Mapping[str, Any]) -> list[str]:
+    may_final = bool(evidence_contract.get("planner_may_choose_final"))
+    may_block = bool(evidence_contract.get("planner_may_choose_block"))
+    if may_final and may_block:
+        return ["final", "block"]
+    if may_final:
+        return ["final"]
+    if may_block:
+        return ["block"]
+    return ["block"]
 
 
 def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -274,6 +311,17 @@ class PromptPackBuilder:
                         "Native Open Terminal run_command may return status=running and exit_code=null; terminal_run_command_wait returns final output.",
                     ],
                 },
+                "runtime_roots": _runtime_roots_payload(config, root),
+                "base_tool_surface_reason": _base_tool_surface_reason(evidence_for_prompt),
+                "surface_filter_source": str(evidence_for_prompt.get("surface_filter_source") or "tool_surface_policy"),
+                "planner_may_choose_final": bool(evidence_for_prompt.get("planner_may_choose_final")),
+                "planner_may_choose_block": bool(evidence_for_prompt.get("planner_may_choose_block")),
+                "allowed_actions": _allowed_actions_from_contract(evidence_for_prompt),
+                "required_next_tool_call": (
+                    evidence_for_prompt["required_next_tool_call"]
+                    if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict)
+                    else {}
+                ),
                 "available_tools": available_tools_for_payload,
                 "tool_shape_examples": tool_shape_examples,
                 "required_working_set": required_working_set,
