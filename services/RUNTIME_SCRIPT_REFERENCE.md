@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # Runtime Script Reference
 
-Updated: 2026-06-02
+Updated: 2026-06-15
 
 This document covers top-level service scripts under `C:\Users\carmi\AI\services`
 that are not package modules. These scripts are entrypoints, compatibility
@@ -49,9 +49,8 @@ wrappers, diagnostics or operational helpers.
 | `requirements-agentic-optional.txt` | Optional dependency list for agentic/runtime features. Install only into the intended venv and verify imports afterward. |
 | `VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md` | Contract for planner/controller validation, finalization and OpenWebUI evidence transport. |
 | `END_TO_END_AGENTIC_FLOW.md` | Code-backed runtime flow from OpenWebUI to 3571, 3572, 11434/11435, dispatcher, validation and terminal 3571 response. |
-| `AGENTIC_LOOP_PATCH_NOTES.md` | Patch notes for current agentic loop behavior and recent changes. |
-| `AGENTIC_LOOP_V5_OPERATIONAL_MEMORY_NOTES.md` | Notes for planner turn memory, `done_reason` capture and real tool-result transport. |
 | `SERVICES_MODULE_TECHNICAL_REFERENCE.md` | Central service module map linking package-level references. |
+| `MODULE_TECHNICAL_DESCRIPTIONS.md` | Per-file technical descriptions for service modules, compatibility wrappers and documentation owners. |
 | `npu_phi_service\MODULE_REFERENCE.md` | Package-local reference for the Phi-3.5 OpenVINO/NPU diagnostic sidecar. |
 
 ## Operational Rule

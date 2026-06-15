@@ -375,8 +375,6 @@ determine whether 3571, 3572, Ollama and OpenWebUI are connected correctly.
 | --- | --- |
 | `VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md` | Operational contract for 3571/3572 agentic loop, validator, finalization and OpenWebUI evidence transport. |
 | `END_TO_END_AGENTIC_FLOW.md` | Code-backed end-to-end flow: OpenWebUI -> 3571 -> 3572 -> 11434/11435 -> dispatcher -> validated terminal result -> 3571 wrapper. |
-| `AGENTIC_LOOP_PATCH_NOTES.md` | Patch notes and technical memory for current agentic loop changes. |
-| `AGENTIC_LOOP_V5_OPERATIONAL_MEMORY_NOTES.md` | Operational notes for planner turn memory, done reasons and tool-result transport. |
 | `SERVICES_MODULE_TECHNICAL_REFERENCE.md` | This module-level source reference. |
 | `MODULE_TECHNICAL_DESCRIPTIONS.md` | Detailed per-file technical descriptions: purpose, inputs, outputs, side effects, risks and verification notes. |
 | `RUNTIME_SCRIPT_REFERENCE.md` | Detailed reference for top-level Python and PowerShell service scripts. |

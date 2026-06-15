@@ -1132,25 +1132,6 @@ Code-backed runtime chain documentation for OpenWebUI -> 3571 -> 3572 ->
   `aicarmine_broker/app.py`, `agent_entry.py`, `planner.py`,
   `tool_dispatch.py` and `job_store.py`.
 
-### `AGENTIC_LOOP_PATCH_NOTES.md`
-
-Patch notes and operational memory for recent agentic loop behavior.
-
-- Reads: by maintainers/agents.
-- Writes: documentation only.
-- Risk: stale notes can mislead debugging.
-- Verify: update when behavior changes.
-
-### `AGENTIC_LOOP_V5_OPERATIONAL_MEMORY_NOTES.md`
-
-Notes for planner turn memory, `done_reason` capture and real tool-result
-transport.
-
-- Reads: by maintainers/agents.
-- Writes: documentation only.
-- Risk: stale notes can mislead protocol/debug work.
-- Verify: update with planner memory changes.
-
 ### `SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 
 Central source map for all `services` modules and runtime boundaries.
