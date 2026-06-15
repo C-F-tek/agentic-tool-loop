@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # aicarmine_broker Module Reference
 
-Updated: 2026-06-05
+Updated: 2026-06-15
 
 `aicarmine_broker` is the 3572 runtime package. It owns the controlled
 agentic loop, job persistence, internal tool dispatch, validator/finalization
@@ -42,6 +42,18 @@ Read before edits:
   text, coordinates, sizes and hashes. Optional history, memory and RAG live in
   `optional_context.intrinsic_context`; they are not planner-selectable tools
   and do not change the public surface.
+- Before the first planner turn, 3572 may ask 11434 for a bounded
+  preplanner RAG query plan. Malformed JSON is repaired through the same
+  planner model; timeout/unavailable results are typed diagnostics and can only
+  fall back to deterministic preseed, not to hidden planning.
+- Repo-analysis and semantic-audit final candidates go through the
+  final-quality judge before acceptance. Judge output can accept, reject or
+  request a concrete next route, but validator/finalization remains
+  authoritative.
+- Selected validator rejections can call the planner replan specialist. The
+  specialist converts rejection evidence into `required_next_progress` and an
+  optional `required_next_tool_call`; malformed specialist JSON is repaired
+  before the route is recorded.
 - Planner context length is requested/capped/effective. `AICARMINE_AGENTIC_PLANNER_NUM_CTX`
   is the request, `AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP` is the guardrail, and
   `AGENTIC_PLANNER_NUM_CTX` is the effective value emitted in health/events.
@@ -63,6 +75,10 @@ Read before edits:
   `materialization_report` from inline `tool_context_for_30b` artifacts before
   3571 transports the payload. 3571 may lint or recover, but it must preserve a
   valid `materialization_report.owner=3572_broker` payload.
+- Public evidence materialization is pointer-first: complete payloads are
+  canonical under `tool_context_for_30b.artifacts[*].artifact`, while
+  `priority_evidence_for_30b` carries bounded metadata/hash/location and
+  `payload_index_for_30b` points to the concrete inline field.
 
 ## Module Map
 
@@ -76,7 +92,11 @@ Read before edits:
 | `job_html.py` | HTML renderer for human job dashboards and the IA Live Control View. It formats existing job state, events, prompt captures, planner streams and same-job tool artifacts only. It must not change planner state, evidence, or validation. |
 | `job_store.py` | Persistence layer for jobs: filesystem state JSON and NDJSON events are primary; SQLite metadata/events are a secondary index. SQLite write failures produce filesystem warnings and job-list fallback rows instead of hiding jobs. It also owns final JSON/MD, compact terminal responses and polling helpers. |
 | `memory_tools.py` | Scratchpad and SQLite-backed memory tools exposed to planner/runtime. `planner_scratchpad_write kind=answer_chunk` also stores complete answer sections in a job-local SQLite composer that the terminal wrapper can reassemble. Planner memory surfaces expose `memory_feature_available`, `memory_query_ok` and `memory_records_available` separately. `runtime_sqlite_memory_cleanup apply=true` requires explicit consent. |
-| `planner.py` | Main controlled agentic loop. It builds planner prompts, records turns, calls Ollama, validates decisions, separates code-product from apply intent, executes internal tools, handles repair routing, writes events/state and finalizes jobs. Highest-risk file in this package. |
+| `planner.py` | Main controlled agentic loop. It builds planner prompts, records turns, calls Ollama, validates decisions, wires preplanner/final-quality/replan-specialist model guidance, separates code-product from apply intent, executes internal tools, handles explicit repair routing, writes events/state and finalizes jobs. Highest-risk file in this package. |
+| `application/controller/rag_preseed.py` | Controller preseed and preplanner query-plan owner. It asks 11434 for bounded RAG query/path intent, repairs malformed query-plan JSON, and records typed non-blocking fallback diagnostics when the planner backend is unavailable. |
+| `application/evidence/final_quality.py` | Evidence-owned final-quality checks and judge request builder for repo-analysis/semantic-audit finals. It defines the bounded judge payload and route vocabulary; `planner.py` performs the 11434 call/repair and the validator remains authoritative. |
+| `application/evidence/required_working_set.py` | Required working-set builder for planner prompt content. It rehydrates concrete file/diff/tool-result windows and stores oversized sections through injected prompt-window storage without replacing required evidence with local paths. |
+| `application/prompt/pack_builder.py` | Measured 11434 prompt-pack builder. It owns serialized prompt budget reports, optional-context omission/windowing and available-tool windows, but does not call Ollama or mutate validation policy. |
 | `planner_intrinsic_context.py` | Internal pre-turn context builder for the planner. It reads controller memory and optional `rag.sqlite`/FTS5 chunks in read-only mode, reranks with the same bounded parser/payload shape as Codex RAG MCP when configured, adds repo-map/failure-pattern/tool-purpose context and exposes `budget_report.num_ctx_effective`. It is not registered as a tool. |
 | `public_wrapper.py` | Deterministic public response helpers and selector failure formatting. Keep pure and deterministic. |
 | `repo_tools.py` | Compatibility facade for deterministic repo/tool helpers. It re-exports tool implementations from `tools/` and keeps historical imports such as `compact`, `safe_rel_path` and `terminal_environment_contract` stable. Command policy lives in `tools/command_safety.py`; compile/build target resolution lives in `tools/repo_command.py`. Do not add new tool behavior here; update the owning `tools/*` module. |
@@ -241,7 +261,7 @@ When debugging a path mismatch, inspect the job capture field
 | --- | --- |
 | `planner_core/__init__.py` | Package marker for planner support modules. |
 | `planner_core/cache.py` | Per-job cache helpers for repeated read-only tools and repair outcomes. It may reuse successful equivalent evidence but must not convert failed/missing evidence into success. |
-| `planner_core/json_io.py` | Ollama HTTP and streaming JSON I/O utilities plus strict JSON object parsing. This module observes model turn completion and streams, but controller validation remains in `planner.py`. |
+| `planner_core/json_io.py` | Ollama HTTP and streaming JSON I/O utilities plus strict JSON object parsing. It guards both response-header wait and stream-frame reads, emits typed stream timeout diagnostics, and observes model turn completion while controller validation remains in `planner.py`. |
 
 ## Data Flow
 

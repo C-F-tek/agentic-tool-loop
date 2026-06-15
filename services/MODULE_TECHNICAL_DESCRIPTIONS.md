@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # Module Technical Descriptions
 
-Updated: 2026-06-01
+Updated: 2026-06-15
 
 This file is the detailed per-module technical reference for
 `C:\Users\carmi\AI\services`. It complements the higher-level maps:
@@ -275,14 +275,29 @@ the planner prompt pack.
 Main controlled planner loop. It normalizes planner decisions, compacts tool
 results for model context, builds intrinsic pre-turn context, builds history
 ledgers, records Ollama turns, expands
-successful tool artifacts, validates finalization, handles repair, dispatches
-tools and writes terminal job state. It also separates code-product intent from
-apply intent: diff/refactoring/code-product goals require a successful
+successful tool artifacts, validates finalization, calls final-quality and
+replan guidance lanes, handles repair, dispatches tools and writes terminal job
+state. It also separates code-product intent from apply intent:
+diff/refactoring/code-product goals require a successful
 `repo_propose_code_edit` proposal, while apply/edit/fix/write goals still
 require `repo_apply_patch`. Its planner prompt pack measures the exact
 serialized prompt and, above the configured compaction threshold, moves large
 file/diff/history/result sections into job-local SQLite prompt documents and
 injects only small real windows that the planner can read recursively.
+
+Planner-adjacent model lanes are explicit:
+
+- preplanner RAG query-plan wiring calls `application/controller/rag_preseed.py`
+  before the first turn and keeps timeout/unavailability non-blocking;
+- final-quality judge wiring calls
+  `application/evidence/final_quality.py` request builders for repo and
+  semantic-audit finals, then routes any `continue_required` result through the
+  validator contract;
+- planner replan specialist wiring handles selected validator rejections and
+  repairs malformed specialist JSON before updating the next required route;
+- Vulkan/GPU0 repair on 11435 is limited to malformed planner emissions or
+  invalid non-code-product tool proposals and must not mask code-product
+  contract failures.
 
 - Reads: config, job history, tool registry/dispatch, Ollama responses,
   successful tool artifacts.
@@ -291,7 +306,8 @@ injects only small real windows that the planner can read recursively.
   validator flow without direct evidence. Do not route semantic
   `repo_propose_code_edit` contract failures to GPU0/11435 repair. Prompt
   compaction must remain internal to 11434 planner calls and must not degrade
-  OpenWebUI `tool_context_for_30b`.
+  OpenWebUI `tool_context_for_30b`. Do not patch this module from intuition:
+  confirm the owner, active process and runtime artifact first.
 - Verify: real job events show planner step, decision, tool result, turn memory
   and terminal status in expected order; code-product jobs show
   `repo_read -> repo_propose_code_edit -> final`, with no `repo_apply_patch`
@@ -321,6 +337,78 @@ purpose manifest and budget report.
 - Verify: payload includes `intrinsic_context`, `budget_report.num_ctx_effective`
   and typed RAG/rerank status; `PLANNER_INTERNAL_TOOLS` has no
   RAG/chunk/intrinsic tool additions.
+
+### `aicarmine_broker/application/controller/rag_preseed.py`
+
+Controller-owned preseed and preplanner query-plan module. It performs
+deterministic initial repo orientation and, when useful, asks the 11434 planner
+model for a bounded RAG query/path plan before the first planner turn. It
+validates semantic intent, repairs malformed query-plan JSON through the same
+planner model and records typed non-blocking fallback metadata when the backend
+times out or is unavailable.
+
+- Reads: goal text, repo/preseed surfaces, injected planner model response and
+  optional reranker/index diagnostics.
+- Writes: no source files; returns JSON-serializable preseed/query-plan
+  payloads to the loop.
+- Risk: must not become a hidden deterministic planner or auto-finalizer.
+  Timeout/unavailable query planning can only reduce semantic preplanner
+  guidance to deterministic preseed; it cannot authorize invented paths or
+  broad uncontrolled repo reads.
+- Verify: events include `controller_preplanner_rag_query_plan_result` with
+  `status=ready` or typed unavailable/invalid diagnostics and the job still
+  proceeds through normal planner turns.
+
+### `aicarmine_broker/application/evidence/final_quality.py`
+
+Evidence-owned final-quality checks and model judge request builder. It
+combines deterministic red flags with a structured model request for
+repo-analysis and semantic-audit finals. The actual 11434 call and malformed
+JSON repair are wired by `planner.py`; this module owns the bounded request
+shape, role guidance and route vocabulary.
+
+- Reads: final answer text, evidence contract, goal/audit guidance.
+- Writes: none.
+- Risk: judge output is guidance for validator routing, not a controller
+  finalizer. It can request `repo_read`, `repo_semantic_search` or a typed
+  rejection, but the planner must still produce the next accepted action.
+- Verify: validator evidence contract contains
+  `repo_analysis_final_quality` for repo/semantic-audit finals and violations
+  include final-quality route reasons when the judge rejects.
+
+### `aicarmine_broker/application/evidence/required_working_set.py`
+
+Required working-set builder for planner prompt content. It collects concrete
+file, diff and tool-result windows needed for the next planner decision,
+rehydrates same-job repo-read/code-product artifacts through injected helpers
+and stores oversized windows through injected prompt-window storage.
+
+- Reads: planner history, evidence contract, file memory and injected artifact
+  rehydration callbacks.
+- Writes: no files directly; prompt-window storage is injected by the caller.
+- Risk: must never replace required text/diff evidence with path-only metadata.
+  It can bound item counts/window chars for the planner prompt, but public
+  OpenWebUI payload completeness is handled elsewhere.
+- Verify: working-set entries include concrete text/diff windows with offsets,
+  chars and hashes, not only `artifact` paths.
+
+### `aicarmine_broker/application/prompt/pack_builder.py`
+
+Measured prompt-pack builder for one 11434 planner turn. It combines the
+required working set, optional intrinsic context, history messages, available
+tool windows and budget reports. It performs hard-budget compaction by moving
+large sections into job-local SQLite prompt windows and exposing real bounded
+windows to the planner.
+
+- Reads: runtime prompt config, required working set, optional context and
+  history.
+- Writes: prompt-window documents through injected storage only.
+- Risk: compaction is only for planner input. It must not remove successful
+  tool payloads from `tool_context_for_30b` or make local SQLite ids part of
+  the public evidence contract.
+- Verify: planner prompt captures show `prompt_budget_report`,
+  `required_working_set`, optional-context omission/window diagnostics and
+  recursive `planner_prompt_context_window.v1` references when needed.
 
 ### `aicarmine_broker/public_wrapper.py`
 
@@ -448,14 +536,19 @@ successful results.
 
 Ollama HTTP JSON and streaming helper module. It posts JSON, streams planner
 responses to files, detects malformed/repetitive streams and parses strict JSON
-objects.
+objects. The streaming path guards both phases separately: waiting for HTTP
+response headers and reading stream frames. If `urlopen()` never returns
+headers, the job emits typed `planner_stream_waiting` /
+`planner_stream_header_timeout` diagnostics instead of leaving a silent
+zero-byte stream.
 
 - Reads: Ollama stream frames and response payloads.
 - Writes: optional planner stream files.
 - Risk: stream `done`/`done_reason` is turn metadata. Controller validation in
-  `planner.py` decides job state.
+  `planner.py` decides job state. Do not rely only on a readline deadline; the
+  response-header wait must also be bounded and visible.
 - Verify: valid streamed JSON is captured and parsed without truncating the
-  final frame.
+  final frame; a simulated header wait timeout produces typed diagnostics.
 
 ## vulkan_bridge Modules
 

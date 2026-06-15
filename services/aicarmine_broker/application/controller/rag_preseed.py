@@ -435,6 +435,160 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return decoded if isinstance(decoded, dict) else None
 
 
+def _query_plan_continue_without_model(
+    report: Mapping[str, Any],
+    *,
+    reason: str,
+    attempt: int,
+    planner_model: str,
+    timeout_seconds: int,
+    response: Mapping[str, Any] | None = None,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    response = response if isinstance(response, Mapping) else {}
+    result: dict[str, Any] = {
+        **dict(report),
+        "ok": False,
+        "status": "unavailable" if "unavailable" in reason or "request_failed" in reason else "failed",
+        "reason": reason,
+        "planner_model": planner_model,
+        "timeout_seconds": timeout_seconds,
+        "attempts": attempt,
+        "semantic_intent_required": False,
+        "semantic_intent_available": False,
+        "preplanner_rag_can_continue": True,
+        "fallback_scope": "deterministic_rag_preseed_only",
+        "controller_did_not_make_semantic_decision": True,
+    }
+    for key in ("backend_timeout", "backend_unreachable", "error_type", "error", "network_reason_type"):
+        if response.get(key) not in (None, "", [], {}):
+            result[key] = response.get(key)
+    if extra:
+        result.update({key: value for key, value in extra.items() if value not in (None, "", [], {})})
+    return result
+
+
+def _repair_preplanner_query_plan_json(
+    *,
+    post_json: PostJson,
+    planner_url: str,
+    planner_model: str,
+    keep_alive: str,
+    raw_response_text: str,
+    parse_diagnostics: Mapping[str, Any],
+    goal: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    repair_timeout = _env_int(
+        "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_REPAIR_TIMEOUT_SECONDS",
+        min(30, max(10, int(timeout_seconds or 10))),
+        minimum=3,
+        maximum=60,
+    )
+    repair_payload = {
+        "model": planner_model,
+        "stream": False,
+        "keep_alive": keep_alive,
+        "think": False,
+        "format": "json",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Repair malformed repository RAG query-plan JSON. Return only strict JSON. "
+                    "Do not solve the user's task and do not call tools."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "schema": "agentic_loop_preplanner_rag_query_plan_repair_request.v1",
+                        "goal": str(goal or ""),
+                        "raw_response": str(raw_response_text or "")[:12000],
+                        "parse_diagnostics": {
+                            key: parse_diagnostics.get(key)
+                            for key in ("error_type", "error", "line", "column", "position", "raw_response_chars")
+                            if parse_diagnostics.get(key) not in (None, "", [], {})
+                        },
+                        "required_json_shape": {
+                            "semantic_intent": {
+                                "class": (
+                                    "analysis_only | code_security_analysis | repo_analysis | "
+                                    "code_product_report | apply_write | generic"
+                                ),
+                                "read_only": True,
+                                "write_requested": False,
+                                "apply_requested": False,
+                                "code_product_requested": False,
+                                "requires_code_security_coverage": False,
+                                "rationale": "short reason",
+                            },
+                            "queries": [{
+                                "query": "target file, owner symbol, module family, or concrete runtime phrase",
+                                "purpose": "why this target family is needed",
+                                "target_kind": (
+                                    "owner_source | validator | controller | tool_surface | prompt | "
+                                    "public_payload | legacy_wrapper | contract_doc | test"
+                                ),
+                            }],
+                        },
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            },
+        ],
+        "options": {
+            "temperature": 0,
+            "num_predict": _env_int(
+                "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_REPAIR_NUM_PREDICT",
+                700,
+                minimum=128,
+                maximum=2048,
+            ),
+        },
+    }
+    response = post_json(planner_url, repair_payload, repair_timeout)
+    if not isinstance(response, Mapping):
+        return {
+            "ok": False,
+            "repair_attempted": True,
+            "repair_status": "failed",
+            "repair_reason": "non_mapping_response",
+            "repair_timeout_seconds": repair_timeout,
+        }
+    if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+        return {
+            "ok": False,
+            "repair_attempted": True,
+            "repair_status": "unavailable",
+            "repair_reason": "repair_request_failed",
+            "repair_error_type": response.get("error_type"),
+            "repair_error": response.get("error"),
+            "repair_backend_timeout": response.get("backend_timeout"),
+            "repair_backend_unreachable": response.get("backend_unreachable"),
+            "repair_timeout_seconds": repair_timeout,
+        }
+    repair_raw_text = _extract_query_plan_response_text(response)
+    repair_parse = _parse_json_object_diagnostics(repair_raw_text)
+    decoded = repair_parse.get("decoded") if repair_parse.get("ok") is True else None
+    sanitized = _sanitize_preplanner_query_plan(decoded, goal=goal)
+    sanitized.update({
+        "repair_attempted": True,
+        "repair_status": "ready" if sanitized.get("ok") else "invalid",
+        "repair_timeout_seconds": repair_timeout,
+        "repair_raw_response_chars": len(repair_raw_text),
+    })
+    if not sanitized.get("ok"):
+        sanitized["repair_raw_response_preview"] = repair_raw_text[:1000]
+        if repair_parse.get("ok") is not True:
+            sanitized["repair_json_parse_error_type"] = repair_parse.get("error_type")
+            if repair_parse.get("error") not in (None, "", [], {}):
+                sanitized["repair_json_parse_error"] = repair_parse.get("error")
+    return sanitized
+
+
 def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: str) -> dict[str, Any]:
     max_queries = _query_plan_max_queries()
     static_goal_class_hint = _preplanner_goal_class(goal)
@@ -680,7 +834,7 @@ def controller_preplanner_rag_query_plan(
     }
     timeout_seconds = _env_int(
         "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_TIMEOUT_SECONDS",
-        min(20, max(5, int(timeout or 20))),
+        min(60, max(20, int(timeout or 60))),
         minimum=3,
         maximum=60,
     )
@@ -738,18 +892,35 @@ def controller_preplanner_rag_query_plan(
             last_sanitized = {**report, "status": "failed", "reason": "non_mapping_response"}
             break
         if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
-            return {
-                **report,
-                "status": "failed",
-                "reason": "planner_query_plan_request_failed",
-                "error_type": response.get("error_type"),
-                "error": response.get("error"),
-                "attempts": attempt,
-            }
+            return _query_plan_continue_without_model(
+                report,
+                reason="planner_query_plan_request_failed",
+                attempt=attempt,
+                planner_model=planner_model,
+                timeout_seconds=timeout_seconds,
+                response=response,
+            )
         raw_response_text = _extract_query_plan_response_text(response)
         parse_diagnostics = _parse_json_object_diagnostics(raw_response_text)
         decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else None
-        sanitized = _sanitize_preplanner_query_plan(decoded, goal=goal)
+        if parse_diagnostics.get("ok") is True:
+            sanitized = _sanitize_preplanner_query_plan(decoded, goal=goal)
+        else:
+            repaired = _repair_preplanner_query_plan_json(
+                post_json=post_json,
+                planner_url=planner_url,
+                planner_model=planner_model,
+                keep_alive=keep_alive,
+                raw_response_text=raw_response_text,
+                parse_diagnostics=parse_diagnostics,
+                goal=goal,
+                timeout_seconds=timeout_seconds,
+            )
+            sanitized = repaired if isinstance(repaired, dict) else _sanitize_preplanner_query_plan(None, goal=goal)
+            sanitized.setdefault("repair_attempted", True)
+            sanitized["original_json_parse_error_type"] = parse_diagnostics.get("error_type")
+            if parse_diagnostics.get("error") not in (None, "", [], {}):
+                sanitized["original_json_parse_error"] = parse_diagnostics.get("error")
         sanitized.update({
             "planner_model": planner_model,
             "timeout_seconds": timeout_seconds,
@@ -766,6 +937,32 @@ def controller_preplanner_rag_query_plan(
         last_sanitized = sanitized
         if sanitized.get("ok"):
             return sanitized
+    if last_sanitized.get("json_parse_error_type") or last_sanitized.get("original_json_parse_error_type"):
+        return _query_plan_continue_without_model(
+            report,
+            reason="planner_query_plan_invalid_json_after_repair",
+            attempt=attempts,
+            planner_model=planner_model,
+            timeout_seconds=timeout_seconds,
+            extra={
+                "status": "invalid_json",
+                "raw_response_preview": last_sanitized.get("raw_response_preview"),
+                "raw_response_chars": last_sanitized.get("raw_response_chars"),
+                "json_parse_error_type": (
+                    last_sanitized.get("json_parse_error_type")
+                    or last_sanitized.get("original_json_parse_error_type")
+                ),
+                "json_parse_error": (
+                    last_sanitized.get("json_parse_error")
+                    or last_sanitized.get("original_json_parse_error")
+                ),
+                "repair_attempted": last_sanitized.get("repair_attempted"),
+                "repair_status": last_sanitized.get("repair_status"),
+                "repair_reason": last_sanitized.get("repair_reason"),
+                "repair_json_parse_error_type": last_sanitized.get("repair_json_parse_error_type"),
+                "repair_json_parse_error": last_sanitized.get("repair_json_parse_error"),
+            },
+        )
     return {
         **last_sanitized,
         "ok": False,
@@ -1755,6 +1952,8 @@ def controller_preplanner_rag_preseed_plan(
 
     selected_paths: list[str] = []
     for path in [*literal_target_paths, *semantic_target_paths]:
+        if len(selected_paths) >= read_path_limit:
+            break
         if path not in selected_paths:
             selected_paths.append(path)
     anchor_paths: list[str] = []
@@ -1796,12 +1995,17 @@ def controller_preplanner_rag_preseed_plan(
             "reason": "no_ranked_or_anchor_paths_selected_after_reindex",
         })
         return None, report, skipped
+    total_read_chars = max(2000, int(multi_file_prompt_read_chars or 2000))
+    max_chars_per_path = max(
+        2000,
+        min(total_read_chars, total_read_chars // max(1, len(selected_paths))),
+    )
 
     plan = {
         "event": "controller_preseed_preplanner_rag_ranked_read",
         "result_event": "controller_preseed_preplanner_rag_ranked_read_result",
         "tool": "repo_read",
-        "arguments": {"paths": selected_paths, "max_chars": int(multi_file_prompt_read_chars)},
+        "arguments": {"paths": selected_paths, "max_chars": max_chars_per_path},
         "reason": "loop_start_delta_rag_reindex_ranked_preplanner_context",
         "artifact_suffix": "preplanner_rag_ranked-repo_read",
         "dynamic_initial_orientation": True,
@@ -1816,6 +2020,9 @@ def controller_preplanner_rag_preseed_plan(
             "anchor_paths": anchor_paths,
             "ranked_preplanner_paths": ranked_preplanner_paths,
             "ranked_items": ranked_items[:read_path_limit],
+            "read_path_limit": read_path_limit,
+            "total_read_chars_budget": total_read_chars,
+            "max_chars_per_path": max_chars_per_path,
         },
         "ranked_preplanner_paths": ranked_preplanner_paths,
     }

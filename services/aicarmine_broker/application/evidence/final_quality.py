@@ -444,6 +444,24 @@ def repo_analysis_final_answer_quality(
         violations.append("repo_analysis_final_claims_complete_despite_declared_limits")
     if _declares_partial_or_limited_coverage(text_low) and _absolute_repo_no_issue_claim(text_low):
         violations.append("repo_analysis_final_absolute_no_issue_claim_with_partial_coverage")
+    core_status = (
+        contract.get("core_discovery_status")
+        if isinstance(contract, dict) and isinstance(contract.get("core_discovery_status"), dict)
+        else {}
+    )
+    rag_reported_missing = "rag" in text_low and any(
+        term in text_low
+        for term in (
+            "missing",
+            "mancant",
+            "assent",
+            "non disponibile",
+            "not available",
+            "unavailable",
+        )
+    )
+    if rag_reported_missing and core_status.get("repo_semantic_search_available_as_planner_tool") is True:
+        violations.append("repo_analysis_final_confuses_intrinsic_rag_missing_with_planner_rag")
 
     code_security_coverage = (
         contract.get("code_security_coverage")

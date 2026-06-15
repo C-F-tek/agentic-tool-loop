@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
+from aicarmine_broker.application.evidence.audit_guidance import goal_requests_semantic_audit
 from aicarmine_broker.application.evidence.goal_classifier import effective_repo_analysis_goal
 from aicarmine_broker.application.tool_surface.required_tool_call import (
     append_stale_required_call_marker,
@@ -98,6 +99,7 @@ def validate_planner_decision_against_evidence(
         semantic_contract,
         repo_analysis_goal=_repo_analysis_goal,
     )
+    semantic_audit_goal = goal_requests_semantic_audit(goal)
     violations: list[str] = []
 
     def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
@@ -464,9 +466,19 @@ def validate_planner_decision_against_evidence(
                 violations.append(f"final_without_in_scope_tree_or_list:{target_scope}")
             if not scope_reads and not final_allowed:
                 violations.append(f"final_without_in_scope_concrete_read:{target_scope}")
-        if effective_repo_goal and not final_answer.strip():
+        if (effective_repo_goal or semantic_audit_goal) and not final_answer.strip():
             violations.append("final_empty_answer")
-        elif effective_repo_goal:
+        elif effective_repo_goal or semantic_audit_goal:
+            deterministic_quality = _repo_analysis_final_answer_quality(final_answer, contract)
+            contract["repo_analysis_final_deterministic_quality"] = deterministic_quality
+            deterministic_violations = (
+                deterministic_quality.get("violations")
+                if isinstance(deterministic_quality.get("violations"), list)
+                else []
+            )
+            if deterministic_violations:
+                violations.extend(str(v) for v in deterministic_violations)
+                _apply_final_quality_route(deterministic_quality)
             if callable(_repo_analysis_final_answer_model_quality):
                 quality = _repo_analysis_final_answer_model_quality(
                     final_answer,

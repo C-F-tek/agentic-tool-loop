@@ -6,6 +6,38 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # Agentic Loop Tool patch notes
 
+## 2026-06-15 runtime guidance and payload update
+
+The current loop has four distinct model-assisted lanes around the
+validator-only controller:
+
+1. `controller_preplanner_rag_query_plan` runs before the first planner turn.
+   Malformed query-plan JSON is repaired by the planner model. Backend timeout
+   or unavailability is recorded as typed diagnostics and falls back only to
+   deterministic preseed; it does not block the job or authorize hidden
+   planning.
+2. `repo_analysis_final_answer_model_quality` is the final-quality judge for
+   repository/semantic-audit finals. Malformed judge JSON is repaired before
+   the validator uses the result to accept, reject or route `continue_required`.
+3. `planner_replan_specialist_for_validation` handles selected validator
+   rejections. Malformed specialist JSON is repaired before the next
+   `required_next_progress` / `required_next_tool_call` route is recorded.
+4. `vulkan_repair_invalid_planner_decision` remains explicit 11435 repair for
+   malformed planner emissions or invalid non-code-product proposals. It must
+   not mask code-product contract failures such as missing target reads,
+   incomplete diffs or preview-only proposal payloads.
+
+The 11434 stream transport now guards the response-header wait separately from
+stream-frame reads. A blocked `urlopen()` before headers produces typed
+planner stream timeout diagnostics instead of leaving a silent empty
+`step-*.txt`.
+
+OpenWebUI public payloads are pointer-first. Complete content/diff/structured
+operation payloads live canonically in
+`tool_context_for_30b.artifacts[*].artifact`; `priority_evidence_for_30b` and
+`payload_index_for_30b` carry bounded navigation metadata and concrete field
+locations rather than duplicating large payloads.
+
 ## 2026-06-02 operational update
 
 Current planner sizing defaults are `AICARMINE_AGENTIC_PLANNER_NUM_CTX=12288`,

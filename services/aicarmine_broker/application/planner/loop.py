@@ -182,6 +182,22 @@ def run_agentic_planner_job(
             and str(guidance.get("mode") or "") == "force_terminal_decision"
         )
 
+    def final_quality_guided_route_available(validation_row: dict[str, Any]) -> bool:
+        contract = _dict_field(validation_row, "evidence_contract")
+        quality = _dict_field(contract, "repo_analysis_final_quality")
+        if not quality:
+            return False
+        if quality.get("ok") is True:
+            return False
+        decision = str(quality.get("decision") or "").strip().lower()
+        if decision not in {"invalid", "reject", "continue_required"}:
+            return False
+        if str(contract.get("required_next_progress") or "").strip():
+            return True
+        if _dict_field(contract, "required_next_tool_call"):
+            return True
+        return bool(_list_field(contract, "candidate_next_actions"))
+
     def runtime_debug_packet(
         *,
         step_number: int,
@@ -825,12 +841,15 @@ def run_agentic_planner_job(
         preplanner_query_plan = {
             "schema": "agentic_loop_preplanner_rag_query_plan.v1",
             "ok": False,
-            "status": "failed",
+            "status": "unavailable",
             "source": "planner",
             "reason": "query_plan_unhandled_exception",
             "error": str(exc),
             "error_type": type(exc).__name__,
-            "semantic_intent_required": True,
+            "semantic_intent_required": False,
+            "semantic_intent_available": False,
+            "preplanner_rag_can_continue": True,
+            "fallback_scope": "deterministic_rag_preseed_only",
         }
     if preplanner_query_plan:
         state["controller_preplanner_rag_query_plan"] = preplanner_query_plan
@@ -1533,6 +1552,45 @@ def run_agentic_planner_job(
                     step=step,
                     goal=str(state.get("goal") or ""),
                 )
+                prior_final_quality_routes = controller_guard_count(
+                    history,
+                    "guided_terminal_final_quality_route",
+                )
+                if (
+                    final_quality_guided_route_available(validation)
+                    and prior_final_quality_routes < 1
+                ):
+                    guard_result["guard_type"] = "guided_terminal_final_quality_route"
+                    guard_result["summary"] = "guided_terminal_final_quality_route"
+                    guard_result["planner_step_budget_guidance"] = state.get("planner_step_budget_guidance")
+                    guard_result["guided_terminal_feedback_turn"] = True
+                    guard_result["final_quality_judge_intervened"] = True
+                    guard_result["final_quality_feedback_retry_count"] = prior_final_quality_routes
+                    guard_result["final_quality_feedback_retry_limit"] = 1
+                    append_agent_event(
+                        job_id,
+                        "planner_decision_rejected",
+                        guard_result["summary"],
+                        guard_result,
+                        step=step,
+                    )
+                    row = {
+                        "step": step,
+                        "decision": {
+                            "action": "continue_required",
+                            "reason": (
+                                "guided terminal final was rejected by final-quality judge; "
+                                "planner must follow the judge route without consuming a semantic step"
+                            ),
+                            "rejected_decision": guard_result.get("rejected_decision"),
+                        },
+                        "tool_result": guard_result,
+                    }
+                    mark_support_subturn(row, semantic_step=semantic_step)
+                    loop_state.append_history_row(row)
+                    persist_loop_turn_memory(row)
+                    write_agent_job_state(state)
+                    continue
                 guard_result["guard_type"] = "guided_terminal_decision_validation_failed"
                 guard_result["summary"] = "guided_terminal_decision_validation_failed"
                 guard_result["planner_step_budget_guidance"] = state.get("planner_step_budget_guidance")

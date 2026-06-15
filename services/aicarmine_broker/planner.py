@@ -1260,6 +1260,8 @@ def _required_working_set_for_prompt(
     job_root: Path,
     window_chars: int,
     compact_mode: bool,
+    max_repo_read_items: int | None = None,
+    max_total_repo_read_window_chars: int | None = None,
 ) -> dict[str, Any]:
     return _required_working_set_for_prompt_impl(
         goal,
@@ -1276,6 +1278,8 @@ def _required_working_set_for_prompt(
         store_prompt_text_window=_store_prompt_text_window,
         window_text=_window_text,
         text_hash=_text_hash,
+        max_repo_read_items=max_repo_read_items,
+        max_total_repo_read_window_chars=max_total_repo_read_window_chars,
     )
 
 
@@ -3159,13 +3163,95 @@ def _repo_analysis_final_answer_model_quality(
     message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
     parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    repaired_raw_text = ""
+    repair_diagnostics: dict[str, Any] = {}
     decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
+    if (
+        not decoded
+        or str(decoded.get("decision") or "").strip().lower()
+        not in {"accept", "reject", "continue_required"}
+    ):
+        repair_payload = {
+            "model": PLANNER_MODEL,
+            "stream": False,
+            "keep_alive": OLLAMA_KEEP_ALIVE,
+            "think": False,
+            "format": "json",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        str(request.get("system") or "")
+                        + "\n\nThe previous final-quality judge response was invalid JSON. "
+                        "Re-evaluate the same request now and return exactly one strict JSON object."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "schema": "repo_analysis_final_model_quality_repair_request.v1",
+                            "original_request": user_payload,
+                            "invalid_response_preview": raw_text[:2000],
+                            "invalid_response_chars": len(raw_text),
+                            "json_parse_error_type": parse_diagnostics.get("error_type"),
+                            "json_parse_error": parse_diagnostics.get("error"),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                },
+            ],
+            "options": options,
+        }
+        repair_response = post_json(PLANNER_URL, repair_payload, timeout_seconds)
+        repair_diagnostics = {
+            "attempted": True,
+            "planner_model": PLANNER_MODEL,
+            "planner_url": PLANNER_URL,
+            "timeout_seconds": timeout_seconds,
+        }
+        if (
+            repair_response.get("backend_unreachable")
+            or repair_response.get("backend_timeout")
+            or repair_response.get("error")
+        ):
+            repair_diagnostics.update({
+                "ok": False,
+                "error": repair_response.get("error") or repair_response.get("error_type") or "planner_backend_error",
+                "error_type": repair_response.get("error_type"),
+            })
+        else:
+            repair_message = _dict_or_empty(repair_response.get("message"))
+            repaired_raw_text = str(
+                repair_message.get("content")
+                or repair_response.get("response")
+                or repair_response.get("partial_content")
+                or ""
+            )
+            repair_parse = parse_strict_json_object_diagnostics(repaired_raw_text)
+            repair_diagnostics.update({
+                "ok": repair_parse.get("ok") is True,
+                "raw_response_chars": len(repaired_raw_text),
+            })
+            if repair_parse.get("ok") is True:
+                decoded = repair_parse.get("decoded") if isinstance(repair_parse.get("decoded"), dict) else {}
+            else:
+                repair_diagnostics.update({
+                    "json_parse_error_type": repair_parse.get("error_type"),
+                    "json_parse_error": repair_parse.get("error"),
+                    "raw_response_preview": repaired_raw_text[:2000],
+                })
     quality = _sanitize_repo_analysis_final_model_quality(decoded)
     quality.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
         "timeout_seconds": timeout_seconds,
     })
+    if repair_diagnostics:
+        quality["json_repair_attempt"] = repair_diagnostics
+        if quality.get("model_decision_available"):
+            quality["json_repaired_by_final_quality_model"] = True
     if not quality.get("model_decision_available"):
         quality["raw_response_preview"] = raw_text[:2000]
         quality["raw_response_chars"] = len(raw_text)
@@ -3861,14 +3947,105 @@ def planner_replan_specialist_for_validation(
         }
     message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
+    original_raw_text = raw_text
     parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    original_parse_diagnostics = dict(parse_diagnostics)
     decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
+    repair_attempted = False
+    repair_success = False
+    repair_error: str | None = None
+    if parse_diagnostics.get("ok") is not True and raw_text.strip():
+        repair_attempted = True
+        repair_request_payload = {
+            "schema": "planner_replan_specialist_json_repair_request.v1",
+            "task": "repair_planner_replan_specialist_json",
+            "original_specialist_request": request_payload,
+            "invalid_response_preview": _prompt_clip_text(raw_text, 4000),
+            "json_parse_error_type": parse_diagnostics.get("error_type"),
+            "json_parse_error": parse_diagnostics.get("error"),
+            "rules": [
+                "Return strict JSON only.",
+                "Do not solve the user task.",
+                "Preserve the specialist role: choose only the next planner-turn route.",
+                "Use the same required_json_shape from the original request.",
+            ],
+        }
+        repair_payload = {
+            "model": PLANNER_MODEL,
+            "stream": False,
+            "keep_alive": OLLAMA_KEEP_ALIVE,
+            "think": False,
+            "format": "json",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You repair malformed JSON from a planner replan specialist. "
+                        "Return one valid JSON object matching the requested schema."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(repair_request_payload, ensure_ascii=False, default=str),
+                },
+            ],
+            "options": {
+                "temperature": 0,
+                "num_predict": 700,
+                "num_ctx": max(
+                    4096,
+                    min(
+                        int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192),
+                        int(AGENTIC_PLANNER_NUM_CTX or 8192),
+                    ),
+                ),
+            },
+        }
+        repair_response = post_json(PLANNER_URL, repair_payload, timeout_seconds)
+        if (
+            repair_response.get("backend_unreachable")
+            or repair_response.get("backend_timeout")
+            or repair_response.get("error")
+        ):
+            repair_error = str(
+                repair_response.get("error")
+                or repair_response.get("error_type")
+                or "planner_replan_specialist_json_repair_backend_error"
+            )
+        else:
+            repair_message = _dict_or_empty(repair_response.get("message"))
+            repair_raw_text = str(
+                repair_message.get("content")
+                or repair_response.get("response")
+                or repair_response.get("partial_content")
+                or ""
+            )
+            repair_parse_diagnostics = parse_strict_json_object_diagnostics(repair_raw_text)
+            if repair_parse_diagnostics.get("ok") is True:
+                raw_text = repair_raw_text
+                parse_diagnostics = repair_parse_diagnostics
+                decoded = repair_parse_diagnostics.get("decoded")
+                repair_success = True
+            else:
+                repair_error = str(
+                    repair_parse_diagnostics.get("error_type")
+                    or repair_parse_diagnostics.get("error")
+                    or "planner_replan_specialist_json_repair_invalid"
+                )
     result = _sanitize_replan_specialist_response(decoded)
     result.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
         "timeout_seconds": timeout_seconds,
     })
+    if repair_attempted:
+        result["json_repair_attempted"] = True
+        result["json_repair_success"] = repair_success
+        result["original_json_parse_error_type"] = original_parse_diagnostics.get("error_type")
+        result["original_raw_response_preview"] = original_raw_text[:1200]
+        result["original_raw_response_chars"] = len(original_raw_text)
+        if repair_error:
+            result["json_repair_error"] = _prompt_clip_text(repair_error, 500)
     if not result.get("ok"):
         result["raw_response_preview"] = raw_text[:1200]
         result["raw_response_chars"] = len(raw_text)
@@ -4059,9 +4236,11 @@ def _should_attempt_vulkan_repair(
     reason = str(decision.get("reason") or "")
     contract = _dict_or_empty(validation.get("evidence_contract"))
     semantic = _dict_or_empty(contract.get("semantic_goal_classification"))
+    code_contract = _dict_or_empty(contract.get("code_product_contract"))
     if (
         contract.get("goal_requests_code_product")
         or contract.get("goal_requires_code_product_report")
+        or bool(code_contract.get("required"))
         or bool(semantic.get("must_produce_code_product"))
     ):
         return False
