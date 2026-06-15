@@ -54,6 +54,9 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](codex_bridge/MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](codex_bridge/MCP_GUIDE.md)
+  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+    and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](model_export/MODULE_REFERENCE.md)
@@ -95,7 +98,8 @@ Core code entry points:
 - [codex_bridge/](codex_bridge/)
   - Optional Codex-facing MCP and Responses-compatible bridge helpers. These
     are host-side Codex integrations, not 3571 OpenWebUI tools and not 3572
-    planner-native tools.
+    planner-native tools. Use [codex_bridge/MCP_GUIDE.md](codex_bridge/MCP_GUIDE.md)
+    for the MCP server matrix, stdio client JSON shape and confirmation gates.
 - [launch/](launch/)
   - PowerShell launcher modules and runtime process/env helpers.
 - [model_export/](model_export/)

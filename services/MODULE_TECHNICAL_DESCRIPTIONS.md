@@ -783,20 +783,23 @@ Dedicated project-local persistent memory MCP server.
 
 ### `codex_bridge/local_subagent_mcp_server.py`
 
-Dedicated local Ollama-backed read-only subagent MCP server for Codex-side
-delegation. It accepts bounded tasks, calls only the 11434 Ollama `/api/chat`
-endpoint and mediates a small explicit read-only tool surface for repo reads,
-repo search, Git diff, RAG context and memory search.
+Codex local subagent MCP facade over the dedicated 3579 agentic-loop client.
+It does not implement a direct Ollama/chat loop and does not host a parallel
+local tool surface; `aicarmine_local_subagent_run_readonly` delegates bounded
+read-only work to `agentic_loop_client_mcp_server.py`, so the broker
+planner/controller/validator path remains the enforcement boundary.
 
-- Reads: selected Codex MCP repo root, local Ollama 11434 when a run tool is
-  invoked, repo files, Git diff output, RAG index and project memory through
-  bounded local handlers.
-- Writes: none.
-- Risk: must not use 11435/GPU0 task models, 3571, 3572, OpenWebUI,
-  `vulkan_helper`, service launchers or source-write tools. Codex MCP root
-  handling stays process-local through `repo_mcp_common.py`.
-- Verify: `aicarmine_local_subagent_health` and
-  `aicarmine_local_subagent_capabilities`.
+- Reads: MCP stdio frames, selected Codex MCP repo root and, only through the
+  delegated 3579 client path, dedicated broker job status/result payloads.
+- Writes: MCP stdio frames only. Any job artifacts are produced by the
+  dedicated broker client path, not by this facade directly.
+- Risk: must not call Ollama 11434/11435 directly, use shared 3571/3572,
+  OpenWebUI, `vulkan_helper`, service launchers or source-write tools. It also
+  must not inherit Codex app `/subagents`; execution goes through the explicit
+  MCP client and its confirmation tokens.
+- Verify: `aicarmine_local_subagent_health`,
+  `aicarmine_local_subagent_capabilities` and the delegated-tool metadata from
+  `aicarmine_local_subagent_run_readonly` when a confirmed run is requested.
 
 ### `codex_bridge/rag_index_repo.py`
 
@@ -1173,9 +1176,12 @@ Package-local technical references exist for:
 - `aicarmine_broker/MODULE_REFERENCE.md`
 - `vulkan_bridge/MODULE_REFERENCE.md`
 - `codex_bridge/MODULE_REFERENCE.md`
+- `codex_bridge/MCP_GUIDE.md`
 - `model_export/MODULE_REFERENCE.md`
 - `npu_phi_service/MODULE_REFERENCE.md`
 - `launch/MODULE_REFERENCE.md`
 
 They document runtime contracts, module responsibilities, data flow and safe
-edit checklists near the modules they describe.
+edit checklists near the modules they describe. `codex_bridge/MCP_GUIDE.md`
+is the operator-facing MCP map for server selection, client JSON compatibility,
+confirmation gates and read-only/debug playbooks.

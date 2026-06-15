@@ -64,10 +64,13 @@ Start from these documents before changing runtime behavior:
    - Public bridge module reference.
 11. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
    - Codex bridge module reference.
-12. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
-    - Launch-script module reference.
-13. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
-    - Model export module reference.
+12. [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md)
+   - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+     and debug playbooks.
+13. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
+   - Launch-script module reference.
+14. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
+   - Model export module reference.
 
 Core code entry points:
 
@@ -101,7 +104,8 @@ Supporting runtime surfaces:
 - [services/launch/](services/launch/)
   - PowerShell helpers for service startup and environment setup.
 - [services/codex_bridge/](services/codex_bridge/)
-  - Codex/Ollama bridge helpers.
+  - Codex/Ollama bridge helpers. MCP operator details live in
+    [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md).
 - [services/model_export/](services/model_export/)
   - Model export helpers.
 - [modelfiles/](modelfiles/)

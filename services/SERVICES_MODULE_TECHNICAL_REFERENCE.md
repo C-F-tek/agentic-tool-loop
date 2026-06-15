@@ -383,6 +383,7 @@ determine whether 3571, 3572, Ollama and OpenWebUI are connected correctly.
 | `aicarmine_broker/MODULE_REFERENCE.md` | Detailed module reference for the 3572 broker/runtime package. |
 | `vulkan_bridge/MODULE_REFERENCE.md` | Detailed module reference for the 3571 OpenWebUI-facing bridge package. |
 | `codex_bridge/MODULE_REFERENCE.md` | Detailed module reference for Codex MCP/Responses bridge modules. |
+| `codex_bridge/MCP_GUIDE.md` | Operator-facing guide for Codex MCP server selection, stdio client JSON compatibility, confirmation gates and debug playbooks. |
 | `model_export/MODULE_REFERENCE.md` | Detailed module reference for model export modules. |
 | `npu_phi_service/MODULE_REFERENCE.md` | Detailed module reference for the Phi-3.5 OpenVINO/NPU diagnostic sidecar. |
 | `launch/MODULE_REFERENCE.md` | Detailed module reference for launcher helpers and runtime order. |
