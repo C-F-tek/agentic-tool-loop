@@ -83,6 +83,8 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "error": "missing_task"}
 
     loop_args = dict(args)
+    for removed_key in ("reload", "restart", "confirm_restart_broker", "restart_timeout_seconds"):
+        loop_args.pop(removed_key, None)
     arguments = dict(loop_args.get("arguments")) if isinstance(loop_args.get("arguments"), dict) else {}
     context = dict(arguments.get("context")) if isinstance(arguments.get("context"), dict) else {}
     initial_context = str(loop_args.pop("initial_context", "") or "").strip()
@@ -133,7 +135,6 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "confirmation_tokens": {
             "run": agentic_loop_client.CONFIRM_RUN,
             "ensure_broker": agentic_loop_client.CONFIRM_ENSURE,
-            "restart_broker": agentic_loop_client.CONFIRM_RESTART,
             "ensure_reranker": agentic_loop_client.CONFIRM_RERANKER,
         },
         "codex_app_subagents_inherited": False,
@@ -229,9 +230,6 @@ def _tools() -> dict[str, ToolSpec]:
                 "append_codex_final_contract": boolean_prop(True),
                 "ensure_broker": boolean_prop(False),
                 "confirm_ensure_broker": string_prop(),
-                "restart": boolean_prop(False),
-                "confirm_restart_broker": string_prop(),
-                "reload": boolean_prop(False),
                 "ensure_reranker": boolean_prop(False),
                 "confirm_ensure_reranker": string_prop(),
                 "require_broker_repo_root_match": boolean_prop(True),

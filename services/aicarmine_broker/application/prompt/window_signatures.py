@@ -31,23 +31,32 @@ def decision_paths(args: dict[str, Any]) -> list[str]:
     args = args if isinstance(args, dict) else {}
     paths: list[str] = []
 
+    def add_path(value: Any) -> None:
+        if value in (None, "", [], {}):
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                add_path(item)
+            return
+        if isinstance(value, dict):
+            add_item_path(value)
+            return
+        text = str(value).strip()
+        if text:
+            paths.append(text)
+
     def add_item_path(item: Any) -> None:
         if isinstance(item, dict):
             for key in ("path", "file", "filename", "target_file", "target_path"):
-                value = item.get(key)
-                if value:
-                    paths.append(str(value))
-        elif isinstance(item, str) and item.strip():
-            paths.append(item)
+                add_path(item.get(key))
+        else:
+            add_path(item)
 
     if isinstance(args.get("paths"), list):
-        paths.extend(str(x) for x in args["paths"] if str(x).strip())
-    if args.get("path"):
-        paths.append(str(args.get("path")))
-    if args.get("target_file"):
-        paths.append(str(args.get("target_file")))
-    if args.get("target_path"):
-        paths.append(str(args.get("target_path")))
+        add_path(args.get("paths"))
+    add_path(args.get("path"))
+    add_path(args.get("target_file"))
+    add_path(args.get("target_path"))
     if args.get("item"):
         add_item_path(args.get("item"))
     if isinstance(args.get("items"), list):

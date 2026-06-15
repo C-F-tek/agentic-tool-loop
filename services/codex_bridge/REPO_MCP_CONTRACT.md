@@ -64,9 +64,11 @@ The project-local memory MCP is write-capable but semantic and isolated:
 The dedicated Codex agentic-loop MCP set is explicit and gated:
 
 - `aicarmine_agentic_loop_client`: client for a dedicated multi-instance broker
-  on a non-shared port, default `127.0.0.1:3579`. It can start/restart only
-  with confirmation tokens and must not target shared OpenWebUI/3572/model
-  ports such as 3571, 3572, 11434 or 11435.
+  on a non-shared port, default `127.0.0.1:3579`. It can start the broker only
+  when the configured port is free and the start confirmation token is supplied.
+  It cannot reload or restart a live broker; loading new code is a manual
+  operator stop/start followed by PID/log/port verification. It must not target
+  shared OpenWebUI/3572/model ports such as 3571, 3572, 11434 or 11435.
 - `aicarmine_local_subagent`: read-only facade over
   `aicarmine_agentic_loop_client`. It does not call Ollama directly, does not
   host a parallel local tool loop and does not inherit Codex app `/subagents`;

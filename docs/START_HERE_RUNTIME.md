@@ -49,6 +49,23 @@ open next, not as a replacement for the contracts.
 | Runtime/root mismatch | Process env, job payload root and launcher docs. | `docs/runtime_env_contract.md`, `docs/launcher_contract.md` | Inferring from Codex cwd only. |
 | Public OpenWebUI payload too large/confusing | Final payload and concrete `tool_context_for_30b` artifacts. | `services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md` | Local artifact paths as proof of model-visible evidence. |
 
+## Contract Proof Bundle
+
+For any significant job diagnosis, collect a small read-only proof bundle before
+changing runtime code:
+
+- `job.json`, `events.ndjson` and `final.json` from the persisted job workspace;
+- `payload_index_for_30b`, `tool_context_for_30b` and `priority_evidence_for_30b`
+  from the terminal public payload;
+- validator rejection/guard summary, planner prompt payload and planner stream;
+- compact tool result fed back to planner history plus the raw same-job
+  `tool-results` artifact when available;
+- `/jobs/{job_id}/ia-view.json` as an operator index over those sources.
+
+Rendered HTML and IA view pages are presentation surfaces. They help navigate
+the bundle, but they do not replace raw artifacts or inline public payloads as
+proof.
+
 ## Source Of Truth Rules
 
 - Runtime contracts beat historical notes.

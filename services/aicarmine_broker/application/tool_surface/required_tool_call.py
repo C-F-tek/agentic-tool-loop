@@ -59,11 +59,52 @@ def _successful_identical_tool_call(history: list[dict[str, Any]], tool: str, ar
             result = _history_tool_result(row)
             if normalize_tool_name(safe_text(result.get("tool"), limit=160)) != tool or result.get("ok") is not True:
                 continue
-            if canonical_required_tool_call_key(tool, _history_decision_args(row)) == expected:
+            decision_args = _history_decision_args(row)
+            if canonical_required_tool_call_key(tool, decision_args) == expected:
+                return True
+            if _successful_tool_call_satisfies_required_args(tool, args, decision_args):
                 return True
         except Exception:
             continue
     return False
+
+
+def _successful_tool_call_satisfies_required_args(
+    tool: str,
+    required_args: ToolArgs,
+    executed_args: ToolArgs,
+) -> bool:
+    """Allow runtime-expanded read-only discovery calls to satisfy model routes."""
+    if tool not in {
+        "repo_semantic_search",
+        "repo_rg_search",
+        "repo_search",
+        "repo_list_files",
+    }:
+        return False
+    if not isinstance(required_args, dict) or not isinstance(executed_args, dict):
+        return False
+    meaningful_required = {
+        safe_text(key, limit=160): value
+        for key, value in required_args.items()
+        if value not in (None, "", [], {})
+    }
+    if not meaningful_required:
+        return False
+    for key, expected_value in meaningful_required.items():
+        if key not in executed_args:
+            return False
+        actual_value = executed_args.get(key)
+        if isinstance(expected_value, (int, float)) or isinstance(actual_value, (int, float)):
+            try:
+                if float(expected_value) != float(actual_value):
+                    return False
+                continue
+            except (TypeError, ValueError):
+                return False
+        if safe_text(actual_value, limit=4000) != safe_text(expected_value, limit=4000):
+            return False
+    return True
 
 
 def required_next_tool_call_satisfaction(
@@ -147,7 +188,22 @@ def required_next_tool_call_satisfaction(
             if signature in successful_signatures:
                 status.update({"satisfied": True, "reason": "repo_read_window_already_successful"})
             else:
-                status["reason"] = "repo_read_window_not_yet_successful"
+                try:
+                    successful_paths = set(successful_repo_read_paths(history))
+                except Exception as exc:
+                    status["reason"] = "required_next_tool_call_successful_paths_failed"
+                    status["satisfaction_diagnostics"] = [
+                        diagnostic_row("repo_read_successful_paths_failed", schema="required_tool_call_diagnostic.v1", exc=exc)
+                    ]
+                    return status
+                if paths and all(path in successful_paths for path in paths):
+                    status.update({
+                        "satisfied": True,
+                        "reason": "repo_read_paths_already_successful_despite_window_mismatch",
+                        "window_signature_matched": False,
+                    })
+                else:
+                    status["reason"] = "repo_read_window_not_yet_successful"
             return status
         try:
             successful_paths = set(successful_repo_read_paths(history))

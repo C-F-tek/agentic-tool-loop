@@ -214,6 +214,27 @@ The view also audits payload transport. If a raw tool result contains required
 fields but the compact payload only carries previews, metadata or a local
 artifact path, the view marks the violation explicitly.
 
+## Contract Proof Bundle
+
+For significant run diagnosis, use a proof bundle assembled from already
+persisted, read-only sources:
+
+- `job.json` for job status, goal, workspace and current step;
+- `events.ndjson` for planner request/decision, validator guard, tool start and
+  tool result events;
+- `final.json` for the terminal payload actually available at job completion;
+- terminal `payload_index_for_30b`, `priority_evidence_for_30b` and
+  `tool_context_for_30b` for OpenWebUI-visible inline evidence;
+- planner prompt capture and planner stream for what 11434 received and
+  returned;
+- compact tool result plus the raw same-job `tool-results` artifact for what
+  was fed back, compacted or rehydrated;
+- `/jobs/{job_id}/ia-view.json` as the operator index over those sources.
+
+Do not diagnose from rendered HTML, local artifact paths or model intuition
+alone. HTML and IA view rendering are navigation/presentation layers; the proof
+is the raw artifact or inline public payload field they point to.
+
 ## Code-Backed Proof Points
 
 ### 1. OpenWebUI sees only `vulkan_helper`

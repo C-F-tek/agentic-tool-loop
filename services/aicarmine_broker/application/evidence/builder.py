@@ -486,12 +486,33 @@ class EvidenceBuilder:
         list_rows = _repo_list_evidence(history)
         all_listed_paths = _paths_from_list_rows(list_rows)
         semantic_search_paths: list[str] = []
+        semantic_suggested_read_paths: list[str] = []
+        semantic_suggested_read_max_chars = 24000
         for row in history if isinstance(history, list) else []:
             if not isinstance(row, dict):
                 continue
             result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
             if str(result.get("tool") or "") != "repo_semantic_search" or not result.get("ok"):
                 continue
+            suggested = result.get("suggested_repo_read") if isinstance(result.get("suggested_repo_read"), dict) else {}
+            try:
+                semantic_suggested_read_max_chars = max(
+                    4000,
+                    min(int(suggested.get("max_chars") or semantic_suggested_read_max_chars), 50000),
+                )
+            except (TypeError, ValueError):
+                semantic_suggested_read_max_chars = 24000
+            suggested_paths = suggested.get("paths") if isinstance(suggested.get("paths"), list) else []
+            for path in suggested_paths:
+                p = _repo_rel_token(path)
+                if (
+                    p
+                    and p not in semantic_suggested_read_paths
+                    and p not in read_ok
+                    and _path_exists_repo_relative(p)
+                    and _repo_readable_evidence_file(p)
+                ):
+                    semantic_suggested_read_paths.append(p)
             for path in _paths_from_result(result):
                 p = _repo_rel_token(path)
                 if (
@@ -781,6 +802,47 @@ class EvidenceBuilder:
             list_failed,
             core_discovery_candidates,
         )
+        semantic_suggested_actions: list[dict[str, Any]] = []
+        if semantic_suggested_read_paths:
+            semantic_suggested_actions.append({
+                "tool": "repo_read",
+                "arguments": {
+                    "paths": semantic_suggested_read_paths[:8],
+                    "max_chars": semantic_suggested_read_max_chars,
+                },
+                "reason": (
+                    "repo_semantic_search returned concrete suggested_repo_read paths; "
+                    "read them before repeating semantic search or finalizing."
+                ),
+                "source": "repo_semantic_search.suggested_repo_read",
+            })
+            for path in semantic_suggested_read_paths[:8]:
+                semantic_suggested_actions.append({
+                    "tool": "repo_read",
+                    "arguments": {"path": path, "max_chars": semantic_suggested_read_max_chars},
+                    "reason": "Read one concrete path suggested by repo_semantic_search.",
+                    "source": "repo_semantic_search.suggested_repo_read",
+                })
+        if semantic_suggested_actions:
+            existing_keys = {
+                (
+                    str(item.get("tool") or ""),
+                    str((item.get("arguments") if isinstance(item.get("arguments"), dict) else {}).get("path") or ""),
+                    tuple((item.get("arguments") if isinstance(item.get("arguments"), dict) else {}).get("paths") or []),
+                )
+                for item in candidates
+                if isinstance(item, dict)
+            }
+            for action in reversed(semantic_suggested_actions):
+                args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+                key = (
+                    str(action.get("tool") or ""),
+                    str(args.get("path") or ""),
+                    tuple(args.get("paths") or []),
+                )
+                if key not in existing_keys:
+                    candidates.insert(0, action)
+                    existing_keys.add(key)
         explicit_request_context = (
             intrinsic_context.get("explicit_request_context")
             if isinstance(intrinsic_context, dict)
@@ -1433,6 +1495,14 @@ class EvidenceBuilder:
             "repo_list_files_evidence": list_rows[-10:],
             "file_memory": file_memory[:32],
             "ranked_core_candidate_dirs": core_candidates,
+            "semantic_search_followup": {
+                "schema": "semantic_search_followup.v1",
+                "suggested_next_tool": "repo_read" if semantic_suggested_read_paths else "",
+                "suggested_repo_read_paths": semantic_suggested_read_paths[:40],
+                "suggested_repo_read_count": len(semantic_suggested_read_paths),
+                "max_chars": semantic_suggested_read_max_chars if semantic_suggested_read_paths else None,
+                "source": "repo_semantic_search.suggested_repo_read",
+            },
             "candidate_next_actions": candidates,
             "disallowed_next_decision_signatures": disallowed_invalid_decision_signatures,
             "minimum_read_coverage": minimum_read_coverage,

@@ -136,9 +136,11 @@ Critical protocol notes:
   index plus a real SQLite text window for the complete compact manifest.
   Optional memory/RAG/history context can be omitted only after real
   SQLite-windowing and serialized prompt counting. `num_ctx` is
-  requested/capped/effective, not assumed. Current documented defaults are
-  `num_ctx_requested=12288`, `num_ctx_cap=12288`,
-  `prompt_char_budget=48000`, with compaction beginning at 50% of that budget.
+  requested/capped/effective, not assumed. Current code defaults are
+  `num_ctx_requested=262144`, `num_ctx_cap=262144`,
+  `prompt_char_budget=max(48000, effective_num_ctx)`, with compaction beginning
+  at 50% of that budget. Launcher/process env may override these defaults; a
+  live job's prompt capture is the operational proof.
   The 50% compaction threshold is a soft trigger for SQLite windowing, not a
   hard no-headroom blocker; the hard generation headroom budget is the prompt
   char budget minus the reserved generation margin.

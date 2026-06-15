@@ -484,6 +484,7 @@ def validate_planner_decision_against_evidence(
                     final_answer,
                     contract,
                     goal=goal,
+                    history=history,
                 )
             else:
                 quality = {

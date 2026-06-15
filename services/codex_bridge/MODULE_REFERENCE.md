@@ -102,11 +102,12 @@ ownership and runtime constraints.
   allowed to start or call the agentic broker. It must use a dedicated
   non-shared port, default `3579`, and must not call the shared OpenWebUI
   bridge on 3571 or a shared 3572 broker. `ensure_broker` starts only when the
-  configured port is free and `confirm_ensure_broker` is supplied. A broker
-  already listening on 3579 is not reloaded by killing the MCP process:
-  `restart=true` requires `confirm_restart_broker` and targets only the
-  dedicated broker process tree, excluding `agentic_loop_client_mcp_server.py`
-  MCP processes. `run`, `status` and `result` call `/vulkan/agent` only when the matching
+  configured port is free and `confirm_ensure_broker` is supplied. It must not
+  reload or restart a broker already listening on 3579; `reload`, `restart` and
+  `confirm_restart_broker` are rejected because uvicorn reload/restart can
+  terminate in-process job workers before terminal state is written. Loading
+  new code is a manual operator stop/start followed by PID/log/port
+  verification. `run`, `status` and `result` call `/vulkan/agent` only when the matching
   `confirm_agentic_loop` token is supplied. Dedicated instances must set
   `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `OPEN_TERMINAL_CWD`,
   `AICARMINE_OPEN_TERMINAL_WORKDIR`, `AICARMINE_VULKAN_WORKSPACE`,
