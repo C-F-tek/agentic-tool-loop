@@ -1150,6 +1150,17 @@ Detailed reference for top-level service scripts.
 - Risk: must stay aligned with launcher/script behavior.
 - Verify: compare against root script inventory.
 
+### `../docs/START_HERE_RUNTIME.md`
+
+Guided first-read runtime map for maintainers and agents.
+
+- Reads: by maintainers/agents before choosing a deeper contract or reference.
+- Writes: documentation only.
+- Risk: must stay short and must not duplicate or override the technical
+  contracts.
+- Verify: every linked owner document exists and role descriptions match the
+  package references.
+
 ### Package `MODULE_REFERENCE.md` files
 
 Package-local technical references exist for:

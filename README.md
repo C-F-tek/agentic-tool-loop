@@ -39,37 +39,40 @@ Start from these documents before changing runtime behavior:
 
 1. [AGENTS.md](AGENTS.md)
    - Workspace operating rules and non-negotiable runtime contract notes.
-2. [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
+2. [docs/START_HERE_RUNTIME.md](docs/START_HERE_RUNTIME.md)
+   - Guided first-read map for runtime roles, debug paths and source-of-truth
+     rules.
+3. [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
    - Core validator/controller contract for the agentic loop.
-3. [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
+4. [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
    - End-to-end flow between OpenWebUI, 3571, 3572, planner, tools, and final
      payload.
-4. [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
+5. [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
    - Service-level technical map and module references.
-5. [docs/runtime_env_contract.md](docs/runtime_env_contract.md)
+6. [docs/runtime_env_contract.md](docs/runtime_env_contract.md)
    - Runtime process/env contract, including active repo roots such as
      `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `AICARMINE_VULKAN_WORKSPACE`,
      `AICARMINE_AGENT_JOB_ROOT`, `OPEN_TERMINAL_CWD` and
      `AICARMINE_OPEN_TERMINAL_WORKDIR`.
-6. [docs/launcher_contract.md](docs/launcher_contract.md)
+7. [docs/launcher_contract.md](docs/launcher_contract.md)
    - Launcher responsibilities for venvs, ports, process order and shared
      repository working-directory variables.
-7. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
+8. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
    - File-by-file technical descriptions for the `services/` tree.
-8. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
+9. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
    - Operational limit for Codex when inspecting large OpenWebUI payloads.
-9. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
+10. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
    - Broker module reference.
-10. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
+11. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
    - Public bridge module reference.
-11. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
+12. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
    - Codex bridge module reference.
-12. [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md)
+13. [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md)
    - Codex MCP server/tool map, client JSON compatibility, confirmation gates
      and debug playbooks.
-13. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
+14. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
    - Launch-script module reference.
-14. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
+15. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
    - Model export module reference.
 
 Core code entry points:

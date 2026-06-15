@@ -38,6 +38,9 @@ Start from these documents before changing runtime behavior:
 
 - [AGENTS.md](../AGENTS.md)
   - Workspace operating rules and non-negotiable runtime contract notes.
+- [docs/START_HERE_RUNTIME.md](../docs/START_HERE_RUNTIME.md)
+  - Guided first-read map for runtime roles, debug paths and source-of-truth
+    rules.
 - [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
   - Core validator/controller contract for the agentic loop.
 - [services/END_TO_END_AGENTIC_FLOW.md](END_TO_END_AGENTIC_FLOW.md)

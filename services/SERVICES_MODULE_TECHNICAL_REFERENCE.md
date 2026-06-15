@@ -373,6 +373,7 @@ determine whether 3571, 3572, Ollama and OpenWebUI are connected correctly.
 
 | File | Purpose |
 | --- | --- |
+| `../docs/START_HERE_RUNTIME.md` | Guided first-read map for runtime roles, debug paths and source-of-truth rules. |
 | `VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md` | Operational contract for 3571/3572 agentic loop, validator, finalization and OpenWebUI evidence transport. |
 | `END_TO_END_AGENTIC_FLOW.md` | Code-backed end-to-end flow: OpenWebUI -> 3571 -> 3572 -> 11434/11435 -> dispatcher -> validated terminal result -> 3571 wrapper. |
 | `SERVICES_MODULE_TECHNICAL_REFERENCE.md` | This module-level source reference. |
