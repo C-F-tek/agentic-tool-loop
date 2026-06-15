@@ -27,6 +27,8 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](MCP_GUIDE.md)
+  - Operator-facing MCP server/tool matrix and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](../launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](../model_export/MODULE_REFERENCE.md)
@@ -98,6 +100,9 @@ Core code entry points:
   - OpenAI Responses-compatible adapter around Ollama.
 - [jsonrpc.py](jsonrpc.py), [responses_proxy.py](responses_proxy.py), [storage.py](storage.py)
   - Compatibility facades for historical import paths.
+- [MCP_GUIDE.md](MCP_GUIDE.md)
+  - Practical map of MCP servers, exposed tools, selection order and debug
+    playbooks.
 
 ## Current MCP Boundaries
 
@@ -112,6 +117,11 @@ effect classes and block reasons while keeping `allow_command=false` and the
 existing confirmation policies. RAG reranking remains best-effort: timeout and
 invalid-response metadata explain the fallback, while FTS candidates stay
 available with `rerank_score=None`.
+
+For practical tool selection, use [MCP_GUIDE.md](MCP_GUIDE.md). The short rule
+is: prefer the narrow dedicated MCP first, use RAG for orientation, use raw job
+artifacts as primary loop evidence and use direct `aicarmine_tools` dispatch
+only when no dedicated MCP fits.
 
 ## Test/Smoke Guardrail
 

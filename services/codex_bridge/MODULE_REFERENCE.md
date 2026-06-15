@@ -16,6 +16,10 @@ Codex MCP tools; the explicit exception is
 `agentic_loop_client_mcp_server.py`, which is a Codex MCP client that can start
 or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 
+For operator-facing tool selection and debug playbooks, read
+`services/codex_bridge/MCP_GUIDE.md`. This reference stays focused on module
+ownership and runtime constraints.
+
 ## Module Map
 
 | Module | Technical description |
@@ -37,6 +41,7 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 | `agentic_loop_client_mcp_server.py` | Explicit Codex MCP client for the canonical broker agentic loop. It can ensure a dedicated multi-instance `aicarmine_broker.app` process on `127.0.0.1:3579` by default, with `AICARMINE_LAB_REPO`, terminal cwd, workspace, job root, job DB and public base URL bound to the Codex-selected root and port. It can also ensure the repo-local OVMS/BGE reranker on `127.0.0.1:3550` using `services/ovms-reranker-npu.ps1`, then pass the reranker URLs into the dedicated broker environment. It requires confirmation tokens before starting a reranker, starting a broker, restarting a broker or calling `/vulkan/agent`, rejects shared ports such as 3571/3572/11434/11435, and returns compact Codex-safe job summaries instead of exposing raw oversized payloads by default. |
 | `rag_index_repo.py` | Standalone index builder for the Codex RAG path. By default it indexes the Git candidate surface (`git ls-files --cached --others --exclude-standard`), so `.gitignore` owns project inclusion/exclusion. It writes a dedicated SQLite/FTS5 code chunk index under `state/codex_rag/`, supports full rebuilds and delta updates, and does not read OpenWebUI/Chroma state or call Ollama/OVMS. |
 | `rag_mcp_server.py` | Dedicated MCP stdio server for Codex RAG. It exposes `aicarmine_rag_context`, `aicarmine_rag_index_status` and `aicarmine_rag_reindex`. Search reads the dedicated SQLite/FTS5 index lazily and optionally reranks candidates through the local OVMS `/v3/rerank` endpoint. Reindex writes only the RAG SQLite index and does not import OpenWebUI, broker dispatchers, or edit/validate tools. |
+| `MCP_GUIDE.md` | Operator-facing MCP guide. It lists the exposed tools per server, selection order, prohibited paths and debug playbooks for RAG/search, job artifacts and the dedicated 3579 broker. Keep it in sync when adding or changing MCP tools. |
 | `jsonrpc.py` | Compatibility exports from `mcp_server.py` for older import paths. No behavior should be added here. |
 | `ollama_responses_bridge.py` | HTTP adapter that presents an OpenAI Responses-like surface over Ollama chat/native APIs. It can save/load response state, inject previous context and stream response events. Preserve native Ollama pass-through routes. |
 | `responses_proxy.py` | Compatibility exports from `ollama_responses_bridge.py`. No behavior should be added here. |
