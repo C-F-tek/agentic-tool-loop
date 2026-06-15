@@ -245,6 +245,17 @@ def validate_planner_decision_against_evidence(
                 return True
         return False
 
+    def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[str]]:
+        valid: list[str] = []
+        invalid: list[str] = []
+        for path in _coalesce_required_next_missing_paths(values):
+            if _path_exists_repo_relative(path) and _repo_readable_evidence_file(path):
+                if path not in valid:
+                    valid.append(path)
+            elif path not in invalid:
+                invalid.append(path)
+        return valid[:12], invalid[:12]
+
     def _required_next_tool_from_missing_evidences(values: Any, allow_if_missing: bool) -> dict[str, Any]:
         iterable_values = values if isinstance(values, (list, tuple, set)) else []
         paths = _coalesce_required_next_missing_paths(
@@ -376,12 +387,30 @@ def validate_planner_decision_against_evidence(
             quality,
             existing_missing=existing_required_missing,
         )
-        if required_next_missing_evidences:
-            contract["required_next_missing_evidences"] = required_next_missing_evidences
-        elif existing_required_missing:
-            contract["required_next_missing_evidences"] = existing_required_missing
+        raw_required_next_missing_evidences = (
+            required_next_missing_evidences
+            if required_next_missing_evidences
+            else existing_required_missing
+        )
+        verified_required_missing, invalid_required_missing = _verified_required_next_missing_paths(
+            raw_required_next_missing_evidences
+        )
+        if invalid_required_missing:
+            contract["invalid_required_next_missing_evidences"] = invalid_required_missing
+            contract["invalid_required_next_missing_evidence_reason"] = (
+                "final-quality proposed strings that are not existing readable repo paths; "
+                "validator will not turn them into repo_read calls"
+            )
+        if verified_required_missing:
+            contract["required_next_missing_evidences"] = verified_required_missing
         else:
             contract.pop("required_next_missing_evidences", None)
+            required_next_missing_evidences = []
+            if invalid_required_missing and not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Final-quality proposed no valid unread repo path. Do not call repo_read for "
+                    "non-existing/prose paths; rewrite final from verified evidence or return a typed block."
+                )
 
         required_next_tool_call = (
             quality.get("required_next_tool_call")
@@ -401,7 +430,40 @@ def validate_planner_decision_against_evidence(
             )
         if required_next_tool_call:
             required_next_tool_call = _coalesce_required_next_tool_tool(required_next_tool_call)
-            if not required_next_tool_call.get("arguments"):
+            if required_next_tool_call.get("tool") == "repo_read":
+                required_args = (
+                    required_next_tool_call.get("arguments")
+                    if isinstance(required_next_tool_call.get("arguments"), dict)
+                    else {}
+                )
+                raw_required_paths = (
+                    required_args.get("paths")
+                    if isinstance(required_args.get("paths"), list)
+                    else [required_args.get("path")]
+                )
+                verified_tool_paths, invalid_tool_paths = _verified_required_next_missing_paths(
+                    raw_required_paths
+                )
+                if invalid_tool_paths:
+                    contract["invalid_required_next_tool_call_paths"] = invalid_tool_paths
+                    contract["invalid_required_next_tool_call_reason"] = (
+                        "repo_read required_next_tool_call contained non-existing or non-readable paths"
+                    )
+                required_missing = (
+                    contract.get("required_next_missing_evidences")
+                    if isinstance(contract.get("required_next_missing_evidences"), list)
+                    else []
+                )
+                if required_missing:
+                    verified_tool_paths = [
+                        path for path in verified_tool_paths
+                        if _path_allowed_by_missing_evidence(path, required_missing)
+                    ]
+                if verified_tool_paths:
+                    required_next_tool_call["arguments"] = {"paths": verified_tool_paths}
+                else:
+                    required_next_tool_call = {}
+            if required_next_tool_call and not required_next_tool_call.get("arguments"):
                 required_next_tool_call = {}
 
         required_next_missing = (
