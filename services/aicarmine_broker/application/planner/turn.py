@@ -790,9 +790,11 @@ def planner_decision(
             "details": str(exc)[:1000],
         })
 
+    planner_stream_timeout_seconds = max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 0))
+
     append_agent_event(
         job_id, "planner_request_started",
-        f"Planner request step={step} timeout={AGENTIC_PLANNER_STEP_TIMEOUT}s.",
+        f"Planner request step={step} timeout={planner_stream_timeout_seconds}s.",
         {
             "planner_url": PLANNER_URL,
             "planner_model": PLANNER_MODEL,
@@ -809,6 +811,7 @@ def planner_decision(
             "prompt_payload_chars": prompt_budget.get("total_user_payload_chars") if isinstance(prompt_budget, dict) else None,
             "prompt_over_budget": prompt_budget.get("over_budget") if isinstance(prompt_budget, dict) else None,
             "prompt_over_generation_headroom_budget": prompt_budget.get("over_generation_headroom_budget") if isinstance(prompt_budget, dict) else None,
+            "planner_step_timeout_requested_seconds": int(AGENTIC_PLANNER_STEP_TIMEOUT or 0),
             "required_working_set_chars": prompt_budget.get("required_working_set_chars") if isinstance(prompt_budget, dict) else None,
             "tool_surface_names": base_tool_names,
             "native_tool_surface_names": native_tool_names if AGENTIC_PLANNER_NATIVE_TOOLS else [],
@@ -837,7 +840,7 @@ def planner_decision(
     stream_path = agent_job_planner_stream_path(job_id, step)
     response = post_json_stream_to_file(
         PLANNER_URL, planner_payload,
-        timeout=max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 0)),
+        timeout=planner_stream_timeout_seconds,
         job_id=job_id, step=step, stream_path=stream_path,
         allow_plain_text_without_json=bool(AGENTIC_PLANNER_NATIVE_TOOLS),
     )
@@ -1025,10 +1028,11 @@ def planner_decision(
 
     # --- timeout: surface, do not force a fallback decision ---
     if response.get("backend_timeout"):
+        stream_timeout_seconds = int(response.get("timeout_seconds") or planner_stream_timeout_seconds)
         append_agent_event(
             job_id,
             "planner_timeout",
-            f"Timeout after {AGENTIC_PLANNER_STEP_TIMEOUT}s; no forced retry/fallback.",
+            f"Timeout after {stream_timeout_seconds}s; no forced retry/fallback.",
             {
                 "error": response.get("error"),
                 "partial_content_chars": len(str(response.get("partial_content") or "")),
