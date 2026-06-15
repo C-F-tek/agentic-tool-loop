@@ -737,7 +737,7 @@ def planner_decision(
     stream_path = agent_job_planner_stream_path(job_id, step)
     response = post_json_stream_to_file(
         PLANNER_URL, planner_payload,
-        timeout=AGENTIC_PLANNER_STEP_TIMEOUT,
+        timeout=max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 0)),
         job_id=job_id, step=step, stream_path=stream_path,
         allow_plain_text_without_json=bool(AGENTIC_PLANNER_NATIVE_TOOLS),
     )
