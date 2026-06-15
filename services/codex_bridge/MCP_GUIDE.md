@@ -64,6 +64,62 @@ are intentionally converted into a portable template. Local files under
 `.codex/` can prove runtime shape, but they are not the source of truth for
 server behavior.
 
+## Root And Local Filesystem Rules
+
+Repo MCP root selection is process-local. The shared helper checks, in order:
+
+1. `AICARMINE_CODEX_MCP_REPO_ROOT`
+2. `CODEX_WORKSPACE_ROOT`
+3. `CODEX_PROJECT_ROOT`
+4. `CODEX_CWD`
+5. `WORKSPACE_ROOT`
+6. `PROJECT_ROOT`
+7. `INIT_CWD`
+8. current working directory Git root
+9. legacy `AICARMINE_LAB_REPO`
+10. current working directory
+
+After selection, the MCP process rewrites its own `AICARMINE_LAB_REPO` to the
+selected root before importing broker helpers. This does not change any already
+running OpenWebUI/3572 process.
+
+Job artifact readers scan only allowlisted local roots:
+
+- `AICARMINE_AGENT_JOB_ROOT`, when set;
+- `qwen-agent-workspace/vulkan-broker/agent-jobs`;
+- dedicated Codex broker workspaces under
+  `state/codex_bridge/agentic_loop_client/port-*/workspace/agent-jobs`;
+- `output/agent-jobs`, `output/agent_jobs`, `agent-jobs`, `agent_jobs`.
+
+SQLite read-only tools resolve only allowlisted databases. Known aliases include
+repo-local state such as the Codex RAG DB and job/planner DBs exposed by the
+server health/list tools. Extra read roots must be passed through
+`AICARMINE_SQLITE_READONLY_ALLOW_ROOTS`; user SQL remains bounded
+`SELECT`/`WITH` only and user PRAGMA is rejected.
+
+## Confirmation And Write Gates
+
+Most MCP servers are read-only. The few tools that can start processes, call the
+dedicated broker or write project-local state require explicit arguments:
+
+| Tool family | Gate argument | Required value | Effect |
+| --- | --- | --- | --- |
+| `aicarmine_agentic_loop_run` | `confirm_agentic_loop` | `aicarmine_agentic_loop_run` | Calls the dedicated 3579 broker `/vulkan/agent`. |
+| `aicarmine_agentic_loop_status` | `confirm_agentic_loop` | `aicarmine_agentic_loop_status` | Reads status from the dedicated 3579 broker. |
+| `aicarmine_agentic_loop_result` | `confirm_agentic_loop` | `aicarmine_agentic_loop_result` | Reads a compact result from the dedicated 3579 broker. |
+| `aicarmine_agentic_loop_ensure_broker` | `confirm_ensure_broker` | `aicarmine_agentic_loop_ensure_broker` | Starts a new dedicated broker only when the configured port is free. |
+| `aicarmine_agentic_loop_ensure_broker` with `restart=true` | `confirm_restart_broker` | `aicarmine_agentic_loop_restart_broker` | Restarts only the dedicated broker process tree. |
+| `aicarmine_agentic_loop_ensure_reranker` | `confirm_ensure_reranker` | `aicarmine_agentic_loop_ensure_reranker` | Starts the repo-local OVMS/BGE reranker only when the configured port is free. |
+| `aicarmine_project_memory_upsert_verified` | `confirm_write` | `project_memory_upsert_verified` | Writes verified memory to the repo-local memory DB. |
+| `aicarmine_project_memory_mark_stale` | `confirm_stale` | `project_memory_mark_stale` | Marks memory records stale by verified source. |
+| `aicarmine_project_memory_supersede` | `confirm_supersede` | `project_memory_supersede` | Supersedes existing memory through the memory DB. |
+| `aicarmine_repo_code_apply_patch` | `allow_source_write` | `true` | Applies exact `old_text` -> `new_text` replacement only. |
+
+The direct `mcp_server.py` facade may list legacy write-like tool names, but
+its Codex direct-dispatch policy keeps command execution disabled and reports
+effect classes/block reasons. Prefer the dedicated MCP above whenever one
+exists.
+
 ## Server Matrix
 
 | Server | Primary tools | Use for | Must not do |
