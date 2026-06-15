@@ -201,6 +201,36 @@ def validate_planner_decision_against_evidence(
                 out.append(token)
         return out[:12]
 
+    def _stale_required_next_repo_read_paths() -> set[str]:
+        paths: set[str] = set()
+        for row in contract.get("stale_required_next_tool_calls") if isinstance(contract.get("stale_required_next_tool_calls"), list) else []:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("tool") or "") != "repo_read":
+                continue
+            args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
+            for path in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
+                token = _repo_rel_token(path)
+                if token:
+                    paths.add(token)
+        return paths
+
+    def _successful_read_paths_for_final_route() -> set[str]:
+        successful = set()
+        for path in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
+            token = _repo_rel_token(path)
+            if token:
+                successful.add(token)
+        if not successful:
+            try:
+                for path in _agentic_v2_successful_read_paths(history):
+                    token = _repo_rel_token(path)
+                    if token:
+                        successful.add(token)
+            except Exception:
+                pass
+        return successful
+
     def _path_allowed_by_missing_evidence(path: str, required_missing: list[str]) -> bool:
         token = _repo_rel_token(path)
         if not token:
@@ -217,6 +247,13 @@ def validate_planner_decision_against_evidence(
         paths = _coalesce_required_next_missing_paths(
             [value for value in values if isinstance(value, str)]
         )
+        if not paths:
+            return {}
+        paths = [
+            path for path in paths
+            if path not in _successful_read_paths_for_final_route()
+            and path not in _stale_required_next_repo_read_paths()
+        ]
         if not paths:
             return {}
         return {
@@ -266,8 +303,13 @@ def validate_planner_decision_against_evidence(
         return out
 
     def _apply_final_quality_route(quality: dict[str, Any]) -> None:
-        reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
-        contract["planner_final_quality_reject_count"] = reject_count
+        step_index = len(history)
+        if int(contract.get("planner_final_quality_last_rewrite_decision") or -1) != step_index:
+            reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
+            contract["planner_final_quality_reject_count"] = reject_count
+            contract["planner_final_quality_last_rewrite_decision"] = step_index
+        reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
+        contract["planner_cuda_rewrite_required"] = True
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
         if required_next_progress:
             contract["required_next_progress"] = required_next_progress
@@ -287,10 +329,23 @@ def validate_planner_decision_against_evidence(
                 for item in required_next_output_sections
                 if str(item).strip()
             ]
+        required_next_missing_evidences = (
+            required_next_missing_evidences
+            if isinstance(required_next_missing_evidences, list)
+            else []
+        )
         if required_next_missing_evidences:
-            contract["required_next_missing_evidences"] = _coalesce_required_next_missing_paths(
-                required_next_missing_evidences
-            )
+            missing_evidences = _coalesce_required_next_missing_paths(required_next_missing_evidences)
+            missing_evidences = [
+                path
+                for path in missing_evidences
+                if path not in _successful_read_paths_for_final_route()
+                and path not in _stale_required_next_repo_read_paths()
+            ]
+            if missing_evidences:
+                contract["required_next_missing_evidences"] = missing_evidences
+            else:
+                contract.pop("required_next_missing_evidences", None)
         required_next_tool_call = (
             quality.get("required_next_tool_call")
             if isinstance(quality.get("required_next_tool_call"), dict)
@@ -305,10 +360,30 @@ def validate_planner_decision_against_evidence(
             required_next_tool_call = _coalesce_required_next_tool_tool(required_next_tool_call)
             if not required_next_tool_call.get("arguments"):
                 required_next_tool_call = {}
+        required_next_missing = (
+            contract.get("required_next_missing_evidences")
+            if isinstance(contract.get("required_next_missing_evidences"), list)
+            else []
+        )
         if required_next_tool_call and required_next_tool_call.get("tool") == "repo_read":
             required_next_tool_call["allow_only_if_missing_evidence"] = True
+            required_args = required_next_tool_call.get("arguments") if isinstance(required_next_tool_call.get("arguments"), dict) else {}
+            if required_next_missing and isinstance(required_args, dict):
+                filtered_paths = [
+                    path
+                    for path in required_args.get("paths", [])
+                    if str(path).strip() and _repo_rel_token(path) in required_next_missing
+                ]
+                if filtered_paths:
+                    required_next_tool_call["arguments"] = {
+                        "paths": _coalesce_required_next_missing_paths(filtered_paths)
+                    }
+                else:
+                    required_next_tool_call = {}
             if not required_next_tool_call.get("source"):
                 required_next_tool_call["source"] = "repo_analysis_final_model_quality"
+            if required_next_tool_call and not required_next_tool_call.get("arguments"):
+                required_next_tool_call = {}
         if required_next_tool_call:
             satisfaction = required_next_tool_call_satisfaction(
                 required_next_tool_call,
@@ -349,7 +424,7 @@ def validate_planner_decision_against_evidence(
             contract["candidate_next_actions"] = [action] + [
                 item for item in existing if isinstance(item, dict) and item != action
             ][:12]
-        elif reject_count >= 2:
+        elif reject_count >= 2 and not required_next_tool_call:
             contract["required_next_progress"] = (
                 "planner_cuda_rewrite_required: rewrite final from verified evidence now. "
                 "Do not call repo_read unless it directly addresses an explicit required_next_tool_call "
@@ -731,6 +806,121 @@ def validate_planner_decision_against_evidence(
                 "progress tools. Planner support primitives such as scratchpad, prompt windows "
                 "and runtime memory remain allowed when their arguments pass validation."
             )
+
+    final_reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
+    rewrite_required = bool(contract.get("planner_cuda_rewrite_required")) and final_reject_count >= 1
+    if rewrite_required:
+        required_tool_call = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        required_rewrite_tool = str(required_tool_call.get("tool") or "").strip()
+        required_rewrite_missing = (
+            contract.get("required_next_missing_evidences")
+            if isinstance(contract.get("required_next_missing_evidences"), list)
+            else []
+        )
+        required_rewrite_paths = []
+        if required_rewrite_tool == "repo_read":
+            args = required_tool_call.get("arguments") if isinstance(required_tool_call.get("arguments"), dict) else {}
+            for raw_path in (args.get("paths", []) if isinstance(args.get("paths"), list) else []):
+                path = _repo_rel_token(raw_path)
+                if path:
+                    required_rewrite_paths.append(path)
+            if not required_rewrite_paths:
+                path = _repo_rel_token(args.get("path"))
+                if path:
+                    required_rewrite_paths.append(path)
+        if not required_rewrite_tool:
+            if tool in SUPPORT_SUBTURN_TOOLS and not (prompt_context_continuation_required and prompt_context_continuation_matches):
+                violations.append("support_subturn_validation_failed")
+                contract["support_subturn_rewrite_retry_count"] = int(
+                    contract.get("support_subturn_rewrite_retry_count") or 0
+                ) + 1
+                if contract["support_subturn_rewrite_retry_count"] >= 2:
+                    contract["required_next_progress"] = (
+                        "Rewrite lane is blocked after repeated support-subturn attempts. "
+                        "Return a rewritten final or block with explicit evidence gates."
+                    )
+                    contract["turn_rewrite_only_after_final_reject"] = True
+                    contract["required_next_tool_call"] = {}
+                else:
+                    contract["required_next_progress"] = (
+                        "Rewrite lane still requires a concrete required-next tool call or a rewritten final."
+                    )
+                return {"ok": False, "violations": violations, "evidence_contract": contract}
+            violations.append("tool_not_allowed_in_post_final_reject_rewrite_lane")
+            contract["required_next_progress"] = (
+                "Rewrite lane is active after final rejection, but no required_next_tool_call is available. "
+                "Use a rewritten terminal final from verified evidence, or return block with explicit gaps."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+        if tool != required_rewrite_tool:
+            if tool in SUPPORT_SUBTURN_TOOLS:
+                if not (prompt_context_continuation_required and prompt_context_continuation_matches):
+                    violations.append("support_subturn_validation_failed")
+                    contract["support_subturn_rewrite_retry_count"] = int(
+                        contract.get("support_subturn_rewrite_retry_count") or 0
+                    ) + 1
+                    if contract["support_subturn_rewrite_retry_count"] >= 2:
+                        contract["required_next_progress"] = (
+                            "Rewrite lane is blocked after repeated support-subturn attempts. "
+                            "Return a rewritten final or block with explicit evidence gates."
+                        )
+                        contract["turn_rewrite_only_after_final_reject"] = True
+                        contract["required_next_tool_call"] = {}
+                    else:
+                        contract["required_next_progress"] = (
+                            f"rewrite lane requires {required_rewrite_tool} as the next tool, "
+                            "or a rewritten final. Support-subturn tools are blocked."
+                        )
+                    return {"ok": False, "violations": violations, "evidence_contract": contract}
+            violations.append("tool_not_allowed_in_post_final_reject_rewrite_lane")
+            contract["required_next_progress"] = (
+                f"rewrite lane requires {required_rewrite_tool} before terminal action."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+        if required_rewrite_tool == "repo_read":
+            decision_paths = [_repo_rel_token(item) for item in _decision_paths(args) if _repo_rel_token(item)]
+
+            def _matches_rewrite_gap(path: str) -> bool:
+                if not required_rewrite_missing:
+                    return path in required_rewrite_paths
+                for gap in required_rewrite_paths:
+                    if (
+                        path == gap
+                        or path.startswith(f"{gap}/")
+                        or gap.startswith(f"{path}/")
+                    ):
+                        if _path_allowed_by_missing_evidence(path, required_rewrite_missing):
+                            return True
+                return False
+
+            if required_rewrite_paths:
+                if not decision_paths:
+                    violations.append("repo_read_not_allowed_post_final_reject_without_gap_match")
+                    contract["required_next_progress"] = (
+                        "rewrite lane requires repo_read with one required missing path, "
+                        f"but no path was provided: {required_rewrite_paths}"
+                    )
+                    return {"ok": False, "violations": violations, "evidence_contract": contract}
+                for path in decision_paths:
+                    if not _matches_rewrite_gap(path):
+                        violations.append(f"repo_read_not_allowed_post_final_reject_without_gap_match:{path}")
+                if violations:
+                    contract["required_next_progress"] = (
+                        "Rewrite lane requires repo_read on one remaining required gap path: "
+                        f"{required_rewrite_paths}"
+                    )
+                    return {"ok": False, "violations": violations, "evidence_contract": contract}
+            elif required_rewrite_missing:
+                contract["required_next_progress"] = (
+                    "Rewrite lane requires repo_read for a remaining missing evidence route, "
+                    "but required arguments are incomplete."
+                )
+                violations.append("repo_read_not_allowed_without_required_next_paths")
+                return {"ok": False, "violations": violations, "evidence_contract": contract}
 
     if tool == "repo_search" and not _any_argument_group_present(args, [["query"], ["pattern"], ["symbol"]]):
         violations.append("repo_search_missing_query_pattern_or_symbol")

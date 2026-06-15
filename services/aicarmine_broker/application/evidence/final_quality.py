@@ -139,12 +139,12 @@ def _final_quality_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
         ),
         "finalization_contract": _compact_mapping(final_contract, text_limit=360, list_limit=8),
         "minimum_read_coverage": _compact_mapping(coverage, text_limit=360, list_limit=12),
-        "successful_repo_read_paths": _compact_list(contract.get("successful_repo_read_paths"), limit=24),
+        "successful_repo_read_paths": _coalesce_unique_paths(contract.get("successful_repo_read_paths"), limit=24),
         "verified_content_reads": _verified_read_summary(contract),
         "file_memory_paths": [
-            row.get("path")
+            _repo_rel_token(row.get("path"))
             for row in _read_note_rows(contract)
-            if isinstance(row, dict) and row.get("path")
+            if isinstance(row, dict) and _repo_rel_token(row.get("path"))
         ][:24],
         "candidate_next_actions": _compact_mapping(contract.get("candidate_next_actions"), text_limit=420, list_limit=8),
         "core_discovery_candidates": _compact_mapping(contract.get("core_discovery_candidates"), text_limit=300, list_limit=10),
@@ -161,10 +161,9 @@ def _final_quality_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
             text_limit=260,
             list_limit=8,
         ),
-        "required_next_missing_evidences": _compact_mapping(
+        "required_next_missing_evidences": _coalesce_unique_paths(
             contract.get("required_next_missing_evidences"),
-            text_limit=260,
-            list_limit=8,
+            limit=12,
         ),
         "required_next_tool_call_satisfied": _compact_mapping(
             contract.get("required_next_tool_call_satisfied"),
@@ -247,9 +246,10 @@ def _final_path_tokens(final_answer: str) -> list[str]:
     return tokens
 
 
-def _coalesce_unique_paths(values: list[Any], *, limit: int = 10) -> list[str]:
+def _coalesce_unique_paths(values: Any, *, limit: int = 10) -> list[str]:
+    rows = values if isinstance(values, list) else []
     out: list[str] = []
-    for raw in values:
+    for raw in rows:
         token = _repo_rel_token(raw)
         if token and token not in out:
             out.append(token)
@@ -720,6 +720,8 @@ def repo_analysis_final_answer_model_quality_request(
                 "ok": True,
                 "violations": [{"code": "short_machine_code", "reason": "human reason"}],
                 "required_next_progress": "short instruction for the next planner turn",
+                "required_next_output_sections": ["Concrete file-level evidence", "Coverage limits and validation status"],
+                "required_next_missing_evidences": ["path or semantic token"],
                 "required_next_tool_call": {
                     "tool": "repo_semantic_search | repo_read | repo_rg_search | repo_search | repo_list_files",
                     "arguments": {"query": "concrete query or path args"},
@@ -834,9 +836,30 @@ def sanitize_repo_analysis_final_model_quality(
     required_next_output_sections = _sanitize_required_next_output_sections(
         value.get("required_next_output_sections")
     )
+    if not ok and not required_next_output_sections:
+        required_next_output_sections = _required_next_output_sections(
+            violations,
+            {
+                "read_note_count": 0,
+                "path_hits": 0,
+                "min_path_hits": 0,
+                "unverified_path_tokens": [],
+                "hard_pending_read_or_search_actions": [],
+            },
+        )
     required_next_missing_evidences = _sanitize_required_next_missing_evidences(
         value.get("required_next_missing_evidences")
     )
+    if not ok and not required_next_missing_evidences:
+        required_next_missing_evidences = _required_next_missing_evidences(
+            violations,
+            {
+                "unverified_path_tokens": [],
+                "read_note_count": 0,
+            },
+            [],
+            {},
+        )
     if not ok and not required_next_progress:
         required_next_progress = (
             "Model final-quality judge rejected the final answer. Continue with the "

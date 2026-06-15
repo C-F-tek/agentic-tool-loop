@@ -152,7 +152,7 @@ def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[
         "schema": "planner_controller_guard_history.v1",
         "step": item.get("step"),
         "substep": item.get("substep"),
-        "tool": "controller_guard",
+        "guard_label": "controller_guard",
         "ok": result.get("ok"),
         "guard_type": result.get("guard_type"),
         "violations": result.get("violations"),
@@ -322,6 +322,24 @@ def planner_history_item_messages(
         and isinstance(decision.get("raw_native_tool_call"), dict)
     ):
         raw_native_call = decision["raw_native_tool_call"]
+        raw_tool_name = str((raw_native_call.get("function") or {}).get("name") or "").lower()
+        result_tool_name = str(result.get("tool") if isinstance(result, dict) else "").lower()
+        is_controller_guard = result_tool_name == "controller_guard" or raw_tool_name == "controller_guard"
+        if is_controller_guard:
+            payload = planner_tool_result_message_payload(
+                item,
+                result,
+                root=root,
+                goal=goal,
+                window_chars=window_chars,
+                code_product_build_state_kind=code_product_build_state_kind,
+                store_prompt_text_window=store_prompt_text_window,
+            )
+            messages.append({
+                "role": "user",
+                "content": json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            })
+            return messages
         messages.append({
             "role": "assistant",
             "content": "",
