@@ -118,10 +118,9 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "rerank_doc_chars": {"type": "integer", "default": 2500},
             "rerank_timeout_seconds": {"type": "number", "default": 30.0},
         },
-        ["query"],
         argument_contract={
-            "required": ["query"],
             "requires_one_of": [["query"], ["pattern"], ["symbol"], ["text"]],
+            "violation": "repo_semantic_search_missing_query",
         },
     ),
     "repo_fd_files": _tool_schema(
