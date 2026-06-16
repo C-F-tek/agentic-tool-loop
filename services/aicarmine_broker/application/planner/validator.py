@@ -168,6 +168,45 @@ def _escalate_final_rewrite_retry_count(
     return contract
 
 
+def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any]:
+    contract = contract if isinstance(contract, dict) else {}
+    final_contract = (
+        contract.get("finalization_contract")
+        if isinstance(contract.get("finalization_contract"), dict)
+        else {}
+    )
+
+    # A valid final answer is considered an explicit reset of terminal rewrite/block
+    # pressure for the current contract state.
+    contract["final_rewrite_latch"] = "inactive"
+    contract["planner_may_choose_block"] = False
+    contract["planner_may_choose_final"] = True
+    contract.pop("planner_forced_terminal_block", None)
+    contract.pop("planner_forced_terminal_block_reason", None)
+    contract.pop("planner_final_quality_terminal_block", None)
+    contract.pop("planner_final_quality_terminal_block_count", None)
+    contract.pop("planner_final_quality_terminal_block_latched", None)
+    contract.pop("planner_final_quality_latched_patch_axes", None)
+    contract.pop("planner_final_quality_latched_operator_instructions", None)
+    contract.pop("planner_final_answer_blocked_reason", None)
+    contract.pop("planner_final_quality_public_notice", None)
+
+    final_contract["final_allowed"] = True
+    final_contract["planner_may_choose_final"] = True
+    final_contract["planner_may_choose_block"] = False
+    final_contract.pop("planner_forced_terminal_block", None)
+    final_contract.pop("planner_forced_terminal_block_reason", None)
+    final_contract.pop("planner_final_quality_terminal_block", None)
+    final_contract.pop("planner_final_quality_terminal_block_count", None)
+    final_contract.pop("planner_final_quality_terminal_block_latched", None)
+    final_contract.pop("planner_final_quality_latched_patch_axes", None)
+    final_contract.pop("planner_final_quality_latched_operator_instructions", None)
+    final_contract.pop("planner_final_answer_blocked_reason", None)
+    final_contract.pop("planner_final_quality_public_notice", None)
+    contract["finalization_contract"] = final_contract
+    return contract
+
+
 def _collect_repo_paths(values: Any) -> set[str]:
     out: set[str] = set()
     if isinstance(values, dict):
@@ -1413,6 +1452,8 @@ def validate_planner_decision_against_evidence(
                 expected = min(expected, total_matches)
             if len(read_ok) < expected:
                 violations.append(f"final_before_required_read_count:{len(read_ok)}/{expected}")
+        if not violations:
+            contract = _clear_final_terminal_block_state(contract)
         result = {
             "ok": not violations,
             "violations": violations,
