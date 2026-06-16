@@ -12,6 +12,7 @@ from aicarmine_broker.application.search import assess_search_quality
 from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.command_safety import classify_command, dangerous_command
+from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error
 
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -206,7 +207,10 @@ def terminal_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     base = terminal_preferred_cwd()
     path_details = normalize_terminal_path_details(directory_arg, base=base)
     directory = path_details["resolved_path_obj"]
-    limit = max(1, int(args.get("limit") or args.get("max_files") or 200))
+    try:
+        limit = bounded_int_arg(args, ("limit", "max_files"), default=200, minimum=1, maximum=2000)
+    except Exception as exc:
+        return deterministic_input_error("terminal_list_files", exc)
     recurse = parse_bool(args.get("recurse", args.get("recursive", False)), False)
     pattern = str(args.get("pattern") or args.get("glob") or "*").strip() or "*"
 
@@ -266,7 +270,10 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     base = terminal_preferred_cwd()
     path_details = normalize_terminal_path_details(directory_arg, base=base)
     directory = path_details["resolved_path_obj"]
-    limit = max(1, int(args.get("limit") or args.get("max_results") or 200))
+    try:
+        limit = bounded_int_arg(args, ("limit", "max_results"), default=200, minimum=1, maximum=2000)
+    except Exception as exc:
+        return deterministic_input_error("terminal_search_files", exc)
     content = parse_bool(args.get("content", False), False)
 
     if not query:
@@ -372,7 +379,10 @@ def terminal_run_command_wait(
             return repair
         command = str(repair.get("repaired_command") or command)
 
-    timeout = max(1, int(args.get("timeout_seconds") or args.get("timeout") or COMMAND_TIMEOUT_SECONDS))
+    try:
+        timeout = bounded_int_arg(args, ("timeout_seconds", "timeout"), default=COMMAND_TIMEOUT_SECONDS, minimum=1, maximum=3600)
+    except Exception as exc:
+        return deterministic_input_error("terminal_run_command_wait", exc)
     cwd_details = normalize_terminal_path_details(args.get("cwd") or args.get("directory") or args.get("path"), base=terminal_preferred_cwd())
     cwd = cwd_details["resolved_path_obj"]
     if not cwd.exists() or not cwd.is_dir():

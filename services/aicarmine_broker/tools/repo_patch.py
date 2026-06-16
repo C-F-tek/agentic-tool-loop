@@ -7,13 +7,17 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error
 
 
 def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or "").strip()
     old_text = args.get("old_text")
     new_text = args.get("new_text")
-    max_replacements = max(1, int(args.get("max_replacements") or 1))
+    try:
+        max_replacements = bounded_int_arg(args, "max_replacements", default=1, minimum=1, maximum=100)
+    except Exception as exc:
+        return deterministic_input_error("repo_apply_patch", exc)
 
     if not path:
         return {"ok": False, "tool": "repo_apply_patch", "error": "missing path"}
@@ -49,6 +53,18 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "path": rel,
             "error": "old_text_not_found",
             "old_text_preview": old_text[:1000],
+            "repair_hints": [
+                "read_current_file_before_retry",
+                "old_text_must_be_exact",
+                "use_repo_read_with_max_chars_80000",
+            ],
+            "suggested_next_tool_calls": [
+                {
+                    "tool": "repo_read",
+                    "arguments": {"path": rel, "max_chars": 80000},
+                    "reason": "read_file_to_verify_old_text",
+                },
+            ],
         }
 
     replacements = min(occurrences, max_replacements)
@@ -163,6 +179,20 @@ def repo_write_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "before_sha256": before_sha256,
         "after_sha256": after_sha256,
         "line_count_after": len(full.read_text(encoding=encoding, errors="replace").splitlines()),
+        "post_write_validation_required": True,
+        "validation_candidates": [
+            {
+                "tool": "repo_validate",
+                "arguments": {"paths": [rel], "timeout_seconds": 300},
+                "reason": "validate_file_after_repo_write",
+            }
+        ] + ([
+            {
+                "tool": "repo_ruff_check",
+                "arguments": {"paths": [rel], "timeout_seconds": 180},
+                "reason": "python_static_validation_after_repo_write",
+            }
+        ] if rel.endswith(".py") else []),
     }
     artifact = root / "tool-results" / f"{now()}-repo_write_file.json"
     write_json(artifact, payload)

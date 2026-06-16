@@ -7,7 +7,7 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO, parse_bool
 from aicarmine_broker.infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.git_surface import git_candidate_files
+from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error, git_candidate_files
 
 
 _EXCLUDE_DIRS_DEFAULT = frozenset(
@@ -29,8 +29,11 @@ _EXCLUDE_DIRS_DEFAULT = frozenset(
 def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or ".").strip()
     suffix = str(args.get("suffix") or args.get("extension") or "").strip().lower()
-    limit = max(1, int(args.get("limit") or args.get("max_files") or 20))
-    max_depth = max(0, int(args.get("max_depth") or 50))
+    try:
+        limit = bounded_int_arg(args, ("limit", "max_files"), default=20, minimum=1, maximum=2000)
+        max_depth = bounded_int_arg(args, "max_depth", default=50, minimum=0, maximum=1000)
+    except Exception as exc:
+        return deterministic_input_error("repo_list_files", exc)
     core = parse_bool(args.get("core", False), False)
 
     if core and path in {"", "."}:
@@ -116,6 +119,18 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "truncated": len(files) > limit,
         "source": source,
         "gitignore_respected": source == "git_ls_files_exclude_standard",
+        "coverage_status": "truncated" if len(files) > limit else "complete",
+        "suggested_next_tool_calls": (
+            [
+                {
+                    "tool": "repo_semantic_search",
+                    "arguments": {"query": "find entry point", "path": rel},
+                    "reason": "narrow_down_large_file_list",
+                }
+            ]
+            if len(files) > limit
+            else []
+        ),
     }
     artifact = root / "tool-results" / f"{now()}-repo_list_files.json"
     write_json(artifact, payload)
