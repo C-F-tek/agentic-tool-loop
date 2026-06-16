@@ -1690,7 +1690,10 @@ class EvidenceBuilder:
             rewrite_latch_active
             and not latest_required_next_tool_call
             and valid_unread_suggested_read_paths
-            and not isinstance(contract.get("required_next_tool_call"), dict)
+            and not (
+                isinstance(contract.get("required_next_tool_call"), dict)
+                and bool(contract.get("required_next_tool_call"))
+            )
         ):
             suggested_read_paths = valid_unread_suggested_read_paths[:8]
             required_next_tool_call: dict[str, Any] = {
