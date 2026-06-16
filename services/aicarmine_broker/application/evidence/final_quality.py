@@ -400,6 +400,108 @@ def _repo_read_path_allowlist(contract: dict[str, Any]) -> set[str]:
     return allowed - _repo_read_completed_paths(contract)
 
 
+def _known_repo_paths(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    known: set[str] = set()
+
+    def add(raw: Any) -> None:
+        if isinstance(raw, dict):
+            raw = raw.get("path") or raw.get("repo_path") or raw.get("source_path")
+        token = _repo_rel_token(raw)
+        if token and token != ".":
+            known.add(token)
+
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "verified_content_reads",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        for item in _path_items(contract.get(key)):
+            add(item)
+
+    coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        for item in _path_items(coverage.get(key)):
+            add(item)
+
+    final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+    final_coverage = (
+        final_contract.get("minimum_read_coverage")
+        if isinstance(final_contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        for item in _path_items(final_coverage.get(key)):
+            add(item)
+
+    return known
+
+
+def _known_repo_dirs(paths: set[str]) -> set[str]:
+    dirs = {"."}
+    for path in paths:
+        parts = [part for part in str(path or "").split("/") if part]
+        for index in range(1, len(parts)):
+            dirs.add("/".join(parts[:index]))
+    return dirs
+
+
+def _route_token_is_prose_or_metric(value: Any) -> bool:
+    token = str(value or "").strip()
+    if not token:
+        return True
+    lowered = token.lower()
+    if lowered in {
+        "ridondanze/rischi",
+        "docs/config",
+        "planner/final-quality",
+        "planner/controller rejection paths",
+    }:
+        return True
+    if any(sep in lowered for sep in (":\\", "://")):
+        return True
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return True
+    if " " in token and not any(
+        lowered.endswith(suffix)
+        for suffix in (".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt")
+    ):
+        return True
+    return False
+
+
+def _search_query_is_concrete(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text or len(text) > 260:
+        return False
+    lowered = text.lower()
+    if lowered in {
+        "docs/config",
+        "ridondanze/rischi",
+        "8/2",
+        "8/8",
+        "9/9",
+        "planner/controller rejection paths",
+    }:
+        return False
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return False
+    useful_tokens = [
+        token
+        for token in lowered.replace(",", " ").replace(";", " ").split()
+        if len(token) >= 3 and "/" not in token and any(ch.isalpha() for ch in token)
+    ]
+    if "/" in lowered and len(useful_tokens) < 2:
+        return False
+    return bool(useful_tokens)
+
+
 def _allowed_concrete_repo_path(value: Any, allowlist: set[str]) -> str:
     if isinstance(value, dict):
         value = value.get("path") or value.get("repo_path") or value.get("source_path")
@@ -910,6 +1012,16 @@ def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> d
         args.get("query") or args.get("pattern") or args.get("symbol")
     ):
         return {}
+    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
+        query_value = args.get("query") or args.get("pattern") or args.get("symbol")
+        if not _search_query_is_concrete(query_value):
+            return {}
+        known_paths = _known_repo_paths(contract if isinstance(contract, dict) else {})
+        known_dirs = _known_repo_dirs(known_paths)
+        path_token = _repo_rel_token(args.get("path")) if args.get("path") else ""
+        if path_token and path_token not in known_paths and path_token not in known_dirs:
+            invalid_paths.append(path_token)
+            args.pop("path", None)
     if tool == "repo_read" and not (args.get("path") or args.get("paths")):
         return {}
     if tool == "repo_read":
@@ -928,9 +1040,14 @@ def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> d
         args = {"paths": valid_paths[:12]}
         if invalid_paths:
             out["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
-    if tool == "repo_list_files" and not args.get("path"):
-        args["path"] = "."
-        out["arguments"] = args
+    if tool == "repo_list_files":
+        known_dirs = _known_repo_dirs(_known_repo_paths(contract if isinstance(contract, dict) else {}))
+        path_token = _repo_rel_token(args.get("path") or ".") or "."
+        if path_token != "." and (_route_token_is_prose_or_metric(path_token) or path_token not in known_dirs):
+            return {}
+        args["path"] = path_token
+    if invalid_paths and "invalid_required_next_tool_call_paths" not in out:
+        out["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
     reason = str(value.get("reason") or "").strip()
     if reason:
         out["reason"] = _clip_text(reason, 500)

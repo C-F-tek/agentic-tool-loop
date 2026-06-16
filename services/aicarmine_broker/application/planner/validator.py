@@ -199,6 +199,120 @@ def _collect_repo_paths(values: Any) -> set[str]:
     return out
 
 
+def _known_contract_repo_paths(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    paths: set[str] = set()
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "verified_content_reads",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        paths.update(_collect_repo_paths(contract.get(key)))
+    coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        paths.update(_collect_repo_paths(coverage.get(key)))
+    final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+    final_coverage = (
+        final_contract.get("minimum_read_coverage")
+        if isinstance(final_contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        paths.update(_collect_repo_paths(final_coverage.get(key)))
+    return {path for path in paths if path and path != "."}
+
+
+def _known_contract_repo_dirs(contract: dict[str, Any]) -> set[str]:
+    dirs = {"."}
+    for path in _known_contract_repo_paths(contract):
+        parts = [part for part in path.split("/") if part]
+        for index in range(1, len(parts)):
+            dirs.add("/".join(parts[:index]))
+    return dirs
+
+
+def _route_token_is_prose_or_metric(value: Any) -> bool:
+    token = _repo_path_token(value)
+    if not token:
+        return True
+    lowered = token.lower()
+    if lowered in {
+        "ridondanze/rischi",
+        "docs/config",
+        "planner/final-quality",
+        "planner/controller rejection paths",
+    }:
+        return True
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return True
+    if " " in token:
+        return True
+    return False
+
+
+def _search_query_is_concrete(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text or len(text) > 260:
+        return False
+    lowered = text.lower()
+    if lowered in {
+        "docs/config",
+        "ridondanze/rischi",
+        "8/2",
+        "8/8",
+        "9/9",
+        "planner/controller rejection paths",
+    }:
+        return False
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return False
+    useful_tokens = [
+        token
+        for token in lowered.replace(",", " ").replace(";", " ").split()
+        if len(token) >= 3 and "/" not in token and any(ch.isalpha() for ch in token)
+    ]
+    if "/" in lowered and len(useful_tokens) < 2:
+        return False
+    return bool(useful_tokens)
+
+
+def _required_next_route_has_deterministic_proof(
+    required_call: dict[str, Any],
+    contract: dict[str, Any],
+) -> bool:
+    required_call = required_call if isinstance(required_call, dict) else {}
+    tool = str(required_call.get("tool") or "").strip()
+    args = required_call.get("arguments") if isinstance(required_call.get("arguments"), dict) else {}
+    if tool == "repo_read":
+        return True
+    if tool == "repo_list_files":
+        path = _repo_path_token(args.get("path") or ".") or "."
+        if path == ".":
+            return True
+        return not _route_token_is_prose_or_metric(path) and path in _known_contract_repo_dirs(contract)
+    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
+        query = args.get("query") or args.get("pattern") or args.get("symbol")
+        if not _search_query_is_concrete(query):
+            return False
+        path = _repo_path_token(args.get("path")) if args.get("path") else ""
+        if path and path not in _known_contract_repo_paths(contract) and path not in _known_contract_repo_dirs(contract):
+            return False
+        return True
+    if tool == "planner_scratchpad_read":
+        document_id = str(args.get("document_id") or "").strip()
+        target_file = _repo_path_token(args.get("target_file")) if args.get("target_file") else ""
+        if document_id and not _route_token_is_prose_or_metric(document_id):
+            return True
+        return bool(target_file and target_file in _known_contract_repo_paths(contract))
+    return False
+
+
 def validate_planner_decision_against_evidence(
     goal: str,
     decision: dict[str, Any],
@@ -674,6 +788,23 @@ def validate_planner_decision_against_evidence(
             contract["invalid_required_next_tool_call_paths"] = invalid_required_next_tool_call_paths[:12]
         if required_next_tool_call:
             required_next_tool_call = _coalesce_required_next_tool_tool(required_next_tool_call)
+            if not _required_next_route_has_deterministic_proof(required_next_tool_call, contract):
+                tool_name = str(required_next_tool_call.get("tool") or "").strip()
+                args = (
+                    required_next_tool_call.get("arguments")
+                    if isinstance(required_next_tool_call.get("arguments"), dict)
+                    else {}
+                )
+                path_token = _repo_path_token(args.get("path")) if args.get("path") else ""
+                query_text = str(args.get("query") or args.get("pattern") or args.get("symbol") or "").strip()
+                if path_token:
+                    contract["invalid_required_next_tool_call_paths"] = [path_token]
+                if query_text:
+                    contract["invalid_required_next_tool_call_query"] = query_text[:260]
+                contract["invalid_required_next_tool_call_reason"] = (
+                    f"{tool_name or 'required_next_tool_call'} lacked deterministic concrete route proof"
+                )
+                required_next_tool_call = {}
             if required_next_tool_call.get("tool") == "repo_read":
                 required_args = (
                     required_next_tool_call.get("arguments")
