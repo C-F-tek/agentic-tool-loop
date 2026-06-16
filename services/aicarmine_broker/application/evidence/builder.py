@@ -806,9 +806,21 @@ class EvidenceBuilder:
             list_failed,
             core_discovery_candidates,
         )
+        valid_unread_suggested_read_paths: list[str] = []
+        for path in semantic_suggested_read_paths:
+            if path in verified_read_path_set:
+                continue
+            if not _path_exists_repo_relative(path):
+                continue
+            if not _repo_readable_evidence_file(path):
+                continue
+            if target_scope and not _path_under_scope(path, target_scope):
+                continue
+            valid_unread_suggested_read_paths.append(path)
+
         semantic_suggested_actions: list[dict[str, Any]] = []
-        if semantic_suggested_read_paths:
-            semantic_suggested_batch_paths = semantic_suggested_read_paths[:8]
+        if valid_unread_suggested_read_paths:
+            semantic_suggested_batch_paths = valid_unread_suggested_read_paths[:8]
             semantic_suggested_actions.append({
                 "tool": "repo_read",
                 "arguments": {
@@ -822,7 +834,7 @@ class EvidenceBuilder:
                 ),
                 "source": "repo_semantic_search.suggested_repo_read",
             })
-            for path in semantic_suggested_read_paths[:8]:
+            for path in valid_unread_suggested_read_paths[:8]:
                 semantic_suggested_actions.append({
                     "tool": "repo_read",
                     "arguments": {"path": path, "max_chars": semantic_suggested_read_max_chars},
@@ -1520,10 +1532,14 @@ class EvidenceBuilder:
             "semantic_search_followup": {
                 "schema": "semantic_search_followup.v1",
                 "suggested_next_tool": "repo_read" if semantic_suggested_read_paths else "",
-                "suggested_repo_read_paths": semantic_suggested_read_paths[:40],
-                "suggested_repo_read_count": len(semantic_suggested_read_paths),
+                "suggested_repo_read_paths": valid_unread_suggested_read_paths[:40],
+                "suggested_repo_read_count": len(valid_unread_suggested_read_paths),
                 "max_chars": semantic_suggested_read_max_chars if semantic_suggested_read_paths else None,
                 "source": "repo_semantic_search.suggested_repo_read",
+                **(
+                    {"suppressed_reason": "no_valid_unread_suggested_repo_read_paths"}
+                    if not valid_unread_suggested_read_paths else {}
+                ),
             },
             "candidate_next_actions": candidates,
             "disallowed_next_decision_signatures": disallowed_invalid_decision_signatures,
@@ -1665,6 +1681,66 @@ class EvidenceBuilder:
         }
         for stale_status in stale_required_next_tool_calls:
             append_stale_required_call_marker(contract, stale_status)
+        rewrite_latch_active = str(contract.get("final_rewrite_latch") or "").strip() in {
+            "rewrite_required",
+            "required_gap_only",
+            "terminal_block_required",
+        }
+        if (
+            rewrite_latch_active
+            and not latest_required_next_tool_call
+            and valid_unread_suggested_read_paths
+            and not isinstance(contract.get("required_next_tool_call"), dict)
+        ):
+            suggested_read_paths = valid_unread_suggested_read_paths[:8]
+            required_next_tool_call: dict[str, Any] = {
+                "tool": "repo_read",
+                "arguments": {
+                    "paths": suggested_read_paths,
+                    "max_chars": semantic_suggested_read_max_chars,
+                    "max_paths": len(suggested_read_paths),
+                },
+                "reason": (
+                    "repo_semantic_search returned concrete unread suggested_repo_read paths; "
+                    "read them before another final attempt."
+                ),
+                "source": "repo_semantic_search.suggested_repo_read",
+                "validated": True,
+                "validation_source": "deterministic_builder_semantic_followup",
+            }
+            contract["required_next_tool_call"] = required_next_tool_call
+            contract["required_next_tool_call_validated"] = True
+            contract["required_next_tool_call_validation_source"] = "deterministic_builder_semantic_followup"
+            if not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Required next tool was promoted from repo_semantic_search suggested_repo_read paths "
+                    "in rewrite lane."
+                )
+            contract["planner_may_choose_final"] = False
+            required_next_action = {
+                "tool": "repo_read",
+                "arguments": required_next_tool_call.get("arguments") or {},
+                "reason": required_next_tool_call.get("reason") or "",
+                "source": required_next_tool_call.get("source") or "repo_semantic_search.suggested_repo_read",
+            }
+            existing_keys = {
+                (
+                    str(item.get("tool") or ""),
+                    tuple((item.get("arguments") or {}).get("paths") or []),
+                )
+                for item in contract.get("candidate_next_actions") or []
+                if isinstance(item, dict)
+            }
+            if (
+                "repo_read",
+                tuple(suggested_read_paths),
+            ) not in existing_keys:
+                contract["candidate_next_actions"] = [required_next_action] + list(contract.get("candidate_next_actions") or [])[:15]
+            final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "required_next_tool_call_from_previous_guard"
+            contract["finalization_contract"] = final_contract
         if stale_required_next_tool_calls and not latest_required_next_tool_call and not contract.get("required_next_progress"):
             contract["required_next_progress"] = (
                 "A previous required_next_tool_call is already satisfied by successful tool history. "
