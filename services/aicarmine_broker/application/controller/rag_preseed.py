@@ -2005,7 +2005,11 @@ def controller_preplanner_rag_preseed_plan(
         "event": "controller_preseed_preplanner_rag_ranked_read",
         "result_event": "controller_preseed_preplanner_rag_ranked_read_result",
         "tool": "repo_read",
-        "arguments": {"paths": selected_paths, "max_chars": max_chars_per_path},
+        "arguments": {
+            "paths": selected_paths,
+            "max_chars": max_chars_per_path,
+            "max_paths": len(selected_paths),
+        },
         "reason": "loop_start_delta_rag_reindex_ranked_preplanner_context",
         "artifact_suffix": "preplanner_rag_ranked-repo_read",
         "dynamic_initial_orientation": True,
