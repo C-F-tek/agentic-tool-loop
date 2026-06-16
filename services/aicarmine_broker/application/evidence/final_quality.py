@@ -809,10 +809,27 @@ def repo_analysis_final_answer_quality(
     red_flags = final_audit_red_flags(stripped)
     if red_flags.get("follow_up_invitations"):
         violations.append("repo_analysis_final_follow_up_invitation_instead_of_answer")
-    # Patch C: distingue truncated+full_context da evidenza assente
+    # Patch C: distingue evidenza acquisita da evidenza assente.
     if red_flags.get("speculative_terms"):
-        read_note_count = metrics.get("read_note_count", 0) or len(metrics.get("verified_content_reads", [])) or 0
-        if read_note_count > 0:
+        verified_content_reads = (
+            contract.get("verified_content_reads")
+            if isinstance(contract, dict) and isinstance(contract.get("verified_content_reads"), list)
+            else []
+        )
+        read_note_count = max(len(rows), len(verified_content_reads))
+
+        full_context_available = any(
+            isinstance(row, dict)
+            and (
+                row.get("full_context_reconstructed") is True
+                or row.get("complete") is True
+                or str(row.get("content_source") or "") == "repo_read_artifact_rehydrated_for_prompt"
+                or str(row.get("source") or "") == "repo_read_artifact_rehydrated_for_prompt"
+            )
+            for row in verified_content_reads
+        )
+
+        if read_note_count > 0 or full_context_available:
             violations.append("evidence_consumed_but_final_too_short")
         else:
             violations.append("repo_analysis_final_speculative_claims_without_evidence")
