@@ -248,6 +248,8 @@ def validate_planner_decision_against_evidence(
     def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[str]]:
         valid: list[str] = []
         invalid: list[str] = []
+        successful = _successful_read_paths_for_final_route()
+        stale = _stale_required_next_repo_read_paths()
         conceptual_tokens = {
             "coverage required",
             "read or search pending",
@@ -260,6 +262,10 @@ def validate_planner_decision_against_evidence(
                 or path.startswith("need_")
                 or any(ch.isspace() for ch in path)
             ):
+                if path not in invalid:
+                    invalid.append(path)
+                continue
+            if path in successful or path in stale:
                 if path not in invalid:
                     invalid.append(path)
                 continue

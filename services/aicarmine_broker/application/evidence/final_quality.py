@@ -266,6 +266,31 @@ def _path_items(value: Any) -> list[Any]:
     return []
 
 
+def _repo_read_completed_paths(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    completed: set[str] = set()
+
+    def add(raw: Any) -> None:
+        if isinstance(raw, dict):
+            raw = raw.get("path") or raw.get("repo_path") or raw.get("source_path")
+        token = _repo_rel_token(raw)
+        if token and token != ".":
+            completed.add(token)
+
+    for key in ("verified_content_reads", "successful_repo_read_paths"):
+        for item in _path_items(contract.get(key)):
+            add(item)
+
+    for row in _path_items(contract.get("stale_required_next_tool_calls")):
+        if not isinstance(row, dict):
+            continue
+        args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
+        for item in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
+            add(item)
+
+    return completed
+
+
 def _repo_read_path_allowlist(contract: dict[str, Any]) -> set[str]:
     contract = contract if isinstance(contract, dict) else {}
     allowed: set[str] = set()
@@ -278,34 +303,12 @@ def _repo_read_path_allowlist(contract: dict[str, Any]) -> set[str]:
             allowed.add(token)
 
     for key in (
-        "verified_content_reads",
-        "successful_repo_read_paths",
         "validator_admissible_repo_read_paths",
         "read_admissible_paths",
-        "candidate_owner_paths",
-        "missing_owner_paths",
-        "covered_owner_paths",
     ):
         for item in _path_items(contract.get(key)):
             add(item)
-
-    final_contract = (
-        contract.get("finalization_contract")
-        if isinstance(contract.get("finalization_contract"), dict)
-        else {}
-    )
-    coverage = (
-        final_contract.get("minimum_read_coverage")
-        if isinstance(final_contract.get("minimum_read_coverage"), dict)
-        else contract.get("minimum_read_coverage")
-        if isinstance(contract.get("minimum_read_coverage"), dict)
-        else {}
-    )
-    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
-        for item in _path_items(coverage.get(key)):
-            add(item)
-
-    return allowed
+    return allowed - _repo_read_completed_paths(contract)
 
 
 def _allowed_concrete_repo_path(value: Any, allowlist: set[str]) -> str:
@@ -406,9 +409,6 @@ def _required_next_missing_evidences(
                     add_path(item)
             else:
                 add_path(value)
-    read_note_paths = _evidence_paths(contract if isinstance(contract, dict) else {})
-    for path in read_note_paths[:24]:
-        add_path(path)
     return missing[:24]
 
 
@@ -770,6 +770,7 @@ def repo_analysis_final_answer_model_quality_request(
                 "If broad discovery is still needed, choose required_next_tool_call.tool=repo_semantic_search with a concrete query.",
                 "If specific unread/truncated paths are named, choose required_next_tool_call.tool=repo_read for those paths or a focused window.",
                 "required_next_missing_evidences is path-only: include only concrete repo-relative paths already present in contract_summary path fields.",
+                "Do not ask to repo_read files already present in verified_content_reads or successful_repo_read_paths.",
                 "For headings, metrics, missing sections, or conceptual gaps, use required_next_progress/required_next_output_sections, or repo_semantic_search with a concrete query.",
                 "If enough evidence exists but the prose is inconsistent, reject and require a corrected final without a tool call.",
             ],

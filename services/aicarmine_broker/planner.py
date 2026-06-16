@@ -4068,37 +4068,29 @@ def _replan_repo_path_token(value: Any) -> str:
 def _replan_contract_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
     contract = contract if isinstance(contract, dict) else {}
     allowed: set[str] = set()
+    completed: set[str] = set()
 
-    for key in (
-        "validator_admissible_repo_read_paths",
-        "read_admissible_paths",
-        "successful_repo_read_paths",
-        "covered_owner_paths",
-        "candidate_owner_paths",
-        "missing_owner_paths",
-    ):
-        for item in _replan_contract_path_items(contract.get(key)):
-            token = _replan_repo_path_token(item)
-            if token:
-                allowed.add(token)
-
-    for item in _replan_contract_path_items(contract.get("verified_content_reads")):
+    def add_token(target: set[str], item: Any) -> None:
         token = _replan_repo_path_token(item)
         if token:
-            allowed.add(token)
+            target.add(token)
 
-    final_contract = _dict_or_empty(contract.get("finalization_contract"))
-    coverage = _dict_or_empty(
-        final_contract.get("minimum_read_coverage")
-        or contract.get("minimum_read_coverage")
-    )
-    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
-        for item in _replan_contract_path_items(coverage.get(key)):
-            token = _replan_repo_path_token(item)
-            if token:
-                allowed.add(token)
+    for key in ("validator_admissible_repo_read_paths", "read_admissible_paths"):
+        for item in _replan_contract_path_items(contract.get(key)):
+            add_token(allowed, item)
 
-    return allowed
+    for key in ("successful_repo_read_paths", "verified_content_reads"):
+        for item in _replan_contract_path_items(contract.get(key)):
+            add_token(completed, item)
+
+    for row in _replan_contract_path_items(contract.get("stale_required_next_tool_calls")):
+        if not isinstance(row, dict):
+            continue
+        args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
+        for item in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
+            add_token(completed, item)
+
+    return allowed - completed
 
 
 def _replan_required_repo_read_paths(args: dict[str, Any]) -> list[Any]:
@@ -4212,7 +4204,8 @@ def planner_replan_specialist_for_validation(
             "If the rejected required_next_tool_call is already satisfied, set required_next_progress toward final rewrite or one different concrete evidence gap.",
             "If prevalidation_feedback is present, do not repeat the rejected route. Choose one different valid route or omit required_next_tool_call.",
             "Use required_next_tool_call only for a concrete read/search/window route, never for invented code edits.",
-            "For repo_read, choose only paths listed in repo_read_allowlist; prose, metrics, headings, and concepts must become required_next_progress or a search query.",
+            "repo_read_allowlist contains only unread validator-admissible paths; if it is empty, do not choose repo_read.",
+            "For repo_read, choose only paths listed in repo_read_allowlist; prose, metrics, headings, concepts, and already-read files must become required_next_progress or a search query.",
         ],
         "allowed_required_next_tools": sorted(_REPLAN_SPECIALIST_ROUTE_TOOLS),
         "required_json_shape": {
