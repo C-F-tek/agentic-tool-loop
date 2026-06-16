@@ -13,6 +13,148 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
 )
 
 
+def _repo_path_token(value: Any) -> str:
+    text = str(value or "").strip().replace("\\", "/").strip()
+    if not text:
+        return ""
+    text = text.strip("/")
+    while text.startswith("./"):
+        text = text[2:]
+    while text.startswith("../"):
+        text = text[3:]
+    while "//" in text:
+        text = text.replace("//", "/")
+    return text
+
+
+def _repo_path_is_concrete(token: Any) -> bool:
+    token = _repo_path_token(token)
+    if not token:
+        return False
+    lowered = token.lower()
+    if lowered in {"services", "tools", "cache", "cache_dir", "repo"}:
+        return False
+    if " " in token:
+        return False
+    if token in {".", ".."}:
+        return False
+    if "/" in token or "\\" in token:
+        return True
+    if token.count(".") >= 1:
+        return True
+    return False
+
+
+def _coalesce_repo_read_paths(values: Any) -> list[str]:
+    if isinstance(values, tuple):
+        values = list(values)
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    for value in values:
+        token = _repo_path_token(value)
+        if not _repo_path_is_concrete(token):
+            continue
+        if token not in out:
+            out.append(token)
+    return out
+
+
+def _final_quality_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    allowlist: set[str] = set()
+    memory = contract.get("file_memory") if isinstance(contract.get("file_memory"), list) else []
+    operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
+    read_notes = operational.get("read_notes") if isinstance(operational.get("read_notes"), list) else []
+    rows: list[dict[str, Any]] = [row for row in memory if isinstance(row, dict)] + [
+        row for row in read_notes if isinstance(row, dict)
+    ]
+
+    def add_token(raw: Any) -> None:
+        token = _repo_path_token(raw)
+        if token and _repo_path_is_concrete(token):
+            allowlist.add(token)
+
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        values = contract.get(key)
+        if isinstance(values, dict):
+            for item in values.values():
+                if isinstance(item, dict):
+                    add_token(item.get("path"))
+                    add_token(item.get("repo_path"))
+                else:
+                    add_token(item)
+        elif isinstance(values, list):
+            for item in values:
+                if isinstance(item, dict):
+                    add_token(item.get("path"))
+                    add_token(item.get("repo_path"))
+                else:
+                    add_token(item)
+    verified_reads = contract.get("verified_content_reads")
+    if isinstance(verified_reads, list):
+        for read in verified_reads:
+            if isinstance(read, dict):
+                add_token(read.get("path") or read.get("repo_path"))
+    for row in rows:
+        add_token(row.get("path"))
+        for path in row.get("mentioned_paths") if isinstance(row.get("mentioned_paths"), list) else []:
+            add_token(path)
+    return allowlist
+
+
+def _next_final_rewrite_latch(
+    current: str,
+    *,
+    reject_count: int,
+    has_gap_route: bool,
+) -> str:
+    current = str(current or "").strip().lower()
+    if current in {"terminal_block_required", "required_gap_only", "rewrite_required"}:
+        if current == "terminal_block_required":
+            return current
+        if current == "required_gap_only" and reject_count < 3 and has_gap_route:
+            return current
+    if has_gap_route:
+        if reject_count >= 3:
+            return "terminal_block_required"
+        if reject_count >= 2:
+            return "required_gap_only"
+        return "rewrite_required"
+    if reject_count >= 2:
+        return "terminal_block_required"
+    return "rewrite_required"
+
+
+def _collect_repo_paths(values: Any) -> set[str]:
+    out: set[str] = set()
+    if isinstance(values, dict):
+        for item in values.values():
+            token = _repo_path_token(item)
+            if token:
+                out.add(token)
+    elif isinstance(values, list):
+        for item in values:
+            if isinstance(item, dict):
+                token = _repo_path_token(item.get("path") or item.get("source_path") or item.get("repo_path"))
+            else:
+                token = _repo_path_token(item)
+            if token:
+                out.add(token)
+    else:
+        token = _repo_path_token(values)
+        if token:
+            out.add(token)
+    return out
+
+
 def validate_planner_decision_against_evidence(
     goal: str,
     decision: dict[str, Any],
@@ -195,6 +337,16 @@ def validate_planner_decision_against_evidence(
 
     def _apply_final_quality_route(quality: dict[str, Any]) -> None:
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
+        reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
+        contract["planner_final_quality_reject_count"] = reject_count
+
+        required_next_missing_evidences = _list_or_empty(quality.get("required_next_missing_evidences"))
+        if required_next_missing_evidences:
+            contract["required_next_missing_evidences"] = required_next_missing_evidences[:12]
+        required_next_output_sections = _list_or_empty(quality.get("required_next_output_sections"))
+        if required_next_output_sections:
+            contract["required_next_output_sections"] = required_next_output_sections[:8]
+        invalid_required_next_tool_call_paths: list[str] = []
         if required_next_progress:
             contract["required_next_progress"] = required_next_progress
         required_next_tool_call = (
@@ -202,6 +354,37 @@ def validate_planner_decision_against_evidence(
             if isinstance(quality.get("required_next_tool_call"), dict)
             else {}
         )
+        if required_next_tool_call.get("tool") == "repo_read":
+            tool = _normalize_tool_name(str(required_next_tool_call.get("tool") or ""))
+            args = (
+                required_next_tool_call.get("arguments")
+                if isinstance(required_next_tool_call.get("arguments"), dict)
+                else {}
+            )
+            raw_paths: list[Any] = []
+            if args.get("path"):
+                raw_paths.append(args.get("path"))
+            raw_paths.extend(args.get("paths") if isinstance(args.get("paths"), list) else [])
+            parsed_paths = _coalesce_repo_read_paths(raw_paths)
+            allowlist = _final_quality_repo_read_allowlist(contract)
+            valid_paths: list[str] = []
+            for path in parsed_paths:
+                if path in allowlist or not allowlist:
+                    valid_paths.append(path)
+                elif path not in invalid_required_next_tool_call_paths:
+                    invalid_required_next_tool_call_paths.append(path)
+            if valid_paths:
+                if len(valid_paths) == 1:
+                    args["path"] = valid_paths[0]
+                    args.pop("paths", None)
+                else:
+                    args["paths"] = valid_paths[:12]
+                    args.pop("path", None)
+                required_next_tool_call["arguments"] = args
+            else:
+                required_next_tool_call = {}
+        if invalid_required_next_tool_call_paths:
+            contract["invalid_required_next_tool_call_paths"] = invalid_required_next_tool_call_paths[:12]
         if required_next_tool_call:
             satisfaction = required_next_tool_call_satisfaction(
                 required_next_tool_call,
@@ -242,6 +425,25 @@ def validate_planner_decision_against_evidence(
             contract["candidate_next_actions"] = [action] + [
                 item for item in existing if isinstance(item, dict) and item != action
             ][:12]
+        else:
+            contract.pop("required_next_tool_call", None)
+            fallback_progress = (
+                "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
+                "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
+            )
+            if not contract.get("required_next_progress"):
+                contract["required_next_progress"] = fallback_progress
+        has_gap_route = bool(
+            required_next_tool_call
+            or required_next_missing_evidences
+        )
+        final_rewrite_latch = _next_final_rewrite_latch(
+            str(contract.get("final_rewrite_latch") or ""),
+            reject_count=reject_count,
+            has_gap_route=has_gap_route,
+        )
+        contract["final_rewrite_latch"] = final_rewrite_latch
+        contract["planner_may_choose_block"] = final_rewrite_latch == "terminal_block_required"
         contract["planner_may_choose_final"] = False
         final_contract = (
             contract.get("finalization_contract")
@@ -250,7 +452,11 @@ def validate_planner_decision_against_evidence(
         )
         final_contract["final_allowed"] = False
         final_contract["planner_may_choose_final"] = False
-        final_contract["reason"] = "repo_analysis_final_model_quality_rejected"
+        if final_rewrite_latch == "terminal_block_required":
+            final_contract["planner_may_choose_block"] = True
+            final_contract["reason"] = "repo_analysis_final_model_quality_repeated_reject_block_required"
+        else:
+            final_contract["reason"] = "repo_analysis_final_model_quality_rejected"
         contract["finalization_contract"] = final_contract
 
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
@@ -356,8 +562,40 @@ def validate_planner_decision_against_evidence(
     target_file = str(contract.get("resolved_goal_file") or "")
     target_kind = str(contract.get("target_kind") or "")
     review_goal = bool(contract.get("goal_requests_python_file_review"))
-    known_paths = [str(x) for x in contract.get("known_paths_from_latest_repo_list_files") or []]
-    admissible_reads = set(str(x) for x in (contract.get("validator_admissible_repo_read_paths") or []))
+    known_paths_set: set[str] = set()
+    known_paths_set.update(_collect_repo_paths(contract.get("known_paths_from_latest_repo_list_files")))
+    known_paths_set.update(_collect_repo_paths(contract.get("validator_admissible_repo_read_paths")))
+    known_paths_set.update(_collect_repo_paths(contract.get("read_admissible_paths")))
+    known_paths_set.update(_collect_repo_paths(contract.get("covered_owner_paths")))
+    known_paths_set.update(_collect_repo_paths(contract.get("candidate_owner_paths")))
+    known_paths_set.update(_collect_repo_paths(contract.get("missing_owner_paths")))
+    known_paths_set.update(_collect_repo_paths(contract.get("successful_repo_read_paths")))
+    for item in (contract.get("file_memory") if isinstance(contract.get("file_memory"), list) else []):
+        if isinstance(item, dict):
+            token = _repo_path_token(item.get("path"))
+            if token:
+                known_paths_set.add(token)
+            for path in item.get("mentioned_paths", []) if isinstance(item.get("mentioned_paths"), list) else []:
+                token = _repo_path_token(path)
+                if token:
+                    known_paths_set.add(token)
+    operational_notes = (
+        contract.get("operational_notes")
+        if isinstance(contract.get("operational_notes"), dict)
+        else {}
+    )
+    for item in operational_notes.get("read_notes", []) if isinstance(operational_notes.get("read_notes"), list) else []:
+        if isinstance(item, dict):
+            token = _repo_path_token(item.get("path"))
+            if token:
+                known_paths_set.add(token)
+            for path in item.get("mentioned_paths", []) if isinstance(item.get("mentioned_paths"), list) else []:
+                token = _repo_path_token(path)
+                if token:
+                    known_paths_set.add(token)
+    known_paths = sorted(known_paths_set)
+    admissible_reads = set(str(x) for x in _collect_repo_paths(contract.get("validator_admissible_repo_read_paths")))
+    admissible_reads.update(_collect_repo_paths(contract.get("read_admissible_paths")))
     read_ok = [str(x) for x in contract.get("successful_repo_read_paths") or []]
     apply_contract = (
         contract.get("apply_write_contract")

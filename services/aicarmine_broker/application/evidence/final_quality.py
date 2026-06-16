@@ -227,6 +227,123 @@ def _repoish_path_token(value: Any) -> str:
     return text
 
 
+def _path_is_concrete_repo_path(token: Any) -> bool:
+    token = _repoish_path_token(token)
+    if not token:
+        return False
+    if token.lower() in {"services", "tools", "cache", "cache_dir", "repo"}:
+        return False
+    if " " in token:
+        return False
+    if token in {".", ".."}:
+        return False
+    if "/" in token or "\\" in token or token.count(".") >= 1:
+        return True
+    return False
+
+
+def _contract_read_allowlist(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    allowlist: set[str] = set()
+
+    def add(value: Any) -> None:
+        token = _repoish_path_token(value)
+        if token and _path_is_concrete_repo_path(token):
+            allowlist.add(token)
+
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        values = contract.get(key)
+        if isinstance(values, dict):
+            for item in values.values():
+                add(item)
+        elif isinstance(values, list):
+            for item in values:
+                if isinstance(item, dict):
+                    add(item.get("path"))
+                    add(item.get("repo_path"))
+                else:
+                    add(item)
+    for item in _read_note_rows(contract):
+        add(item.get("path"))
+        for path in item.get("mentioned_paths") if isinstance(item.get("mentioned_paths"), list) else []:
+            add(path)
+    return allowlist
+
+
+def _coalesce_required_next_missing_paths(values: Any) -> list[str]:
+    if isinstance(values, tuple):
+        values = list(values)
+    elif not isinstance(values, list):
+        return []
+    out: list[str] = []
+    for value in values:
+        token = _repoish_path_token(value)
+        if not token or not _path_is_concrete_repo_path(token):
+            continue
+        if token not in out:
+            out.append(token)
+    return out
+
+
+def _required_next_missing_evidences(
+    final_answer: str,
+    contract: dict[str, Any],
+    *,
+    paths: list[str],
+    core_paths: list[str],
+    hard_pending_actions: list[Any],
+) -> list[str]:
+    candidate_paths = _unverified_final_path_tokens(
+        final_answer,
+        contract,
+        paths=paths,
+        core_paths=core_paths,
+    )
+    for action in hard_pending_actions:
+        if not isinstance(action, dict):
+            continue
+        if str(action.get("action_id") or "").startswith("repo_analysis_final_quality:"):
+            arguments = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+            explicit_paths = []
+            if arguments.get("path"):
+                explicit_paths.append(arguments.get("path"))
+            explicit_paths.extend(arguments.get("paths") if isinstance(arguments.get("paths"), list) else [])
+            for explicit_path in _coalesce_required_next_missing_paths(explicit_paths):
+                if explicit_path not in candidate_paths:
+                    candidate_paths.append(explicit_path)
+    allowlist = _contract_read_allowlist(contract)
+    if not allowlist:
+        return [path for path in candidate_paths if _path_is_concrete_repo_path(path)]
+    return [path for path in candidate_paths if path in allowlist]
+
+
+def _required_next_output_sections(
+    final_answer: str,
+    violations: list[str],
+    pending_actions: list[dict[str, Any]],
+) -> list[str]:
+    sections: list[str] = []
+    text = (final_answer or "").lower()
+    if "workflow" in text or "entrypoint" in text:
+        sections.append("workflow_entrypoint")
+    if any(token in text for token in ("coverage", "copertura")):
+        sections.append("coverage_validation")
+    if any("core_candidate" in violation for violation in violations):
+        sections.append("core_candidate_paths")
+    if any("search" in str(v) for v in pending_actions):
+        sections.append("search_gap")
+    if not sections:
+        sections.append("repository_analysis_summary")
+    return sections[:6]
+
+
 def _final_path_tokens(final_answer: str) -> list[str]:
     tokens: list[str] = []
     for match in _FINAL_PATH_TOKEN_RE.finditer(str(final_answer or "")):
@@ -345,6 +462,16 @@ def repo_analysis_final_answer_quality(
     """Return deterministic quality evidence for a repository-analysis final."""
     text = str(final_answer or "")
     stripped = text.strip()
+    pending_actions = pending_read_or_search_actions(contract if isinstance(contract, dict) else {})
+    hard_pending_actions = [
+        action for action in pending_actions
+        if (
+            action.get("required") is True
+            or str(action.get("source") or "") == "repo_analysis_final_model_quality"
+            or str(action.get("action_id") or "").startswith("repo_analysis_final_quality:")
+            or "required" in str(action.get("reason") or "").lower()
+        )
+    ]
     rows = _read_note_rows(contract if isinstance(contract, dict) else {})
     paths = _evidence_paths(contract if isinstance(contract, dict) else {})
     path_hits = _path_hit_count(stripped, paths)
@@ -366,6 +493,13 @@ def repo_analysis_final_answer_quality(
     min_path_hits = min(6, max(3, len(pathish_evidence) // 3))
     if len(paths) >= 8:
         min_path_hits = max(min_path_hits, 5)
+    required_next_missing_evidences = _required_next_missing_evidences(
+        stripped,
+        contract if isinstance(contract, dict) else {},
+        paths=paths,
+        core_paths=core_paths,
+        hard_pending_actions=hard_pending_actions,
+    )
 
     text_low = stripped.lower()
     violations: list[str] = []
@@ -377,6 +511,11 @@ def repo_analysis_final_answer_quality(
         violations.append(f"repo_analysis_final_missing_concrete_paths:{path_hits}/{min_path_hits}")
     if core_paths and core_hits < min(2, len(core_paths)):
         violations.append(f"repo_analysis_final_missing_core_candidate_paths:{core_hits}/{min(2, len(core_paths))}")
+    if required_next_missing_evidences:
+        violations.append(
+            "repo_analysis_final_missing_concrete_paths_needed:"
+            + ",".join(required_next_missing_evidences[:6])
+        )
     if not _concept_present(
         text_low,
         (
@@ -428,16 +567,6 @@ def repo_analysis_final_answer_quality(
     )
     if unverified_path_tokens:
         violations.append("repo_analysis_final_mentions_unverified_paths:" + ",".join(unverified_path_tokens[:4]))
-    pending_actions = pending_read_or_search_actions(contract if isinstance(contract, dict) else {})
-    hard_pending_actions = [
-        action for action in pending_actions
-        if (
-            action.get("required") is True
-            or str(action.get("source") or "") == "repo_analysis_final_model_quality"
-            or str(action.get("action_id") or "").startswith("repo_analysis_final_quality:")
-            or "required" in str(action.get("reason") or "").lower()
-        )
-    ]
     if hard_pending_actions and not _declares_partial_or_limited_coverage(text_low):
         violations.append("repo_analysis_final_ignores_required_read_or_search_route")
     if _declares_partial_or_limited_coverage(text_low) and _claims_deep_or_complete_review(text_low):
@@ -475,6 +604,11 @@ def repo_analysis_final_answer_quality(
     ):
         violations.append("repo_analysis_final_absolute_security_verdict_without_code_coverage")
 
+    required_next_output_sections = _required_next_output_sections(
+        stripped,
+        violations,
+        hard_pending_actions,
+    )
     return {
         "ok": not violations,
         "violations": violations,
@@ -491,6 +625,8 @@ def repo_analysis_final_answer_quality(
             "final_audit_red_flags": red_flags,
             "hard_pending_read_or_search_actions": hard_pending_actions[:4],
         },
+        "required_next_missing_evidences": required_next_missing_evidences[:12],
+        "required_next_output_sections": required_next_output_sections,
         "required_next_progress": (
             "Final answer rejected as too shallow for repository analysis. Return action=final "
             "with a richer final_answer grounded in operational_notes.read_notes and file_memory: "
@@ -585,6 +721,8 @@ def repo_analysis_final_answer_model_quality_request(
                 "ok": True,
                 "violations": [{"code": "short_machine_code", "reason": "human reason"}],
                 "required_next_progress": "short instruction for the next planner turn",
+                "required_next_missing_evidences": ["repo/path/file.py"],
+                "required_next_output_sections": ["workflow_entrypoint", "coverage_validation"],
                 "required_next_tool_call": {
                     "tool": "repo_semantic_search | repo_read | repo_rg_search | repo_search | repo_list_files",
                     "arguments": {"query": "concrete query or path args"},
@@ -621,18 +759,40 @@ def _sanitize_required_next_tool_call(value: Any) -> dict[str, Any]:
         for key in allowed_args
         if raw_args.get(key) not in (None, "", [], {})
     }
+    out = {
+        "tool": tool,
+        "arguments": args,
+    }
+    invalid_paths: list[str] = []
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"} and not (
         args.get("query") or args.get("pattern") or args.get("symbol")
     ):
         return {}
     if tool == "repo_read" and not (args.get("path") or args.get("paths")):
         return {}
+    if tool == "repo_read":
+        paths: list[str] = []
+        invalid_paths: list[str] = []
+        if args.get("path"):
+            paths.extend([args.get("path")])
+        if isinstance(args.get("paths"), list):
+            paths.extend(args.get("paths"))
+        parsed = _coalesce_required_next_missing_paths(paths)
+        if not parsed:
+            invalid_paths = [str(value) for value in paths]
+        else:
+            if len(parsed) == 1:
+                args["path"] = parsed[0]
+                args.pop("paths", None)
+            else:
+                args["paths"] = parsed[:12]
+                args.pop("path", None)
+            out["arguments"] = args
+        if invalid_paths:
+            out["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
     if tool == "repo_list_files" and not args.get("path"):
         args["path"] = "."
-    out = {
-        "tool": tool,
-        "arguments": args,
-    }
+        out["arguments"] = args
     reason = str(value.get("reason") or "").strip()
     if reason:
         out["reason"] = _clip_text(reason, 500)
