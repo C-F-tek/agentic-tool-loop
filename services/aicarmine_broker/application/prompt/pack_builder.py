@@ -501,8 +501,8 @@ class PromptPackBuilder:
                 "planner_may_choose_block": bool(evidence_for_prompt.get("planner_may_choose_block")),
                 "allowed_actions": _allowed_actions_from_contract(payload_evidence),
                 "required_next_tool_call": (
-                    evidence_for_prompt["required_next_tool_call"]
-                    if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict)
+                    payload_evidence["required_next_tool_call"]
+                    if isinstance(payload_evidence.get("required_next_tool_call"), dict)
                     else {}
                 ),
                 "available_tools": available_tools_for_payload,
@@ -528,7 +528,7 @@ class PromptPackBuilder:
                     compact_mode=compact_mode,
                     window_chars=window_chars,
                 ),
-                "evidence_contract": evidence_for_prompt,
+                "evidence_contract": payload_evidence,
                 "required_response_format": (
                     {
                         "native_tool_calls_required_for_tools": True,
@@ -578,7 +578,7 @@ class PromptPackBuilder:
             if isinstance(payload_evidence.get("required_next_tool_call"), dict):
                 payload_local["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
             if isinstance(payload_evidence.get("forbidden_repeated_tool_calls"), list):
-                payload_local["forbidden_repeated_tool_calls"] = evidence_for_prompt["forbidden_repeated_tool_calls"]
+                payload_local["forbidden_repeated_tool_calls"] = payload_evidence["forbidden_repeated_tool_calls"]
             report_local = _prompt_budget_report(
                 payload_local,
                 system_prompt=system_prompt_for_budget,
