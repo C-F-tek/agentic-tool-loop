@@ -110,20 +110,20 @@ def _filter_candidate_actions_by_available_tools(
     visible_actions: list[dict[str, Any]] = []
     hidden_actions: list[dict[str, Any]] = []
 
-    has_restriction = bool(available_tool_names)
+    transport_surface_empty = not available_tool_names
     for action in candidate_actions if isinstance(candidate_actions, list) else []:
         if not isinstance(action, dict):
             continue
         tool = str(action.get("tool") or "").strip()
         if not tool:
-            if not has_restriction:
+            if not transport_surface_empty:
                 visible_actions.append(action)
             else:
                 action["hidden_from_payload"] = True
                 action["hidden_from_payload_reason"] = hidden_reason
                 hidden_actions.append(action)
             continue
-        if has_restriction and tool not in available_tool_names:
+        if transport_surface_empty or tool not in available_tool_names:  # Patch P1: tools=[] è il caso più restrittivo
             action["hidden_from_payload"] = True
             action["hidden_from_payload_reason"] = hidden_reason
             hidden_actions.append(action)
