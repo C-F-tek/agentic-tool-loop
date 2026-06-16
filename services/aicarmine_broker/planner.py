@@ -3836,6 +3836,60 @@ def _evidence_contract_storage_summary(contract: dict[str, Any]) -> tuple[dict[s
     )
 
 
+def _controller_guard_contract_overlay(contract: dict[str, Any]) -> dict[str, Any]:
+    """Persist only turn-control fields needed to rebuild the next planner contract."""
+    contract = _dict_or_empty(contract)
+    overlay: dict[str, Any] = {}
+    for key in (
+        "planner_cuda_rewrite_required",
+        "final_rewrite_latch",
+        "planner_final_quality_reject_count",
+        "planner_may_choose_final",
+        "planner_may_choose_block",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "invalid_required_next_tool_call_paths",
+        "stale_required_next_tool_calls",
+    ):
+        if key not in contract:
+            continue
+        value = contract.get(key)
+        if isinstance(value, (bool, int)):
+            overlay[key] = value
+        elif isinstance(value, str) and value.strip():
+            overlay[key] = _prompt_clip_text(value, 2000)
+        elif isinstance(value, list) and value:
+            overlay[key] = value[:20]
+        elif isinstance(value, dict) and value:
+            overlay[key] = value
+
+    progress = str(contract.get("required_next_progress") or "").strip()
+    if progress:
+        overlay["required_next_progress"] = _prompt_clip_text(progress, 4000)
+
+    required_call = _dict_or_empty(contract.get("required_next_tool_call"))
+    if required_call:
+        overlay["required_next_tool_call"] = required_call
+
+    candidate_next_actions = _list_or_empty(contract.get("candidate_next_actions"))
+    if candidate_next_actions:
+        overlay["candidate_next_actions"] = candidate_next_actions[:6]
+
+    final_contract = _dict_or_empty(contract.get("finalization_contract"))
+    if final_contract:
+        overlay["finalization_contract"] = {
+            key: final_contract.get(key)
+            for key in (
+                "final_allowed",
+                "planner_may_choose_final",
+                "planner_may_choose_block",
+                "reason",
+            )
+            if key in final_contract and final_contract.get(key) not in (None, "", [], {})
+        }
+    return overlay
+
+
 _REPLAN_SPECIALIST_ROUTE_TOOLS = {
     "repo_read",
     "repo_semantic_search",
@@ -4758,6 +4812,7 @@ def controller_guard_result_for_validation(
         validation = dict(validation)
         validation["evidence_contract"] = contract
     contract_summary, contract_chars, contract_sha256 = _evidence_contract_storage_summary(contract)
+    contract_overlay = _controller_guard_contract_overlay(contract)
     guard = {
         "tool": "controller_guard",
         "ok": True,
@@ -4783,6 +4838,8 @@ def controller_guard_result_for_validation(
         },
         "ollama_turn": _planner_ollama_turn_from_decision(decision),
     }
+    if contract_overlay:
+        guard["evidence_contract_overlay"] = contract_overlay
     if validation.get("semantic_goal_classification") not in (None, "", [], {}):
         guard["semantic_goal_classification"] = validation.get("semantic_goal_classification")
     if validation.get("invalid_decision_signature") not in (None, "", [], {}):

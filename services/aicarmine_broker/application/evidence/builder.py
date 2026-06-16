@@ -1362,6 +1362,11 @@ class EvidenceBuilder:
                         if isinstance(result.get("required_next_tool_call"), dict)
                         else {}
                     ),
+                    "evidence_contract_overlay": (
+                        result.get("evidence_contract_overlay")
+                        if isinstance(result.get("evidence_contract_overlay"), dict)
+                        else {}
+                    ),
                     "action_plan_candidate": result.get("action_plan_candidate"),
                     "raw_planner_text_preview": result.get("raw_planner_text_preview"),
                     "violations": result.get("violations") or [],
@@ -1393,8 +1398,12 @@ class EvidenceBuilder:
         action_plan_candidate = ""
         latest_required_next_tool_call: dict[str, Any] = {}
         latest_required_next_progress = ""
+        latest_evidence_contract_overlay: dict[str, Any] = {}
         stale_required_next_tool_calls: list[dict[str, Any]] = []
         for row in reversed(validation_rejections):
+            overlay = row.get("evidence_contract_overlay")
+            if isinstance(overlay, dict) and overlay and not latest_evidence_contract_overlay:
+                latest_evidence_contract_overlay = overlay
             required_call = row.get("required_next_tool_call")
             if isinstance(required_call, dict) and required_call and not latest_required_next_tool_call:
                 satisfaction = required_next_tool_call_satisfaction(
@@ -2022,6 +2031,70 @@ class EvidenceBuilder:
             contract["required_next_progress"] = (
                 "Use prior evidence. If enough, final with concrete cited paths; otherwise choose a new evidence-bound tool."
             )
+        if latest_evidence_contract_overlay:
+            overlay_latch = str(latest_evidence_contract_overlay.get("final_rewrite_latch") or "").strip()
+            overlay_cuda_required = latest_evidence_contract_overlay.get("planner_cuda_rewrite_required") is True
+            if overlay_latch or overlay_cuda_required:
+                contract["planner_cuda_rewrite_required"] = overlay_cuda_required
+                if overlay_latch:
+                    contract["final_rewrite_latch"] = overlay_latch
+                contract["surface_lock_reason"] = "planner_cuda_rewrite_required_history_overlay"
+                for key in (
+                    "planner_final_quality_reject_count",
+                    "required_next_missing_evidences",
+                    "required_next_output_sections",
+                    "invalid_required_next_tool_call_paths",
+                    "stale_required_next_tool_calls",
+                ):
+                    value = latest_evidence_contract_overlay.get(key)
+                    if value not in (None, "", [], {}):
+                        contract[key] = value
+                if "planner_may_choose_final" in latest_evidence_contract_overlay:
+                    contract["planner_may_choose_final"] = bool(
+                        latest_evidence_contract_overlay.get("planner_may_choose_final")
+                    )
+                if "planner_may_choose_block" in latest_evidence_contract_overlay:
+                    contract["planner_may_choose_block"] = bool(
+                        latest_evidence_contract_overlay.get("planner_may_choose_block")
+                    )
+                overlay_progress = str(
+                    latest_evidence_contract_overlay.get("required_next_progress") or ""
+                ).strip()
+                if overlay_progress:
+                    contract["required_next_progress"] = overlay_progress
+                overlay_candidates = latest_evidence_contract_overlay.get("candidate_next_actions")
+                if isinstance(overlay_candidates, list) and overlay_candidates:
+                    contract["candidate_next_actions"] = overlay_candidates
+                if latest_required_next_tool_call:
+                    contract["required_next_tool_call"] = latest_required_next_tool_call
+                overlay_final_contract = (
+                    latest_evidence_contract_overlay.get("finalization_contract")
+                    if isinstance(latest_evidence_contract_overlay.get("finalization_contract"), dict)
+                    else {}
+                )
+                final_contract = (
+                    contract.get("finalization_contract")
+                    if isinstance(contract.get("finalization_contract"), dict)
+                    else {}
+                )
+                if overlay_final_contract:
+                    for key in (
+                        "final_allowed",
+                        "planner_may_choose_final",
+                        "planner_may_choose_block",
+                        "reason",
+                    ):
+                        if key in overlay_final_contract:
+                            final_contract[key] = overlay_final_contract.get(key)
+                if latest_evidence_contract_overlay.get("planner_may_choose_final") is False:
+                    final_contract["final_allowed"] = False
+                    final_contract["planner_may_choose_final"] = False
+                    final_contract["reason"] = final_contract.get("reason") or "planner_cuda_rewrite_required"
+                if "planner_may_choose_block" in latest_evidence_contract_overlay:
+                    final_contract["planner_may_choose_block"] = bool(
+                        latest_evidence_contract_overlay.get("planner_may_choose_block")
+                    )
+                contract["finalization_contract"] = final_contract
         proofed_candidates: list[dict[str, Any]] = []
         for action in contract.get("candidate_next_actions") or []:
             if not isinstance(action, dict):
