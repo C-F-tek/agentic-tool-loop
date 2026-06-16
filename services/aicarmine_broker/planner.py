@@ -34,7 +34,10 @@ from .config import (
     AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
     AGENTIC_PLANNER_STEP_TIMEOUT,
     AGENTIC_RESULT_COMPACT_CHARS,
+    AGENTIC_PLANNER_PRESENCE_PENALTY,
     AGENTIC_PLANNER_TEMPERATURE,
+    AGENTIC_PLANNER_TOP_K,
+    AGENTIC_PLANNER_TOP_P,
     AGENT_DEFAULT_MAX_STEPS,
     AGENT_MAX_STEPS,
     LAB_REPO,
@@ -76,6 +79,7 @@ from .planner_intrinsic_context import build_planner_intrinsic_context
 from .repo_tools import safe_rel_path
 from .planner_core.json_io import (
     _parse_strict_json_object,
+    parse_strict_json_object_diagnostics,
     post_json,
     post_json_stream_to_file,
 )
@@ -129,8 +133,11 @@ from .application.evidence.execution_digest import (
     repo_read_content_views as _repo_read_content_views_impl,
 )
 from .application.evidence.final_quality import (
+    repo_analysis_final_answer_model_quality_request as _repo_analysis_final_answer_model_quality_request,
     repo_analysis_final_answer_quality as _repo_analysis_final_answer_quality,
+    sanitize_repo_analysis_final_model_quality as _sanitize_repo_analysis_final_model_quality,
 )
+from .application.evidence.audit_guidance import role_guidance_for_goal
 from .application.evidence.initial_orientation import (
     initial_orientation_surface_from_history as _initial_orientation_surface_from_history_impl,
 )
@@ -145,6 +152,7 @@ from .application.public_payload.openwebui_tool_context import build_tool_contex
 from .application.tool_surface.candidate_actions import (
     candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
     decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
+    enforce_required_scratchpad_read_continuation_contract as _enforce_scratchpad_read_continuation_contract_impl,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
     required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
@@ -174,6 +182,10 @@ from .application.controller.preseed import (
     root_surface_dir_paths as _root_surface_dir_paths_impl,
     root_surface_entries as _root_surface_entries_impl,
     root_surface_file_paths as _root_surface_file_paths_impl,
+)
+from .application.controller.rag_preseed import (
+    controller_preplanner_rag_query_plan as _controller_preplanner_rag_query_plan_impl,
+    controller_preplanner_rag_preseed_plan as _controller_preplanner_rag_preseed_plan_impl,
 )
 from .application.evidence.core_discovery import (
     add_core_discovery_candidate as _add_core_discovery_candidate_impl,
@@ -221,6 +233,7 @@ from .application.code_product.history import (
 from .application.evidence.goal_classifier import (
     final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
     goal_requires_code_security_coverage,
+    goal_operational_intent_text as _goal_operational_intent_text,
     goal_requests_apply,
     goal_requests_code_product,
     has_any as _has_any,
@@ -239,6 +252,9 @@ from .application.shared.history_queries import (
     history_has_tool,
 )
 from .application.shared.clean_values import drop_empty_dict_values as _drop_empty_dict_values_impl
+from .application.shared.evidence_contract_summary import (
+    evidence_contract_summary_triplet as _evidence_contract_summary_triplet_impl,
+)
 from .application.shared.history_ledger import (
     history_item_ollama_turn as _history_item_ollama_turn_impl,
     planner_history_ledger as _planner_history_ledger_impl,
@@ -300,11 +316,7 @@ from .application.planner.status import (
     summarize_history_artifacts as _summarize_history_artifacts_impl,
 )
 from .application.prompt.budget import (
-    planner_token_generation_reserve as _planner_token_generation_reserve,
-    prompt_budget_report as _prompt_budget_report_impl,
-    prompt_compaction_threshold as _prompt_compaction_threshold,
-    prompt_generation_headroom_char_budget as _prompt_generation_headroom_char_budget,
-    prompt_window_chars as _prompt_window_chars,
+    PROMPT_CHARS_PER_TOKEN as _PROMPT_CHARS_PER_TOKEN,
     report_exceeds_generation_headroom as _report_exceeds_generation_headroom_impl,
 )
 from .application.prompt.values import (
@@ -359,6 +371,7 @@ from .application.tool_surface.manifest_builder import (
 )
 from .application.prompt.tool_contract import (
     available_tools_for_user_payload as _available_tools_for_user_payload_impl,
+    hard_budget_tool_shape_examples_for_prompt as _hard_budget_tool_shape_examples_for_prompt_impl,
     tool_shape_examples_for_prompt as _tool_shape_examples_for_prompt_impl,
 )
 from .application.tool_surface.result_digest import planner_last_result_digest as _planner_last_result_digest_impl
@@ -367,6 +380,9 @@ from .application.tool_surface.turn_surface_policy import (
     apply_turn_surface_policy as _apply_turn_surface_policy_impl,
     contract_final_required_now as _contract_final_required_now,
     tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
+)
+from .application.tool_surface.required_tool_call import (
+    required_next_tool_call_satisfaction as _required_next_tool_call_satisfaction,
 )
 from .application.evidence.user_scope_claims import (
     claim_area_from_user_token as _claim_area_from_user_token_impl,
@@ -485,6 +501,12 @@ def _tool_shape_examples_for_prompt() -> dict[str, Any]:
     )
 
 
+def _hard_budget_tool_shape_examples_for_prompt() -> dict[str, Any]:
+    return _hard_budget_tool_shape_examples_for_prompt_impl(
+        native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
+    )
+
+
 def _compact_history_for_prompt(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _compact_history_for_prompt_impl(
         history,
@@ -533,6 +555,10 @@ def _windowed_evidence_contract_for_prompt(
             "resolved_goal_scope",
             "successful_repo_read_count",
             "verified_content_read_count",
+            "minimum_read_coverage",
+            "coverage_satisfied",
+            "covered_owner_paths",
+            "missing_owner_paths",
             "planner_may_choose_final",
             "required_next_progress",
         ):
@@ -709,6 +735,16 @@ def _preserve_required_next_tool_call_for_prompt(
     _preserve_required_next_tool_call_for_prompt_impl(payload, previous_evidence_contract)
 
 
+def _enforce_required_scratchpad_read_continuation_contract(
+    contract: dict[str, Any],
+    continuation: dict[str, Any],
+) -> dict[str, Any]:
+    return _enforce_scratchpad_read_continuation_contract_impl(
+        contract,
+        continuation,
+    )
+
+
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
     return _compact_intrinsic_context_for_prompt_impl(
         context,
@@ -847,49 +883,50 @@ def _optional_context_for_prompt(
     if not compact_mode:
         return optional
     tool_payload_windows: list[dict[str, Any]] = []
-    for row in reversed(history if isinstance(history, list) else []):
-        result = _history_tool_result(row)
-        if not result.get("ok"):
-            continue
-        if result.get("tool") == "controller_guard":
-            continue
-        raw_payload = _same_tool_artifact_payload(result)
-        if not isinstance(raw_payload, dict):
-            continue
-        raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
-        if not raw_text.strip():
-            continue
-        window = _store_prompt_text_window(
-            root,
-            section=f"tool_result:{row.get('step')}:{result.get('tool')}",
-            text=raw_text,
-            query=goal,
-            max_chars=window_chars,
-            metadata={
-                "kind": "successful_tool_result_payload",
+    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+        for row in reversed(history if isinstance(history, list) else []):
+            result = _history_tool_result(row)
+            if not result.get("ok"):
+                continue
+            if result.get("tool") == "controller_guard":
+                continue
+            raw_payload = _same_tool_artifact_payload(result)
+            if not isinstance(raw_payload, dict):
+                continue
+            raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
+            if not raw_text.strip():
+                continue
+            window = _store_prompt_text_window(
+                root,
+                section=f"tool_result:{row.get('step')}:{result.get('tool')}",
+                text=raw_text,
+                query=goal,
+                max_chars=window_chars,
+                metadata={
+                    "kind": "successful_tool_result_payload",
+                    "step": row.get("step"),
+                    "tool": result.get("tool"),
+                    "format": "json",
+                },
+            )
+            item = {
                 "step": row.get("step"),
                 "tool": result.get("tool"),
-                "format": "json",
-            },
-        )
-        item = {
-            "step": row.get("step"),
-            "tool": result.get("tool"),
-            "window": window,
-        }
-        if window.get("document_id") and window.get("has_more_after") is True:
-            item["planner_can_request_more"] = {
-                "tool": "planner_scratchpad_read",
-                "arguments": {
-                    "kind": "prompt_context_window",
-                    "document_id": window.get("document_id"),
-                    "offset": window.get("window_end"),
-                    "max_chars": window_chars,
-                },
+                "window": window,
             }
-        tool_payload_windows.append(item)
-        if len(tool_payload_windows) >= 4:
-            break
+            if window.get("document_id") and window.get("has_more_after") is True:
+                item["planner_can_request_more"] = {
+                    "tool": "planner_scratchpad_read",
+                    "arguments": {
+                        "kind": "prompt_context_window",
+                        "document_id": window.get("document_id"),
+                        "offset": window.get("window_end"),
+                        "max_chars": window_chars,
+                    },
+                }
+            tool_payload_windows.append(item)
+            if len(tool_payload_windows) >= 4:
+                break
     if tool_payload_windows:
         optional["successful_tool_payload_windows"] = list(reversed(tool_payload_windows))
     return {
@@ -908,17 +945,97 @@ def _optional_context_for_prompt(
     }
 
 
+def _planner_token_generation_reserve(num_ctx: int | None = None) -> int:
+    try:
+        ctx = int(num_ctx if num_ctx is not None else AGENTIC_PLANNER_NUM_CTX)
+    except Exception:
+        ctx = 0
+    if ctx <= 0:
+        return 0
+    return max(512, min(32768, ctx // 16))
+
+
+def _prompt_compaction_threshold() -> int:
+    if AGENTIC_PLANNER_PROMPT_CHAR_BUDGET <= 0:
+        return 0
+    ratio = float(AGENTIC_PLANNER_PROMPT_COMPACT_RATIO or 0.5)
+    ratio = max(0.1, min(ratio, 0.95))
+    return max(1000, int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET * ratio))
+
+
+def _prompt_generation_headroom_char_budget() -> int:
+    budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
+    if budget <= 0:
+        return 0
+    generation_reserve = int(_planner_token_generation_reserve() * _PROMPT_CHARS_PER_TOKEN)
+    generation_reserve = max(12000, min(max(12000, budget // 3), generation_reserve))
+    char_budget_limit = budget - generation_reserve
+    token_budget_limit = int(
+        max(1, AGENTIC_PLANNER_NUM_CTX - _planner_token_generation_reserve()) * _PROMPT_CHARS_PER_TOKEN
+    )
+    return max(1000, min(char_budget_limit, token_budget_limit))
+
+
+def _prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
+    budget = int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or 0)
+    if compact_mode:
+        base = max(4000, min(64000, budget // 16 if budget > 0 else 4000))
+        sequence = (
+            base,
+            int(base * 0.75),
+            int(base * 0.60),
+            int(base * 0.45),
+            int(base * 0.30),
+            int(base * 0.20),
+            int(base * 0.15),
+            int(base * 0.10),
+        )
+        return sequence[min(max(0, attempt), len(sequence) - 1)]
+    return max(1000, min(96000, budget // 8 if budget > 0 else 6000))
+
+
 def _prompt_budget_report(
     user_payload: dict[str, Any],
     *,
     system_prompt: str = "",
     extra_prompt_sections: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    return _prompt_budget_report_impl(
-        user_payload,
-        system_prompt=system_prompt,
-        extra_prompt_sections=extra_prompt_sections,
-    )
+    sections = {
+        key: _json_char_len(value)
+        for key, value in user_payload.items()
+        if key not in {"available_tools"}
+    }
+    sections["available_tools"] = _json_char_len(user_payload.get("available_tools"))
+    extra_sections = {
+        str(key): int(value)
+        for key, value in (extra_prompt_sections or {}).items()
+        if int(value or 0) > 0
+    }
+    sections.update(extra_sections)
+    total_user = _json_char_len(user_payload)
+    system_chars = len(str(system_prompt or ""))
+    extra_chars = sum(extra_sections.values())
+    total = total_user + system_chars + extra_chars
+    headroom_budget = _prompt_generation_headroom_char_budget()
+    generation_reserve = max(0, AGENTIC_PLANNER_PROMPT_CHAR_BUDGET - headroom_budget)
+    return {
+        "schema": "planner_prompt_budget.v1",
+        "char_budget": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
+        "generation_headroom_char_budget": headroom_budget,
+        "generation_headroom_reserve_chars": generation_reserve,
+        "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
+        "generation_token_reserve": _planner_token_generation_reserve(),
+        "system_prompt_chars": system_chars,
+        "total_user_payload_chars": total_user,
+        "extra_prompt_chars": extra_chars,
+        "total_prompt_chars": total,
+        "over_budget": bool(
+            AGENTIC_PLANNER_PROMPT_CHAR_BUDGET > 0
+            and total > AGENTIC_PLANNER_PROMPT_CHAR_BUDGET
+        ),
+        "over_generation_headroom_budget": bool(headroom_budget > 0 and total > headroom_budget),
+        "sections": sections,
+    }
 
 
 def _read_json_file(path: str) -> dict[str, Any]:
@@ -1146,6 +1263,8 @@ def _required_working_set_for_prompt(
     job_root: Path,
     window_chars: int,
     compact_mode: bool,
+    max_repo_read_items: int | None = None,
+    max_total_repo_read_window_chars: int | None = None,
 ) -> dict[str, Any]:
     return _required_working_set_for_prompt_impl(
         goal,
@@ -1162,6 +1281,8 @@ def _required_working_set_for_prompt(
         store_prompt_text_window=_store_prompt_text_window,
         window_text=_window_text,
         text_hash=_text_hash,
+        max_repo_read_items=max_repo_read_items,
+        max_total_repo_read_window_chars=max_total_repo_read_window_chars,
     )
 
 
@@ -1264,8 +1385,12 @@ def _build_planner_user_payload(
             "available_tools_window_pack": _available_tools_window_pack,
             "compact_evidence_contract_for_prompt": _compact_evidence_contract_for_prompt,
             "compact_tool_manifest_for_prompt": _compact_tool_manifest_for_prompt,
+            "enforce_required_scratchpad_read_continuation_contract": (
+                _enforce_required_scratchpad_read_continuation_contract
+            ),
             "forbidden_repeated_prompt_window_calls": _forbidden_repeated_prompt_window_calls,
             "hard_budget_evidence_contract_for_prompt": _hard_budget_evidence_contract_for_prompt,
+            "hard_budget_tool_shape_examples_for_prompt": _hard_budget_tool_shape_examples_for_prompt,
             "json_char_len": _json_char_len,
             "native_history_message_reserve_chars": _native_history_message_reserve_chars,
             "optional_context_for_prompt": _optional_context_for_prompt,
@@ -1841,25 +1966,30 @@ def failed_repo_read_paths(history: list[dict[str, Any]]) -> list[str]:
 
 
 def _repo_reference_mentioned(low: str) -> bool:
-    return any(term in low for term in ("repo", "repository", "progetto", "project"))
+    return any(term in low for term in (
+        "repo", "repository", "progetto", "project", "workspace", "codebase",
+        "codice corrente", "current code", "codice nel workspace",
+    ))
 
 
 def _repo_analysis_intent_mentioned(low: str) -> bool:
     return any(term in low for term in (
         "analizza", "anlizza", "analisi", "analyze", "analyse", "analysis",
         "inspect", "inspection", "esplora", "scansiona", "struttura", "structure",
-        "overview", "mappa",
+        "overview", "mappa", "review", "audit", "ispeziona", "trova", "trovare",
+        "cerca", "ricerca",
     ))
 
 
 def _repo_analysis_goal(goal: str) -> bool:
-    low = _semantic_goal_low(goal)
+    low = _goal_operational_intent_text(goal).lower()
     repo_terms = (
         "analyze the repository", "analizza la repo", "analizza il repo",
         "anlizza la repo", "anlizza il repo", "anlizza la repository",
         "repository structure", "repo structure", "struttura repo",
         "analyze repo", "analisi repo", "structure and content",
-        "project inspection", "local project evidence",
+        "project inspection", "local project evidence", "workspace code",
+        "codice corrente", "current code", "codebase",
         "documentation", "documentazione", "docs", "examples", "diagrams",
         "gpu coordination", "heap pointer", "recovery turns",
         "deferred evidence", "packet_review_only", "gpu1", "gpu0",
@@ -1869,8 +1999,7 @@ def _repo_analysis_goal(goal: str) -> bool:
         "analyze the ", "analyse the ", "analizza ", "analisi ",
         "directory", "cartella", "folder", "path",
     )
-    write_terms = ("patch", "fix", "modifica", "correggi", "apply", "write", "edit")
-    if any(t in low for t in write_terms):
+    if goal_has_write_intent(goal):
         return False
     if _input_error_goal(goal):
         return False
@@ -1936,8 +2065,6 @@ def _goal_target_file(goal: str) -> str:
 
 
 def _goal_target_scope(goal: str) -> str:
-    if _goal_target_file(goal):
-        return ""
     return _agentic_v2_goal_scope(goal, {}) or goal_requested_repo_scope(goal)
 
 
@@ -2011,6 +2138,33 @@ def _controller_preseed_plan(goal: str, original_args: dict[str, Any]) -> dict[s
             "dynamic_initial_orientation": True,
         }
     return None
+
+
+def _controller_preplanner_rag_query_plan(goal: str) -> dict[str, Any]:
+    return _controller_preplanner_rag_query_plan_impl(
+        goal,
+        post_json=post_json,
+        planner_url=PLANNER_URL,
+        planner_model=PLANNER_MODEL,
+        keep_alive=OLLAMA_KEEP_ALIVE,
+        num_ctx=AGENTIC_PLANNER_NUM_CTX,
+        timeout=AGENTIC_PLANNER_STEP_TIMEOUT,
+    )
+
+
+def _controller_preplanner_rag_preseed_plan(
+    goal: str,
+    original_args: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any], list[dict[str, Any]]]:
+    return _controller_preplanner_rag_preseed_plan_impl(
+        goal,
+        original_args,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+        named_read_priority=_NAMED_READ_PRIORITY,
+        generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
+        multi_file_prompt_read_chars=_multi_file_prompt_read_chars(),
+    )
 
 
 def _controller_file_code_product_orientation_preseed_plan(goal: str) -> dict[str, Any] | None:
@@ -2419,8 +2573,9 @@ def _build_operational_notebook(goal: str, contract: dict[str, Any]) -> dict[str
         "goal": goal,
         "final_allowed": final_allowed,
         "next_instruction": (
-            "Quality gate is satisfied. Stop navigation/listing and produce final from read_notes, "
-            "mentioned_paths, core_candidates, workflow/problems evidence, and limits."
+            "Quality gate is satisfied and final is allowed, not required. Prefer final from read_notes, "
+            "mentioned_paths, core_candidates, workflow/problems evidence, and limits when no concrete "
+            "evidence gap remains; otherwise name the gap and choose one selective evidence-bound tool."
             if final_allowed else
             "Continue only with one evidence-bound unread doc/code candidate. Do not repeat prior tool calls."
         ),
@@ -2502,11 +2657,13 @@ def planner_evidence_contract(
             "path_under_scope": _path_under_scope,
             "paths_from_list_rows": _paths_from_list_rows,
             "paths_from_result": _paths_from_result,
+            "planner_scratchpad_window_signature": _planner_scratchpad_window_signature,
             "rank_core_candidates": _rank_core_candidates,
             "repo_analysis_goal": _repo_analysis_goal,
             "repo_code_file": _repo_code_file,
             "repo_doc_or_config": _repo_doc_or_config,
             "repo_list_evidence": _repo_list_evidence,
+            "repo_read_window_signature": _repo_read_window_signature,
             "repo_readable_evidence_file": _repo_readable_evidence_file,
             "repo_rel_token": _repo_rel_token,
             "repo_required_read_count": _repo_required_read_count,
@@ -2523,6 +2680,7 @@ def planner_evidence_contract(
             "latest_file_list_result": latest_file_list_result,
             "requested_file_limit_from_goal": requested_file_limit_from_goal,
             "semantic_goal_classification": semantic_goal_classification,
+            "successful_window_signatures": _successful_window_signatures,
             "successful_code_edit_proposals": successful_code_edit_proposals,
             "successful_repo_read_paths": successful_repo_read_paths,
             "failed_repo_read_paths": failed_repo_read_paths,
@@ -2614,6 +2772,7 @@ def _agentic_v2_decision_paths(tool: str, args: dict[str, Any]) -> list[str]:
         "repo_ctags_symbols",
         "repo_semgrep_scan",
         "repo_shellcheck",
+        "repo_validate",
         "repo_ruff_check",
         "repo_pyright_check",
         "repo_pytest_run",
@@ -2641,7 +2800,7 @@ def _agentic_v2_read_has_window(args: dict[str, Any]) -> bool:
     return any(k in args for k in (
         "start", "start_line", "end", "end_line", "offset", "limit",
         "line", "line_start", "line_count", "before", "after",
-        "max_chars", "window", "chunk", "range",
+        "window", "chunk", "range",
     ))
 
 
@@ -2955,6 +3114,265 @@ def _apply_unverified_old_text_replan_contract(
     return contract
 
 
+def _repo_analysis_final_answer_model_quality(
+    final_answer: str,
+    contract: dict[str, Any],
+    *,
+    goal: str,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    request = _repo_analysis_final_answer_model_quality_request(
+        final_answer,
+        contract,
+        goal=goal,
+    )
+    user_payload = _dict_or_empty(request.get("user_payload"))
+    options = {
+        "temperature": 0,
+        "num_predict": 1000,
+        "num_ctx": max(
+            4096,
+            min(int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192), int(AGENTIC_PLANNER_NUM_CTX or 8192)),
+        ),
+    }
+    payload = {
+        "model": PLANNER_MODEL,
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "think": False,
+        "format": "json",
+        "messages": [
+            {"role": "system", "content": str(request.get("system") or "")},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, default=str)},
+        ],
+        "options": options,
+    }
+    timeout_seconds = min(90, max(20, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
+    response = post_json(PLANNER_URL, payload, timeout_seconds)
+    if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+        quality = _sanitize_repo_analysis_final_model_quality(None, contract)
+        quality.update({
+            "violations": ["repo_analysis_final_model_quality_unavailable"],
+            "required_next_progress": (
+                "Final answer rejected because the model final-quality judge was unavailable. "
+                "Retry final-quality evaluation; do not accept the final through deterministic heuristics."
+            ),
+            "planner_model": PLANNER_MODEL,
+            "planner_url": PLANNER_URL,
+            "timeout_seconds": timeout_seconds,
+            "backend_error": response.get("error") or response.get("error_type") or "planner_backend_error",
+        })
+        return quality
+
+    message = _dict_or_empty(response.get("message"))
+    raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
+    parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    repaired_raw_text = ""
+    repair_diagnostics: dict[str, Any] = {}
+    decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
+    if (
+        not decoded
+        or str(decoded.get("decision") or "").strip().lower()
+        not in {"accept", "reject", "continue_required"}
+    ):
+        repair_payload = {
+            "model": PLANNER_MODEL,
+            "stream": False,
+            "keep_alive": OLLAMA_KEEP_ALIVE,
+            "think": False,
+            "format": "json",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        str(request.get("system") or "")
+                        + "\n\nThe previous final-quality judge response was invalid JSON. "
+                        "Re-evaluate the same request now and return exactly one strict JSON object."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "schema": "repo_analysis_final_model_quality_repair_request.v1",
+                            "original_request": user_payload,
+                            "invalid_response_preview": raw_text[:2000],
+                            "invalid_response_chars": len(raw_text),
+                            "json_parse_error_type": parse_diagnostics.get("error_type"),
+                            "json_parse_error": parse_diagnostics.get("error"),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                },
+            ],
+            "options": options,
+        }
+        repair_response = post_json(PLANNER_URL, repair_payload, timeout_seconds)
+        repair_diagnostics = {
+            "attempted": True,
+            "planner_model": PLANNER_MODEL,
+            "planner_url": PLANNER_URL,
+            "timeout_seconds": timeout_seconds,
+        }
+        if (
+            repair_response.get("backend_unreachable")
+            or repair_response.get("backend_timeout")
+            or repair_response.get("error")
+        ):
+            repair_diagnostics.update({
+                "ok": False,
+                "error": repair_response.get("error") or repair_response.get("error_type") or "planner_backend_error",
+                "error_type": repair_response.get("error_type"),
+            })
+        else:
+            repair_message = _dict_or_empty(repair_response.get("message"))
+            repaired_raw_text = str(
+                repair_message.get("content")
+                or repair_response.get("response")
+                or repair_response.get("partial_content")
+                or ""
+            )
+            repair_parse = parse_strict_json_object_diagnostics(repaired_raw_text)
+            repair_diagnostics.update({
+                "ok": repair_parse.get("ok") is True,
+                "raw_response_chars": len(repaired_raw_text),
+            })
+            if repair_parse.get("ok") is True:
+                decoded = repair_parse.get("decoded") if isinstance(repair_parse.get("decoded"), dict) else {}
+            else:
+                repair_diagnostics.update({
+                    "json_parse_error_type": repair_parse.get("error_type"),
+                    "json_parse_error": repair_parse.get("error"),
+                    "raw_response_preview": repaired_raw_text[:2000],
+                })
+    quality = _sanitize_repo_analysis_final_model_quality(decoded, contract)
+    quality.update({
+        "planner_model": PLANNER_MODEL,
+        "planner_url": PLANNER_URL,
+        "timeout_seconds": timeout_seconds,
+    })
+    if repair_diagnostics:
+        quality["json_repair_attempt"] = repair_diagnostics
+        if quality.get("model_decision_available"):
+            quality["json_repaired_by_final_quality_model"] = True
+    if not quality.get("model_decision_available"):
+        quality["raw_response_preview"] = raw_text[:2000]
+        quality["raw_response_chars"] = len(raw_text)
+        if parse_diagnostics.get("ok") is not True:
+            quality["json_parse_error_type"] = parse_diagnostics.get("error_type")
+            if parse_diagnostics.get("error") not in (None, "", [], {}):
+                quality["json_parse_error"] = parse_diagnostics.get("error")
+        quality["violations"] = ["repo_analysis_final_model_quality_invalid"]
+        quality["required_next_progress"] = (
+            "Final answer rejected because the model final-quality judge did not return valid JSON. "
+            "Retry final-quality evaluation; do not accept the final through deterministic heuristics."
+        )
+    history_for_audit = history if isinstance(history, list) else []
+    required_route = (
+        quality.get("required_next_tool_call")
+        if isinstance(quality.get("required_next_tool_call"), dict)
+        else {}
+    )
+    if required_route:
+        route_audit = _specialist_route_audit(
+            required_route,
+            history_for_audit,
+            source="repo_analysis_final_quality",
+            allowed_tools=_FINAL_QUALITY_ROUTE_TOOLS,
+        )
+        if route_audit.get("accepted") is not True:
+            retry_user_payload = dict(user_payload)
+            retry_rules = retry_user_payload.get("decision_rules")
+            retry_rules = list(retry_rules) if isinstance(retry_rules, list) else []
+            retry_rules.append(
+                "A previous required_next_tool_call failed prevalidation. Do not repeat it. "
+                "Choose one different valid route, or omit required_next_tool_call and require "
+                "a corrected final answer from existing evidence."
+            )
+            retry_user_payload["decision_rules"] = retry_rules
+            retry_user_payload["prevalidation_feedback"] = _prompt_clip_value(
+                route_audit,
+                text_limit=900,
+                list_limit=8,
+            )
+            retry_payload = {
+                "model": PLANNER_MODEL,
+                "stream": False,
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "think": False,
+                "format": "json",
+                "messages": [
+                    {"role": "system", "content": str(request.get("system") or "")},
+                    {"role": "user", "content": json.dumps(retry_user_payload, ensure_ascii=False, default=str)},
+                ],
+                "options": options,
+            }
+            retry_response = post_json(PLANNER_URL, retry_payload, timeout_seconds)
+            retry_quality: dict[str, Any]
+            retry_audit: dict[str, Any] = {}
+            if (
+                retry_response.get("backend_unreachable")
+                or retry_response.get("backend_timeout")
+                or retry_response.get("error")
+            ):
+                retry_quality = _sanitize_repo_analysis_final_model_quality(None, contract)
+                retry_quality["backend_error"] = (
+                    retry_response.get("error")
+                    or retry_response.get("error_type")
+                    or "planner_backend_error"
+                )
+            else:
+                retry_message = _dict_or_empty(retry_response.get("message"))
+                retry_raw_text = str(
+                    retry_message.get("content")
+                    or retry_response.get("response")
+                    or retry_response.get("partial_content")
+                    or ""
+                )
+                retry_parse = parse_strict_json_object_diagnostics(retry_raw_text)
+                retry_decoded = retry_parse.get("decoded") if retry_parse.get("ok") is True else {}
+                retry_quality = _sanitize_repo_analysis_final_model_quality(retry_decoded, contract)
+                retry_quality["raw_response_preview"] = retry_raw_text[:1200]
+                retry_quality["raw_response_chars"] = len(retry_raw_text)
+                if retry_parse.get("ok") is not True:
+                    retry_quality["json_parse_error_type"] = retry_parse.get("error_type")
+            retry_route = (
+                retry_quality.get("required_next_tool_call")
+                if isinstance(retry_quality.get("required_next_tool_call"), dict)
+                else {}
+            )
+            if retry_route:
+                retry_audit = _specialist_route_audit(
+                    retry_route,
+                    history_for_audit,
+                    source="repo_analysis_final_quality_retry",
+                    allowed_tools=_FINAL_QUALITY_ROUTE_TOOLS,
+                )
+            if retry_route and retry_audit.get("accepted") is True:
+                quality = retry_quality
+                quality["judge_route_prevalidation_retry"] = {
+                    "attempted": True,
+                    "first_audit": route_audit,
+                    "retry_audit": retry_audit,
+                    "accepted": True,
+                }
+            else:
+                quality["stale_or_invalid_judge_route"] = {
+                    "attempted_retry": True,
+                    "first_audit": route_audit,
+                    "retry_audit": retry_audit,
+                    "retry_quality": _prompt_clip_value(retry_quality, text_limit=700, list_limit=8),
+                }
+                quality.pop("required_next_tool_call", None)
+                quality["required_next_progress"] = (
+                    "Final-quality judge route was stale or invalid after one retry. "
+                    "Rewrite action=final from existing verified evidence if sufficient, "
+                    "choose a different concrete evidence gap, or return a typed action=block."
+                )
+    return quality
+
+
 def validate_planner_decision_against_evidence(
     goal: str,
     decision: dict[str, Any],
@@ -2986,8 +3404,12 @@ def validate_planner_decision_against_evidence(
             "copyable_example_text": _copyable_example_text,
             "decision_matches_prompt_context_continuation": _decision_matches_prompt_context_continuation,
             "decision_paths": _decision_paths,
+            "enforce_required_scratchpad_read_continuation_contract": (
+                _enforce_required_scratchpad_read_continuation_contract
+            ),
             "final_answer_is_action_plan_without_code_product": _final_answer_is_action_plan_without_code_product,
             "final_composition_tool_names_from_candidates": _final_composition_tool_names_from_candidates,
+            "repo_analysis_final_answer_model_quality": _repo_analysis_final_answer_model_quality,
             "repo_analysis_final_answer_quality": _repo_analysis_final_answer_quality,
             "goal_requires_code_product_report": goal_requires_code_product_report,
             "invalid_code_product_decision_signature_count": _invalid_code_product_decision_signature_count,
@@ -3163,7 +3585,7 @@ def _raw_planner_text_has_explicit_tool_alias_invocation(text: str) -> bool:
         TOOL_ALIASES = {}
     generic_aliases = {
         "capabilities", "tools", "status", "diff", "search", "grep", "rg",
-        "read", "patch", "edit", "validate", "validation", "smoke",
+        "read", "patch", "edit", "validate", "validation",
         "command", "run", "compile", "terminal", "tree", "directory",
         "files",
     }
@@ -3354,6 +3776,10 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
         "resolved_goal_scope",
         "successful_repo_read_count",
         "verified_content_read_count",
+        "minimum_read_coverage",
+        "coverage_satisfied",
+        "covered_owner_paths",
+        "missing_owner_paths",
         "planner_may_choose_final",
         "required_next_progress",
     ):
@@ -3379,6 +3805,13 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
         value = contract.get(key)
         if value not in (None, "", [], {}):
             compact[key] = _prompt_clip_value(value, text_limit=260, list_limit=4)
+    code_contract = contract.get("code_product_contract")
+    if isinstance(code_contract, dict) and code_contract.get("replan_role_guidance"):
+        compact["code_product_replan_role_guidance"] = _prompt_clip_value(
+            code_contract.get("replan_role_guidance"),
+            text_limit=500,
+            list_limit=6,
+        )
     candidates = contract.get("candidate_next_actions")
     if isinstance(candidates, list) and candidates:
         compact["candidate_next_actions"] = _prompt_clip_value(
@@ -3394,6 +3827,769 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
             list_limit=4,
         )
     return _prompt_clip_value(compact, text_limit=500, list_limit=16)
+
+
+def _evidence_contract_storage_summary(contract: dict[str, Any]) -> tuple[dict[str, Any], int, str]:
+    return _evidence_contract_summary_triplet_impl(
+        contract,
+        schema="planner_evidence_contract_storage_summary.v1",
+    )
+
+
+def _controller_guard_contract_overlay(contract: dict[str, Any]) -> dict[str, Any]:
+    """Persist only turn-control fields needed to rebuild the next planner contract."""
+    contract = _dict_or_empty(contract)
+    overlay: dict[str, Any] = {}
+    for key in (
+        "planner_cuda_rewrite_required",
+        "final_rewrite_latch",
+        "planner_final_quality_reject_count",
+        "planner_may_choose_final",
+        "planner_may_choose_block",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "invalid_required_next_tool_call_paths",
+        "stale_required_next_tool_calls",
+    ):
+        if key not in contract:
+            continue
+        value = contract.get(key)
+        if isinstance(value, (bool, int)):
+            overlay[key] = value
+        elif isinstance(value, str) and value.strip():
+            overlay[key] = _prompt_clip_text(value, 2000)
+        elif isinstance(value, list) and value:
+            overlay[key] = value[:20]
+        elif isinstance(value, dict) and value:
+            overlay[key] = value
+
+    progress = str(contract.get("required_next_progress") or "").strip()
+    if progress:
+        overlay["required_next_progress"] = _prompt_clip_text(progress, 4000)
+
+    required_call = _dict_or_empty(contract.get("required_next_tool_call"))
+    if required_call:
+        overlay["required_next_tool_call"] = required_call
+
+    candidate_next_actions = _list_or_empty(contract.get("candidate_next_actions"))
+    if candidate_next_actions:
+        overlay["candidate_next_actions"] = candidate_next_actions[:6]
+
+    final_contract = _dict_or_empty(contract.get("finalization_contract"))
+    if final_contract:
+        overlay["finalization_contract"] = {
+            key: final_contract.get(key)
+            for key in (
+                "final_allowed",
+                "planner_may_choose_final",
+                "planner_may_choose_block",
+                "reason",
+            )
+            if key in final_contract and final_contract.get(key) not in (None, "", [], {})
+        }
+    return overlay
+
+
+_REPLAN_SPECIALIST_ROUTE_TOOLS = {
+    "repo_read",
+    "repo_semantic_search",
+    "repo_rg_search",
+    "repo_search",
+    "repo_list_files",
+    "planner_scratchpad_read",
+}
+
+_FINAL_QUALITY_ROUTE_TOOLS = {
+    "repo_read",
+    "repo_semantic_search",
+    "repo_rg_search",
+    "repo_search",
+    "repo_list_files",
+}
+
+
+def _validation_needs_replan_specialist(
+    violations: list[Any],
+    contract: dict[str, Any],
+    decision: dict[str, Any],
+) -> bool:
+    text = " ".join(str(value or "") for value in violations).lower()
+    code_contract = _dict_or_empty(contract.get("code_product_contract"))
+    tool = str(decision.get("tool") or "").strip()
+    if code_contract.get("required") or code_contract.get("route_shift_after_payload_rejection"):
+        return True
+    if tool in {"repo_propose_code_edit", "planner_scratchpad_write", "planner_scratchpad_read"} and any(
+        token in text
+        for token in (
+            "code_product",
+            "repo_propose_code_edit",
+            "planner_scratchpad",
+            "support",
+            "ready_without_complete_payload",
+        )
+    ):
+        return True
+    return any(
+        token in text
+        for token in (
+            "planner_repeated_invalid_code_product_decision",
+            "invalid_code_product_candidate",
+            "code_product_route_shift_required",
+            "support_subturn_validation_failed",
+            "repo_read_window_already_successful_without_progress",
+            "planner_scratchpad_window_already_successful_without_progress",
+            "repo_read_already_successful",
+            "required_next_tool_call_pending",
+            "required_next_tool_call_from_previous_guard",
+            "ignores_pending_actions",
+            "inconsistent_flow_mapping",
+            "duplicate_window",
+        )
+    )
+
+
+def _specialist_route_audit(
+    required_call: Any,
+    history: list[dict[str, Any]],
+    *,
+    source: str,
+    allowed_tools: set[str] | None = None,
+) -> dict[str, Any]:
+    allowed = allowed_tools or _REPLAN_SPECIALIST_ROUTE_TOOLS
+    if not isinstance(required_call, dict):
+        return {
+            "schema": "specialist_route_audit.v1",
+            "accepted": False,
+            "source": source,
+            "rejected_reason": "required_next_tool_call_invalid_shape",
+            "safe_feedback": "Do not provide a required_next_tool_call unless it is a valid object.",
+            "diagnostic_only": True,
+        }
+    tool = _normalize_tool_name(str(required_call.get("tool") or ""))
+    raw_args = required_call.get("arguments")
+    args = raw_args if isinstance(raw_args, dict) else {}
+    audit: dict[str, Any] = {
+        "schema": "specialist_route_audit.v1",
+        "accepted": False,
+        "source": source,
+        "tool": tool,
+        "arguments": args,
+    }
+    if not tool or tool not in allowed:
+        audit.update({
+            "rejected_reason": "tool_not_allowed_for_specialist_route",
+            "allowed_tools": sorted(allowed),
+            "safe_feedback": (
+                "Choose only an allowed read/search route, or omit required_next_tool_call "
+                "and instruct the planner to rewrite final/block from existing evidence."
+            ),
+            "diagnostic_only": True,
+        })
+        return audit
+    if not args:
+        audit.update({
+            "rejected_reason": "missing_route_arguments",
+            "safe_feedback": (
+                "Provide concrete arguments for the required route, or omit required_next_tool_call "
+                "and use required_next_progress only."
+            ),
+            "diagnostic_only": True,
+        })
+        return audit
+    satisfaction = _required_next_tool_call_satisfaction(
+        {"tool": tool, "arguments": args},
+        history,
+        successful_repo_read_paths=_agentic_v2_successful_read_paths,
+        successful_window_signatures=_successful_window_signatures,
+        repo_read_window_signature=_repo_read_window_signature,
+        planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
+        decision_paths=_decision_paths,
+    )
+    audit["satisfaction"] = satisfaction
+    if satisfaction.get("satisfied") is True:
+        audit.update({
+            "rejected_reason": "route_already_satisfied",
+            "safe_feedback": (
+                "The proposed route is already satisfied by verified tool history. Do not repeat it. "
+                "Either request one different concrete evidence gap or instruct the planner to rewrite "
+                "a terminal final/block from existing evidence."
+            ),
+            "diagnostic_only": True,
+        })
+        return audit
+    audit.update({
+        "accepted": True,
+        "rejected_reason": "",
+        "normalized_route": {"tool": tool, "arguments": args},
+    })
+    return audit
+
+
+def _sanitize_replan_required_next_tool_call(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    tool = str(value.get("tool") or "").strip()
+    if tool not in _REPLAN_SPECIALIST_ROUTE_TOOLS:
+        return {}
+    raw_args = value.get("arguments") if isinstance(value.get("arguments"), dict) else {}
+    allowed_args = {
+        "repo_read": {
+            "path", "paths", "line", "line_start", "line_count", "start_line",
+            "end_line", "before", "after", "max_chars",
+        },
+        "repo_semantic_search": {
+            "query", "path", "limit", "top_k", "max_results", "candidate_limit",
+            "rerank", "reindex", "max_chunk_chars",
+        },
+        "repo_rg_search": {"query", "pattern", "path", "max_results", "context"},
+        "repo_search": {"query", "pattern", "symbol", "path", "max_results"},
+        "repo_list_files": {"path", "limit", "suffix", "glob", "max_files"},
+        "planner_scratchpad_read": {
+            "kind", "document_id", "offset", "max_chars", "target_file",
+            "section", "line_start", "line_count",
+        },
+    }.get(tool, set())
+    args = {
+        key: raw_args.get(key)
+        for key in allowed_args
+        if raw_args.get(key) not in (None, "", [], {})
+    }
+    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"} and not (
+        args.get("query") or args.get("pattern") or args.get("symbol")
+    ):
+        return {}
+    if tool == "repo_read" and not (args.get("path") or args.get("paths")):
+        return {}
+    if tool == "planner_scratchpad_read" and not (
+        args.get("document_id") or args.get("target_file") or args.get("section")
+    ):
+        return {}
+    reason = str(value.get("reason") or "").strip()
+    return {
+        "tool": tool,
+        "arguments": args,
+        "reason": _prompt_clip_text(reason, 500) if reason else "replan_specialist_required_next_tool_call",
+        "source": "planner_replan_specialist",
+    }
+
+
+def _sanitize_replan_specialist_response(value: Any) -> dict[str, Any]:
+    base = {
+        "schema": "planner_replan_specialist_result.v1",
+        "available": False,
+        "ok": False,
+        "decision": "invalid",
+    }
+    if not isinstance(value, dict):
+        return {**base, "error": "invalid_json_object"}
+    decision = str(value.get("decision") or "").strip().lower()
+    if decision not in {"continue_required", "block_recommended", "retry_same_context"}:
+        return {**base, "raw_decision": _prompt_clip_value(value, text_limit=500, list_limit=6)}
+    required_next_progress = str(value.get("required_next_progress") or "").strip()
+    if not required_next_progress:
+        return {**base, "decision": decision, "error": "missing_required_next_progress"}
+    required_next_tool_call = _sanitize_replan_required_next_tool_call(value.get("required_next_tool_call"))
+    return {
+        "schema": "planner_replan_specialist_result.v1",
+        "available": True,
+        "ok": True,
+        "decision": decision,
+        "required_next_progress": _prompt_clip_text(required_next_progress, 1000),
+        "required_next_tool_call": required_next_tool_call,
+        "rationale": _prompt_clip_text(value.get("rationale"), 600),
+        "confidence": value.get("confidence"),
+    }
+
+
+def _replan_contract_path_items(value: Any) -> list[Any]:
+    if isinstance(value, dict):
+        items = value.get("items")
+        return items if isinstance(items, list) else []
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _replan_repo_path_token(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("path") or value.get("source_path") or ""
+    token = str(value or "").strip().replace("\\", "/")
+    while token.startswith("./"):
+        token = token[2:]
+    return token
+
+
+def _replan_contract_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    allowed: set[str] = set()
+    completed: set[str] = set()
+
+    def add_token(target: set[str], item: Any) -> None:
+        token = _replan_repo_path_token(item)
+        if token:
+            target.add(token)
+
+    for key in ("validator_admissible_repo_read_paths", "read_admissible_paths"):
+        for item in _replan_contract_path_items(contract.get(key)):
+            add_token(allowed, item)
+
+    for key in ("successful_repo_read_paths", "verified_content_reads"):
+        for item in _replan_contract_path_items(contract.get(key)):
+            add_token(completed, item)
+
+    for row in _replan_contract_path_items(contract.get("stale_required_next_tool_calls")):
+        if not isinstance(row, dict):
+            continue
+        args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
+        for item in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
+            add_token(completed, item)
+
+    return allowed - completed
+
+
+def _replan_required_repo_read_paths(args: dict[str, Any]) -> list[Any]:
+    out: list[Any] = []
+    if not isinstance(args, dict):
+        return out
+    if args.get("path") not in (None, "", [], {}):
+        out.append(args.get("path"))
+    raw_paths = args.get("paths")
+    if isinstance(raw_paths, list):
+        out.extend(raw_paths)
+    return out
+
+
+def _sanitize_replan_specialist_result_against_contract(
+    result: dict[str, Any],
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Do not let replan specialist turn prose/metrics into repo_read routes."""
+    result = result if isinstance(result, dict) else {}
+    if result.get("ok") is not True:
+        return result
+
+    required_call = (
+        result.get("required_next_tool_call")
+        if isinstance(result.get("required_next_tool_call"), dict)
+        else {}
+    )
+    tool = _normalize_tool_name(str(required_call.get("tool") or ""))
+    if tool != "repo_read":
+        return result
+
+    args = (
+        required_call.get("arguments")
+        if isinstance(required_call.get("arguments"), dict)
+        else {}
+    )
+    raw_paths = _replan_required_repo_read_paths(args)
+    allowed_paths = _replan_contract_repo_read_allowlist(contract)
+
+    valid_paths: list[str] = []
+    invalid_paths: list[str] = []
+    for raw_path in raw_paths:
+        token = _replan_repo_path_token(raw_path)
+        if token and token in allowed_paths:
+            if token not in valid_paths:
+                valid_paths.append(token)
+        elif token and token not in invalid_paths:
+            invalid_paths.append(token)
+
+    if invalid_paths:
+        result["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
+        result["invalid_required_next_tool_call_reason"] = (
+            "planner_replan_specialist proposed repo_read paths that are not "
+            "known/admissible repo paths in the current evidence contract"
+        )
+
+    if valid_paths:
+        required_call["arguments"] = {"paths": valid_paths[:12]}
+        result["required_next_tool_call"] = required_call
+        return result
+
+    result["required_next_tool_call"] = {}
+    if invalid_paths:
+        result["decision"] = "block_recommended"
+        result["required_next_progress"] = (
+            "Replan specialist proposed no valid existing repo_read path. "
+            "Do not call repo_read for prose, metrics, headings, or non-existing paths. "
+            "Use verified evidence for a terminal answer if allowed, or return a typed block."
+        )
+    return result
+
+
+
+def planner_replan_specialist_for_validation(
+    *,
+    goal: str,
+    decision: dict[str, Any],
+    validation: dict[str, Any],
+    prevalidation_feedback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    violations = _list_or_empty(validation.get("violations"))
+    contract = _dict_or_empty(validation.get("evidence_contract"))
+    if not _validation_needs_replan_specialist(violations, contract, decision):
+        return {}
+    code_contract = _dict_or_empty(contract.get("code_product_contract"))
+    replan_role = "code_product_replan" if code_contract.get("required") else "planner_replan"
+    request_payload = {
+        "schema": "planner_replan_specialist_request.v1",
+        "task": "route_next_planner_turn_after_validator_rejection",
+        "goal": str(goal or ""),
+        "rejected_decision": _prompt_clip_value(
+            {
+                k: decision.get(k)
+                for k in ("action", "tool", "arguments", "reason", "final_answer")
+                if decision.get(k) not in (None, "", [], {})
+            },
+            text_limit=1600,
+            list_limit=6,
+        ),
+        "validator_violations": violations,
+        "evidence_contract": _compact_vulkan_repair_evidence_contract(contract),
+        "repo_read_allowlist": sorted(_replan_contract_repo_read_allowlist(contract))[:48],
+        "role_guidance": role_guidance_for_goal(replan_role, goal),
+        "rules": [
+            "Return strict JSON only.",
+            "Do not execute tools and do not invent payload content.",
+            "The next planner turn must still emit the action; validator remains authoritative.",
+            "For code-product replan, choose either a complete repo_propose_code_edit in the next planner turn or a typed block.",
+            "For repo-analysis replan, never convert duplicate-read/final-quality failures into repo_propose_code_edit or code_product_build_state.",
+            "If the rejected required_next_tool_call is already satisfied, set required_next_progress toward final rewrite or one different concrete evidence gap.",
+            "If prevalidation_feedback is present, do not repeat the rejected route. Choose one different valid route or omit required_next_tool_call.",
+            "Use required_next_tool_call only for a concrete read/search/window route, never for invented code edits.",
+            "repo_read_allowlist contains only unread validator-admissible paths; if it is empty, do not choose repo_read.",
+            "For repo_read, choose only paths listed in repo_read_allowlist; prose, metrics, headings, concepts, and already-read files must become required_next_progress or a search query.",
+        ],
+        "allowed_required_next_tools": sorted(_REPLAN_SPECIALIST_ROUTE_TOOLS),
+        "required_json_shape": {
+            "decision": "continue_required | block_recommended | retry_same_context",
+            "required_next_progress": "one concise instruction for the next planner turn",
+            "required_next_tool_call": {
+                "tool": "repo_read | repo_semantic_search | repo_rg_search | repo_search | repo_list_files | planner_scratchpad_read",
+                "arguments": {"path": "or query/document selector"},
+                "reason": "why this route is required",
+            },
+            "rationale": "short reason",
+            "confidence": 0.0,
+        },
+    }
+    if isinstance(prevalidation_feedback, dict) and prevalidation_feedback:
+        request_payload["prevalidation_feedback"] = _prompt_clip_value(
+            prevalidation_feedback,
+            text_limit=900,
+            list_limit=8,
+        )
+    payload = {
+        "model": PLANNER_MODEL,
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "think": False,
+        "format": "json",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a specialized planner replan judge. You do not solve the task. "
+                    "You convert validator rejection evidence into the next instruction for the "
+                    "main planner. Return strict JSON only."
+                ),
+            },
+            {"role": "user", "content": json.dumps(request_payload, ensure_ascii=False, default=str)},
+        ],
+        "options": {
+            "temperature": 0,
+            "num_predict": 700,
+            "num_ctx": max(
+                4096,
+                min(int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192), int(AGENTIC_PLANNER_NUM_CTX or 8192)),
+            ),
+        },
+    }
+    timeout_seconds = min(60, max(15, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
+    response = post_json(PLANNER_URL, payload, timeout_seconds)
+    if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+        return {
+            "schema": "planner_replan_specialist_result.v1",
+            "available": False,
+            "ok": False,
+            "decision": "unavailable",
+            "error": response.get("error") or response.get("error_type") or "planner_replan_specialist_backend_error",
+            "planner_model": PLANNER_MODEL,
+            "planner_url": PLANNER_URL,
+            "timeout_seconds": timeout_seconds,
+        }
+    message = _dict_or_empty(response.get("message"))
+    raw_text = str(message.get("content") or response.get("response") or response.get("partial_content") or "")
+    original_raw_text = raw_text
+    parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    original_parse_diagnostics = dict(parse_diagnostics)
+    decoded = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
+    repair_attempted = False
+    repair_success = False
+    repair_error: str | None = None
+    if parse_diagnostics.get("ok") is not True and raw_text.strip():
+        repair_attempted = True
+        repair_request_payload = {
+            "schema": "planner_replan_specialist_json_repair_request.v1",
+            "task": "repair_planner_replan_specialist_json",
+            "original_specialist_request": request_payload,
+            "invalid_response_preview": _prompt_clip_text(raw_text, 4000),
+            "json_parse_error_type": parse_diagnostics.get("error_type"),
+            "json_parse_error": parse_diagnostics.get("error"),
+            "rules": [
+                "Return strict JSON only.",
+                "Do not solve the user task.",
+                "Preserve the specialist role: choose only the next planner-turn route.",
+                "Use the same required_json_shape from the original request.",
+            ],
+        }
+        repair_payload = {
+            "model": PLANNER_MODEL,
+            "stream": False,
+            "keep_alive": OLLAMA_KEEP_ALIVE,
+            "think": False,
+            "format": "json",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You repair malformed JSON from a planner replan specialist. "
+                        "Return one valid JSON object matching the requested schema."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(repair_request_payload, ensure_ascii=False, default=str),
+                },
+            ],
+            "options": {
+                "temperature": 0,
+                "num_predict": 700,
+                "num_ctx": max(
+                    4096,
+                    min(
+                        int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192),
+                        int(AGENTIC_PLANNER_NUM_CTX or 8192),
+                    ),
+                ),
+            },
+        }
+        repair_response = post_json(PLANNER_URL, repair_payload, timeout_seconds)
+        if (
+            repair_response.get("backend_unreachable")
+            or repair_response.get("backend_timeout")
+            or repair_response.get("error")
+        ):
+            repair_error = str(
+                repair_response.get("error")
+                or repair_response.get("error_type")
+                or "planner_replan_specialist_json_repair_backend_error"
+            )
+        else:
+            repair_message = _dict_or_empty(repair_response.get("message"))
+            repair_raw_text = str(
+                repair_message.get("content")
+                or repair_response.get("response")
+                or repair_response.get("partial_content")
+                or ""
+            )
+            repair_parse_diagnostics = parse_strict_json_object_diagnostics(repair_raw_text)
+            if repair_parse_diagnostics.get("ok") is True:
+                raw_text = repair_raw_text
+                parse_diagnostics = repair_parse_diagnostics
+                decoded = repair_parse_diagnostics.get("decoded")
+                repair_success = True
+            else:
+                repair_error = str(
+                    repair_parse_diagnostics.get("error_type")
+                    or repair_parse_diagnostics.get("error")
+                    or "planner_replan_specialist_json_repair_invalid"
+                )
+    result = _sanitize_replan_specialist_response(decoded)
+    result = _sanitize_replan_specialist_result_against_contract(result, contract)
+    result.update({
+        "planner_model": PLANNER_MODEL,
+        "planner_url": PLANNER_URL,
+        "timeout_seconds": timeout_seconds,
+    })
+    if repair_attempted:
+        result["json_repair_attempted"] = True
+        result["json_repair_success"] = repair_success
+        result["original_json_parse_error_type"] = original_parse_diagnostics.get("error_type")
+        result["original_raw_response_preview"] = original_raw_text[:1200]
+        result["original_raw_response_chars"] = len(original_raw_text)
+        if repair_error:
+            result["json_repair_error"] = _prompt_clip_text(repair_error, 500)
+    if not result.get("ok"):
+        result["raw_response_preview"] = raw_text[:1200]
+        result["raw_response_chars"] = len(raw_text)
+        if parse_diagnostics.get("ok") is not True:
+            result["json_parse_error_type"] = parse_diagnostics.get("error_type")
+            if parse_diagnostics.get("error") not in (None, "", [], {}):
+                result["json_parse_error"] = parse_diagnostics.get("error")
+    return result
+
+
+_PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS = {
+    "repo_apply_patch_missing_path_or_paths",
+    "repo_apply_patch_old_text_not_from_verified_read",
+    "repo_apply_patch_placeholder_text",
+    "repo_propose_code_edit_invalid_edit_kind",
+    "repo_propose_code_edit_missing_rationale",
+    "repo_propose_code_edit_missing_structured_operations",
+    "repo_propose_code_edit_missing_unified_diff",
+    "repo_propose_code_edit_no_op_has_patch_payload",
+    "repo_propose_code_edit_old_text_not_from_verified_read",
+    "repo_propose_code_edit_placeholder_text",
+    "code_product_target_not_read",
+    "final_action_plan_without_code_product",
+    "final_empty_answer",
+    "invalid_code_product_candidate",
+    "missing_code_product_candidate",
+    "planner_final_required_empty_output",
+}
+
+_PLANNER_CUDA_REWRITE_PATCH_PREFIXES = (
+    "repo_apply_patch_",
+    "repo_propose_code_edit_",
+    "code_product_",
+)
+
+_PLANNER_CUDA_REWRITE_FINAL_PREFIXES = (
+    "final_not_allowed_by_evidence_contract:",
+    "final_without_",
+    "repo_analysis_final_",
+)
+
+
+def _planner_cuda_rewrite_violations(validation: dict[str, Any]) -> list[str]:
+    return [str(violation) for violation in _list_or_empty(validation.get("violations"))]
+
+
+def _planner_cuda_rewrite_violation_matches(
+    violations: list[str],
+    *,
+    exact: set[str],
+    prefixes: tuple[str, ...],
+) -> bool:
+    return any(violation in exact or violation.startswith(prefixes) for violation in violations)
+
+
+def planner_cuda_rewrite_target(validation: dict[str, Any], decision: dict[str, Any]) -> str:
+    violations = _planner_cuda_rewrite_violations(validation)
+    if not violations or "planner_repeated_invalid_code_product_decision" in violations:
+        return ""
+    action = str(decision.get("action") or "").strip().lower()
+    tool = _normalize_tool_name(str(decision.get("tool") or ""))
+    if (
+        action == "tool"
+        and tool in {"repo_apply_patch", "repo_propose_code_edit"}
+        and _planner_cuda_rewrite_violation_matches(
+            violations,
+            exact=_PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS,
+            prefixes=_PLANNER_CUDA_REWRITE_PATCH_PREFIXES,
+        )
+    ):
+        return tool
+    if (
+        action in {"final", "done", "complete", "completed"}
+        and _planner_cuda_rewrite_violation_matches(
+            violations,
+            exact=_PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS,
+            prefixes=_PLANNER_CUDA_REWRITE_FINAL_PREFIXES,
+        )
+    ):
+        return "final"
+    if (
+        action in {"block", "blocked", "need_user", "needs_user"}
+        and "planner_final_required_empty_output" in violations
+    ):
+        return "final"
+    return ""
+
+
+def _planner_cuda_rewrite_instruction(
+    *,
+    rewrite_target: str,
+    existing_instruction: str,
+) -> str:
+    common = (
+        "Retry on the planner CUDA lane only; do not ask Vulkan/GPU0 to repair this semantic "
+        "proposal. Return one strict JSON decision. The controller did not synthesize a patch, "
+        "tool call, or final answer."
+    )
+    if rewrite_target in {"repo_apply_patch", "repo_propose_code_edit"}:
+        target_instruction = (
+            "Rewrite the rejected patch/code-product proposal from evidence_contract and "
+            "candidate_next_actions. If old_text was rejected, old_text must be an exact substring "
+            "from verified repo_read content for the same path; remove unrelated final prose "
+            "or protocol text from old_text/new_text. If the current evidence is insufficient, "
+            "choose the validator-provided read/scratchpad candidate or return a typed block."
+        )
+    elif rewrite_target == "final":
+        target_instruction = (
+            "Rewrite the final response only when the evidence_contract allows finalization. "
+            "Satisfy the finalization/code-product contract, remove unrelated patch/protocol "
+            "text, and if evidence is insufficient choose candidate_next_actions or return a typed block."
+        )
+    else:
+        target_instruction = "Rewrite the rejected decision using the validator evidence, or return a typed block."
+    if existing_instruction:
+        return f"{common} {target_instruction} Validator next_instruction: {existing_instruction}"
+    return f"{common} {target_instruction}"
+
+
+def planner_cuda_rewrite_guard_for_validation(
+    validation: dict[str, Any],
+    decision: dict[str, Any],
+    *,
+    job_id: str = "",
+    step: int = 0,
+    goal: str = "",
+) -> dict[str, Any]:
+    guard = controller_guard_result_for_validation(
+        validation,
+        decision,
+        job_id=job_id,
+        step=step,
+        goal=goal,
+    )
+    rewrite_target = planner_cuda_rewrite_target(validation, decision)
+    guard["guard_type"] = "planner_cuda_rewrite_required"
+    guard["summary"] = (
+        f"planner_cuda_rewrite_required:{rewrite_target}"
+        if rewrite_target else "planner_cuda_rewrite_required"
+    )
+    guard["rewrite_lane"] = "planner_cuda"
+    guard["rewrite_target"] = rewrite_target or "decision"
+    guard["controller_synthesized_repair"] = False
+    guard["vulkan_repair"] = {
+        "attempted": False,
+        "reason": "semantic_rewrite_retry_goes_back_to_planner_cuda",
+    }
+    guard["next_instruction"] = _prompt_clip_text(
+        _planner_cuda_rewrite_instruction(
+            rewrite_target=rewrite_target,
+            existing_instruction=str(guard.get("next_instruction") or "").strip(),
+        ),
+        4000,
+    )
+    guard["runtime_debug_packet"] = _build_runtime_debug_packet(
+        job_id=job_id,
+        step=step,
+        phase="CONTROLLER_GUARD",
+        goal=goal,
+        decision=decision,
+        validator_result=validation,
+        evidence_contract=_dict_or_empty(validation.get("evidence_contract")),
+        extra={
+            "guard_type": "planner_cuda_rewrite_required",
+            "rewrite_lane": "planner_cuda",
+            "rewrite_target": rewrite_target or "decision",
+        },
+    )
+    return guard
 
 
 def _should_attempt_vulkan_repair(
@@ -3415,9 +4611,11 @@ def _should_attempt_vulkan_repair(
     reason = str(decision.get("reason") or "")
     contract = _dict_or_empty(validation.get("evidence_contract"))
     semantic = _dict_or_empty(contract.get("semantic_goal_classification"))
+    code_contract = _dict_or_empty(contract.get("code_product_contract"))
     if (
         contract.get("goal_requests_code_product")
         or contract.get("goal_requires_code_product_report")
+        or bool(code_contract.get("required"))
         or bool(semantic.get("must_produce_code_product"))
     ):
         return False
@@ -3437,7 +4635,7 @@ def _should_attempt_vulkan_repair(
     if action == "tool":
         tool = _normalize_tool_name(str(decision.get("tool") or ""))
         violations = _list_or_empty(validation.get("violations"))
-        if tool == "repo_propose_code_edit":
+        if tool in {"repo_apply_patch", "repo_propose_code_edit"}:
             return False
         if any(
             str(violation).startswith((
@@ -3526,6 +4724,7 @@ def vulkan_repair_invalid_planner_decision(
                     "original_planner_decision": decision,
                     "raw_planner_text": raw_planner_text[:20000],
                     "validator_violations": validation.get("violations"),
+                    "repair_role_guidance": role_guidance_for_goal("repair", goal),
                     "evidence_contract": _compact_vulkan_repair_evidence_contract(
                         _dict_or_empty(validation.get("evidence_contract"))
                     ),
@@ -3558,11 +4757,15 @@ def vulkan_repair_invalid_planner_decision(
 
     message = _dict_or_empty(response.get("message"))
     raw_text = str(message.get("content") or response.get("response") or "")
-    repaired = _parse_strict_json_object(raw_text)
+    parse_diagnostics = parse_strict_json_object_diagnostics(raw_text)
+    repaired = parse_diagnostics.get("decoded") if parse_diagnostics.get("ok") is True else {}
     if not isinstance(repaired, dict) or not repaired:
         return {
             "ok": False,
             "error": "vulkan_repair_no_pure_json_decision",
+            "json_parse_error_type": parse_diagnostics.get("error_type"),
+            "json_parse_error": parse_diagnostics.get("error"),
+            "raw_response_chars": len(raw_text),
             "raw_text_preview": raw_text[:2000],
             "raw_planner_text_preview": raw_planner_text[:2000],
             "repair_cache_key": repair_key,
@@ -3596,6 +4799,20 @@ def controller_guard_result_for_validation(
 ) -> dict[str, Any]:
     violations = _list_or_empty(validation.get("violations"))
     contract = _dict_or_empty(validation.get("evidence_contract"))
+    required_continuation = (
+        validation.get("required_prompt_context_continuation")
+        if isinstance(validation.get("required_prompt_context_continuation"), dict)
+        else {}
+    )
+    if required_continuation:
+        contract = _enforce_required_scratchpad_read_continuation_contract(
+            contract,
+            required_continuation,
+        )
+        validation = dict(validation)
+        validation["evidence_contract"] = contract
+    contract_summary, contract_chars, contract_sha256 = _evidence_contract_storage_summary(contract)
+    contract_overlay = _controller_guard_contract_overlay(contract)
     guard = {
         "tool": "controller_guard",
         "ok": True,
@@ -3605,7 +4822,9 @@ def controller_guard_result_for_validation(
             if violations else "planner_decision_validation_failed"
         ),
         "violations": violations,
-        "evidence_contract": contract,
+        "evidence_contract_summary": contract_summary,
+        "evidence_contract_chars": contract_chars,
+        "evidence_contract_sha256": contract_sha256,
         "rejected_decision": {
             k: (
                 _prompt_clip_text(decision.get(k), 12000)
@@ -3619,15 +4838,24 @@ def controller_guard_result_for_validation(
         },
         "ollama_turn": _planner_ollama_turn_from_decision(decision),
     }
+    if contract_overlay:
+        guard["evidence_contract_overlay"] = contract_overlay
     if validation.get("semantic_goal_classification") not in (None, "", [], {}):
         guard["semantic_goal_classification"] = validation.get("semantic_goal_classification")
     if validation.get("invalid_decision_signature") not in (None, "", [], {}):
         guard["invalid_decision_signature"] = validation.get("invalid_decision_signature")
     if validation.get("invalid_decision_repeat_count") not in (None, "", [], {}):
         guard["invalid_decision_repeat_count"] = validation.get("invalid_decision_repeat_count")
+    replan_specialist = _dict_or_empty(validation.get("planner_replan_specialist"))
+    if replan_specialist:
+        guard["planner_replan_specialist"] = replan_specialist
     required_next_progress = str(contract.get("required_next_progress") or "").strip()
     if required_next_progress:
         guard["next_instruction"] = required_next_progress
+    required_next_tool_call = _dict_or_empty(contract.get("required_next_tool_call"))
+    if required_next_tool_call:
+        guard["required_next_tool_call"] = required_next_tool_call
+        guard["planner_may_choose_final"] = False
     candidate_next_actions = _list_or_empty(contract.get("candidate_next_actions"))
     if candidate_next_actions:
         guard["candidate_next_actions"] = candidate_next_actions[:6]
@@ -3660,7 +4888,7 @@ def controller_guard_result_for_validation(
         goal=goal,
         decision=decision,
         validator_result=validation,
-        evidence_contract=contract,
+        evidence_contract=contract_summary,
         extra=runtime_debug_extra or None,
     )
     return guard
@@ -3730,6 +4958,9 @@ def planner_decision(
             "AGENTIC_PLANNER_PROMPT_CHAR_BUDGET": AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
             "AGENTIC_PLANNER_STEP_TIMEOUT": AGENTIC_PLANNER_STEP_TIMEOUT,
             "AGENTIC_PLANNER_TEMPERATURE": AGENTIC_PLANNER_TEMPERATURE,
+            "AGENTIC_PLANNER_TOP_K": AGENTIC_PLANNER_TOP_K,
+            "AGENTIC_PLANNER_TOP_P": AGENTIC_PLANNER_TOP_P,
+            "AGENTIC_PLANNER_PRESENCE_PENALTY": AGENTIC_PLANNER_PRESENCE_PENALTY,
             "OLLAMA_KEEP_ALIVE": OLLAMA_KEEP_ALIVE,
             "PLANNER_INTRINSIC_CONTEXT_MAX_CHARS": PLANNER_INTRINSIC_CONTEXT_MAX_CHARS,
             "PLANNER_INTRINSIC_RAG_CHAR_BUDGET": PLANNER_INTRINSIC_RAG_CHAR_BUDGET,
@@ -3818,13 +5049,63 @@ def _repo_read_content_views(
     )
 
 
-def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 180000) -> str:
+def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 12000) -> str:
     return _execution_evidence_digest_text_impl(
         result,
         repo_read_item_full_content=_repo_read_item_full_content,
         extract_key_lines=_extract_key_lines,
         limit=limit,
     )
+
+
+def _compact_evidence_guide_for_30b(
+    *,
+    goal: Any,
+    status: str,
+    answer: str,
+    tool_context: dict[str, Any],
+    limit: int = 12000,
+) -> str:
+    artifacts = tool_context.get("artifacts") if isinstance(tool_context.get("artifacts"), list) else []
+    artifact_rows: list[str] = []
+    for index, row in enumerate(artifacts[:12]):
+        if not isinstance(row, dict):
+            continue
+        artifact = row.get("artifact") if isinstance(row.get("artifact"), dict) else {}
+        label = str(artifact.get("kind") or row.get("tool") or "tool_result")
+        path = artifact.get("repo_path") or artifact.get("target_file")
+        if path:
+            label += f":{path}"
+        artifact_rows.append(f"{index}:{label}")
+    digest = str(tool_context.get("evidence_digest_for_30b") or "").strip()
+    answer_text = str(answer or "").strip()
+    lines = [
+        "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
+        "Guida compatta: non duplica file, diff o digest estesi.",
+        (
+            "Ordine di lettura: primary_payload_for_30b.primary_location; "
+            "payload_index_for_30b.concrete_results; "
+            "tool_context_for_30b.artifacts[*].artifact."
+        ),
+        f"status={status}; artifacts={len(artifacts)}",
+        f"richiesta_utente={str(goal or '').strip()}",
+    ]
+    if artifact_rows:
+        suffix = f" (+{len(artifacts) - len(artifact_rows)} altri)" if len(artifacts) > len(artifact_rows) else ""
+        lines.append("artifact_order=" + ", ".join(artifact_rows) + suffix)
+    if answer_text:
+        lines.extend([
+            "",
+            "Sommario/risposta del planner da usare come guida:",
+            _prompt_clip_text(answer_text, 6000),
+        ])
+    if status != "completed" and digest and digest not in answer_text:
+        lines.extend([
+            "",
+            "Evidenza eseguita inline breve:",
+            _prompt_clip_text(digest, 4000),
+        ])
+    return _public_terminal_sanitize_text(_prompt_clip_text("\n".join(lines), limit))
 
 
 def _latest_code_product_payload(history: list[dict[str, Any]]) -> dict[str, Any]:
@@ -4031,18 +5312,11 @@ def finalize_agentic_job(
         result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
     public_result = _public_terminal_result_for_30b(result)
     answer = answer_for_openwebui(status, final_summary_with_turns, result)
-    evidence_guide = "\n".join(
-        part
-        for part in (
-            "GUIDA ALL'EVIDENZA INLINE PER IL 30B.",
-            "Questo e' l'unico testo guida globale; il payload utile e' in tool_context_for_30b.",
-            f"status={status}; richiesta_utente={state.get('goal') or ''}",
-            "Sommario/risposta del planner da usare come guida:",
-            str(answer or "").strip(),
-            "Evidenza concreta inline:",
-            str(tool_context.get("evidence_digest_for_30b") or "").strip(),
-        )
-        if str(part or "").strip()
+    evidence_guide = _compact_evidence_guide_for_30b(
+        goal=state.get("goal"),
+        status=status,
+        answer=answer,
+        tool_context=tool_context,
     )
     public_final_summary = (
         answer
@@ -4069,6 +5343,7 @@ def finalize_agentic_job(
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
         "evidence_guide_for_30b": evidence_guide,
+        "primary_payload_for_30b": materialized["primary_payload_for_30b"],
         "payload_index_for_30b": materialized["payload_index_for_30b"],
         "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
         "materialization_report": materialized["materialization_report"],
@@ -4091,6 +5366,7 @@ def finalize_agentic_job(
         "final_summary": public_final_summary,
         "planner_final_summary": final_summary,
         "evidence_guide_for_30b": evidence_guide,
+        "primary_payload_for_30b": materialized["primary_payload_for_30b"],
         "payload_index_for_30b": materialized["payload_index_for_30b"],
         "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
         "materialization_report": materialized["materialization_report"],
@@ -4124,6 +5400,8 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "controller_initial_area_read_plan": _controller_initial_area_read_plan,
             "controller_initial_doc_preseed_plan": _controller_initial_doc_preseed_plan,
             "controller_memory_target_key": _controller_memory_target_key,
+            "controller_preplanner_rag_query_plan": _controller_preplanner_rag_query_plan,
+            "controller_preplanner_rag_preseed_plan": _controller_preplanner_rag_preseed_plan,
             "controller_preseed_plan": _controller_preseed_plan,
             "decision_memory_claim_text": _decision_memory_claim_text,
             "decision_raw_planner_text": _decision_raw_planner_text,
@@ -4131,11 +5409,15 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
             "native_required_repaired_tool_decision_disallowed": _native_required_repaired_tool_decision_disallowed,
             "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
+            "planner_cuda_rewrite_guard_for_validation": planner_cuda_rewrite_guard_for_validation,
+            "planner_cuda_rewrite_target": planner_cuda_rewrite_target,
             "planner_incomprehensible_retry_count": _planner_incomprehensible_retry_count,
             "planner_memory_false_unavailable_claim": _planner_memory_false_unavailable_claim,
+            "planner_replan_specialist_for_validation": planner_replan_specialist_for_validation,
             "raw_planner_text_classification": _raw_planner_text_classification,
             "should_attempt_vulkan_repair": _should_attempt_vulkan_repair,
             "should_retry_incomprehensible_planner_output": _should_retry_incomprehensible_planner_output,
+            "specialist_route_audit": _specialist_route_audit,
             "tool_cache_hit": _tool_cache_hit,
             "tool_cache_key": _tool_cache_key,
             "write_loop_turn_memory": _write_loop_turn_memory,
