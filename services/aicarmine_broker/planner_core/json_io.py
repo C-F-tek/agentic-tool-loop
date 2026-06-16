@@ -31,8 +31,9 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    stream_timeout_seconds = max(3600, int(timeout or 3600))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=stream_timeout_seconds) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except (socket.timeout, TimeoutError) as exc:
         return {
@@ -41,7 +42,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "backend_unreachable": False,
             "error_type": type(exc).__name__,
             "error": str(exc),
-            "timeout_seconds": int(timeout or 0),
+            "timeout_seconds": stream_timeout_seconds,
         }
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", None)
@@ -54,7 +55,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "error_type": type(exc).__name__,
             "error": str(exc),
             "network_reason_type": type(reason).__name__ if reason is not None else None,
-            "timeout_seconds": int(timeout or 0),
+            "timeout_seconds": stream_timeout_seconds,
         }
     except OSError as exc:
         is_timeout = "timed out" in str(exc).lower()
@@ -64,7 +65,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "backend_unreachable": not is_timeout,
             "error_type": type(exc).__name__,
             "error": str(exc),
-            "timeout_seconds": int(timeout or 0),
+            "timeout_seconds": stream_timeout_seconds,
         }
     try:
         decoded = json.loads(raw)
