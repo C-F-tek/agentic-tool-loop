@@ -316,7 +316,7 @@ def _post_final_reject_turn_tool_names(
     required = evidence_contract.get("required_next_tool_call")
     required_tool = str(required.get("tool") or "").strip() if isinstance(required, dict) else ""
     if required_tool:
-        if required_tool in tool_names:
+        if required_tool in known:
             return [required_tool]
 
         final_reason = ""

@@ -26,9 +26,20 @@ def _runtime_roots_payload(config: Mapping[str, Any], job_root: Any) -> dict[str
 
 
 def _base_tool_surface_reason(evidence_contract: Mapping[str, Any]) -> str:
-    final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "").strip().lower()
-    if final_rewrite_latch != "inactive":
+    existing = str(evidence_contract.get("base_tool_surface_reason") or "").strip()
+    if existing:
+        return existing
+
+    final_rewrite_latch = str(
+        evidence_contract.get("final_rewrite_latch") or "inactive"
+    ).strip().lower()
+    if final_rewrite_latch in {
+        "rewrite_required",
+        "required_gap_only",
+        "terminal_block_required",
+    }:
         return "final_rewrite_latch"
+
     surface_policy = (
         evidence_contract.get("turn_tool_surface_policy")
         if isinstance(evidence_contract.get("turn_tool_surface_policy"), dict)
@@ -38,8 +49,21 @@ def _base_tool_surface_reason(evidence_contract: Mapping[str, Any]) -> str:
 
 
 def _allowed_actions_from_contract(evidence_contract: Mapping[str, Any]) -> list[str]:
-    may_final = bool(evidence_contract.get("planner_may_choose_final"))
-    may_block = bool(evidence_contract.get("planner_may_choose_block"))
+    final_contract = (
+        evidence_contract.get("finalization_contract")
+        if isinstance(evidence_contract.get("finalization_contract"), dict)
+        else {}
+    )
+
+    may_final = (
+        evidence_contract.get("planner_may_choose_final") is True
+        or final_contract.get("planner_may_choose_final") is True
+        or final_contract.get("final_allowed") is True
+    )
+    may_block = (
+        evidence_contract.get("planner_may_choose_block") is True
+        or final_contract.get("planner_may_choose_block") is True
+    )
     if may_final and may_block:
         return ["final", "block"]
     if may_final:
