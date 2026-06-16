@@ -708,12 +708,6 @@ def validate_planner_decision_against_evidence(
 
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
 
-        required_next_missing_evidences = _list_or_empty(quality.get("required_next_missing_evidences"))
-        if required_next_missing_evidences:
-            contract["required_next_missing_evidences"] = required_next_missing_evidences[:12]
-        required_next_output_sections = _list_or_empty(quality.get("required_next_output_sections"))
-        if required_next_output_sections:
-            contract["required_next_output_sections"] = required_next_output_sections[:8]
         invalid_required_next_tool_call_paths: list[str] = []
         if required_next_progress:
             contract["required_next_progress"] = required_next_progress

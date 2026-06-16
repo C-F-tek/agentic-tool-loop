@@ -265,7 +265,7 @@ def post_json_stream_to_file(
     allow_plain_text_without_json: bool = False,
 ) -> dict[str, Any]:
     started = time.time()
-    stream_timeout_seconds = max(3600, int(timeout or 1))
+    stream_timeout_seconds = max(1, int(timeout or 1))
     chunks: list[str] = []
     guard_chunks: list[str] = []
     native_tool_calls: list[dict[str, Any]] = []

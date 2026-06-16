@@ -293,7 +293,10 @@ def _degenerate_output_block_decision(
 def _post_final_reject_turn_tool_names(
     evidence_contract: dict[str, Any],
     tool_names: list[str],
+    *,
+    known_tool_names: set[str] | None = None,
 ) -> list[str]:
+    known = set(known_tool_names or tool_names)
     if not isinstance(evidence_contract, dict):
         return tool_names
     final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
@@ -315,7 +318,31 @@ def _post_final_reject_turn_tool_names(
     if required_tool:
         if required_tool in tool_names:
             return [required_tool]
-        return [required_tool]
+        evidence_contract["required_next_tool_call_invalid_tool"] = required_tool
+        evidence_contract["required_next_tool_call_invalid_reason"] = (
+            "required_next_tool_call.tool is present in the planner registry but not "
+            "in the current final-rewrite tool surface."
+            if required_tool in known
+            else "required_next_tool_call.tool is not present in the planner tool registry"
+        )
+        evidence_contract.pop("required_next_tool_call", None)
+        evidence_contract["planner_may_choose_final"] = False
+        evidence_contract["planner_may_choose_block"] = True
+        evidence_contract["required_next_progress"] = (
+            f"required_next_tool_call references unknown tool {required_tool!r}. "
+            "Return action=block with invalid contract diagnostic instead of calling an unknown tool."
+        )
+        final_contract = (
+            evidence_contract.get("finalization_contract")
+            if isinstance(evidence_contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_contract["planner_may_choose_final"] = False
+        final_contract["planner_may_choose_block"] = True
+        final_contract["final_allowed"] = False
+        final_contract["reason"] = "required_next_tool_call_unknown_tool"
+        evidence_contract["finalization_contract"] = final_contract
+        return []
     if final_rewrite_latch in {"rewrite_required", "required_gap_only"}:
         return []
     return []
@@ -405,6 +432,11 @@ def planner_decision(
         if isinstance(item.get("function"), dict)
         and item["function"].get("name") in internal_tools_list(exclude_vulkan=False)
     ]
+    known_tool_names = {
+        str(item.get("name") or "").strip()
+        for item in all_tool_manifest
+        if str(item.get("name") or "").strip()
+    }
 
     last_step = history[-1] if history else {}
     last_tool_result = last_step.get("tool_result") if isinstance(last_step, dict) else {}
@@ -446,7 +478,11 @@ def planner_decision(
         evidence_contract=evidence_contract,
         intrinsic_context=intrinsic_context,
     )
-    native_tool_names = _post_final_reject_turn_tool_names(evidence_contract, base_tool_names)
+    native_tool_names = _post_final_reject_turn_tool_names(
+        evidence_contract,
+        base_tool_names,
+        known_tool_names=known_tool_names,
+    )
     final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
     if "base_tool_surface_reason" not in evidence_contract:
         turn_tool_surface_policy = (
@@ -508,6 +544,7 @@ def planner_decision(
     refined_native_tool_names = _post_final_reject_turn_tool_names(
         evidence_contract,
         refined_native_tool_names,
+        known_tool_names=known_tool_names,
     )
     if AGENTIC_PLANNER_NATIVE_TOOLS and refined_native_tool_names != native_tool_names:
         native_tool_names = refined_native_tool_names
@@ -523,6 +560,14 @@ def planner_decision(
             return ""
         normalized = str(Path(normalized).resolve()).lower().replace("\\", "/").rstrip("/")
         return normalized
+
+    def _is_terminal_runtime_tool(name: str) -> bool:
+        lowered = str(name or "").strip().lower()
+        return (
+            lowered.startswith("terminal_")
+            or lowered.startswith("open_terminal_")
+            or lowered in {"run_command", "terminal_run_command", "terminal_run_command_wait"}
+        )
 
     runtime_roots_mismatch = False
     if isinstance(runtime_roots, dict):
@@ -542,7 +587,16 @@ def planner_decision(
                 normalized_workdir == normalized_lab or normalized_workdir.startswith(f"{normalized_lab}/")
             )
     evidence_contract["runtime_roots_mismatch"] = runtime_roots_mismatch
-    if runtime_roots_mismatch:
+    terminal_runtime_surface = any(
+        _is_terminal_runtime_tool(name)
+        for name in base_tool_names + native_tool_names
+    )
+    runtime_roots_mismatch_blocks_final = bool(runtime_roots_mismatch and terminal_runtime_surface)
+    evidence_contract["runtime_roots_mismatch_blocks_final"] = runtime_roots_mismatch_blocks_final
+    evidence_contract["runtime_roots_mismatch_diagnostic_only"] = bool(
+        runtime_roots_mismatch and not runtime_roots_mismatch_blocks_final
+    )
+    if runtime_roots_mismatch_blocks_final:
         final_contract = (
             evidence_contract.get("finalization_contract")
             if isinstance(evidence_contract.get("finalization_contract"), dict)
@@ -790,7 +844,7 @@ def planner_decision(
             "details": str(exc)[:1000],
         })
 
-    planner_stream_timeout_seconds = max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 0))
+    planner_stream_timeout_seconds = max(1, int(AGENTIC_PLANNER_STEP_TIMEOUT or 1))
 
     append_agent_event(
         job_id, "planner_request_started",
