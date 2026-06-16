@@ -4047,6 +4047,132 @@ def _sanitize_replan_specialist_response(value: Any) -> dict[str, Any]:
     }
 
 
+def _replan_contract_path_items(value: Any) -> list[Any]:
+    if isinstance(value, dict):
+        items = value.get("items")
+        return items if isinstance(items, list) else []
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _replan_repo_path_token(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("path") or value.get("source_path") or ""
+    token = str(value or "").strip().replace("\\", "/")
+    while token.startswith("./"):
+        token = token[2:]
+    return token
+
+
+def _replan_contract_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    allowed: set[str] = set()
+
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        for item in _replan_contract_path_items(contract.get(key)):
+            token = _replan_repo_path_token(item)
+            if token:
+                allowed.add(token)
+
+    for item in _replan_contract_path_items(contract.get("verified_content_reads")):
+        token = _replan_repo_path_token(item)
+        if token:
+            allowed.add(token)
+
+    final_contract = _dict_or_empty(contract.get("finalization_contract"))
+    coverage = _dict_or_empty(
+        final_contract.get("minimum_read_coverage")
+        or contract.get("minimum_read_coverage")
+    )
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        for item in _replan_contract_path_items(coverage.get(key)):
+            token = _replan_repo_path_token(item)
+            if token:
+                allowed.add(token)
+
+    return allowed
+
+
+def _replan_required_repo_read_paths(args: dict[str, Any]) -> list[Any]:
+    out: list[Any] = []
+    if not isinstance(args, dict):
+        return out
+    if args.get("path") not in (None, "", [], {}):
+        out.append(args.get("path"))
+    raw_paths = args.get("paths")
+    if isinstance(raw_paths, list):
+        out.extend(raw_paths)
+    return out
+
+
+def _sanitize_replan_specialist_result_against_contract(
+    result: dict[str, Any],
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Do not let replan specialist turn prose/metrics into repo_read routes."""
+    result = result if isinstance(result, dict) else {}
+    if result.get("ok") is not True:
+        return result
+
+    required_call = (
+        result.get("required_next_tool_call")
+        if isinstance(result.get("required_next_tool_call"), dict)
+        else {}
+    )
+    tool = _normalize_tool_name(str(required_call.get("tool") or ""))
+    if tool != "repo_read":
+        return result
+
+    args = (
+        required_call.get("arguments")
+        if isinstance(required_call.get("arguments"), dict)
+        else {}
+    )
+    raw_paths = _replan_required_repo_read_paths(args)
+    allowed_paths = _replan_contract_repo_read_allowlist(contract)
+
+    valid_paths: list[str] = []
+    invalid_paths: list[str] = []
+    for raw_path in raw_paths:
+        token = _replan_repo_path_token(raw_path)
+        if token and token in allowed_paths:
+            if token not in valid_paths:
+                valid_paths.append(token)
+        elif token and token not in invalid_paths:
+            invalid_paths.append(token)
+
+    if invalid_paths:
+        result["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
+        result["invalid_required_next_tool_call_reason"] = (
+            "planner_replan_specialist proposed repo_read paths that are not "
+            "known/admissible repo paths in the current evidence contract"
+        )
+
+    if valid_paths:
+        required_call["arguments"] = {"paths": valid_paths[:12]}
+        result["required_next_tool_call"] = required_call
+        return result
+
+    result["required_next_tool_call"] = {}
+    if invalid_paths:
+        result["decision"] = "block_recommended"
+        result["required_next_progress"] = (
+            "Replan specialist proposed no valid existing repo_read path. "
+            "Do not call repo_read for prose, metrics, headings, or non-existing paths. "
+            "Use verified evidence for a terminal answer if allowed, or return a typed block."
+        )
+    return result
+
+
+
 def planner_replan_specialist_for_validation(
     *,
     goal: str,
@@ -4232,6 +4358,7 @@ def planner_replan_specialist_for_validation(
                     or "planner_replan_specialist_json_repair_invalid"
                 )
     result = _sanitize_replan_specialist_response(decoded)
+    result = _sanitize_replan_specialist_result_against_contract(result, contract)
     result.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
