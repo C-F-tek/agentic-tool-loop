@@ -642,9 +642,9 @@ class PromptPackBuilder:
                     evidence_contract=payload["evidence_contract"],
                     available_tool_names=available_tool_names,
                 )
-                # Rileggi evidence_contract normalizzato dopo _normalize_transport_tool_surface_state
-                payload_evidence = _dict_field(payload, "evidence_contract")
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
+                # Rileggi evidence_contract normalizzato dopo _preserve_required_next_tool_call_for_prompt
+                payload_evidence = _dict_field(payload, "evidence_contract")
                 payload["tool_shape_examples"] = _tool_shape_examples_for_transport(
                     tool_shape_examples=_hard_budget_tool_shape_examples_for_prompt(),
                     available_tool_names=available_tool_names,

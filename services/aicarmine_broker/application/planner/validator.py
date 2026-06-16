@@ -1193,26 +1193,12 @@ def validate_planner_decision_against_evidence(
             for path in normalized
         )
         if duplicate_threshold_reached:
-            # Route di consumo evidenza: proponi planner_scratchpad_read per consumare evidenza verificata
+            # Non forzare planner_scratchpad_read senza document_id/section/offset reali
             contract["required_next_progress"] = (
-                "Duplicate repo_read recovery: consume verified evidence via planner_scratchpad_read "
-                "before forcing terminal block. Review existing reads and extract conclusions."
+                "Duplicate repo_read recovery: use verified_content_reads and required_working_set.repo_reads; "
+                "do not repeat repo_read. Extract conclusions from existing verified evidence."
             )
-            contract["required_next_tool_call"] = {
-                "tool": "planner_scratchpad_read",
-                "arguments": {
-                    "paths": list(normalized)[:3],
-                    "max_chars": 3000,
-                    "max_paths": min(len(normalized), 3),
-                },
-                "reason": (
-                    "consume verified evidence from duplicate reads; "
-                    "extract conclusions before forcing terminal block."
-                ),
-                "source": "duplicate_repo_read_recovery_evidence_consumption",
-                "validated": True,
-                "validation_source": "deterministic_duplicate_recovery_route",
-            }
+            # Non impostare required_next_tool_call: attendi documento_id reale da required_working_set
             contract["planner_may_choose_block"] = True
             contract["planner_may_choose_final"] = False
             final_contract["planner_forced_terminal_block"] = True
@@ -1223,7 +1209,7 @@ def validate_planner_decision_against_evidence(
             final_contract["final_allowed"] = False
             final_contract["planner_may_choose_final"] = False
             final_contract["reason"] = "duplicate_repo_read_recovery_count_threshold_reached"
-            # Se evidenzia non è stata consumata, mantieni required_next_progress informativo
+            # Se required_next_progress non è stato settato, mantieni messaggio informativo
             if not contract.get("required_next_progress"):
                 contract["required_next_progress"] = (
                     "Duplicate repo_read recovery crossed retry threshold. "
