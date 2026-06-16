@@ -1023,10 +1023,9 @@ def validate_planner_decision_against_evidence(
                 "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
                 "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
             )
-            has_gap_route = bool(required_next_missing_evidences)
             final_rewrite_latch = "terminal_block_required" if reject_count >= 2 else "rewrite_required"
             if final_rewrite_latch == "rewrite_required":
-                if has_gap_route:
+                if required_next_missing_evidences:
                     contract["required_next_progress"] = (
                         "Final-quality rejected with concrete, verified evidence gaps but no runnable required_next_tool_call. "
                         "You must rewrite the final answer by explicitly addressing the remaining required gaps: "
@@ -1048,8 +1047,8 @@ def validate_planner_decision_against_evidence(
                 )
             else:
                 contract["planner_may_choose_block"] = False
+        has_gap_route = bool(required_next_tool_call) or bool(required_next_missing_evidences)
         if required_next_tool_call:
-            has_gap_route = has_gap_route or bool(required_next_missing_evidences)
             final_rewrite_latch = _next_final_rewrite_latch(
                 str(contract.get("final_rewrite_latch") or ""),
                 reject_count=reject_count,
@@ -1386,6 +1385,47 @@ def validate_planner_decision_against_evidence(
 
     if action in {"final", "done", "complete", "completed"}:
         final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+        final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+
+        final_forced_block_payload = final_contract.get("planner_forced_terminal_block")
+        planner_forced_terminal_block = False
+        planner_forced_terminal_block_reason = ""
+        if isinstance(final_forced_block_payload, dict):
+            planner_forced_terminal_block = bool(final_forced_block_payload.get("enabled"))
+            planner_forced_terminal_block_reason = str(final_forced_block_payload.get("reason") or "").strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        else:
+            planner_forced_terminal_block = bool(final_forced_block_payload is True)
+            planner_forced_terminal_block_reason = str(
+                final_contract.get("planner_forced_terminal_block_reason") or ""
+            ).strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        contract["finalization_contract"] = final_contract
+
+        planner_may_choose_block = bool(contract.get("planner_may_choose_block")) or bool(
+            final_contract.get("planner_may_choose_block")
+        )
+        if (final_rewrite_latch == "terminal_block_required" and planner_may_choose_block) or planner_forced_terminal_block:
+            violations.append("terminal_block_required_final_disallowed")
+            contract["terminal_block_final_retry_count"] = int(contract.get("terminal_block_final_retry_count") or 0) + 1
+            contract["planner_cuda_rewrite_required"] = True
+            contract["final_rewrite_latch"] = "terminal_block_required"
+            contract["planner_may_choose_final"] = False
+            contract["planner_may_choose_block"] = True
+            contract["required_next_progress"] = (
+                "Terminal block lane is active after repeated final-quality rejection. "
+                "Return action=block with the remaining blocker; do not emit another final."
+            )
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["planner_may_choose_block"] = True
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                planner_forced_terminal_block_reason or "terminal_block_required_final_disallowed"
+            )
+            final_contract["reason"] = "terminal_block_required_final_disallowed"
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+
         if final_contract and final_contract.get("final_allowed") is False:
             violations.append("final_not_allowed_by_evidence_contract:" + str(final_contract.get("reason") or "insufficient evidence"))
         if post_write_validation_required and not post_write_validation_done:
