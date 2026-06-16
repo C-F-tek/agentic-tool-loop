@@ -442,8 +442,9 @@ class PromptPackBuilder:
             available_tool_names = _tool_names_from_available_tools_payload(
                 available_tools_for_payload if isinstance(available_tools_for_payload, Mapping) else {}
             )
+            payload_evidence = _dict_field(evidence_for_prompt, 'evidence_contract')
             _normalize_transport_tool_surface_state(
-                evidence_contract=evidence_for_prompt,
+                evidence_contract=payload_evidence,
                 available_tool_names=available_tool_names,
             )
             tool_shape_examples = _tool_shape_examples_for_transport(
@@ -498,7 +499,7 @@ class PromptPackBuilder:
                 "surface_filter_source": str(evidence_for_prompt.get("surface_filter_source") or "tool_surface_policy"),
                 "planner_may_choose_final": bool(evidence_for_prompt.get("planner_may_choose_final")),
                 "planner_may_choose_block": bool(evidence_for_prompt.get("planner_may_choose_block")),
-                "allowed_actions": _allowed_actions_from_contract(evidence_for_prompt),
+                "allowed_actions": _allowed_actions_from_contract(payload_evidence),
                 "required_next_tool_call": (
                     evidence_for_prompt["required_next_tool_call"]
                     if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict)
@@ -574,9 +575,9 @@ class PromptPackBuilder:
             }
             if step_budget_guidance:
                 payload_local["planner_step_budget_guidance"] = step_budget_guidance
-            if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict):
-                payload_local["required_next_tool_call"] = evidence_for_prompt["required_next_tool_call"]
-            if isinstance(evidence_for_prompt.get("forbidden_repeated_tool_calls"), list):
+            if isinstance(payload_evidence.get("required_next_tool_call"), dict):
+                payload_local["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
+            if isinstance(payload_evidence.get("forbidden_repeated_tool_calls"), list):
                 payload_local["forbidden_repeated_tool_calls"] = evidence_for_prompt["forbidden_repeated_tool_calls"]
             report_local = _prompt_budget_report(
                 payload_local,
