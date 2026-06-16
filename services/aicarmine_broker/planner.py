@@ -381,6 +381,9 @@ from .application.tool_surface.turn_surface_policy import (
     contract_final_required_now as _contract_final_required_now,
     tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
 )
+from .application.tool_surface.required_tool_call import (
+    required_next_tool_call_satisfaction as _required_next_tool_call_satisfaction,
+)
 from .application.evidence.user_scope_claims import (
     claim_area_from_user_token as _claim_area_from_user_token_impl,
     normalize_scope_claim_text as _normalize_scope_claim_text_impl,
@@ -3116,6 +3119,7 @@ def _repo_analysis_final_answer_model_quality(
     contract: dict[str, Any],
     *,
     goal: str,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     request = _repo_analysis_final_answer_model_quality_request(
         final_answer,
@@ -3146,7 +3150,7 @@ def _repo_analysis_final_answer_model_quality(
     timeout_seconds = min(90, max(20, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
     response = post_json(PLANNER_URL, payload, timeout_seconds)
     if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
-        quality = _sanitize_repo_analysis_final_model_quality(None)
+        quality = _sanitize_repo_analysis_final_model_quality(None, contract)
         quality.update({
             "violations": ["repo_analysis_final_model_quality_unavailable"],
             "required_next_progress": (
@@ -3242,7 +3246,7 @@ def _repo_analysis_final_answer_model_quality(
                     "json_parse_error": repair_parse.get("error"),
                     "raw_response_preview": repaired_raw_text[:2000],
                 })
-    quality = _sanitize_repo_analysis_final_model_quality(decoded)
+    quality = _sanitize_repo_analysis_final_model_quality(decoded, contract)
     quality.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
@@ -3264,6 +3268,108 @@ def _repo_analysis_final_answer_model_quality(
             "Final answer rejected because the model final-quality judge did not return valid JSON. "
             "Retry final-quality evaluation; do not accept the final through deterministic heuristics."
         )
+    history_for_audit = history if isinstance(history, list) else []
+    required_route = (
+        quality.get("required_next_tool_call")
+        if isinstance(quality.get("required_next_tool_call"), dict)
+        else {}
+    )
+    if required_route:
+        route_audit = _specialist_route_audit(
+            required_route,
+            history_for_audit,
+            source="repo_analysis_final_quality",
+            allowed_tools=_FINAL_QUALITY_ROUTE_TOOLS,
+        )
+        if route_audit.get("accepted") is not True:
+            retry_user_payload = dict(user_payload)
+            retry_rules = retry_user_payload.get("decision_rules")
+            retry_rules = list(retry_rules) if isinstance(retry_rules, list) else []
+            retry_rules.append(
+                "A previous required_next_tool_call failed prevalidation. Do not repeat it. "
+                "Choose one different valid route, or omit required_next_tool_call and require "
+                "a corrected final answer from existing evidence."
+            )
+            retry_user_payload["decision_rules"] = retry_rules
+            retry_user_payload["prevalidation_feedback"] = _prompt_clip_value(
+                route_audit,
+                text_limit=900,
+                list_limit=8,
+            )
+            retry_payload = {
+                "model": PLANNER_MODEL,
+                "stream": False,
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "think": False,
+                "format": "json",
+                "messages": [
+                    {"role": "system", "content": str(request.get("system") or "")},
+                    {"role": "user", "content": json.dumps(retry_user_payload, ensure_ascii=False, default=str)},
+                ],
+                "options": options,
+            }
+            retry_response = post_json(PLANNER_URL, retry_payload, timeout_seconds)
+            retry_quality: dict[str, Any]
+            retry_audit: dict[str, Any] = {}
+            if (
+                retry_response.get("backend_unreachable")
+                or retry_response.get("backend_timeout")
+                or retry_response.get("error")
+            ):
+                retry_quality = _sanitize_repo_analysis_final_model_quality(None, contract)
+                retry_quality["backend_error"] = (
+                    retry_response.get("error")
+                    or retry_response.get("error_type")
+                    or "planner_backend_error"
+                )
+            else:
+                retry_message = _dict_or_empty(retry_response.get("message"))
+                retry_raw_text = str(
+                    retry_message.get("content")
+                    or retry_response.get("response")
+                    or retry_response.get("partial_content")
+                    or ""
+                )
+                retry_parse = parse_strict_json_object_diagnostics(retry_raw_text)
+                retry_decoded = retry_parse.get("decoded") if retry_parse.get("ok") is True else {}
+                retry_quality = _sanitize_repo_analysis_final_model_quality(retry_decoded, contract)
+                retry_quality["raw_response_preview"] = retry_raw_text[:1200]
+                retry_quality["raw_response_chars"] = len(retry_raw_text)
+                if retry_parse.get("ok") is not True:
+                    retry_quality["json_parse_error_type"] = retry_parse.get("error_type")
+            retry_route = (
+                retry_quality.get("required_next_tool_call")
+                if isinstance(retry_quality.get("required_next_tool_call"), dict)
+                else {}
+            )
+            if retry_route:
+                retry_audit = _specialist_route_audit(
+                    retry_route,
+                    history_for_audit,
+                    source="repo_analysis_final_quality_retry",
+                    allowed_tools=_FINAL_QUALITY_ROUTE_TOOLS,
+                )
+            if retry_route and retry_audit.get("accepted") is True:
+                quality = retry_quality
+                quality["judge_route_prevalidation_retry"] = {
+                    "attempted": True,
+                    "first_audit": route_audit,
+                    "retry_audit": retry_audit,
+                    "accepted": True,
+                }
+            else:
+                quality["stale_or_invalid_judge_route"] = {
+                    "attempted_retry": True,
+                    "first_audit": route_audit,
+                    "retry_audit": retry_audit,
+                    "retry_quality": _prompt_clip_value(retry_quality, text_limit=700, list_limit=8),
+                }
+                quality.pop("required_next_tool_call", None)
+                quality["required_next_progress"] = (
+                    "Final-quality judge route was stale or invalid after one retry. "
+                    "Rewrite action=final from existing verified evidence if sufficient, "
+                    "choose a different concrete evidence gap, or return a typed action=block."
+                )
     return quality
 
 
@@ -3730,6 +3836,60 @@ def _evidence_contract_storage_summary(contract: dict[str, Any]) -> tuple[dict[s
     )
 
 
+def _controller_guard_contract_overlay(contract: dict[str, Any]) -> dict[str, Any]:
+    """Persist only turn-control fields needed to rebuild the next planner contract."""
+    contract = _dict_or_empty(contract)
+    overlay: dict[str, Any] = {}
+    for key in (
+        "planner_cuda_rewrite_required",
+        "final_rewrite_latch",
+        "planner_final_quality_reject_count",
+        "planner_may_choose_final",
+        "planner_may_choose_block",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "invalid_required_next_tool_call_paths",
+        "stale_required_next_tool_calls",
+    ):
+        if key not in contract:
+            continue
+        value = contract.get(key)
+        if isinstance(value, (bool, int)):
+            overlay[key] = value
+        elif isinstance(value, str) and value.strip():
+            overlay[key] = _prompt_clip_text(value, 2000)
+        elif isinstance(value, list) and value:
+            overlay[key] = value[:20]
+        elif isinstance(value, dict) and value:
+            overlay[key] = value
+
+    progress = str(contract.get("required_next_progress") or "").strip()
+    if progress:
+        overlay["required_next_progress"] = _prompt_clip_text(progress, 4000)
+
+    required_call = _dict_or_empty(contract.get("required_next_tool_call"))
+    if required_call:
+        overlay["required_next_tool_call"] = required_call
+
+    candidate_next_actions = _list_or_empty(contract.get("candidate_next_actions"))
+    if candidate_next_actions:
+        overlay["candidate_next_actions"] = candidate_next_actions[:6]
+
+    final_contract = _dict_or_empty(contract.get("finalization_contract"))
+    if final_contract:
+        overlay["finalization_contract"] = {
+            key: final_contract.get(key)
+            for key in (
+                "final_allowed",
+                "planner_may_choose_final",
+                "planner_may_choose_block",
+                "reason",
+            )
+            if key in final_contract and final_contract.get(key) not in (None, "", [], {})
+        }
+    return overlay
+
+
 _REPLAN_SPECIALIST_ROUTE_TOOLS = {
     "repo_read",
     "repo_semantic_search",
@@ -3737,6 +3897,14 @@ _REPLAN_SPECIALIST_ROUTE_TOOLS = {
     "repo_search",
     "repo_list_files",
     "planner_scratchpad_read",
+}
+
+_FINAL_QUALITY_ROUTE_TOOLS = {
+    "repo_read",
+    "repo_semantic_search",
+    "repo_rg_search",
+    "repo_search",
+    "repo_list_files",
 }
 
 
@@ -3778,6 +3946,83 @@ def _validation_needs_replan_specialist(
             "duplicate_window",
         )
     )
+
+
+def _specialist_route_audit(
+    required_call: Any,
+    history: list[dict[str, Any]],
+    *,
+    source: str,
+    allowed_tools: set[str] | None = None,
+) -> dict[str, Any]:
+    allowed = allowed_tools or _REPLAN_SPECIALIST_ROUTE_TOOLS
+    if not isinstance(required_call, dict):
+        return {
+            "schema": "specialist_route_audit.v1",
+            "accepted": False,
+            "source": source,
+            "rejected_reason": "required_next_tool_call_invalid_shape",
+            "safe_feedback": "Do not provide a required_next_tool_call unless it is a valid object.",
+            "diagnostic_only": True,
+        }
+    tool = _normalize_tool_name(str(required_call.get("tool") or ""))
+    raw_args = required_call.get("arguments")
+    args = raw_args if isinstance(raw_args, dict) else {}
+    audit: dict[str, Any] = {
+        "schema": "specialist_route_audit.v1",
+        "accepted": False,
+        "source": source,
+        "tool": tool,
+        "arguments": args,
+    }
+    if not tool or tool not in allowed:
+        audit.update({
+            "rejected_reason": "tool_not_allowed_for_specialist_route",
+            "allowed_tools": sorted(allowed),
+            "safe_feedback": (
+                "Choose only an allowed read/search route, or omit required_next_tool_call "
+                "and instruct the planner to rewrite final/block from existing evidence."
+            ),
+            "diagnostic_only": True,
+        })
+        return audit
+    if not args:
+        audit.update({
+            "rejected_reason": "missing_route_arguments",
+            "safe_feedback": (
+                "Provide concrete arguments for the required route, or omit required_next_tool_call "
+                "and use required_next_progress only."
+            ),
+            "diagnostic_only": True,
+        })
+        return audit
+    satisfaction = _required_next_tool_call_satisfaction(
+        {"tool": tool, "arguments": args},
+        history,
+        successful_repo_read_paths=_agentic_v2_successful_read_paths,
+        successful_window_signatures=_successful_window_signatures,
+        repo_read_window_signature=_repo_read_window_signature,
+        planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
+        decision_paths=_decision_paths,
+    )
+    audit["satisfaction"] = satisfaction
+    if satisfaction.get("satisfied") is True:
+        audit.update({
+            "rejected_reason": "route_already_satisfied",
+            "safe_feedback": (
+                "The proposed route is already satisfied by verified tool history. Do not repeat it. "
+                "Either request one different concrete evidence gap or instruct the planner to rewrite "
+                "a terminal final/block from existing evidence."
+            ),
+            "diagnostic_only": True,
+        })
+        return audit
+    audit.update({
+        "accepted": True,
+        "rejected_reason": "",
+        "normalized_route": {"tool": tool, "arguments": args},
+    })
+    return audit
 
 
 def _sanitize_replan_required_next_tool_call(value: Any) -> dict[str, Any]:
@@ -3856,11 +4101,130 @@ def _sanitize_replan_specialist_response(value: Any) -> dict[str, Any]:
     }
 
 
+def _replan_contract_path_items(value: Any) -> list[Any]:
+    if isinstance(value, dict):
+        items = value.get("items")
+        return items if isinstance(items, list) else []
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _replan_repo_path_token(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("path") or value.get("source_path") or ""
+    token = str(value or "").strip().replace("\\", "/")
+    while token.startswith("./"):
+        token = token[2:]
+    return token
+
+
+def _replan_contract_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    allowed: set[str] = set()
+    completed: set[str] = set()
+
+    def add_token(target: set[str], item: Any) -> None:
+        token = _replan_repo_path_token(item)
+        if token:
+            target.add(token)
+
+    for key in ("validator_admissible_repo_read_paths", "read_admissible_paths"):
+        for item in _replan_contract_path_items(contract.get(key)):
+            add_token(allowed, item)
+
+    for key in ("successful_repo_read_paths", "verified_content_reads"):
+        for item in _replan_contract_path_items(contract.get(key)):
+            add_token(completed, item)
+
+    for row in _replan_contract_path_items(contract.get("stale_required_next_tool_calls")):
+        if not isinstance(row, dict):
+            continue
+        args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
+        for item in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
+            add_token(completed, item)
+
+    return allowed - completed
+
+
+def _replan_required_repo_read_paths(args: dict[str, Any]) -> list[Any]:
+    out: list[Any] = []
+    if not isinstance(args, dict):
+        return out
+    if args.get("path") not in (None, "", [], {}):
+        out.append(args.get("path"))
+    raw_paths = args.get("paths")
+    if isinstance(raw_paths, list):
+        out.extend(raw_paths)
+    return out
+
+
+def _sanitize_replan_specialist_result_against_contract(
+    result: dict[str, Any],
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Do not let replan specialist turn prose/metrics into repo_read routes."""
+    result = result if isinstance(result, dict) else {}
+    if result.get("ok") is not True:
+        return result
+
+    required_call = (
+        result.get("required_next_tool_call")
+        if isinstance(result.get("required_next_tool_call"), dict)
+        else {}
+    )
+    tool = _normalize_tool_name(str(required_call.get("tool") or ""))
+    if tool != "repo_read":
+        return result
+
+    args = (
+        required_call.get("arguments")
+        if isinstance(required_call.get("arguments"), dict)
+        else {}
+    )
+    raw_paths = _replan_required_repo_read_paths(args)
+    allowed_paths = _replan_contract_repo_read_allowlist(contract)
+
+    valid_paths: list[str] = []
+    invalid_paths: list[str] = []
+    for raw_path in raw_paths:
+        token = _replan_repo_path_token(raw_path)
+        if token and token in allowed_paths:
+            if token not in valid_paths:
+                valid_paths.append(token)
+        elif token and token not in invalid_paths:
+            invalid_paths.append(token)
+
+    if invalid_paths:
+        result["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
+        result["invalid_required_next_tool_call_reason"] = (
+            "planner_replan_specialist proposed repo_read paths that are not "
+            "known/admissible repo paths in the current evidence contract"
+        )
+
+    if valid_paths:
+        required_call["arguments"] = {"paths": valid_paths[:12]}
+        result["required_next_tool_call"] = required_call
+        return result
+
+    result["required_next_tool_call"] = {}
+    if invalid_paths:
+        result["decision"] = "block_recommended"
+        result["required_next_progress"] = (
+            "Replan specialist proposed no valid existing repo_read path. "
+            "Do not call repo_read for prose, metrics, headings, or non-existing paths. "
+            "Use verified evidence for a terminal answer if allowed, or return a typed block."
+        )
+    return result
+
+
+
 def planner_replan_specialist_for_validation(
     *,
     goal: str,
     decision: dict[str, Any],
     validation: dict[str, Any],
+    prevalidation_feedback: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     violations = _list_or_empty(validation.get("violations"))
     contract = _dict_or_empty(validation.get("evidence_contract"))
@@ -3883,6 +4247,7 @@ def planner_replan_specialist_for_validation(
         ),
         "validator_violations": violations,
         "evidence_contract": _compact_vulkan_repair_evidence_contract(contract),
+        "repo_read_allowlist": sorted(_replan_contract_repo_read_allowlist(contract))[:48],
         "role_guidance": role_guidance_for_goal(replan_role, goal),
         "rules": [
             "Return strict JSON only.",
@@ -3891,7 +4256,10 @@ def planner_replan_specialist_for_validation(
             "For code-product replan, choose either a complete repo_propose_code_edit in the next planner turn or a typed block.",
             "For repo-analysis replan, never convert duplicate-read/final-quality failures into repo_propose_code_edit or code_product_build_state.",
             "If the rejected required_next_tool_call is already satisfied, set required_next_progress toward final rewrite or one different concrete evidence gap.",
+            "If prevalidation_feedback is present, do not repeat the rejected route. Choose one different valid route or omit required_next_tool_call.",
             "Use required_next_tool_call only for a concrete read/search/window route, never for invented code edits.",
+            "repo_read_allowlist contains only unread validator-admissible paths; if it is empty, do not choose repo_read.",
+            "For repo_read, choose only paths listed in repo_read_allowlist; prose, metrics, headings, concepts, and already-read files must become required_next_progress or a search query.",
         ],
         "allowed_required_next_tools": sorted(_REPLAN_SPECIALIST_ROUTE_TOOLS),
         "required_json_shape": {
@@ -3906,6 +4274,12 @@ def planner_replan_specialist_for_validation(
             "confidence": 0.0,
         },
     }
+    if isinstance(prevalidation_feedback, dict) and prevalidation_feedback:
+        request_payload["prevalidation_feedback"] = _prompt_clip_value(
+            prevalidation_feedback,
+            text_limit=900,
+            list_limit=8,
+        )
     payload = {
         "model": PLANNER_MODEL,
         "stream": False,
@@ -4033,6 +4407,7 @@ def planner_replan_specialist_for_validation(
                     or "planner_replan_specialist_json_repair_invalid"
                 )
     result = _sanitize_replan_specialist_response(decoded)
+    result = _sanitize_replan_specialist_result_against_contract(result, contract)
     result.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
@@ -4437,6 +4812,7 @@ def controller_guard_result_for_validation(
         validation = dict(validation)
         validation["evidence_contract"] = contract
     contract_summary, contract_chars, contract_sha256 = _evidence_contract_storage_summary(contract)
+    contract_overlay = _controller_guard_contract_overlay(contract)
     guard = {
         "tool": "controller_guard",
         "ok": True,
@@ -4462,6 +4838,8 @@ def controller_guard_result_for_validation(
         },
         "ollama_turn": _planner_ollama_turn_from_decision(decision),
     }
+    if contract_overlay:
+        guard["evidence_contract_overlay"] = contract_overlay
     if validation.get("semantic_goal_classification") not in (None, "", [], {}):
         guard["semantic_goal_classification"] = validation.get("semantic_goal_classification")
     if validation.get("invalid_decision_signature") not in (None, "", [], {}):
@@ -5039,6 +5417,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "raw_planner_text_classification": _raw_planner_text_classification,
             "should_attempt_vulkan_repair": _should_attempt_vulkan_repair,
             "should_retry_incomprehensible_planner_output": _should_retry_incomprehensible_planner_output,
+            "specialist_route_audit": _specialist_route_audit,
             "tool_cache_hit": _tool_cache_hit,
             "tool_cache_key": _tool_cache_key,
             "write_loop_turn_memory": _write_loop_turn_memory,
