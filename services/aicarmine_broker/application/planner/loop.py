@@ -13,7 +13,10 @@ from ..shared.evidence_contract_summary import (
 )
 from ..tool_surface.batch_contract import canonical_batch_args as _canonical_batch_args
 from ..tool_surface.batch_contract import canonical_batch_call_key
-from ..tool_surface.required_tool_call import canonical_required_tool_call_key
+from ..tool_surface.required_tool_call import (
+    append_stale_required_call_marker,
+    canonical_required_tool_call_key,
+)
 
 
 def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
@@ -69,6 +72,7 @@ def run_agentic_planner_job(
     _raw_planner_text_classification = deps["raw_planner_text_classification"]
     _should_attempt_vulkan_repair = deps["should_attempt_vulkan_repair"]
     _should_retry_incomprehensible_planner_output = deps["should_retry_incomprehensible_planner_output"]
+    _specialist_route_audit = deps["specialist_route_audit"]
     _tool_cache_hit = deps["tool_cache_hit"]
     _tool_cache_key = deps["tool_cache_key"]
     _write_loop_turn_memory = deps["write_loop_turn_memory"]
@@ -281,6 +285,103 @@ def run_agentic_planner_job(
             else {}
         )
         if required_next_tool_call:
+            route_audit = _specialist_route_audit(
+                required_next_tool_call,
+                history,
+                source="planner_replan_specialist",
+            )
+            if route_audit.get("accepted") is not True:
+                retry_replan = _planner_replan_specialist_for_validation(
+                    goal=str(state.get("goal") or ""),
+                    decision=planner_decision_row,
+                    validation=validation_row,
+                    prevalidation_feedback=route_audit,
+                )
+                append_agent_event(
+                    job_id,
+                    "replan_specialist_route_rejected_by_prevalidation",
+                    "Replan specialist route failed prevalidation; one retry was requested.",
+                    {
+                        "route_audit": route_audit,
+                        "retry_replan": retry_replan,
+                    },
+                    step=step_number,
+                )
+                if retry_replan.get("ok"):
+                    retry_progress = str(retry_replan.get("required_next_progress") or "").strip()
+                    if retry_progress:
+                        contract["required_next_progress"] = retry_progress
+                        contract["required_next_progress_model"] = retry_replan
+                    retry_call = (
+                        retry_replan.get("required_next_tool_call")
+                        if isinstance(retry_replan.get("required_next_tool_call"), dict)
+                        else {}
+                    )
+                    if not retry_call:
+                        contract["replan_specialist_route_diagnostics"] = {
+                            "first_audit": route_audit,
+                            "retry_replan": retry_replan,
+                            "retry_required_next_tool_call": "omitted",
+                        }
+                        contract.pop("required_next_tool_call", None)
+                        enriched["evidence_contract"] = contract
+                        return enriched
+                    retry_audit = (
+                        _specialist_route_audit(
+                            retry_call,
+                            history,
+                            source="planner_replan_specialist_retry",
+                        )
+                    )
+                    if retry_call and retry_audit.get("accepted") is True:
+                        required_next_tool_call = retry_call
+                        replan = retry_replan
+                        route_audit = retry_audit
+                    else:
+                        contract["replan_specialist_route_diagnostics"] = {
+                            "first_audit": route_audit,
+                            "retry_audit": retry_audit,
+                            "retry_replan": retry_replan,
+                        }
+                        contract.pop("required_next_tool_call", None)
+                        contract["required_next_progress"] = (
+                            "Replan specialist could not produce a prevalidated route after one retry. "
+                            "Do not repeat rejected routes. Rewrite action=final from existing verified "
+                            "evidence if sufficient, choose a different concrete evidence gap, or return "
+                            "a typed action=block with the blocker."
+                        )
+                        enriched["evidence_contract"] = contract
+                        return enriched
+                else:
+                    contract["replan_specialist_route_diagnostics"] = {
+                        "first_audit": route_audit,
+                        "retry_replan": retry_replan,
+                    }
+                    contract.pop("required_next_tool_call", None)
+                    contract["required_next_progress"] = (
+                        "Replan specialist route failed prevalidation and retry did not return a usable route. "
+                        "Do not repeat rejected routes. Rewrite action=final from existing verified evidence "
+                        "if sufficient, choose a different concrete evidence gap, or return a typed action=block."
+                    )
+                    enriched["evidence_contract"] = contract
+                    return enriched
+            satisfaction = (
+                route_audit.get("satisfaction")
+                if isinstance(route_audit.get("satisfaction"), dict)
+                else {}
+            )
+            if satisfaction.get("satisfied") is True:
+                append_stale_required_call_marker(contract, satisfaction)
+                contract.pop("required_next_tool_call", None)
+                contract["required_next_progress"] = (
+                    "Replan specialist requested an evidence route that is already satisfied "
+                    "in verified tool history. Do not repeat the same tool route. Rewrite "
+                    "action=final from existing verified evidence, or choose a different "
+                    "concrete evidence gap only if one is still missing."
+                )
+                contract["required_next_progress_model_stale"] = replan
+                enriched["evidence_contract"] = contract
+                return enriched
             violations = {str(item) for item in _list_field(validation_row, "violations")}
             duplicate_route = any(
                 item == "repo_read_window_already_successful_without_progress"

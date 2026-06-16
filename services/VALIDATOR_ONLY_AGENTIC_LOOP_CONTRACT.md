@@ -337,12 +337,12 @@ Schema minimo:
   "failure_patterns": [],
   "tool_purpose_manifest": [],
   "budget_report": {
-    "num_ctx_requested": 12288,
-    "num_ctx_cap": 12288,
-    "num_ctx_effective": 12288,
-    "prompt_char_budget": 48000,
-    "prompt_compact_threshold_chars": 24000,
-    "generation_headroom_char_budget": 40000,
+    "num_ctx_requested": 262144,
+    "num_ctx_cap": 262144,
+    "num_ctx_effective": 262144,
+    "prompt_char_budget": 262144,
+    "prompt_compact_threshold_chars": 131072,
+    "generation_headroom_char_budget": 254144,
     "generation_headroom_reserve_chars": 8000
   }
 }
@@ -352,7 +352,9 @@ Regole:
 
 - `AICARMINE_AGENTIC_PLANNER_NUM_CTX` e' il valore richiesto; il valore
   operativo e' cappato da `AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP` per evitare
-  spill CPU/RAM. Health/eventi espongono requested/cap/effective.
+  spill CPU/RAM. Health/eventi espongono requested/cap/effective. I valori nel
+  blocco sopra sono un esempio coerente con i default codice correnti; launcher
+  e process env restano fonte di verita' per un job gia' avviato.
 - `AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET` governa il prompt pack. Il
   controller misura il prompt reale, incluso system prompt e report stesso.
 - `AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO`, default `0.5`, e' la soglia

@@ -265,6 +265,7 @@ def post_json_stream_to_file(
     allow_plain_text_without_json: bool = False,
 ) -> dict[str, Any]:
     started = time.time()
+    stream_timeout_seconds = max(3600, int(timeout or 1))
     chunks: list[str] = []
     guard_chunks: list[str] = []
     native_tool_calls: list[dict[str, Any]] = []
@@ -287,13 +288,14 @@ def post_json_stream_to_file(
     all_path = stream_path.with_suffix(".all.txt")
 
     last_progress_at = last_waiting_at = 0.0
-    deadline = started + max(1, int(timeout or 1))
+    deadline = started + stream_timeout_seconds
 
     append_agent_event(job_id, "planner_stream_started",
                        f"Planner stream started step={step}.",
                        {
                            "planner_url": url,
-                           "timeout_seconds": timeout,
+                           "timeout_seconds": stream_timeout_seconds,
+                           "planner_step_timeout_requested_seconds": int(timeout or 0),
                            "allow_plain_text_without_json": allow_plain_text_without_json,
                        }, step=step)
 
@@ -330,10 +332,11 @@ def post_json_stream_to_file(
             append_agent_event(
                 job_id,
                 "planner_stream_header_timeout",
-                f"Planner stream did not return HTTP headers within {timeout}s.",
+                f"Planner stream did not return HTTP headers within {stream_timeout_seconds}s.",
                 {
                     "elapsed_seconds": round(time.time() - started, 3),
-                    "timeout_seconds": timeout,
+                    "timeout_seconds": stream_timeout_seconds,
+                    "planner_step_timeout_requested_seconds": int(timeout or 0),
                     "stream_path": str(stream_path),
                     "phase": "awaiting_response_headers",
                 },
@@ -344,11 +347,12 @@ def post_json_stream_to_file(
                 "backend_timeout": True,
                 "backend_unreachable": False,
                 "error_type": "PlannerStreamHeaderTimeout",
-                "error": f"planner stream did not return HTTP headers within {timeout}s",
+                "error": f"planner stream did not return HTTP headers within {stream_timeout_seconds}s",
                 "partial_content": "",
                 "stream_path": str(stream_path),
                 "elapsed_seconds": round(time.time() - started, 3),
                 "timeout_phase": "awaiting_response_headers",
+                "timeout_seconds": stream_timeout_seconds,
             }
         try:
             response_kind, response_value = response_queue.get(timeout=min(5.0, max(0.1, remaining)))
@@ -363,7 +367,8 @@ def post_json_stream_to_file(
                     "Waiting for planner HTTP headers.",
                     {
                         "elapsed_seconds": round(now_ts - started, 3),
-                        "timeout_seconds": timeout,
+                        "timeout_seconds": stream_timeout_seconds,
+                        "planner_step_timeout_requested_seconds": int(timeout or 0),
                         "stream_path": str(stream_path),
                         "phase": "awaiting_response_headers",
                     },
@@ -377,6 +382,7 @@ def post_json_stream_to_file(
             "backend_unreachable": "timed out" not in str(exc).lower(),
             "error_type": type(exc).__name__,
             "error": str(exc),
+            "timeout_seconds": stream_timeout_seconds,
             "partial_content": "",
             "stream_path": str(stream_path),
             "elapsed_seconds": round(time.time() - started, 3),

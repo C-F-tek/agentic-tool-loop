@@ -469,6 +469,104 @@ def _payload_index_row(item: dict[str, Any], index: int, tool_context: dict[str,
     return {}
 
 
+def _code_product_payload_is_complete(artifact: dict[str, Any]) -> bool:
+    edit_kind = str(artifact.get("edit_kind") or "")
+    if edit_kind == "unified_diff":
+        diff = artifact.get("unified_diff")
+        return isinstance(diff, str) and bool(diff.strip())
+    if edit_kind == "structured_edit":
+        operations = artifact.get("structured_operations")
+        return operations not in (None, "", [], {})
+    if edit_kind == "no_op":
+        rationale = artifact.get("rationale")
+        return isinstance(rationale, str) and bool(rationale.strip())
+    return False
+
+
+def _code_product_final_allowed(tool_context: dict[str, Any]) -> bool:
+    contract = _as_dict(
+        tool_context.get("evidence_contract_at_terminal")
+        or tool_context.get("evidence_contract_at_finish")
+    )
+    finalization = _as_dict(contract.get("finalization_contract"))
+    if "final_allowed" in finalization:
+        return finalization.get("final_allowed") is True
+    if "planner_may_choose_final" in contract:
+        return contract.get("planner_may_choose_final") is True
+    if "final_allowed" in contract:
+        return contract.get("final_allowed") is True
+    return False
+
+
+def _code_product_gate(priority_evidence: dict[str, Any], tool_context: dict[str, Any]) -> dict[str, Any]:
+    priority_items = [_as_dict(item) for item in _as_list(priority_evidence.get("items"))]
+    artifacts = [_as_dict(row) for row in _as_list(tool_context.get("artifacts"))]
+    code_items = [
+        item for item in priority_items
+        if str(item.get("kind") or "") in {"code_edit_proposal"}
+        or str(item.get("kind") or "").startswith("partial_code_product")
+    ]
+    proposal_rows = [
+        row for row in artifacts
+        if str(row.get("tool") or "") == "repo_propose_code_edit"
+        or str(_as_dict(row.get("artifact")).get("kind") or "") == "code_edit_proposal"
+    ]
+    if not code_items and not proposal_rows:
+        return {}
+
+    target_file = ""
+    edit_kind = "unknown"
+    repo_propose_ok = False
+    complete_inline = False
+    for row in proposal_rows:
+        artifact = _as_dict(row.get("artifact"))
+        if not target_file:
+            target_file = str(artifact.get("target_file") or row.get("target_file") or "")
+        if edit_kind == "unknown" and str(artifact.get("edit_kind") or "") in {"unified_diff", "structured_edit", "no_op"}:
+            edit_kind = str(artifact.get("edit_kind") or "")
+        if row.get("ok") is not False and artifact.get("ok") is not False:
+            repo_propose_ok = True
+        if _code_product_payload_is_complete(artifact):
+            complete_inline = True
+    for item in code_items:
+        if not target_file:
+            target_file = str(item.get("target_file") or "")
+        if edit_kind == "unknown" and str(item.get("edit_kind") or "") in {"unified_diff", "structured_edit", "no_op"}:
+            edit_kind = str(item.get("edit_kind") or "")
+        if item.get("payload_is_complete") is True:
+            complete_inline = True
+
+    target_read = False
+    if target_file:
+        for row in artifacts:
+            artifact = _as_dict(row.get("artifact"))
+            if str(artifact.get("kind") or "") != "repo_read":
+                continue
+            if row.get("ok") is False or artifact.get("ok") is False:
+                continue
+            if str(artifact.get("repo_path") or "") != target_file:
+                continue
+            content = artifact.get("content")
+            target_read = isinstance(content, str) and bool(content)
+            if target_read:
+                break
+
+    return _clean({
+        "schema": "openwebui_payload_index.code_product_gate.v1",
+        "diagnostic_only": True,
+        "target_file": target_file,
+        "target_read": target_read,
+        "repo_propose_code_edit_ok": repo_propose_ok,
+        "complete_payload_inline": complete_inline,
+        "edit_kind": edit_kind,
+        "final_allowed": _code_product_final_allowed(tool_context),
+        "source": (
+            "Derived from tool_context_for_30b artifacts and priority evidence; "
+            "diagnostic only, not a validator or apply/write decision."
+        ),
+    })
+
+
 def _iter_location_strings(value: Any):
     if isinstance(value, str):
         yield value
@@ -762,6 +860,7 @@ class PublicEvidenceMaterializer:
                 })
         descriptive_rows = descriptive_only
         has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
+        code_product_gate = _code_product_gate(priority_evidence, tool_context)
         return _clean({
             "index_kind": INDEX_KIND,
             "job_completed": bool(completed),
@@ -778,6 +877,7 @@ class PublicEvidenceMaterializer:
             "concrete_results": concrete_results,
             "partial_results": partial_results,
             "descriptive_only": descriptive_rows,
+            "code_product_gate": code_product_gate,
             "suggestions_or_review_metadata_only": suggestions_only + [
                 {
                     "field": "priority_evidence_for_30b.limits",

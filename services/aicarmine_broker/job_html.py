@@ -386,6 +386,67 @@ def _html_pre(value: Any) -> str:
     return f"<pre>{html.escape(text)}</pre>"
 
 
+def _ia_debug_lanes(
+    *,
+    selected_step: dict[str, Any],
+    prompt_available: bool,
+    stream_available: bool,
+    tool_feedback_available: bool,
+    terminal_available: bool,
+    terminal_included: bool,
+    terminal_omitted: bool,
+) -> dict[str, Any]:
+    validator_guard = selected_step.get("validator_guard") if isinstance(selected_step.get("validator_guard"), dict) else {}
+    payload_audit = selected_step.get("payload_audit") if isinstance(selected_step.get("payload_audit"), dict) else {}
+    prompt_capture = selected_step.get("prompt_capture") if isinstance(selected_step.get("prompt_capture"), dict) else {}
+    compacted = bool(
+        prompt_capture.get("capture_compacted")
+        or payload_audit.get("compact_payload_complete") is not True and payload_audit not in ({}, None)
+    )
+    raw_rehydrated = bool(
+        selected_step.get("raw_tool_result_rehydrated") not in (None, "", [], {})
+        or selected_step.get("raw_tool_results_rehydrated") not in (None, "", [], {})
+    )
+    return {
+        "schema": "aicarmine_ia_view_debug_lanes.v1",
+        "diagnostic_only": True,
+        "what_planner_saw": {
+            "available": bool(prompt_available),
+            "source": "planner-prompts/step-XXX-planner-payload.json",
+            "heavy_payload_lazy": True,
+        },
+        "what_validator_rejected": {
+            "available": bool(validator_guard),
+            "source": "events.ndjson planner_decision_rejected payload",
+            "guard_type": validator_guard.get("guard_type") or validator_guard.get("reason"),
+        },
+        "what_tool_returned": {
+            "available": bool(tool_feedback_available),
+            "source": "events.ndjson tool_result payload",
+            "compact_result_fed_back_to_planner": bool(tool_feedback_available),
+        },
+        "what_was_compacted": {
+            "available": bool(compacted),
+            "source": "planner prompt capture / payload audit",
+        },
+        "what_was_rehydrated": {
+            "available": bool(raw_rehydrated or tool_feedback_available),
+            "source": "same-job tool-results artifact",
+            "raw_payload_loaded_in_heavy_view": bool(raw_rehydrated),
+        },
+        "what_openwebui_received": {
+            "available": bool(terminal_available),
+            "source": "final.json tool_context_for_30b",
+            "included": bool(terminal_included),
+            "omitted_from_light_view": bool(terminal_omitted),
+        },
+        "planner_stream": {
+            "available": bool(stream_available),
+            "source": "planner-stream/step-XXX.*",
+        },
+    }
+
+
 def _safe_detail_key(value: Any) -> str:
     text = _safe_text(value, limit=200).strip().lower()
     cleaned = "".join(ch if ch.isalnum() else "-" for ch in text)
@@ -2008,6 +2069,17 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
             or selected_row.get("payload_audit") not in (None, "", [], {})
         )
     )
+    terminal_included = bool(include_heavy and terminal_payload)
+    terminal_omitted = bool(terminal_available and not include_heavy)
+    debug_lanes = _ia_debug_lanes(
+        selected_step=selected_row if isinstance(selected_row, dict) else {},
+        prompt_available=prompt_available,
+        stream_available=stream_available,
+        tool_feedback_available=tool_feedback_available,
+        terminal_available=terminal_available,
+        terminal_included=terminal_included,
+        terminal_omitted=terminal_omitted,
+    )
     event_count_after = len(read_agent_events(job_id, 5000))
     return {
         "ok": True,
@@ -2043,10 +2115,11 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
                 "terminal_payload": {"source": "final.json tool_context_for_30b", "available": terminal_available},
             },
         },
+        "debug_lanes": debug_lanes,
         "openwebui_30b_payload": terminal_payload,
         "openwebui_30b_payload_available": terminal_available,
-        "openwebui_30b_payload_included": bool(include_heavy and terminal_payload),
-        "openwebui_30b_payload_omitted": bool(terminal_available and not include_heavy),
+        "openwebui_30b_payload_included": terminal_included,
+        "openwebui_30b_payload_omitted": terminal_omitted,
     }
 
 
@@ -2188,6 +2261,7 @@ def agent_job_ia_view_html(job_id: str) -> str:
         current_step = all_steps[-1]
     job = payload.get("job") if isinstance(payload.get("job"), dict) else {}
     mutation_check = payload.get("mutation_check") if isinstance(payload.get("mutation_check"), dict) else {}
+    debug_lanes = payload.get("debug_lanes") if isinstance(payload.get("debug_lanes"), dict) else {}
     prompt_capture = current_step.get("prompt_capture") if isinstance(current_step, dict) and isinstance(current_step.get("prompt_capture"), dict) else {}
     planner_decision = current_step.get("planner_decision") if isinstance(current_step, dict) and isinstance(current_step.get("planner_decision"), dict) else {}
     planner_stream = current_step.get("planner_stream") if isinstance(current_step, dict) and isinstance(current_step.get("planner_stream"), dict) else {}
@@ -2395,6 +2469,13 @@ def agent_job_ia_view_html(job_id: str) -> str:
                 available=True,
                 priority=60,
                 summary=payload.get("view_contract") if isinstance(payload.get("view_contract"), dict) else {},
+            ),
+            _html_control_panel(
+                title="Debug Lanes",
+                role="diagnostic",
+                available=bool(debug_lanes),
+                priority=70,
+                summary=debug_lanes,
             ),
         ]
         cards.append(

@@ -108,7 +108,6 @@ dedicated broker or write project-local state require explicit arguments:
 | `aicarmine_agentic_loop_status` | `confirm_agentic_loop` | `aicarmine_agentic_loop_status` | Reads status from the dedicated 3579 broker. |
 | `aicarmine_agentic_loop_result` | `confirm_agentic_loop` | `aicarmine_agentic_loop_result` | Reads a compact result from the dedicated 3579 broker. |
 | `aicarmine_agentic_loop_ensure_broker` | `confirm_ensure_broker` | `aicarmine_agentic_loop_ensure_broker` | Starts a new dedicated broker only when the configured port is free. |
-| `aicarmine_agentic_loop_ensure_broker` with `restart=true` | `confirm_restart_broker` | `aicarmine_agentic_loop_restart_broker` | Restarts only the dedicated broker process tree. |
 | `aicarmine_agentic_loop_ensure_reranker` | `confirm_ensure_reranker` | `aicarmine_agentic_loop_ensure_reranker` | Starts the repo-local OVMS/BGE reranker only when the configured port is free. |
 | `aicarmine_project_memory_upsert_verified` | `confirm_write` | `project_memory_upsert_verified` | Writes verified memory to the repo-local memory DB. |
 | `aicarmine_project_memory_mark_stale` | `confirm_stale` | `project_memory_mark_stale` | Marks memory records stale by verified source. |
@@ -134,7 +133,7 @@ exists.
 | `job_view_mcp_server.py` | `aicarmine_job_view_list_views`, `aicarmine_job_view_render`, `aicarmine_job_view_render_section`, `aicarmine_job_view_ia_payload`, `aicarmine_job_view_outline`, `aicarmine_job_view_links`, `aicarmine_job_view_validate_html` | Local-rendered operator views for existing jobs. | Treat HTML as primary evidence when raw artifacts are available. |
 | `project_memory_mcp_server.py` | `aicarmine_project_memory_search`, `aicarmine_project_memory_get`, `aicarmine_project_memory_upsert_verified`, `aicarmine_project_memory_mark_stale`, `aicarmine_project_memory_supersede`, `aicarmine_project_memory_audit_sources` | Persistent project-local memory with source metadata. | Write silently, store unverified assumptions or reuse RAG/job/planner DBs. |
 | `local_subagent_mcp_server.py` | `aicarmine_local_subagent_health`, `aicarmine_local_subagent_capabilities`, `aicarmine_local_subagent_run_readonly` | Bounded read-only subagent analysis through the dedicated 3579 loop. | Call Ollama directly, use 11434/11435, call 3571/3572 or write source. |
-| `agentic_loop_client_mcp_server.py` | `aicarmine_agentic_loop_health`, `aicarmine_agentic_loop_capabilities`, `aicarmine_agentic_loop_ensure_reranker`, `aicarmine_agentic_loop_ensure_broker`, `aicarmine_agentic_loop_run`, `aicarmine_agentic_loop_status`, `aicarmine_agentic_loop_result` | Dedicated Codex agentic-loop jobs on non-shared 3579. | Reuse shared 3571/3572, start/restart without confirmation, hide oversized payloads as if fully read. |
+| `agentic_loop_client_mcp_server.py` | `aicarmine_agentic_loop_health`, `aicarmine_agentic_loop_capabilities`, `aicarmine_agentic_loop_ensure_reranker`, `aicarmine_agentic_loop_ensure_broker`, `aicarmine_agentic_loop_run`, `aicarmine_agentic_loop_status`, `aicarmine_agentic_loop_result` | Dedicated Codex agentic-loop jobs on non-shared 3579. | Reuse shared 3571/3572, reload/restart a live broker, hide oversized payloads as if fully read. |
 | `repo_code_mcp_server.py` | `aicarmine_repo_code_propose_edit`, `aicarmine_repo_code_unidiff_validate`, `aicarmine_repo_code_git_apply_check`, `aicarmine_repo_code_apply_patch` | Incubating report-only code proposal checks; exact patching only when explicitly confirmed. | Promote into stable tools or write source without `allow_source_write=true`. |
 | `ops_mcp_server.py` | `aicarmine_mcp_inventory_*`, `aicarmine_service_state_*` | Read-only local MCP/process/port/log inventory. | HTTP smoke against services, broker calls or unredacted command output. |
 | `mcp_server.py` | Direct `aicarmine_tools` facade including repo/status/search/memory helpers | Compatibility/direct dispatch when no dedicated MCP fits. | Bypass dedicated MCPs, enable command execution, call 3571 or broker HTTP loop. |
@@ -161,13 +160,26 @@ exists.
    surface and `aicarmine_job_artifact_rejections` for validator feedback.
 4. Use `aicarmine_job_view_*` only after raw artifacts establish the state.
 
-### Dedicated 3579 Broker Reload
+For important jobs, keep a read-only contract proof bundle: `job.json`,
+`events.ndjson`, `final.json`, terminal `payload_index_for_30b`,
+`priority_evidence_for_30b`, `tool_context_for_30b`, planner prompt payload,
+planner stream, compact tool result and raw same-job tool artifact. The
+`aicarmine_job_view_ia_payload` / `/ia-view.json` surface is an index over this
+bundle, not a substitute for the raw artifact or inline public payload.
 
-`aicarmine_agentic_loop_ensure_broker(reload=true)` applies reload behavior only
-when it starts a new dedicated broker process. If a 3579 broker is already
-listening, verify `reload_applied`, PID/log and port state before assuming new
-code is loaded. Use `restart=true` only with `confirm_restart_broker` and only
-for the dedicated 3579 process tree.
+### Dedicated 3579 Broker Code Freshness
+
+`aicarmine_agentic_loop_ensure_broker` is start-only: it may start the
+dedicated 3579 broker only when the configured port is free and
+`confirm_ensure_broker` is supplied. It must not reload or restart a live
+broker. `reload`, `restart` and `confirm_restart_broker` are rejected with
+`broker_reload_restart_removed_from_mcp`.
+
+To load new code, the operator stops and restarts the broker manually outside
+the MCP tool surface, then verifies PID, log and port state before relying on
+the new process. Historical jobs interrupted by older reload behavior remain
+diagnostic evidence; the MCP must not convert them into artificial terminal
+states.
 
 ## Documentation Maintenance
 
