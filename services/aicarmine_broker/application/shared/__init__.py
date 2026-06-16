@@ -16,6 +16,7 @@ _PUBLIC_EXPORTS = {
     'evidence_contract_summary_triplet': 'evidence_contract_summary',
     'history_tool_result': 'history_queries',
     'planner_ollama_turn_from_decision': 'history_ledger',
+    'repo_path_token': 'path_tokens',
     'repo_rel_token': 'path_tokens',
     'safe_json_text': 'diagnostics',
     'safe_text': 'diagnostics',

@@ -11,20 +11,7 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     append_stale_required_call_marker,
     required_next_tool_call_satisfaction,
 )
-
-
-def _repo_path_token(value: Any) -> str:
-    text = str(value or "").strip().replace("\\", "/").strip()
-    if not text:
-        return ""
-    text = text.strip("/")
-    while text.startswith("./"):
-        text = text[2:]
-    while text.startswith("../"):
-        text = text[3:]
-    while "//" in text:
-        text = text.replace("//", "/")
-    return text
+from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
 
 
 def _repo_path_is_concrete(token: Any) -> bool:
@@ -961,6 +948,89 @@ def validate_planner_decision_against_evidence(
             final_contract["reason"] = "repo_analysis_final_model_quality_rejected"
         contract["finalization_contract"] = final_contract
 
+    def _apply_duplicate_repo_read_path_recovery_contract(
+        contract: dict[str, Any],
+        repeated_reads: list[str],
+        history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        contract = contract if isinstance(contract, dict) else {}
+        history = history if isinstance(history, list) else []
+        normalized: list[str] = []
+        for path in repeated_reads if isinstance(repeated_reads, list) else []:
+            token = _repo_path_token(path)
+            if token and token not in normalized:
+                normalized.append(token)
+        if not normalized:
+            return contract
+
+        forbidden: list[str] = []
+        for item in contract.get("forbidden_repeated_repo_read_paths", []):
+            if isinstance(item, str):
+                token = _repo_path_token(item)
+                if token and token not in forbidden:
+                    forbidden.append(token)
+        for token in normalized:
+            if token not in forbidden:
+                forbidden.append(token)
+        if not forbidden:
+            return contract
+        contract["forbidden_repeated_repo_read_paths"] = forbidden[:40]
+
+        required_next_tool_call = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if required_next_tool_call:
+            required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            required_args = (
+                required_next_tool_call.get("arguments")
+                if isinstance(required_next_tool_call.get("arguments"), dict)
+                else {}
+            )
+            if required_tool == "repo_read":
+                required_paths = _decision_paths(required_args)
+                if any(path in normalized for path in required_paths):
+                    last_step = None
+                    if history and isinstance(history[-1], dict):
+                        last_step = history[-1].get("step")
+                    append_stale_required_call_marker(
+                        contract,
+                        {
+                            "tool": required_tool,
+                            "arguments": required_args,
+                            "satisfied": True,
+                            "reason": "repo_read_already_successful",
+                            "path_overlap": normalized,
+                            "step": last_step,
+                        },
+                    )
+
+        contract.pop("required_next_tool_call", None)
+        contract.pop("required_next_tool_call_validated", None)
+        contract.pop("required_next_tool_call_validation_source", None)
+        contract["required_next_progress"] = (
+            "Read/analysis path already exists in successful repo_read history. "
+            "Use required_working_set and verified_content_reads to consume the evidence; "
+            "do not repeat full-path repo_read for already successful paths."
+        )
+        if _minimum_read_coverage_satisfied():
+            contract["planner_may_choose_final"] = True
+            final_contract = (
+                contract.get("finalization_contract")
+                if isinstance(contract.get("finalization_contract"), dict)
+                else {}
+            )
+            final_contract["final_allowed"] = True
+            final_contract["planner_may_choose_final"] = True
+            coverage = contract.get("minimum_read_coverage")
+            if isinstance(coverage, dict):
+                contract["coverage_satisfied"] = coverage.get("coverage_satisfied", True)
+            contract["finalization_contract"] = final_contract
+        if _coerce_final_rewrite_latch(contract.get("final_rewrite_latch")) == "terminal_block_required":
+            contract["planner_may_choose_block"] = True
+        return contract
+
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
         return {
@@ -1651,12 +1721,10 @@ def validate_planner_decision_against_evidence(
         repeated_reads = [p for p in _agentic_v2_decision_paths(tool, args) if p in already_read]
         if repeated_reads:
             violations.append("repo_read_already_successful:" + ",".join(repeated_reads[:5]))
-            contract = _escalate_final_rewrite_retry_count(
+            contract = _apply_duplicate_repo_read_path_recovery_contract(
                 contract,
-                has_gap_route=bool(
-                    contract.get("required_next_tool_call")
-                    or contract.get("required_next_missing_evidences")
-                ),
+                repeated_reads=repeated_reads,
+                history=history,
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
 
