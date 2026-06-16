@@ -498,6 +498,15 @@ def _code_product_final_allowed(tool_context: dict[str, Any]) -> bool:
     return False
 
 
+def _artifact_repo_path(artifact: dict[str, Any]) -> str:
+    return str(
+        artifact.get("repo_path")
+        or artifact.get("path")
+        or artifact.get("source_path")
+        or ""
+    ).strip()
+
+
 def _code_product_gate(priority_evidence: dict[str, Any], tool_context: dict[str, Any]) -> dict[str, Any]:
     priority_items = [_as_dict(item) for item in _as_list(priority_evidence.get("items"))]
     artifacts = [_as_dict(row) for row in _as_list(tool_context.get("artifacts"))]
@@ -540,11 +549,12 @@ def _code_product_gate(priority_evidence: dict[str, Any], tool_context: dict[str
     if target_file:
         for row in artifacts:
             artifact = _as_dict(row.get("artifact"))
-            if str(artifact.get("kind") or "") != "repo_read":
+            kind = str(artifact.get("kind") or "")
+            if kind not in {"repo_read", "repo_file_full_content"}:
                 continue
             if row.get("ok") is False or artifact.get("ok") is False:
                 continue
-            if str(artifact.get("repo_path") or "") != target_file:
+            if _artifact_repo_path(artifact) != target_file:
                 continue
             content = artifact.get("content")
             target_read = isinstance(content, str) and bool(content)

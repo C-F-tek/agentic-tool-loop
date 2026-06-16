@@ -8,6 +8,25 @@ from typing import Any
 from ...tool_contract import normalize_tool_name
 from ..shared.diagnostics import diagnostic_row, safe_json_text, safe_text
 
+_DISCOVERY_ROUTE_TOOLS = {
+    "repo_semantic_search",
+    "repo_rg_search",
+    "repo_search",
+    "repo_list_files",
+}
+
+_DISCOVERY_ARG_ALIASES = {
+    "limit": "max_results",
+    "top_k": "max_results",
+    "candidate_limit": "max_results",
+}
+
+_DISCOVERY_CONTROL_ARGS = {
+    "rerank",
+    "reindex",
+    "max_chunk_chars",
+}
+
 
 ToolArgs = dict[str, Any]
 DecisionPaths = Callable[[ToolArgs], list[str]]
@@ -52,6 +71,27 @@ def _history_decision_args(row: Any) -> dict[str, Any]:
     return args if isinstance(args, dict) else {}
 
 
+def _canonical_discovery_args(tool: str, args: ToolArgs) -> dict[str, Any]:
+    if tool not in _DISCOVERY_ROUTE_TOOLS:
+        return args if isinstance(args, dict) else {}
+    if not isinstance(args, dict):
+        return {}
+
+    out: dict[str, Any] = {}
+    for key, value in args.items():
+        if value in (None, "", [], {}):
+            continue
+
+        raw_key = safe_text(key, limit=160)
+        canonical_key = _DISCOVERY_ARG_ALIASES.get(raw_key, raw_key)
+        if canonical_key in _DISCOVERY_CONTROL_ARGS:
+            continue
+
+        out[canonical_key] = value
+
+    return out
+
+
 def _successful_identical_tool_call(history: list[dict[str, Any]], tool: str, args: ToolArgs) -> bool:
     expected = canonical_required_tool_call_key(tool, args)
     for row in history if isinstance(history, list) else []:
@@ -75,15 +115,12 @@ def _successful_tool_call_satisfies_required_args(
     executed_args: ToolArgs,
 ) -> bool:
     """Allow runtime-expanded read-only discovery calls to satisfy model routes."""
-    if tool not in {
-        "repo_semantic_search",
-        "repo_rg_search",
-        "repo_search",
-        "repo_list_files",
-    }:
+    if tool not in _DISCOVERY_ROUTE_TOOLS:
         return False
     if not isinstance(required_args, dict) or not isinstance(executed_args, dict):
         return False
+    required_args = _canonical_discovery_args(tool, required_args)
+    executed_args = _canonical_discovery_args(tool, executed_args)
     meaningful_required = {
         safe_text(key, limit=160): value
         for key, value in required_args.items()

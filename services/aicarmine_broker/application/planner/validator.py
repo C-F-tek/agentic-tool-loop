@@ -211,6 +211,10 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
         "stale_required_next_tool_calls",
         "required_next_progress",
         "required_next_tool_call_validation_error",
+        "replan_specialist_route_diagnostics",
+        "replan_specialist_route_audit",
+        "replan_specialist_retry_audit",
+        "replan_specialist_retry_replan",
     ):
         contract.pop(key, None)
 
@@ -237,18 +241,6 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
     final_contract["final_allowed"] = True
     final_contract["planner_may_choose_final"] = True
     final_contract["planner_may_choose_block"] = False
-    final_contract.pop("planner_forced_terminal_block", None)
-    final_contract.pop("planner_forced_terminal_block_reason", None)
-    final_contract.pop("planner_final_quality_terminal_block", None)
-    final_contract.pop("planner_final_quality_terminal_block_count", None)
-    final_contract.pop("planner_final_quality_terminal_block_latched", None)
-    final_contract.pop("planner_final_quality_latched_patch_axes", None)
-    final_contract.pop("planner_final_quality_latched_operator_instructions", None)
-    final_contract.pop("planner_final_answer_blocked_reason", None)
-    final_contract.pop("planner_final_quality_public_notice", None)
-    final_contract.pop("required_next_tool_call", None)
-    final_contract.pop("required_next_missing_evidences", None)
-    final_contract.pop("required_next_output_sections", None)
     for key in (
         "planner_forced_terminal_block",
         "planner_forced_terminal_block_reason",
@@ -259,6 +251,13 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
         "planner_final_quality_latched_operator_instructions",
         "planner_final_answer_blocked_reason",
         "planner_final_quality_public_notice",
+        "required_next_tool_call",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "replan_specialist_route_diagnostics",
+        "replan_specialist_route_audit",
+        "replan_specialist_retry_audit",
+        "replan_specialist_retry_replan",
     ):
         final_contract.pop(key, None)
     if final_contract.get("reason") in {

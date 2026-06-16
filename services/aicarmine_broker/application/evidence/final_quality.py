@@ -1014,7 +1014,7 @@ def _sanitize_required_next_tool_call(
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
-    tool = str(value.get("tool") or "").strip()
+    tool = str(value.get("tool") or "").strip().lower()
     if tool not in _ALLOWED_FINAL_QUALITY_ROUTE_TOOLS:
         _record_invalid_required_next_tool_call(
             diagnostics,
