@@ -7,7 +7,8 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO, parse_bool
 from aicarmine_broker.infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error, git_candidate_files
+from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error
+from aicarmine_broker.tools.git_surface import git_candidate_files
 
 
 _EXCLUDE_DIRS_DEFAULT = frozenset(
