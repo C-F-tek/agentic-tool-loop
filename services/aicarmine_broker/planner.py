@@ -3150,7 +3150,7 @@ def _repo_analysis_final_answer_model_quality(
     timeout_seconds = min(90, max(20, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
     response = post_json(PLANNER_URL, payload, timeout_seconds)
     if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
-        quality = _sanitize_repo_analysis_final_model_quality(None)
+        quality = _sanitize_repo_analysis_final_model_quality(None, contract)
         quality.update({
             "violations": ["repo_analysis_final_model_quality_unavailable"],
             "required_next_progress": (
@@ -3246,7 +3246,7 @@ def _repo_analysis_final_answer_model_quality(
                     "json_parse_error": repair_parse.get("error"),
                     "raw_response_preview": repaired_raw_text[:2000],
                 })
-    quality = _sanitize_repo_analysis_final_model_quality(decoded)
+    quality = _sanitize_repo_analysis_final_model_quality(decoded, contract)
     quality.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
@@ -3316,7 +3316,7 @@ def _repo_analysis_final_answer_model_quality(
                 or retry_response.get("backend_timeout")
                 or retry_response.get("error")
             ):
-                retry_quality = _sanitize_repo_analysis_final_model_quality(None)
+                retry_quality = _sanitize_repo_analysis_final_model_quality(None, contract)
                 retry_quality["backend_error"] = (
                     retry_response.get("error")
                     or retry_response.get("error_type")
@@ -3332,7 +3332,7 @@ def _repo_analysis_final_answer_model_quality(
                 )
                 retry_parse = parse_strict_json_object_diagnostics(retry_raw_text)
                 retry_decoded = retry_parse.get("decoded") if retry_parse.get("ok") is True else {}
-                retry_quality = _sanitize_repo_analysis_final_model_quality(retry_decoded)
+                retry_quality = _sanitize_repo_analysis_final_model_quality(retry_decoded, contract)
                 retry_quality["raw_response_preview"] = retry_raw_text[:1200]
                 retry_quality["raw_response_chars"] = len(retry_raw_text)
                 if retry_parse.get("ok") is not True:
@@ -4201,6 +4201,7 @@ def planner_replan_specialist_for_validation(
         ),
         "validator_violations": violations,
         "evidence_contract": _compact_vulkan_repair_evidence_contract(contract),
+        "repo_read_allowlist": sorted(_replan_contract_repo_read_allowlist(contract))[:48],
         "role_guidance": role_guidance_for_goal(replan_role, goal),
         "rules": [
             "Return strict JSON only.",
@@ -4211,6 +4212,7 @@ def planner_replan_specialist_for_validation(
             "If the rejected required_next_tool_call is already satisfied, set required_next_progress toward final rewrite or one different concrete evidence gap.",
             "If prevalidation_feedback is present, do not repeat the rejected route. Choose one different valid route or omit required_next_tool_call.",
             "Use required_next_tool_call only for a concrete read/search/window route, never for invented code edits.",
+            "For repo_read, choose only paths listed in repo_read_allowlist; prose, metrics, headings, and concepts must become required_next_progress or a search query.",
         ],
         "allowed_required_next_tools": sorted(_REPLAN_SPECIALIST_ROUTE_TOOLS),
         "required_json_shape": {

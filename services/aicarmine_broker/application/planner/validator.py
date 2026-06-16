@@ -248,7 +248,21 @@ def validate_planner_decision_against_evidence(
     def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[str]]:
         valid: list[str] = []
         invalid: list[str] = []
+        conceptual_tokens = {
+            "coverage required",
+            "read or search pending",
+            "missing core candidate paths",
+            "missing unverified file mentions",
+        }
         for path in _coalesce_required_next_missing_paths(values):
+            if (
+                path in conceptual_tokens
+                or path.startswith("need_")
+                or any(ch.isspace() for ch in path)
+            ):
+                if path not in invalid:
+                    invalid.append(path)
+                continue
             if _path_exists_repo_relative(path) and _repo_readable_evidence_file(path):
                 if path not in valid:
                     valid.append(path)
