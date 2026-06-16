@@ -296,7 +296,11 @@ def _post_final_reject_turn_tool_names(
     *,
     known_tool_names: set[str] | None = None,
 ) -> list[str]:
-    known = set(known_tool_names or tool_names)
+    known_by_lower = {}
+    for name in known_tool_names or tool_names:
+        canonical_name = str(name or "").strip()
+        if canonical_name:
+            known_by_lower[canonical_name.lower()] = canonical_name
     if not isinstance(evidence_contract, dict):
         return tool_names
     final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
@@ -314,37 +318,25 @@ def _post_final_reject_turn_tool_names(
     if final_rewrite_latch == "terminal_block_required":
         return []
     required = evidence_contract.get("required_next_tool_call")
-    required_tool = str(required.get("tool") or "").strip() if isinstance(required, dict) else ""
-    if required_tool:
-        if required_tool in known:
-            return [required_tool]
+    required_tool_raw = str(required.get("tool") or "").strip() if isinstance(required, dict) else ""
+    required_tool_key = required_tool_raw.lower()
+    if required_tool_key:
+        canonical_required_tool = known_by_lower.get(required_tool_key)
+        if canonical_required_tool:
+            return [canonical_required_tool]
 
-        final_reason = ""
-        evidence_contract["required_next_tool_call_invalid_tool"] = required_tool
+        evidence_contract["required_next_tool_call_invalid_tool"] = required_tool_raw
         evidence_contract["required_next_tool_call_invalid_reason"] = (
-            "required_next_tool_call.tool exists in the planner registry but is not currently "
-            "allowed by the final-rewrite tool surface."
-            if required_tool in known
-            else "required_next_tool_call.tool is not present in the planner tool registry"
+            "required_next_tool_call.tool is not present in the planner tool registry"
         )
         evidence_contract.pop("required_next_tool_call", None)
         evidence_contract["planner_may_choose_final"] = False
         evidence_contract["planner_may_choose_block"] = True
-        if required_tool in known:
-            final_reason = "required_next_tool_call_not_in_current_surface"
-            evidence_contract["required_next_progress"] = (
-                f"required_next_tool_call references tool {required_tool!r}, "
-                "which is present in the planner registry but unavailable in the current final-rewrite "
-                "tool surface. Return action=block with an unavailable-tool-surface diagnostic instead "
-                "of calling a tool outside this turn surface."
-            )
-        else:
-            final_reason = "required_next_tool_call_unknown_tool"
-            evidence_contract["required_next_progress"] = (
-                f"required_next_tool_call references unknown tool {required_tool!r}. "
-                "Return action=block with invalid contract diagnostic instead of calling "
-                "an unknown tool."
-            )
+        evidence_contract["required_next_progress"] = (
+            f"required_next_tool_call references unknown tool {required_tool_raw!r}. "
+            "Return action=block with invalid contract diagnostic instead of calling "
+            "an unknown tool."
+        )
         final_contract = (
             evidence_contract.get("finalization_contract")
             if isinstance(evidence_contract.get("finalization_contract"), dict)
@@ -353,7 +345,7 @@ def _post_final_reject_turn_tool_names(
         final_contract["planner_may_choose_final"] = False
         final_contract["planner_may_choose_block"] = True
         final_contract["final_allowed"] = False
-        final_contract["reason"] = final_reason
+        final_contract["reason"] = "required_next_tool_call_unknown_tool"
         evidence_contract["finalization_contract"] = final_contract
         return []
     if final_rewrite_latch in {"rewrite_required", "required_gap_only"}:

@@ -234,16 +234,6 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
     else:
         contract.pop("candidate_next_actions", None)
 
-    contract.pop("planner_forced_terminal_block", None)
-    contract.pop("planner_forced_terminal_block_reason", None)
-    contract.pop("planner_final_quality_terminal_block", None)
-    contract.pop("planner_final_quality_terminal_block_count", None)
-    contract.pop("planner_final_quality_terminal_block_latched", None)
-    contract.pop("planner_final_quality_latched_patch_axes", None)
-    contract.pop("planner_final_quality_latched_operator_instructions", None)
-    contract.pop("planner_final_answer_blocked_reason", None)
-    contract.pop("planner_final_quality_public_notice", None)
-
     final_contract["final_allowed"] = True
     final_contract["planner_may_choose_final"] = True
     final_contract["planner_may_choose_block"] = False
