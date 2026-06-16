@@ -2094,6 +2094,8 @@ class EvidenceBuilder:
                         "planner_may_choose_final",
                         "planner_may_choose_block",
                         "reason",
+                        "planner_forced_terminal_block",
+                        "planner_forced_terminal_block_reason",
                     ):
                         if key in overlay_final_contract:
                             final_contract[key] = overlay_final_contract.get(key)
@@ -2105,6 +2107,27 @@ class EvidenceBuilder:
                     final_contract["planner_may_choose_block"] = bool(
                         latest_evidence_contract_overlay.get("planner_may_choose_block")
                     )
+                if (
+                    contract.get("final_rewrite_latch") in {
+                        "rewrite_required",
+                        "required_gap_only",
+                        "terminal_block_required",
+                    }
+                ):
+                    final_contract["final_allowed"] = False
+                    final_contract["planner_may_choose_final"] = False
+                    if contract.get("final_rewrite_latch") == "terminal_block_required":
+                        final_contract["planner_may_choose_block"] = True
+                        final_contract.setdefault("planner_forced_terminal_block", True)
+                        final_contract.setdefault(
+                            "planner_forced_terminal_block_reason",
+                            "planner_cuda_rewrite_required_history_overlay",
+                        )
+                        contract["planner_may_choose_block"] = True
+                    else:
+                        final_contract["planner_may_choose_block"] = final_contract.get("planner_may_choose_block") is True
+                        contract["planner_may_choose_block"] = bool(final_contract.get("planner_may_choose_block"))
+                    final_contract.setdefault("reason", "final_rewrite_latch_active")
                 contract["finalization_contract"] = final_contract
         proofed_candidates: list[dict[str, Any]] = []
         for action in contract.get("candidate_next_actions") or []:

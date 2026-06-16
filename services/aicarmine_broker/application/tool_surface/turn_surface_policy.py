@@ -226,10 +226,20 @@ class ToolSurfacePolicy:
                     if isinstance(contract.get("finalization_contract"), dict)
                     else {}
                 )
+                final_contract_planner_forced_block = final_contract.get("planner_forced_terminal_block")
+                planner_forced_terminal_block = False
+                if isinstance(final_contract_planner_forced_block, dict):
+                    planner_forced_terminal_block = bool(final_contract_planner_forced_block.get("enabled"))
+                elif final_contract_planner_forced_block is True:
+                    planner_forced_terminal_block = True
                 final_contract["final_allowed"] = False
                 final_contract["planner_may_choose_final"] = False
                 contract["planner_may_choose_final"] = False
-                contract["planner_may_choose_block"] = False
+                if planner_forced_terminal_block:
+                    contract["planner_may_choose_block"] = True
+                    final_contract["planner_may_choose_block"] = True
+                else:
+                    contract["planner_may_choose_block"] = False
                 contract["turn_tool_surface_policy"] = {
                     **policy,
                     "reason": "final_rewrite_latch_required_tool",

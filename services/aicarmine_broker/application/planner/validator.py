@@ -14,6 +14,10 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
 from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
 
 
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _repo_path_is_concrete(token: Any) -> bool:
     token = _repo_path_token(token)
     if not token:
@@ -661,7 +665,6 @@ def validate_planner_decision_against_evidence(
             contract["planner_final_quality_reject_count"] = reject_count
             contract["planner_final_quality_last_rewrite_decision"] = step_index
         reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
-        previous_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
         contract["planner_cuda_rewrite_required"] = True
 
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
@@ -920,17 +923,44 @@ def validate_planner_decision_against_evidence(
                 "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
                 "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
             )
+            has_gap_route = bool(required_next_missing_evidences)
+            final_rewrite_latch = "terminal_block_required" if reject_count >= 2 else "rewrite_required"
+            if final_rewrite_latch == "rewrite_required":
+                if has_gap_route:
+                    contract["required_next_progress"] = (
+                        "Final-quality rejected with concrete, verified evidence gaps but no runnable required_next_tool_call. "
+                        "You must rewrite the final answer by explicitly addressing the remaining required gaps: "
+                        f"{required_next_missing_evidences[:8]}"
+                    )
+                else:
+                    contract["required_next_progress"] = (
+                        "Final-quality rejected without a concrete runnable gap route. "
+                        "Continue rewrite from verified evidence and existing covered gaps only; "
+                        "do not emit block unless a controller-forced terminal decision is present."
+                    )
             if not contract.get("required_next_progress"):
                 contract["required_next_progress"] = fallback_progress
-        has_gap_route = bool(
-            required_next_tool_call
-            or required_next_missing_evidences
-        )
-        final_rewrite_latch = _next_final_rewrite_latch(
-            str(contract.get("final_rewrite_latch") or ""),
-            reject_count=reject_count,
-            has_gap_route=has_gap_route,
-        )
+            if final_rewrite_latch == "terminal_block_required":
+                contract["planner_may_choose_block"] = True
+                contract["planner_forced_terminal_block"] = True
+                contract["planner_forced_terminal_block_reason"] = (
+                    "repo_analysis_final_quality_no_runnable_gap_terminal_block"
+                )
+            else:
+                contract["planner_may_choose_block"] = False
+        if required_next_tool_call:
+            has_gap_route = has_gap_route or bool(required_next_missing_evidences)
+            final_rewrite_latch = _next_final_rewrite_latch(
+                str(contract.get("final_rewrite_latch") or ""),
+                reject_count=reject_count,
+                has_gap_route=has_gap_route,
+            )
+        elif final_rewrite_latch != "terminal_block_required":
+            final_rewrite_latch = _next_final_rewrite_latch(
+                final_rewrite_latch,
+                reject_count=reject_count,
+                has_gap_route=False,
+            )
         contract["final_rewrite_latch"] = final_rewrite_latch
         contract["planner_may_choose_block"] = final_rewrite_latch == "terminal_block_required"
         contract["planner_may_choose_final"] = False
@@ -943,9 +973,14 @@ def validate_planner_decision_against_evidence(
         final_contract["planner_may_choose_final"] = False
         if final_rewrite_latch == "terminal_block_required":
             final_contract["planner_may_choose_block"] = True
-            final_contract["reason"] = "repo_analysis_final_model_quality_repeated_reject_block_required"
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                "repo_analysis_final_quality_no_runnable_gap_terminal_block"
+            )
+            final_contract["reason"] = "repo_analysis_final_quality_no_runnable_gap_terminal_block"
         else:
-            final_contract["reason"] = "repo_analysis_final_model_quality_rejected"
+            final_contract["planner_may_choose_block"] = False
+            final_contract["reason"] = "repo_analysis_final_model_quality_rejected_no_runnable_gap"
         contract["finalization_contract"] = final_contract
 
     def _apply_duplicate_repo_read_path_recovery_contract(
@@ -975,6 +1010,28 @@ def validate_planner_decision_against_evidence(
         if not forbidden:
             return contract
         contract["forbidden_repeated_repo_read_paths"] = forbidden[:40]
+        duplicate_repo_read_recovery_count = (
+            contract.get("duplicate_repo_read_recovery_count")
+            if isinstance(contract.get("duplicate_repo_read_recovery_count"), dict)
+            else {}
+        )
+        for token in normalized:
+            duplicate_repo_read_recovery_count[str(token)] = (
+                int(duplicate_repo_read_recovery_count.get(str(token), 0) or 0) + 1
+            )
+        contract["duplicate_repo_read_recovery_count"] = {
+            key: int(value)
+            for key, value in duplicate_repo_read_recovery_count.items()
+            if str(key).strip()
+        }
+        contract["required_next_tool_call_advisory"] = {
+            "tool": "repo_read",
+            "arguments": {
+                "paths": normalized[:12],
+            },
+            "reason": "already_successful_full_path_read",
+            "source": "duplicate_repo_read_recovery_contract",
+        }
 
         required_next_tool_call = (
             contract.get("required_next_tool_call")
@@ -1010,25 +1067,52 @@ def validate_planner_decision_against_evidence(
         contract.pop("required_next_tool_call_validated", None)
         contract.pop("required_next_tool_call_validation_source", None)
         contract["required_next_progress"] = (
-            "Read/analysis path already exists in successful repo_read history. "
+            "Duplicate repo_read detected: read/analysis path already exists in successful repo_read history. "
             "Use required_working_set and verified_content_reads to consume the evidence; "
             "do not repeat full-path repo_read for already successful paths."
         )
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
         if _minimum_read_coverage_satisfied():
-            contract["planner_may_choose_final"] = True
-            final_contract = (
-                contract.get("finalization_contract")
-                if isinstance(contract.get("finalization_contract"), dict)
-                else {}
-            )
-            final_contract["final_allowed"] = True
-            final_contract["planner_may_choose_final"] = True
+            final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+            if final_rewrite_latch == "inactive":
+                contract["planner_may_choose_final"] = True
+                final_contract["final_allowed"] = True
+                final_contract["planner_may_choose_final"] = True
+            else:
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["reason"] = "duplicate_repo_read_recovery_active_rewrite_latch"
             coverage = contract.get("minimum_read_coverage")
             if isinstance(coverage, dict):
                 contract["coverage_satisfied"] = coverage.get("coverage_satisfied", True)
-            contract["finalization_contract"] = final_contract
-        if _coerce_final_rewrite_latch(contract.get("final_rewrite_latch")) == "terminal_block_required":
+
+        duplicate_threshold_reached = any(
+            int(duplicate_repo_read_recovery_count.get(path, 0) or 0) >= 2
+            for path in normalized
+        )
+        if duplicate_threshold_reached:
+            contract["final_rewrite_latch"] = "terminal_block_required"
             contract["planner_may_choose_block"] = True
+            contract["planner_may_choose_final"] = False
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                "duplicate_repo_read_recovery_count_threshold_reached"
+            )
+            final_contract["planner_may_choose_block"] = True
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "duplicate_repo_read_recovery_count_threshold_reached"
+            if not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Duplicate repo_read recovery crossed retry threshold. "
+                    "Return a rewrite constrained to verified evidence or explicit terminal blocker if controller-forced."
+                )
+
+        contract["finalization_contract"] = final_contract
         return contract
 
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
@@ -1389,6 +1473,76 @@ def validate_planner_decision_against_evidence(
             or reason.startswith("PLANNER_DEGENERATE_OUTPUT")
         ):
             violations.append("planner_block_requires_controller_classification:" + reason[:160])
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_forced_block_payload = final_contract.get("planner_forced_terminal_block")
+        planner_forced_terminal_block = False
+        planner_forced_terminal_block_reason = ""
+        if isinstance(final_forced_block_payload, dict):
+            planner_forced_terminal_block = bool(final_forced_block_payload.get("enabled"))
+            planner_forced_terminal_block_reason = str(final_forced_block_payload.get("reason") or "").strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        else:
+            planner_forced_terminal_block = bool(final_forced_block_payload is True)
+            planner_forced_terminal_block_reason = str(
+                final_contract.get("planner_forced_terminal_block_reason") or ""
+            ).strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        contract["finalization_contract"] = final_contract
+        planner_may_choose_block = bool(contract.get("planner_may_choose_block")) or bool(
+            final_contract.get("planner_may_choose_block")
+        )
+        block_override_reason = (
+            planner_forced_terminal_block_reason
+            if planner_forced_terminal_block and planner_forced_terminal_block_reason
+            else "planner_forced_terminal_block"
+        )
+        if planner_forced_terminal_block:
+            contract["planner_may_choose_block"] = True
+            if block_override_reason and not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Controller-forced terminal block is active: "
+                    f"{block_override_reason}. Consume and pass through this terminal signal."
+                )
+            return {"ok": True, "violations": [], "evidence_contract": contract}
+        if not planner_may_choose_block:
+            final_quality_reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
+            coverage_required = _minimum_read_coverage_required()
+            coverage_satisfied = _minimum_read_coverage_satisfied()
+            coverage_missing = _minimum_read_coverage_missing_owner_paths()
+            required_tool = ""
+            required_next_tool_call = contract.get("required_next_tool_call")
+            if isinstance(required_next_tool_call, dict):
+                required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            coverage_progress = (
+                f"Block is not authorized after {final_quality_reject_count} final-quality reject"
+                f"{'s' if final_quality_reject_count != 1 else ''}; "
+                "provide rewrite evidence before terminal."
+            )
+            final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+            if required_tool:
+                coverage_progress = (
+                    "Block is not authorized by evidence contract while required_next_tool_call is pending. "
+                    f"Required tool: {required_tool}. "
+                    "Either execute the required tool path or return final only when final is explicitly allowed."
+                )
+            elif coverage_required and not coverage_satisfied:
+                coverage_progress = (
+                    "Block is not authorized by evidence contract because minimum read coverage is not satisfied; "
+                    f"missing_owner_paths={coverage_missing[:12]}."
+                )
+            elif final_rewrite_latch:
+                coverage_progress = (
+                    "Block is not authorized by evidence contract while a final-rewrite/deadlock lane is active; "
+                    f"required_next_progress: {str(contract.get('required_next_progress') or '')[:180] or 'resolve remaining lane'}. "
+                    "Resume rewrite using verified evidence and required evidence gaps."
+                )
+            violations.append("block_not_allowed_by_evidence_contract")
+            contract["required_next_progress"] = coverage_progress
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         return {"ok": True, "violations": [], "evidence_contract": contract}
 
