@@ -265,7 +265,7 @@ def post_json_stream_to_file(
     allow_plain_text_without_json: bool = False,
 ) -> dict[str, Any]:
     started = time.time()
-    stream_timeout_seconds = max(1, int(timeout or 1))
+    stream_timeout_seconds = max(3600, int(timeout or 3600))
     chunks: list[str] = []
     guard_chunks: list[str] = []
     native_tool_calls: list[dict[str, Any]] = []
@@ -304,7 +304,7 @@ def post_json_stream_to_file(
 
     def open_response() -> None:
         try:
-            response = urllib.request.urlopen(req, timeout=timeout)
+            response = urllib.request.urlopen(req, timeout=stream_timeout_seconds)
             if response_abandoned.is_set():
                 try:
                     response.close()
@@ -395,14 +395,15 @@ def post_json_stream_to_file(
             while True:
                 if time.time() >= deadline:
                     return {
-                        "ok": False,
-                        "backend_timeout": True,
-                        "backend_unreachable": False,
-                        "error_type": "PlannerStreamTimeout",
-                        "error": f"planner stream exceeded {timeout}s",
-                        "partial_content": "".join(chunks)[-12000:],
-                        "stream_path": str(stream_path),
-                    }
+                    "ok": False,
+                    "backend_timeout": True,
+                    "backend_unreachable": False,
+                    "error_type": "PlannerStreamTimeout",
+                    "error": f"planner stream exceeded {stream_timeout_seconds}s",
+                    "partial_content": "".join(chunks)[-12000:],
+                    "stream_path": str(stream_path),
+                    "timeout_seconds": stream_timeout_seconds,
+                }
                 try:
                     raw_line = response.readline()
                 except (socket.timeout, TimeoutError):

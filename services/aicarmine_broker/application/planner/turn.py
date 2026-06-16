@@ -318,20 +318,33 @@ def _post_final_reject_turn_tool_names(
     if required_tool:
         if required_tool in tool_names:
             return [required_tool]
+
+        final_reason = ""
         evidence_contract["required_next_tool_call_invalid_tool"] = required_tool
         evidence_contract["required_next_tool_call_invalid_reason"] = (
-            "required_next_tool_call.tool is present in the planner registry but not "
-            "in the current final-rewrite tool surface."
+            "required_next_tool_call.tool exists in the planner registry but is not currently "
+            "allowed by the final-rewrite tool surface."
             if required_tool in known
             else "required_next_tool_call.tool is not present in the planner tool registry"
         )
         evidence_contract.pop("required_next_tool_call", None)
         evidence_contract["planner_may_choose_final"] = False
         evidence_contract["planner_may_choose_block"] = True
-        evidence_contract["required_next_progress"] = (
-            f"required_next_tool_call references unknown tool {required_tool!r}. "
-            "Return action=block with invalid contract diagnostic instead of calling an unknown tool."
-        )
+        if required_tool in known:
+            final_reason = "required_next_tool_call_not_in_current_surface"
+            evidence_contract["required_next_progress"] = (
+                f"required_next_tool_call references tool {required_tool!r}, "
+                "which is present in the planner registry but unavailable in the current final-rewrite "
+                "tool surface. Return action=block with an unavailable-tool-surface diagnostic instead "
+                "of calling a tool outside this turn surface."
+            )
+        else:
+            final_reason = "required_next_tool_call_unknown_tool"
+            evidence_contract["required_next_progress"] = (
+                f"required_next_tool_call references unknown tool {required_tool!r}. "
+                "Return action=block with invalid contract diagnostic instead of calling "
+                "an unknown tool."
+            )
         final_contract = (
             evidence_contract.get("finalization_contract")
             if isinstance(evidence_contract.get("finalization_contract"), dict)
@@ -340,7 +353,7 @@ def _post_final_reject_turn_tool_names(
         final_contract["planner_may_choose_final"] = False
         final_contract["planner_may_choose_block"] = True
         final_contract["final_allowed"] = False
-        final_contract["reason"] = "required_next_tool_call_unknown_tool"
+        final_contract["reason"] = final_reason
         evidence_contract["finalization_contract"] = final_contract
         return []
     if final_rewrite_latch in {"rewrite_required", "required_gap_only"}:
@@ -844,7 +857,7 @@ def planner_decision(
             "details": str(exc)[:1000],
         })
 
-    planner_stream_timeout_seconds = max(1, int(AGENTIC_PLANNER_STEP_TIMEOUT or 1))
+    planner_stream_timeout_seconds = max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 3600))
 
     append_agent_event(
         job_id, "planner_request_started",

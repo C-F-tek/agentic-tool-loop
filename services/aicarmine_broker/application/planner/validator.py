@@ -181,6 +181,59 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
     contract["final_rewrite_latch"] = "inactive"
     contract["planner_may_choose_block"] = False
     contract["planner_may_choose_final"] = True
+    for key in (
+        "planner_cuda_rewrite_required",
+        "planner_forced_terminal_block",
+        "planner_forced_terminal_block_reason",
+        "planner_final_quality_terminal_block",
+        "planner_final_quality_terminal_block_count",
+        "planner_final_quality_terminal_block_latched",
+        "planner_final_quality_latched_patch_axes",
+        "planner_final_quality_latched_operator_instructions",
+        "planner_final_answer_blocked_reason",
+        "planner_final_quality_public_notice",
+        "required_next_tool_call",
+        "required_next_tool_call_validated",
+        "required_next_tool_call_validation_source",
+        "required_next_tool_call_invalid_tool",
+        "required_next_tool_call_invalid_reason",
+        "required_next_tool_call_satisfied",
+        "required_next_tool_call_satisfied_reason",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "invalid_required_next_missing_evidences",
+        "invalid_required_next_missing_evidence_reason",
+        "invalid_required_next_tool_call_paths",
+        "invalid_required_next_tool_call_reason",
+        "invalid_required_next_tool_call_query",
+        "required_next_progress_model_stale",
+        "required_next_progress_model",
+        "stale_required_next_tool_calls",
+        "required_next_progress",
+        "required_next_tool_call_validation_error",
+    ):
+        contract.pop(key, None)
+
+    existing_actions = (
+        contract.get("candidate_next_actions")
+        if isinstance(contract.get("candidate_next_actions"), list)
+        else []
+    )
+    filtered_actions = [
+        item for item in existing_actions
+        if not (
+            isinstance(item, dict)
+            and (
+                str(item.get("source") or "") == "repo_analysis_final_model_quality"
+                or str(item.get("action_id") or "").startswith("repo_analysis_final_quality:")
+            )
+        )
+    ]
+    if filtered_actions:
+        contract["candidate_next_actions"] = filtered_actions
+    else:
+        contract.pop("candidate_next_actions", None)
+
     contract.pop("planner_forced_terminal_block", None)
     contract.pop("planner_forced_terminal_block_reason", None)
     contract.pop("planner_final_quality_terminal_block", None)
@@ -203,6 +256,31 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
     final_contract.pop("planner_final_quality_latched_operator_instructions", None)
     final_contract.pop("planner_final_answer_blocked_reason", None)
     final_contract.pop("planner_final_quality_public_notice", None)
+    final_contract.pop("required_next_tool_call", None)
+    final_contract.pop("required_next_missing_evidences", None)
+    final_contract.pop("required_next_output_sections", None)
+    for key in (
+        "planner_forced_terminal_block",
+        "planner_forced_terminal_block_reason",
+        "planner_final_quality_terminal_block",
+        "planner_final_quality_terminal_block_count",
+        "planner_final_quality_terminal_block_latched",
+        "planner_final_quality_latched_patch_axes",
+        "planner_final_quality_latched_operator_instructions",
+        "planner_final_answer_blocked_reason",
+        "planner_final_quality_public_notice",
+    ):
+        final_contract.pop(key, None)
+    if final_contract.get("reason") in {
+        "repo_analysis_final_quality_no_runnable_gap_terminal_block",
+        "repo_analysis_final_model_quality_rejected_no_runnable_gap",
+        "planner_cuda_rewrite_required_repeated_retry_block_required",
+        "planner_cuda_rewrite_required_retry_gap_only",
+        "planner_cuda_rewrite_required_retry_continue",
+        "required_next_tool_call_unknown_tool",
+        "required_next_tool_call_not_in_current_surface",
+    }:
+        final_contract.pop("reason", None)
     contract["finalization_contract"] = final_contract
     return contract
 
