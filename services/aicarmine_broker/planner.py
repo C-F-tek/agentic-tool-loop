@@ -5473,6 +5473,7 @@ def _write_loop_turn_memory(
     )
 
 
+# Patch A: judge report per blocked_needs_attention
 def finalize_agentic_job(
     job_id: str,
     state: dict[str, Any],

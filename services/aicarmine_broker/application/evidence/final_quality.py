@@ -809,8 +809,13 @@ def repo_analysis_final_answer_quality(
     red_flags = final_audit_red_flags(stripped)
     if red_flags.get("follow_up_invitations"):
         violations.append("repo_analysis_final_follow_up_invitation_instead_of_answer")
+    # Patch C: distingue truncated+full_context da evidenza assente
     if red_flags.get("speculative_terms"):
-        violations.append("repo_analysis_final_speculative_claims_without_evidence")
+        read_note_count = metrics.get("read_note_count", 0) or len(metrics.get("verified_content_reads", [])) or 0
+        if read_note_count > 0:
+            violations.append("evidence_consumed_but_final_too_short")
+        else:
+            violations.append("repo_analysis_final_speculative_claims_without_evidence")
     if red_flags.get("generic_no_issue_phrases") and len(rows) < 8:
         violations.append("repo_analysis_final_generic_no_issue_claim_with_shallow_evidence")
     unverified_path_tokens = _unverified_final_path_tokens(

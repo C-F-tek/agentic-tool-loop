@@ -1165,10 +1165,9 @@ def validate_planner_decision_against_evidence(
         contract.pop("required_next_tool_call", None)
         contract.pop("required_next_tool_call_validated", None)
         contract.pop("required_next_tool_call_validation_source", None)
+        # Patch B: duplicate repo_read recovery con evidence consumption route
         contract["required_next_progress"] = (
-            "Duplicate repo_read detected: read/analysis path already exists in successful repo_read history. "
-            "Use required_working_set and verified_content_reads to consume the evidence; "
-            "do not repeat full-path repo_read for already successful paths."
+            "Duplicate repo_read detected. Consume verified evidence windows or rewrite final from existing reads."
         )
         final_contract = (
             contract.get("finalization_contract")
