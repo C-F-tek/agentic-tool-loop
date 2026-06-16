@@ -2038,6 +2038,11 @@ class EvidenceBuilder:
                 contract["planner_cuda_rewrite_required"] = overlay_cuda_required
                 if overlay_latch:
                     contract["final_rewrite_latch"] = overlay_latch
+                elif overlay_cuda_required:
+                    overlay_reject_count = int(
+                        latest_evidence_contract_overlay.get("planner_final_quality_reject_count") or 0
+                    )
+                    contract["final_rewrite_latch"] = "terminal_block_required" if overlay_reject_count >= 2 else "rewrite_required"
                 contract["surface_lock_reason"] = "planner_cuda_rewrite_required_history_overlay"
                 for key in (
                     "planner_final_quality_reject_count",

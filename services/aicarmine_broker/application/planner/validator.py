@@ -117,20 +117,64 @@ def _next_final_rewrite_latch(
     has_gap_route: bool,
 ) -> str:
     current = str(current or "").strip().lower()
-    if current in {"terminal_block_required", "required_gap_only", "rewrite_required"}:
-        if current == "terminal_block_required":
-            return current
-        if current == "required_gap_only" and reject_count < 3 and has_gap_route:
-            return current
-    if has_gap_route:
-        if reject_count >= 3:
-            return "terminal_block_required"
-        if reject_count >= 2:
-            return "required_gap_only"
-        return "rewrite_required"
+    if current == "terminal_block_required":
+        return current
+
+    # one retry is allowed; on the second final-quality reject, block deterministically.
     if reject_count >= 2:
         return "terminal_block_required"
+
+    if current == "required_gap_only":
+        if has_gap_route:
+            return "required_gap_only"
+        return "terminal_block_required"
+
+    # first rejection starts rewrite branch and keeps retry path concrete.
     return "rewrite_required"
+
+
+def _escalate_final_rewrite_retry_count(
+    contract: dict[str, Any],
+    *,
+    has_gap_route: bool,
+) -> dict[str, Any]:
+    contract = contract if isinstance(contract, dict) else {}
+    current_latch = str(contract.get("final_rewrite_latch") or "").strip().lower()
+    if not current_latch:
+        return contract
+    if current_latch not in {"rewrite_required", "required_gap_only", "terminal_block_required"}:
+        return contract
+    if contract.get("planner_cuda_rewrite_required") is not True:
+        return contract
+    if current_latch == "terminal_block_required":
+        contract["planner_may_choose_block"] = True
+        return contract
+
+    reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
+    contract["planner_final_quality_reject_count"] = reject_count
+    next_latch = _next_final_rewrite_latch(
+        current_latch,
+        reject_count=reject_count,
+        has_gap_route=has_gap_route,
+    )
+    contract["final_rewrite_latch"] = next_latch
+    contract["planner_may_choose_block"] = next_latch == "terminal_block_required"
+    final_contract = (
+        contract.get("finalization_contract")
+        if isinstance(contract.get("finalization_contract"), dict)
+        else {}
+    )
+    if next_latch == "terminal_block_required":
+        final_contract["planner_may_choose_block"] = True
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["reason"] = "planner_cuda_rewrite_required_repeated_retry_block_required"
+    elif next_latch == "required_gap_only":
+        final_contract["reason"] = "planner_cuda_rewrite_required_retry_gap_only"
+    else:
+        final_contract["reason"] = "planner_cuda_rewrite_required_retry_continue"
+    contract["finalization_contract"] = final_contract
+    return contract
 
 
 def _collect_repo_paths(values: Any) -> set[str]:
@@ -988,6 +1032,13 @@ def validate_planner_decision_against_evidence(
         repeated_reads = [p for p in _agentic_v2_decision_paths(tool, args) if p in already_read]
         if repeated_reads:
             violations.append("repo_read_already_successful:" + ",".join(repeated_reads[:5]))
+            contract = _escalate_final_rewrite_retry_count(
+                contract,
+                has_gap_route=bool(
+                    contract.get("required_next_tool_call")
+                    or contract.get("required_next_missing_evidences")
+                ),
+            )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
 
     if tool == "repo_list_files":
@@ -1037,6 +1088,13 @@ def validate_planner_decision_against_evidence(
             if tool == "repo_read" and known_paths and path not in known_paths and path not in admissible_reads:
                 # Existing files are valid only if they have been discovered in tree/list evidence.
                 violations.append(f"repo_read_path_not_from_prior_file_evidence:{path}")
+                contract = _escalate_final_rewrite_retry_count(
+                    contract,
+                    has_gap_route=bool(
+                        contract.get("required_next_tool_call")
+                        or contract.get("required_next_missing_evidences")
+                    ),
+                )
             if tool in {"repo_read", "repo_apply_patch", "repo_propose_code_edit"} and not _path_exists_repo_relative(path):
                 violations.append(f"non_existing_path:{path}")
             if tool == "repo_apply_patch":
