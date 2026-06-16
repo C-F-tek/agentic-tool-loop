@@ -442,7 +442,7 @@ class PromptPackBuilder:
             available_tool_names = _tool_names_from_available_tools_payload(
                 available_tools_for_payload if isinstance(available_tools_for_payload, Mapping) else {}
             )
-            payload_evidence = _dict_field(evidence_for_prompt, 'evidence_contract')
+            payload_evidence = evidence_for_prompt
             _normalize_transport_tool_surface_state(
                 evidence_contract=payload_evidence,
                 available_tool_names=available_tool_names,
@@ -495,10 +495,10 @@ class PromptPackBuilder:
                     ],
                 },
                 "runtime_roots": _runtime_roots_payload(config, root),
-                "base_tool_surface_reason": _base_tool_surface_reason(evidence_for_prompt),
-                "surface_filter_source": str(evidence_for_prompt.get("surface_filter_source") or "tool_surface_policy"),
-                "planner_may_choose_final": bool(evidence_for_prompt.get("planner_may_choose_final")),
-                "planner_may_choose_block": bool(evidence_for_prompt.get("planner_may_choose_block")),
+                "base_tool_surface_reason": _base_tool_surface_reason(payload_evidence),
+                "surface_filter_source": str(payload_evidence.get("surface_filter_source") or "tool_surface_policy"),
+                "planner_may_choose_final": bool(payload_evidence.get("planner_may_choose_final")),
+                "planner_may_choose_block": bool(payload_evidence.get("planner_may_choose_block")),
                 "allowed_actions": _allowed_actions_from_contract(payload_evidence),
                 "required_next_tool_call": (
                     payload_evidence["required_next_tool_call"]
