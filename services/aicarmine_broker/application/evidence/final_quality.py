@@ -502,6 +502,23 @@ def _search_query_is_concrete(value: Any) -> bool:
     return bool(useful_tokens)
 
 
+def _record_invalid_required_next_tool_call(
+    diagnostics: dict[str, Any] | None,
+    *,
+    reason: str,
+    paths: list[str] | None = None,
+    query: Any = None,
+) -> None:
+    if diagnostics is None:
+        return
+    if paths:
+        diagnostics["invalid_required_next_tool_call_paths"] = paths[:12]
+    query_text = str(query or "").strip()
+    if query_text:
+        diagnostics["invalid_required_next_tool_call_query"] = query_text[:260]
+    diagnostics["invalid_required_next_tool_call_reason"] = reason
+
+
 def _allowed_concrete_repo_path(value: Any, allowlist: set[str]) -> str:
     if isinstance(value, dict):
         value = value.get("path") or value.get("repo_path") or value.get("source_path")
@@ -990,11 +1007,19 @@ def _violation_code(value: Any) -> str:
     return text[:120]
 
 
-def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> dict[str, Any]:
+def _sanitize_required_next_tool_call(
+    value: Any,
+    contract: dict[str, Any],
+    diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
     tool = str(value.get("tool") or "").strip()
     if tool not in _ALLOWED_FINAL_QUALITY_ROUTE_TOOLS:
+        _record_invalid_required_next_tool_call(
+            diagnostics,
+            reason="final-quality proposed a required_next_tool_call tool outside the allowed route set",
+        )
         return {}
     raw_args = value.get("arguments") if isinstance(value.get("arguments"), dict) else {}
     allowed_args = _ALLOWED_FINAL_QUALITY_ROUTE_ARGS.get(tool, set())
@@ -1011,10 +1036,19 @@ def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> d
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"} and not (
         args.get("query") or args.get("pattern") or args.get("symbol")
     ):
+        _record_invalid_required_next_tool_call(
+            diagnostics,
+            reason=f"{tool} required_next_tool_call was missing query, pattern, or symbol",
+        )
         return {}
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
         query_value = args.get("query") or args.get("pattern") or args.get("symbol")
         if not _search_query_is_concrete(query_value):
+            _record_invalid_required_next_tool_call(
+                diagnostics,
+                reason=f"{tool} query looked like a heading, metric, violation label, or path token",
+                query=query_value,
+            )
             return {}
         known_paths = _known_repo_paths(contract if isinstance(contract, dict) else {})
         known_dirs = _known_repo_dirs(known_paths)
@@ -1023,6 +1057,10 @@ def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> d
             invalid_paths.append(path_token)
             args.pop("path", None)
     if tool == "repo_read" and not (args.get("path") or args.get("paths")):
+        _record_invalid_required_next_tool_call(
+            diagnostics,
+            reason="repo_read required_next_tool_call was missing path or paths",
+        )
         return {}
     if tool == "repo_read":
         allowlist = _repo_read_path_allowlist(contract if isinstance(contract, dict) else {})
@@ -1036,6 +1074,11 @@ def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> d
             elif raw_path not in (None, "", [], {}):
                 invalid_paths.append(str(raw_path))
         if not valid_paths:
+            _record_invalid_required_next_tool_call(
+                diagnostics,
+                reason="repo_read required_next_tool_call contained no concrete unread admissible repo paths",
+                paths=invalid_paths,
+            )
             return {}
         args = {"paths": valid_paths[:12]}
         if invalid_paths:
@@ -1044,6 +1087,11 @@ def _sanitize_required_next_tool_call(value: Any, contract: dict[str, Any]) -> d
         known_dirs = _known_repo_dirs(_known_repo_paths(contract if isinstance(contract, dict) else {}))
         path_token = _repo_rel_token(args.get("path") or ".") or "."
         if path_token != "." and (_route_token_is_prose_or_metric(path_token) or path_token not in known_dirs):
+            _record_invalid_required_next_tool_call(
+                diagnostics,
+                reason="repo_list_files path was not a known concrete repo directory",
+                paths=[path_token],
+            )
             return {}
         args["path"] = path_token
     if invalid_paths and "invalid_required_next_tool_call_paths" not in out:
@@ -1113,7 +1161,12 @@ def sanitize_repo_analysis_final_model_quality(
         violations = []
     required_next_progress = str(value.get("required_next_progress") or "").strip()
     contract = contract if isinstance(contract, dict) else {}
-    required_next_tool_call = _sanitize_required_next_tool_call(value.get("required_next_tool_call"), contract)
+    invalid_required_next_tool_call: dict[str, Any] = {}
+    required_next_tool_call = _sanitize_required_next_tool_call(
+        value.get("required_next_tool_call"),
+        contract,
+        invalid_required_next_tool_call,
+    )
     required_next_output_sections = _sanitize_required_next_output_sections(
         value.get("required_next_output_sections")
     )
@@ -1164,6 +1217,13 @@ def sanitize_repo_analysis_final_model_quality(
     }
     if not required_next_tool_call:
         out.pop("required_next_tool_call", None)
+    for key in (
+        "invalid_required_next_tool_call_paths",
+        "invalid_required_next_tool_call_query",
+        "invalid_required_next_tool_call_reason",
+    ):
+        if invalid_required_next_tool_call.get(key) not in (None, "", [], {}):
+            out[key] = invalid_required_next_tool_call.get(key)
     return out
 
 
