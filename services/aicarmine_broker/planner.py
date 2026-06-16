@@ -4816,6 +4816,8 @@ def controller_guard_result_for_validation(
     guard = {
         "tool": "controller_guard",
         "ok": True,
+        "kind": "validator_feedback",
+        "source": "validator",
         "guard_type": "planner_decision_validation",
         "summary": (
             "planner_decision_validation_failed: " + "; ".join(str(v) for v in violations)

@@ -152,9 +152,11 @@ def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[
     payload: dict[str, Any] = {
         "schema": "planner_controller_guard_history.v1",
         "kind": "validator_feedback",
+        "source": result.get("source") or "validator",
         "step": item.get("step"),
         "substep": item.get("substep"),
         "guard_label": "controller_guard",
+        "not_a_tool": True,
         "ok": result.get("ok"),
         "guard_type": result.get("guard_type"),
         "contract_state": {
@@ -171,6 +173,9 @@ def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[
         "rejected_final_answer_source": rejected.get("final_answer_source"),
         "rejected_content_keys": list(content.keys()) if isinstance(content, dict) else None,
         "required_next_progress": contract.get("required_next_progress"),
+        "required_next_tool_call": contract.get("required_next_tool_call"),
+        "required_next_missing_evidences": contract.get("required_next_missing_evidences"),
+        "required_next_output_sections": contract.get("required_next_output_sections"),
         "planner_may_choose_final": contract.get("planner_may_choose_final"),
         "coverage_satisfied": contract.get("coverage_satisfied"),
         "missing_owner_paths": contract.get("missing_owner_paths"),
@@ -332,10 +337,14 @@ def planner_history_item_messages(
         and isinstance(decision.get("raw_native_tool_call"), dict)
     ):
         raw_native_call = decision["raw_native_tool_call"]
-        raw_tool_name = str((raw_native_call.get("function") or {}).get("name") or "").lower()
-        result_tool_name = str(result.get("tool") if isinstance(result, dict) else "").lower()
-        is_controller_guard = result_tool_name == "controller_guard" or raw_tool_name == "controller_guard"
-        if is_controller_guard:
+        raw_tool_name = str(
+            raw_native_call.get("function", {}).get("name")
+            or raw_native_call.get("name")
+            or decision.get("tool")
+            or ""
+        ).strip().lower()
+        result_tool = str((result or {}).get("tool") if isinstance(result, dict) else "").strip().lower()
+        if raw_tool_name == "controller_guard" or result_tool == "controller_guard":
             payload = planner_tool_result_message_payload(
                 item,
                 result,

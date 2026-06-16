@@ -90,6 +90,10 @@ class ToolSurfacePolicy:
         if required_tools is not None and not self._required_call_is_marked_satisfied(contract):
             return self._ordered(set(required_tools))
 
+        rewrite_latch_tools = self._rewrite_latch_tools(contract)
+        if rewrite_latch_tools is not None:
+            return self._ordered(set(rewrite_latch_tools))
+
         if self._contract_coverage_required(contract) and not self._contract_coverage_satisfied(contract):
             names = set(self._REPO_DISCOVERY_TOOLS)
             names.update(self._NON_TERMINAL_SUPPORT_TOOLS)
@@ -178,6 +182,71 @@ class ToolSurfacePolicy:
             if isinstance(contract.get("required_next_tool_call"), dict)
             else {}
         )
+        rewrite_latch = self._final_rewrite_latch(contract)
+        if rewrite_latch:
+            required_tool = self._required_next_tool_call_tool(required)
+            if required_tool in self._REPO_DISCOVERY_TOOLS and not self._required_call_is_marked_satisfied(contract):
+                arguments = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
+                reason = safe_text(required.get("reason") or progress or "final_rewrite_latch", limit=900)
+                action = {
+                    "action_id": "final_rewrite_latch_required_tool:" + required_tool,
+                    "tool": required_tool,
+                    "arguments": arguments,
+                    "reason": reason,
+                    "source": safe_text(required.get("source") or "final_rewrite_latch", limit=160),
+                    "independent_read_only": True,
+                }
+                contract["candidate_next_actions"] = [action]
+                contract["required_next_tool_call"] = {
+                    "tool": required_tool,
+                    "arguments": arguments,
+                    "reason": reason,
+                    "source": action["source"],
+                }
+                final_contract = (
+                    contract.get("finalization_contract")
+                    if isinstance(contract.get("finalization_contract"), dict)
+                    else {}
+                )
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                contract["planner_may_choose_final"] = False
+                contract["planner_may_choose_block"] = False
+                contract["turn_tool_surface_policy"] = {
+                    **policy,
+                    "reason": "final_rewrite_latch_required_tool",
+                    "allowed_tool_names": [required_tool],
+                    "candidate_actions_filtered": True,
+                    "required_next_tool_call": contract.get("required_next_tool_call"),
+                    "final_rewrite_latch": rewrite_latch,
+                }
+                contract["finalization_contract"] = final_contract
+                return contract
+            final_contract = (
+                contract.get("finalization_contract")
+                if isinstance(contract.get("finalization_contract"), dict)
+                else {}
+            )
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            contract["planner_may_choose_final"] = False
+            policy.update(
+                {
+                    "reason": "final_rewrite_latch_no_required_tool_call",
+                    "final_rewrite_latch": rewrite_latch,
+                }
+            )
+            if rewrite_latch == "terminal_block_required":
+                policy["locked_empty_tool_surface"] = True
+                contract["planner_may_choose_block"] = True
+                final_contract["planner_may_choose_block"] = True
+                final_contract["reason"] = "final_rewrite_latch_terminal_block_required"
+            else:
+                final_contract["reason"] = "final_rewrite_latch_active"
+            contract["finalization_contract"] = final_contract
+            self._set_surface_only(contract, policy, set(), "final_rewrite_latch_lockout")
+            return contract
+
         if required and self._required_call_is_marked_satisfied(contract):
             contract.pop("required_next_tool_call", None)
             required = {}
@@ -611,6 +680,38 @@ class ToolSurfacePolicy:
             return ["planner_scratchpad_read"]
         if tool in self._REPO_DISCOVERY_TOOLS:
             return [tool]
+        return None
+
+    @staticmethod
+    def _required_next_tool_call_tool(required: dict[str, Any]) -> str:
+        required = required if isinstance(required, dict) else {}
+        return normalize_tool_name(safe_text(required.get("tool"), limit=160))
+
+    @classmethod
+    def _final_rewrite_latch(cls, contract: dict[str, Any]) -> str:
+        contract = contract if isinstance(contract, dict) else {}
+        latch = str(contract.get("final_rewrite_latch") or "").strip().lower()
+        if latch in {"rewrite_required", "required_gap_only", "terminal_block_required"}:
+            return latch
+        return ""
+
+    def _rewrite_latch_tools(self, contract: dict[str, Any]) -> list[str] | None:
+        contract = contract if isinstance(contract, dict) else {}
+        latch = self._final_rewrite_latch(contract)
+        if not latch:
+            return None
+        required = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if self._required_call_is_marked_satisfied(contract):
+            return None
+        required_tool = self._required_next_tool_call_tool(required)
+        if required_tool in self._REPO_DISCOVERY_TOOLS:
+            return [required_tool]
+        if latch in {"rewrite_required", "required_gap_only", "terminal_block_required"}:
+            return []
         return None
 
     def _policy_declared_tools(self, contract: dict[str, Any]) -> list[str] | None:
