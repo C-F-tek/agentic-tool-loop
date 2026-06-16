@@ -564,8 +564,6 @@ def validate_planner_decision_against_evidence(
         contract["planner_cuda_rewrite_required"] = True
 
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
-        reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
-        contract["planner_final_quality_reject_count"] = reject_count
 
         required_next_missing_evidences = _list_or_empty(quality.get("required_next_missing_evidences"))
         if required_next_missing_evidences:
@@ -759,6 +757,8 @@ def validate_planner_decision_against_evidence(
             if satisfaction.get("satisfied") is True:
                 append_stale_required_call_marker(contract, satisfaction)
                 contract.pop("required_next_tool_call", None)
+                contract.pop("required_next_tool_call_validated", None)
+                contract.pop("required_next_tool_call_validation_source", None)
                 contract["required_next_progress"] = (
                     "Final-quality requested an evidence route that is already satisfied in "
                     "verified tool history. Do not call the same tool with the same arguments. "
@@ -767,7 +767,11 @@ def validate_planner_decision_against_evidence(
                 )
                 required_next_tool_call = {}
             else:
+                required_next_tool_call["validated"] = True
+                required_next_tool_call["validation_source"] = "deterministic_validator"
                 contract["required_next_tool_call"] = required_next_tool_call
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
                 tool_name = str(required_next_tool_call.get("tool") or "").strip()
                 arguments = (
                     required_next_tool_call.get("arguments")
@@ -792,6 +796,8 @@ def validate_planner_decision_against_evidence(
                 ][:12]
         else:
             contract.pop("required_next_tool_call", None)
+            contract.pop("required_next_tool_call_validated", None)
+            contract.pop("required_next_tool_call_validation_source", None)
             fallback_progress = (
                 "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
                 "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
@@ -1246,6 +1252,8 @@ def validate_planner_decision_against_evidence(
                     contract["planner_may_choose_block"] = True
                     contract["planner_may_choose_final"] = False
                     contract["required_next_tool_call"] = {}
+                    contract.pop("required_next_tool_call_validated", None)
+                    contract.pop("required_next_tool_call_validation_source", None)
                     required_next_progress = (
                         "Rewrite lane support-subturn loop detected. Return a rewritten terminal final "
                         "from verified evidence, or explicit block with remaining evidence gaps."
@@ -1270,6 +1278,8 @@ def validate_planner_decision_against_evidence(
                         contract["planner_may_choose_block"] = True
                         contract["planner_may_choose_final"] = False
                         contract["required_next_tool_call"] = {}
+                        contract.pop("required_next_tool_call_validated", None)
+                        contract.pop("required_next_tool_call_validation_source", None)
                         contract["required_next_progress"] = (
                             "Rewrite lane support-subturn loop detected. Return a rewritten terminal final "
                             "from verified evidence, or explicit block with remaining evidence gaps."
@@ -1316,11 +1326,21 @@ def validate_planner_decision_against_evidence(
             if not violations and contract.get("final_rewrite_latch") == "terminal_block_required":
                 contract["planner_may_choose_block"] = True
             if required_rewrite_missing and not violations:
+                required_tool_call["validated"] = True
+                required_tool_call["validation_source"] = "deterministic_validator"
                 contract["required_next_tool_call"] = required_tool_call
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
             elif required_rewrite_paths and not violations:
+                required_tool_call["validated"] = True
+                required_tool_call["validation_source"] = "deterministic_validator"
                 contract["required_next_tool_call"] = required_tool_call
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
             elif not required_rewrite_paths and not violations:
                 violations.append("repo_read_not_allowed_without_required_next_paths")
+                contract.pop("required_next_tool_call_validated", None)
+                contract.pop("required_next_tool_call_validation_source", None)
                 contract["required_next_progress"] = (
                     "Rewrite lane requires a concrete required_next_tool_call, but it has no path arguments."
                 )

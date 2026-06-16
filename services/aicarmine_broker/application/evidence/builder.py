@@ -1362,6 +1362,8 @@ class EvidenceBuilder:
                         if isinstance(result.get("required_next_tool_call"), dict)
                         else {}
                     ),
+                    "required_next_tool_call_validated": result.get("required_next_tool_call_validated"),
+                    "required_next_tool_call_validation_source": result.get("required_next_tool_call_validation_source"),
                     "evidence_contract_overlay": (
                         result.get("evidence_contract_overlay")
                         if isinstance(result.get("evidence_contract_overlay"), dict)
@@ -2049,6 +2051,10 @@ class EvidenceBuilder:
                     "required_next_missing_evidences",
                     "required_next_output_sections",
                     "invalid_required_next_tool_call_paths",
+                    "invalid_required_next_tool_call_query",
+                    "invalid_required_next_tool_call_reason",
+                    "required_next_tool_call_validated",
+                    "required_next_tool_call_validation_source",
                     "stale_required_next_tool_calls",
                 ):
                     value = latest_evidence_contract_overlay.get(key)
