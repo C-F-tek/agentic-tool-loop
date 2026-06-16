@@ -288,7 +288,11 @@ def _post_write_validation_candidates(
     if validation_failed and paths:
         candidates.append({
             "tool": "repo_read",
-            "arguments": {"paths": paths, "max_chars": 50000},
+            "arguments": {
+                "paths": paths,
+                "max_chars": 50000,
+                "max_paths": len(paths),
+            },
             "reason": "post_write_validation_failed_read_modified_files",
             "source": "post_write_validation_contract",
         })
@@ -804,11 +808,13 @@ class EvidenceBuilder:
         )
         semantic_suggested_actions: list[dict[str, Any]] = []
         if semantic_suggested_read_paths:
+            semantic_suggested_batch_paths = semantic_suggested_read_paths[:8]
             semantic_suggested_actions.append({
                 "tool": "repo_read",
                 "arguments": {
-                    "paths": semantic_suggested_read_paths[:8],
+                    "paths": semantic_suggested_batch_paths,
                     "max_chars": semantic_suggested_read_max_chars,
+                    "max_paths": len(semantic_suggested_batch_paths),
                 },
                 "reason": (
                     "repo_semantic_search returned concrete suggested_repo_read paths; "
@@ -1021,9 +1027,14 @@ class EvidenceBuilder:
                     "Planner must return a typed block instead of generic repository discovery."
                 )
             elif apply_unread_target_files:
+                apply_unread_batch_paths = apply_unread_target_files[:6]
                 candidates = [{
                     "tool": "repo_read",
-                    "arguments": {"paths": apply_unread_target_files[:6], "max_chars": 50000},
+                    "arguments": {
+                        "paths": apply_unread_batch_paths,
+                        "max_chars": 50000,
+                        "max_paths": len(apply_unread_batch_paths),
+                    },
                     "reason": "apply_write_preloop_target_read_required",
                     "source": "apply_write_contract",
                 }]

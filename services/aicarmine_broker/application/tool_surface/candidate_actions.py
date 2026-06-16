@@ -181,7 +181,11 @@ def candidate_actions_from_evidence(
         add({
             "action": "tool",
             "tool": "repo_read",
-            "arguments": {"paths": discovery_selected, "max_chars": multi_file_prompt_read_chars()},
+            "arguments": {
+                "paths": discovery_selected,
+                "max_chars": multi_file_prompt_read_chars(),
+                "max_paths": len(discovery_selected),
+            },
             "reason": (
                 "Read core_discovery_candidates from RAG/rerank or rebuilt LAB_REPO ranking; "
                 "ranking is discovery-only and does not authorize a patch."
@@ -212,7 +216,11 @@ def candidate_actions_from_evidence(
                 add({
                     "action": "tool",
                     "tool": "repo_read",
-                    "arguments": {"paths": selected, "max_chars": multi_file_prompt_read_chars()},
+                    "arguments": {
+                        "paths": selected,
+                        "max_chars": multi_file_prompt_read_chars(),
+                        "max_paths": len(selected),
+                    },
                     "reason": (
                         f"Read up to {scoped_concrete_read_target} dynamically discovered "
                         f"readable files inside requested scope {target_scope} before finalizing."
@@ -235,7 +243,11 @@ def candidate_actions_from_evidence(
             add({
                 "action": "tool",
                 "tool": "repo_read",
-                "arguments": {"paths": selected, "max_chars": multi_file_prompt_read_chars()},
+                "arguments": {
+                    "paths": selected,
+                    "max_chars": multi_file_prompt_read_chars(),
+                    "max_paths": len(selected),
+                },
                 "reason": (
                     f"Read up to {repo_concrete_read_target} dynamically discovered "
                     "readable files from already listed meaningful non-root areas before finalizing."
@@ -260,10 +272,15 @@ def candidate_actions_from_evidence(
     # document. After a small baseline, spend budget on core directories/files.
     if not (repo_goal and len(doc_reads) >= 6):
         if docs:
+            doc_paths = docs[:scoped_concrete_read_target]
             add({
                 "action": "tool",
                 "tool": "repo_read",
-                "arguments": {"paths": docs[:scoped_concrete_read_target], "max_chars": multi_file_prompt_read_chars()},
+                "arguments": {
+                    "paths": doc_paths,
+                    "max_chars": multi_file_prompt_read_chars(),
+                    "max_paths": len(doc_paths),
+                },
                 "reason": "Read repository documentation/config already discovered in evidence before finalizing.",
             })
 
