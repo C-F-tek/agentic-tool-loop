@@ -15,16 +15,23 @@ _DISCOVERY_ROUTE_TOOLS = {
     "repo_list_files",
 }
 
-_DISCOVERY_ARG_ALIASES = {
-    "limit": "max_results",
-    "top_k": "max_results",
-    "candidate_limit": "max_results",
+_DISCOVERY_SEMANTIC_ARGS = {
+    "repo_semantic_search": {"query", "path"},
+    "repo_rg_search": {"query", "pattern", "path"},
+    "repo_search": {"query", "pattern", "symbol", "path"},
+    "repo_list_files": {"path", "suffix", "glob"},
 }
 
-_DISCOVERY_CONTROL_ARGS = {
+_DISCOVERY_RUNTIME_CONTROL_ARGS = {
+    "limit",
+    "top_k",
+    "candidate_limit",
+    "max_results",
+    "max_files",
     "rerank",
     "reindex",
     "max_chunk_chars",
+    "context",
 }
 
 
@@ -71,23 +78,25 @@ def _history_decision_args(row: Any) -> dict[str, Any]:
     return args if isinstance(args, dict) else {}
 
 
-def _canonical_discovery_args(tool: str, args: ToolArgs) -> dict[str, Any]:
+def _semantic_discovery_args(tool: str, args: ToolArgs) -> dict[str, Any]:
     if tool not in _DISCOVERY_ROUTE_TOOLS:
         return args if isinstance(args, dict) else {}
     if not isinstance(args, dict):
         return {}
 
+    semantic_keys = _DISCOVERY_SEMANTIC_ARGS.get(tool, set())
     out: dict[str, Any] = {}
     for key, value in args.items():
         if value in (None, "", [], {}):
             continue
 
-        raw_key = safe_text(key, limit=160)
-        canonical_key = _DISCOVERY_ARG_ALIASES.get(raw_key, raw_key)
-        if canonical_key in _DISCOVERY_CONTROL_ARGS:
+        raw_key = safe_text(key, limit=160).lower()
+        if raw_key in _DISCOVERY_RUNTIME_CONTROL_ARGS:
+            continue
+        if raw_key not in semantic_keys:
             continue
 
-        out[canonical_key] = value
+        out[raw_key] = value
 
     return out
 
@@ -119,8 +128,8 @@ def _successful_tool_call_satisfies_required_args(
         return False
     if not isinstance(required_args, dict) or not isinstance(executed_args, dict):
         return False
-    required_args = _canonical_discovery_args(tool, required_args)
-    executed_args = _canonical_discovery_args(tool, executed_args)
+    required_args = _semantic_discovery_args(tool, required_args)
+    executed_args = _semantic_discovery_args(tool, executed_args)
     meaningful_required = {
         safe_text(key, limit=160): value
         for key, value in required_args.items()
