@@ -1531,7 +1531,7 @@ class EvidenceBuilder:
             "ranked_core_candidate_dirs": core_candidates,
             "semantic_search_followup": {
                 "schema": "semantic_search_followup.v1",
-                "suggested_next_tool": "repo_read" if valid_unread_suggested_read_paths else ""  # Patch P2a: usare valid_unread invece di semantic_suggested_read_paths,
+                "suggested_next_tool": "repo_read" if valid_unread_suggested_read_paths else "",  # Patch P2a: usare valid_unread
                 "suggested_repo_read_paths": valid_unread_suggested_read_paths[:40],
                 "suggested_repo_read_count": len(valid_unread_suggested_read_paths),
                 "max_chars": semantic_suggested_read_max_chars if semantic_suggested_read_paths else None,
