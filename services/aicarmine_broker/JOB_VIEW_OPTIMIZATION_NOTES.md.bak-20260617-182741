@@ -30,18 +30,18 @@ This document tracks the implementation status of job view quality regression fi
 - [x] `renderStructureRows()` - Handles array rows with depth/path/role/type fields
 - [x] `renderChainItem()` - Escapes role_label and kind_label for XSS prevention
 
-### Lost Surfaces (Implemented)
-The following functions have been implemented as operator-relevant surfaces (not optional):
-- `renderRedundancyAudit()` - Redundancy audit display
-- `renderPartialResults()` - Partial results display
-- `renderDescriptiveOnly()` - Descriptive-only fields display
-- `renderSearchOrder()` - Search order display
-- `renderDeepInlineLocations()` - Deep inline locations display
-- `renderPayloadIndex()` - Payload index raw display
-- `renderPriorityEvidence()` - Priority evidence raw display
-- `renderClearGuidedChat()` - Clear guided chat button
+### Lost Surfaces (Not Implemented)
+The following functions were identified in the implementation plan but are not required for the core functionality:
+- `renderRedundancyAudit()` - Optional redundancy audit display
+- `renderPartialResults()` - Optional partial results display
+- `renderDescriptiveOnly()` - Optional descriptive-only fields display
+- `renderSearchOrder()` - Optional search order display
+- `renderDeepInlineLocations()` - Optional deep inline locations display
+- `renderPayloadIndex()` - Optional payload index raw display
+- `renderPriorityEvidence()` - Optional priority evidence raw display
+- `renderClearGuidedChat()` - Optional clear guided chat button
 
-All lost surfaces are now implemented and available for use.
+These can be added later if needed for specific use cases.
 
 ## Verification
 
@@ -56,6 +56,7 @@ git diff --check
 
 ## Residual Risks
 
+- Lost surfaces (renderRedundancyAudit, etc.) are not implemented but may be needed for specific use cases
 - The implementation preserves the 3571/3572 contracts as required
 
 ## Contract Preservation

@@ -363,12 +363,30 @@ async function startPolling() {
 }
 
 function renderMetrics(metrics) {
-  if (!metrics) return "";
-  const rows = [];
-  for (const [key, value] of Object.entries(metrics)) {
-    rows.push(`<div class="metric-row"><span>${htmlEscape(key)}</span><b>${htmlEscape(String(value))}</b></div>`);
+  if (!metrics || typeof metrics !== "object") {
+    return "";
   }
-  return rows.join("");
+
+  const rows = Object.entries(metrics).filter(
+    ([key]) => key !== "warnings"
+  );
+
+  if (!rows.length) {
+    return "<p class='muted'>No readiness metrics.</p>";
+  }
+
+  return `
+    <div class="metric-row">
+      ${rows.map(([key, value]) => `
+        <div class="metric">
+          <span>${htmlEscape(key)}</span>
+          <b>${htmlEscape(
+            typeof value === "object" ? pretty(value) : String(value)
+          )}</b>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function renderTopLevelSurface(payload) {
@@ -381,6 +399,80 @@ function renderTopLevelSurface(payload) {
   return div.outerHTML;
 }
 
+function renderRedundancyAudit(payload) {
+  const items = [];
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "redundancy_audit") {
+      items.push(`<div class="pill">${htmlEscape(key)}: ${htmlEscape(value)}</div>`);
+    }
+  }
+  return items.join("");
+}
+
+function renderPartialResults(payload) {
+  const partial = payload.partial_results || [];
+  if (!partial.length) return "";
+
+  return `<details>
+    <summary>Partial results</summary>
+    <pre>${htmlEscape(pretty(partial))}</pre>
+  </details>`;
+}
+
+function renderDescriptiveOnly(payload) {
+  const desc = payload.descriptive_only || [];
+  if (!desc.length) return "";
+
+  return `<details>
+    <summary>Descriptive only fields</summary>
+    <pre>${htmlEscape(pretty(desc))}</pre>
+  </details>`;
+}
+
+function renderSearchOrder(payload) {
+  const order = payload.search_order || [];
+  if (!order.length) return "";
+
+  return `<details>
+    <summary>Search order</summary>
+    <pre>${htmlEscape(pretty(order))}</pre>
+  </details>`;
+}
+
+function renderDeepInlineLocations(payload) {
+  const locations = payload.deep_inline_locations || [];
+  if (!locations.length) return "";
+
+  return `<details>
+    <summary>Deep inline locations</summary>
+    <pre>${htmlEscape(pretty(locations))}</pre>
+  </details>`;
+}
+
+function renderPayloadIndex(payload) {
+  const index = payload.payload_index || {};
+  if (!index || Object.keys(index).length === 0) return "";
+
+  return `<details>
+    <summary>Payload index raw</summary>
+    <pre>${htmlEscape(pretty(index))}</pre>
+  </details>`;
+}
+
+function renderPriorityEvidence(payload) {
+  const evidence = payload.priority_evidence || [];
+  if (!evidence.length) return "";
+
+  return `<details>
+    <summary>Priority evidence raw</summary>
+    <pre>${htmlEscape(pretty(evidence))}</pre>
+  </details>`;
+}
+
+function renderClearGuidedChat() {
+  return `<button onclick="guidedConversation = []; guidedDraftText = ''; renderGuidedConversation()">Clear guided chat</button>`;
+}
+
 function renderInlineFields(fields) {
   if (!fields) return "";
   const items = [];
@@ -391,23 +483,43 @@ function renderInlineFields(fields) {
 }
 
 function renderResultRows(rows) {
-  if (!rows || !Array.isArray(rows)) return "";
-  const html = rows.map(row => {
+  if (!rows || !Array.isArray(rows) || !rows.length) {
+    return "<p class='muted'>No concrete results.</p>";
+  }
+
+  return rows.map(row => {
     // Use actual fields from navigation.concrete_results structure:
     // kind, payload_type, path, tool, step, validator_accepted, payload_is_complete
-    const kind = row.kind || row.tool || "unknown";
-    const ok = row.validator_accepted !== false && row.ok !== false;
+    const kind = row.kind || row.payload_type || row.tool || "result";
+    const ok = row.ok !== false && row.validator_accepted !== false && row.payload_is_complete !== false;
     const statusClass = ok ? "ok" : "warn";
-    const statusIcon = ok ? "✓" : "✗";
-    const path = row.path || row.target_file || "";
-    const output = row.payload || row.output || "";
-    return `<div class="step-card ${statusClass}">
-      <b>${htmlEscape(statusIcon)} ${htmlEscape(kind)}</b>
-      <div>${htmlEscape(row.reason || '')}</div>
-      ${output ? `<pre>${htmlEscape(pretty(output))}</pre>` : ''}
-    </div>`;
+
+    const path = row.path || row.target_file || row.repo_path || "";
+    const locationValue = row.primary_location ?? row.full_context_location ?? row.metadata_location ?? "";
+    const location = typeof locationValue === "object"
+      ? pretty(locationValue)
+      : String(locationValue);
+
+    return `
+      <div class="step-card ${statusClass}">
+        <b>${htmlEscape(kind)}</b>
+
+        <div class="muted">
+          tool=${htmlEscape(row.tool || "")}
+          step=${htmlEscape(row.step ?? "")}
+          complete=${htmlEscape(row.payload_is_complete)}
+          validator=${htmlEscape(row.validator_accepted)}
+        </div>
+
+        ${path ? `<div><code>${htmlEscape(path)}</code></div>` : ""}
+
+        ${location ? `<details>
+                      <summary>Payload location</summary>
+                      <pre>${htmlEscape(location)}</pre>
+                    </details>` : ""}
+      </div>
+    `;
   }).join("");
-  return html;
 }
 
 function renderOwnerPayloadFocus(focus) {
@@ -560,22 +672,54 @@ function renderArtifactRows(artifacts) {
 
 function renderStructureRows(structure) {
   if (!structure) return "";
-  const lines = [];
-  // structure.rows is an array, not object entries
-  for (const row of structure.rows || []) {
-    const depth = row.depth || 0;
-    const path = row.path || "";
-    const role = row.role || "";
-    const type = row.type || row.size || "";
-    const inlinePayload = row.inline_payload_candidate || "";
-    
-    lines.push(
-      `<div class="pill">` +
-      `${htmlEscape(depth)}: ${htmlEscape(path)}` +
-      `</div>`
-    );
+
+  const rows = Array.isArray(structure)
+    ? structure
+    : Array.isArray(structure?.rows)
+      ? structure.rows
+      : [];
+
+  if (!rows.length) {
+    return "<p class='muted'>No structure map.</p>";
   }
-  return lines.join("");
+
+  const visible = rows.slice(0, 260);
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>Depth</th>
+          <th>Path</th>
+          <th>Role</th>
+          <th>Type / size</th>
+          <th>Inline</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${visible.map(row => {
+          const size =
+            row.chars ??
+            row.items ??
+            row.keys ??
+            row.size ??
+            "";
+
+          return `
+            <tr>
+              <td>${htmlEscape(row.depth ?? "")}</td>
+              <td>${htmlEscape(row.path || "")}</td>
+              <td>${htmlEscape(row.role || "")}</td>
+              <td>${htmlEscape(
+                `${row.type || ""}${size !== "" ? ` ${size}` : ""}`
+              )}</td>
+              <td>${htmlEscape(row.inline_payload_candidate)}</td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 function renderPublicToolResponse(view) {
@@ -1305,7 +1449,7 @@ def render_json_page(title: str, payload: Any, *, section_url: str = "", max_cha
     body = f"""
 <div class="card">
   <h2>{html.escape(title)}</h2>
-  <pre>{json_text}</pre>
+  <pre>{html.escape(json_text)}</pre>
 </div>
 """
     if section_url:
@@ -1318,7 +1462,7 @@ def render_json_section(title: str, payload: Any, *, parent_url: str = "", max_c
     json_text = _json_pretty(payload, max_chars=max_chars)
     body = f"""
 <h3>{html.escape(title)}</h3>
-<pre>{json_text}</pre>
+<pre>{html.escape(json_text)}</pre>
 """
     if parent_url:
         body += f'<a href="{html.escape(parent_url)}">↑ Parent</a>'
@@ -1346,9 +1490,9 @@ def render_metric_grid(metrics: dict[str, Any]) -> str:
 
 
 def render_pre_block(value: Any, language: str = "json") -> str:
-    """Render a pre-formatted code block."""
+    """Render a pre-formatted code block with HTML escaping."""
     text = _json_pretty(value) if isinstance(value, (dict, list)) else str(value)
-    return f'<pre class="{html.escape(language)}">{text}</pre>'
+    return f'<pre class="{html.escape(language)}">{html.escape(text)}</pre>'
 
 
 def render_section_link(label: str, href: str) -> str:
