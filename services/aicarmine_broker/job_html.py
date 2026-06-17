@@ -379,6 +379,15 @@ def agent_job_planner_stream_text(job_id: str) -> str:
     return "".join(parts).strip()
 
 
+def _html_pre(value: Any) -> str:
+    """Render a pre-formatted code block with HTML escaping."""
+    if isinstance(value, str):
+        text = _clip_text(value)
+    else:
+        text = _json_pretty(value)
+    return f"<pre>{html.escape(text)}</pre>"
+
+
 def _html_page(title: str, body: str, *, extra_css: str = "", extra_js: str = "") -> str:
     extra_css_attr = f'<style>{extra_css}</style>' if extra_css else ""
     extra_js_script = f'<script>{extra_js}</script>' if extra_js else ""

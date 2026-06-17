@@ -130,9 +130,16 @@ function stopPolling() {
     clearInterval(pollTimer);
     pollTimer = null;
     setStatus("stopped");
+    // Keep the panel intact, only update status text
     const panel = document.getElementById("active-job-panel");
     if (panel) {
-      panel.innerHTML = "<div class='muted'>Polling stopped. Use 'Load' or 'Poll' to resume.</div>";
+      const statusLine = panel.querySelector(".status-line");
+      if (statusLine) {
+        const statusSpan = statusLine.querySelector(".muted");
+        if (statusSpan) {
+          statusSpan.textContent = "polling stopped";
+        }
+      }
     }
   }
 }
@@ -386,13 +393,18 @@ function renderInlineFields(fields) {
 function renderResultRows(rows) {
   if (!rows || !Array.isArray(rows)) return "";
   const html = rows.map(row => {
-    const ok = row.ok ?? true;
-    const statusClass = ok ? "ok" : "bad";
+    // Use actual fields from navigation.concrete_results structure:
+    // kind, payload_type, path, tool, step, validator_accepted, payload_is_complete
+    const kind = row.kind || row.tool || "unknown";
+    const ok = row.validator_accepted !== false && row.ok !== false;
+    const statusClass = ok ? "ok" : "warn";
     const statusIcon = ok ? "✓" : "✗";
+    const path = row.path || row.target_file || "";
+    const output = row.payload || row.output || "";
     return `<div class="step-card ${statusClass}">
-      <b>${htmlEscape(statusIcon)} ${htmlEscape(row.tool || 'unknown')}</b>
+      <b>${htmlEscape(statusIcon)} ${htmlEscape(kind)}</b>
       <div>${htmlEscape(row.reason || '')}</div>
-      ${row.output ? `<pre>${htmlEscape(pretty(row.output))}</pre>` : ''}
+      ${output ? `<pre>${htmlEscape(pretty(output))}</pre>` : ''}
     </div>`;
   }).join("");
   return html;
@@ -549,10 +561,17 @@ function renderArtifactRows(artifacts) {
 function renderStructureRows(structure) {
   if (!structure) return "";
   const lines = [];
-  for (const [key, value] of Object.entries(structure)) {
+  // structure.rows is an array, not object entries
+  for (const row of structure.rows || []) {
+    const depth = row.depth || 0;
+    const path = row.path || "";
+    const role = row.role || "";
+    const type = row.type || row.size || "";
+    const inlinePayload = row.inline_payload_candidate || "";
+    
     lines.push(
       `<div class="pill">` +
-      `${htmlEscape(key)}: ${htmlEscape(pretty(value))}` +
+      `${htmlEscape(depth)}: ${htmlEscape(path)}` +
       `</div>`
     );
   }
@@ -1242,8 +1261,9 @@ function renderThread(thread) {
 }
 
 function renderChainItem(stepIndex, role, kind, text) {
-  const roleLabel = role === "user" ? "Operator" : role === "assistant" ? "Assistant" : role;
-  const kindLabel = kind === "followup" ? "Follow-up" : kind === "compose" ? "Compose Answer" : kind;
+  // Escape role_label and kind_label to prevent XSS
+  const roleLabel = htmlEscape(role === "user" ? "Operator" : role === "assistant" ? "Assistant" : role);
+  const kindLabel = htmlEscape(kind === "followup" ? "Follow-up" : kind === "compose" ? "Compose Answer" : kind);
   return `<div class="planner-lab-chain-item">
     <div class="planner-lab-chain-label">${stepIndex}. ${roleLabel}: ${kindLabel}</div>
     <div class="planner-lab-chain-text">${htmlEscape(text)}</div>
