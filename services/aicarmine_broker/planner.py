@@ -5473,69 +5473,302 @@ def _write_loop_turn_memory(
     )
 
 
-# Patch A: judge report per blocked_needs_attention
+def _terminal_judge_fallback_report(
+    *,
+    status: str,
+    goal: str,
+    history: list[dict[str, Any]],
+    artifacts: list[Any],
+    error: str,
+) -> dict[str, Any]:
+    return {
+        "schema": "terminal_judge_fallback.v1",
+        "available": False,
+        "provider_attempted": True,
+        "provider_ok": False,
+        "provider_available": False,
+        "fallback_used": True,
+        "status": status,
+        "goal": goal,
+        "history_rows": len(history),
+        "artifacts_count": len(artifacts),
+        "root_cause_class": "terminal_judge_provider_unavailable",
+        "root_cause": error or "terminal judge provider returned no valid report",
+        "operator_summary": (
+            f"Terminal status={status}; provider-backed terminal judge was attempted but "
+            f"did not return a valid report. Evidence remains available: "
+            f"artifacts={len(artifacts)}, history_rows={len(history)}."
+        ),
+    }
+
+
+def _terminal_judge_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# Terminal judge report",
+        "",
+        f"- schema: `{report.get('schema') or ''}`",
+        f"- decision: `{report.get('decision') or ''}`",
+        f"- root_cause_class: `{report.get('root_cause_class') or ''}`",
+        f"- provider_ok: `{report.get('provider_ok') is True}`",
+        f"- fallback_used: `{report.get('fallback_used') is True}`",
+        "",
+        "## Root cause",
+        "",
+        str(report.get("root_cause") or ""),
+        "",
+        "## Operator summary",
+        "",
+        str(report.get("operator_summary") or ""),
+    ]
+    recommendations = report.get("recommended_patch_targets")
+    if isinstance(recommendations, list) and recommendations:
+        lines.extend(["", "## Recommended patch targets", ""])
+        lines.extend(f"- {str(item)}" for item in recommendations[:20])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _sanitize_terminal_judge_provider_report(
+    value: Any,
+    *,
+    status: str,
+    goal: str,
+    history_count: int,
+    artifact_count: int,
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    root_cause = str(value.get("root_cause") or "").strip()
+    operator_summary = str(value.get("operator_summary") or "").strip()
+    if not root_cause or not operator_summary:
+        return {}
+    decision = str(value.get("decision") or "blocked_with_diagnosis").strip().lower()
+    if decision != "blocked_with_diagnosis":
+        decision = "blocked_with_diagnosis"
+    return {
+        "schema": "blocked_needs_attention_judge_report.v2",
+        "available": True,
+        "provider_attempted": True,
+        "provider_ok": True,
+        "provider_available": True,
+        "fallback_used": False,
+        "provider": "gpu1_planner",
+        "planner_model": PLANNER_MODEL,
+        "planner_url": PLANNER_URL,
+        "decision": decision,
+        "status": status,
+        "goal": goal,
+        "history_rows": history_count,
+        "artifacts_count": artifact_count,
+        "root_cause_class": str(value.get("root_cause_class") or "unspecified")[:160],
+        "root_cause": _prompt_clip_text(root_cause, 6000),
+        "evidence_status": _prompt_clip_value(
+            value.get("evidence_status"), text_limit=1200, list_limit=20
+        ),
+        "lane_diagnostics": _prompt_clip_value(
+            value.get("lane_diagnostics"), text_limit=1200, list_limit=24
+        ),
+        "operator_summary": _prompt_clip_text(operator_summary, 8000),
+        "recommended_patch_targets": _prompt_clip_value(
+            value.get("recommended_patch_targets"), text_limit=800, list_limit=20
+        ),
+        "confidence": value.get("confidence"),
+    }
+
+
 def judge_blocked_job(
     job_id: str,
     root: Path,
     state: dict[str, Any],
     status: str,
+    final_summary: str,
     result: dict[str, Any],
     tool_context: dict[str, Any],
 ) -> dict[str, Any]:
-    """Terminal judge for blocked_needs_attention and max_steps_reached.
-    
-    Produces analysis without reopening the loop, modifying evidence contract,
-    or executing tools. Saves an artifact and adds an event. Fails non-blockingly.
-    
-    S3: Reads goal from state, not from result. Receives tool_context directly.
-    Writes terminal-judge.json. Emits terminal_judge_completed/failed event.
-    Does not modify evidence_contract, latch, or required_next_tool_call.
+    """Run the same GPU1 planner model in terminal-judge role.
+
+    This lane diagnoses a terminal failure. It cannot execute tools, reopen the
+    loop, mark the job completed, or bypass the validator. The deterministic
+    report is used only when the GPU1 provider is unavailable or returns invalid JSON.
     """
     result = dict(result) if isinstance(result, dict) else {}
     goal = str(state.get("goal") or "")
-    history = result.get("history") or []
-    artifacts = tool_context.get("artifacts") or []
-    
-    judge_report = {
-        "schema": "terminal_judge_blocked.v1",
-        "available": True,
-        "status": status,
+    history = result.get("history") if isinstance(result.get("history"), list) else []
+    artifacts = tool_context.get("artifacts") if isinstance(tool_context.get("artifacts"), list) else []
+    evidence_contract = planner_evidence_contract(goal, history)
+    repo_read_views = _repo_read_content_views(
+        history,
+        per_item_limit=12000,
+        total_limit=120000,
+    )
+    request_payload = {
+        "schema": "blocked_needs_attention_judge_request.v1",
+        "task": "diagnose_terminal_agentic_loop_without_reopening_it",
+        "role": "terminal_judge",
         "goal": goal,
-        "history_rows": len(history) if isinstance(history, list) else 0,
-        "artifacts_count": len(artifacts) if isinstance(artifacts, list) else 0,
-        "analysis": (
-            f"Job terminated with status={status}. Evidence collected: "
-            f"{len(artifacts)} artifacts, {len(history)} history rows. "
-            "Terminal judge produced analysis without reopening the loop."
+        "status": status,
+        "final_summary": _prompt_clip_text(final_summary, 12000),
+        "blocked_by": result.get("blocked_by"),
+        "validation_rejections": _prompt_clip_value(
+            _validation_rejection_rows(history)[-20:], text_limit=2000, list_limit=20
         ),
+        "planner_decision_tail": _prompt_clip_value(
+            _planner_decision_rows(history)[-20:], text_limit=2000, list_limit=20
+        ),
+        "tool_results_tail": _prompt_clip_value(
+            _executed_tool_rows(history)[-24:], text_limit=1600, list_limit=24
+        ),
+        "repo_read_evidence_windows": repo_read_views[:20],
+        "final_quality": _prompt_clip_value(
+            evidence_contract.get("repo_analysis_final_quality"),
+            text_limit=2000,
+            list_limit=20,
+        ),
+        "evidence_contract": _compact_vulkan_repair_evidence_contract(evidence_contract),
+        "tool_context_summary": {
+            "artifact_count": len(artifacts),
+            "history_rows": len(history),
+            "payload_available": bool(artifacts),
+            "primary_payload": _prompt_clip_value(
+                tool_context.get("primary_payload_for_30b"),
+                text_limit=1200,
+                list_limit=12,
+            ),
+        },
+        "rules": [
+            "Return strict JSON only.",
+            "Do not execute tools or reopen the loop.",
+            "Do not mark the job completed and do not bypass the validator.",
+            "Distinguish missing evidence from evidence present but not consumed.",
+            "Distinguish bad final composition from contradictory controller state.",
+            "Treat successful repo_read artifacts as evidence even when prompt previews were truncated.",
+            "Produce an operational diagnosis for the operator, not a synthetic count summary.",
+        ],
+        "required_json_shape": {
+            "decision": "blocked_with_diagnosis",
+            "root_cause_class": "short machine class",
+            "root_cause": "concrete causal explanation",
+            "evidence_status": {},
+            "lane_diagnostics": {},
+            "operator_summary": "usable report",
+            "recommended_patch_targets": ["repo-relative file or function"],
+            "confidence": 0.0,
+        },
     }
-    
-    if status == "blocked_needs_attention":
-        judge_report["block_reason"] = (
-            "Planner blocked due to validation failure or terminal condition. "
-            "Terminal judge analyzed the situation and produced a final report."
+    payload = {
+        "model": PLANNER_MODEL,
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "think": False,
+        "format": "json",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are the terminal judge lane of the same GPU1 planner model. "
+                    "Read the terminal job evidence and diagnose why no validator-accepted "
+                    "final was produced. You are not the main planner and cannot execute tools, "
+                    "reopen the loop, mark completed, or bypass the validator. Return strict JSON only."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(request_payload, ensure_ascii=False, default=str),
+            },
+        ],
+        "options": {
+            "temperature": 0,
+            "num_predict": 2200,
+            "num_ctx": max(
+                4096,
+                min(
+                    int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192),
+                    int(AGENTIC_PLANNER_NUM_CTX or 8192),
+                ),
+            ),
+        },
+    }
+    timeout_seconds = min(180, max(30, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
+    step = state.get("current_step")
+    try:
+        append_agent_event(
+            job_id,
+            "planner_role_call_started",
+            "Terminal judge role started on GPU1.",
+            {
+                "role": "terminal_judge",
+                "provider": "gpu1_planner",
+                "planner_model": PLANNER_MODEL,
+                "planner_url": PLANNER_URL,
+                "timeout_seconds": timeout_seconds,
+            },
+            step=step,
         )
-    elif status == "max_steps_reached":
-        judge_report["block_reason"] = (
-            "Job reached maximum step limit. Terminal judge analyzed collected evidence "
-            "and produced a final report before termination."
-        )
-    
-    # S3: Separate terminal_judge_report from terminal_judge_artifact
-    judge_report["persistence_ok"] = True
-    result["terminal_judge_report"] = judge_report
+    except Exception:
+        pass
 
-    judge_path = root / "terminal-judge.json"
+    provider_error = ""
+    decoded: dict[str, Any] = {}
+    try:
+        response = post_json(PLANNER_URL, payload, timeout_seconds)
+        if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
+            provider_error = str(
+                response.get("error")
+                or response.get("error_type")
+                or "terminal_judge_backend_error"
+            )
+        else:
+            message = response.get("message") if isinstance(response.get("message"), dict) else {}
+            raw_text = str(
+                message.get("content")
+                or response.get("response")
+                or response.get("partial_content")
+                or ""
+            )
+            diagnostics = parse_strict_json_object_diagnostics(raw_text)
+            if diagnostics.get("ok") is True and isinstance(diagnostics.get("decoded"), dict):
+                decoded = dict(diagnostics["decoded"])
+            else:
+                provider_error = str(
+                    diagnostics.get("error_type")
+                    or diagnostics.get("error")
+                    or "terminal_judge_invalid_json"
+                )
+    except Exception as exc:
+        provider_error = f"{type(exc).__name__}: {exc}"
+
+    judge_report = _sanitize_terminal_judge_provider_report(
+        decoded,
+        status=status,
+        goal=goal,
+        history_count=len(history),
+        artifact_count=len(artifacts),
+    )
+    if not judge_report:
+        judge_report = _terminal_judge_fallback_report(
+            status=status,
+            goal=goal,
+            history=history,
+            artifacts=artifacts,
+            error=provider_error,
+        )
+
+    result["terminal_judge_report"] = judge_report
+    judge_path = root / "blocked_judge_report.json"
+    judge_markdown_path = root / "blocked_judge_report.md"
     judge_artifact = {
-        "schema": "terminal_judge_artifact.v1",
+        "schema": "terminal_judge_artifact.v2",
         "job_id": job_id,
         "root_path": str(root),
         "status": status,
         "report": judge_report,
     }
-
     try:
         write_json(judge_path, judge_artifact)
+        write_json(root / "terminal-judge.json", judge_artifact)
+        judge_markdown_path.write_text(
+            _terminal_judge_markdown(judge_report),
+            encoding="utf-8",
+        )
     except Exception as exc:
         judge_report["persistence_ok"] = False
         judge_report["persistence_error_type"] = type(exc).__name__
@@ -5543,22 +5776,26 @@ def judge_blocked_job(
         try:
             append_agent_event(
                 job_id,
-                "terminal_judge_failed",
-                f"Terminal judge artifact persistence failed for status={status}.",
+                "planner_role_call_failed",
+                f"Terminal judge persistence failed for status={status}.",
                 judge_report,
+                step=step,
             )
         except Exception:
             pass
         return result
 
+    judge_report["persistence_ok"] = True
     result["terminal_judge_artifact"] = str(judge_path)
+    result["terminal_judge_markdown_artifact"] = str(judge_markdown_path)
 
     try:
         append_agent_event(
             job_id,
-            "terminal_judge_completed",
-            f"Terminal judge completed for status={status}.",
+            "planner_role_call_completed",
+            f"Terminal judge role completed for status={status}.",
             judge_artifact,
+            step=step,
         )
         judge_report["event_emit_ok"] = True
     except Exception as exc:
@@ -5568,9 +5805,10 @@ def judge_blocked_job(
         try:
             append_agent_event(
                 job_id,
-                "terminal_judge_failed",
+                "planner_role_call_failed",
                 f"Terminal judge event emission failed for status={status}.",
                 judge_report,
+                step=step,
             )
         except Exception:
             pass
@@ -5595,6 +5833,7 @@ def finalize_agentic_job(
             root=root,
             state=state,
             status=status,
+            final_summary=final_summary,
             result=result,
             tool_context=tool_context,
         )

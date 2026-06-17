@@ -1215,7 +1215,67 @@ def run_agentic_planner_job(
         # The planner must remain the decision-maker. 3572 may validate or reject
         # the proposal, but must not synthesize hidden tool calls such as an
         # automatic repo_read after repo_list_files.
-        decision = planner_decision(job_id, state, step, history)
+        planner_role_override = (
+            dict(state.get("planner_role_override"))
+            if isinstance(state.get("planner_role_override"), dict)
+            else {}
+        )
+        if planner_role_override:
+            append_agent_event(
+                job_id,
+                "planner_role_call_started",
+                f"Planner role {planner_role_override.get('role')} started on GPU1.",
+                {
+                    "role": planner_role_override.get("role"),
+                    "provider": "gpu1_planner",
+                    "planner_model": PLANNER_MODEL,
+                    "planner_url": PLANNER_URL,
+                    "rewrite_target": planner_role_override.get("rewrite_target"),
+                    "source_step": planner_role_override.get("source_step"),
+                },
+                step=step,
+            )
+        try:
+            decision = planner_decision(job_id, state, step, history)
+        except Exception as exc:
+            if planner_role_override:
+                append_agent_event(
+                    job_id,
+                    "planner_role_call_failed",
+                    f"Planner role {planner_role_override.get('role')} failed.",
+                    {
+                        "role": planner_role_override.get("role"),
+                        "provider": "gpu1_planner",
+                        "planner_model": PLANNER_MODEL,
+                        "planner_url": PLANNER_URL,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:1000],
+                    },
+                    step=step,
+                )
+                state.pop("planner_role_override", None)
+                write_agent_job_state(state)
+            raise
+        if planner_role_override:
+            decision["planner_role"] = planner_role_override.get("role")
+            decision["planner_role_override"] = planner_role_override
+            append_agent_event(
+                job_id,
+                "planner_role_call_completed",
+                f"Planner role {planner_role_override.get('role')} returned a candidate decision.",
+                {
+                    "role": planner_role_override.get("role"),
+                    "provider": "gpu1_planner",
+                    "planner_model": PLANNER_MODEL,
+                    "planner_url": PLANNER_URL,
+                    "rewrite_target": planner_role_override.get("rewrite_target"),
+                    "candidate_action": decision.get("action"),
+                    "candidate_tool": decision.get("tool"),
+                },
+                step=step,
+            )
+            state.pop("planner_role_override", None)
+            write_agent_job_state(state)
 
         append_agent_event(
             job_id, "planner_decision",
@@ -2163,6 +2223,35 @@ def run_agentic_planner_job(
                 guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
                 guard_result["retry_count"] = repeated_rejection_count
                 guard_result["retry_limit"] = 1
+                rejected_for_role = {
+                    key: decision.get(key)
+                    for key in ("action", "tool", "arguments", "reason")
+                    if decision.get(key) not in (None, "", [], {})
+                }
+                if decision.get("final_answer") not in (None, ""):
+                    rejected_for_role["final_answer"] = str(
+                        decision.get("final_answer") or ""
+                    )[:16000]
+                state["planner_role_override"] = {
+                    "schema": "planner_role_override.v1",
+                    "role": "planner_cuda_rewrite",
+                    "provider": "gpu1_planner",
+                    "one_shot": True,
+                    "rewrite_target": rewrite_target,
+                    "source_step": step,
+                    "instruction": str(guard_result.get("next_instruction") or "")[:4000],
+                    "rejected_decision": rejected_for_role,
+                    "validator_violations": [
+                        str(item)
+                        for item in (
+                            validation.get("violations")
+                            if isinstance(validation.get("violations"), list)
+                            else []
+                        )
+                    ][:32],
+                    "evidence_contract_sha256": guard_result.get("evidence_contract_sha256"),
+                }
+                guard_result["planner_role_scheduled"] = state["planner_role_override"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
