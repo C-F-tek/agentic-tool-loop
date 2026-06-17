@@ -749,6 +749,7 @@ COMMAND_EXEC_TOOLS: frozenset[str] = frozenset(
         "repo_ruff_check",
         "repo_semgrep_scan",
         "repo_shellcheck",
+        "repo_validate",
     }
 )
 
