@@ -460,23 +460,87 @@ function renderOwnerPayloadFocus(focus) {
 }
 
 function renderPriorityRows(items) {
-  if (!items) return "";
+  if (!items || !items.length) {
+    return "<p class='muted'>No priority evidence.</p>";
+  }
   return items.map(item => {
-    const priority = item.priority ?? "normal";
-    const priorityClass = priority === "high" ? "bad" : priority === "low" ? "ok" : "";
-    return `<div class="step-card ${priorityClass}">
-      <b>${htmlEscape(item.tool || 'unknown')}</b>
-      <span class="muted">priority: ${htmlEscape(priority)}</span>
-    </div>`;
+    const accepted =
+      item.ok !== false &&
+      item.validator_accepted !== false;
+
+    const inlineFields = Array.isArray(item.inline_fields)
+      ? item.inline_fields
+      : [];
+
+    return `
+      <div class="step-card ${accepted ? "ok" : "warn"}">
+        <b>
+          ${htmlEscape(item.tool || item.kind || "evidence")}
+        </b>
+
+        <div class="muted">
+          kind=${htmlEscape(item.kind || "")}
+          ok=${htmlEscape(item.ok)}
+          complete=${htmlEscape(item.payload_is_complete)}
+          validator=${htmlEscape(item.validator_accepted)}
+        </div>
+
+        <div>${htmlEscape(item.repo_path || item.path || "")}</div>
+
+        ${
+          inlineFields.length
+            ? `<details>
+                 <summary>Inline fields</summary>
+                 <pre>${htmlEscape(pretty(inlineFields))}</pre>
+               </details>`
+            : ""
+        }
+      </div>
+    `;
   }).join("");
 }
 
 function renderArtifactRows(artifacts) {
-  if (!artifacts) return "";
-  return artifacts.map(a => {
-    const path = a.path || "unknown";
-    const size = a.size_bytes ?? 0;
-    return `<div class="pill">📄 ${htmlEscape(path)} (${size} bytes)</div>`;
+  if (!artifacts || !artifacts.length) {
+    return "<p class='muted'>No tool-context artifacts.</p>";
+  }
+
+  return artifacts.map(item => {
+    const inlineFields = Array.isArray(item.inline_fields)
+      ? item.inline_fields
+      : [];
+
+    return `
+      <div class="step-card ${item.ok === false ? "warn" : "ok"}">
+        <b>${htmlEscape(item.tool || item.kind || "artifact")}</b>
+
+        <div class="muted">
+          kind=${htmlEscape(item.kind || "")}
+          ok=${htmlEscape(item.ok)}
+          complete=${htmlEscape(item.payload_is_complete)}
+        </div>
+
+        <div>${htmlEscape(item.repo_path || item.path || "")}</div>
+
+        ${
+          inlineFields.length
+            ? `<details>
+                 <summary>Inline fields</summary>
+                 <pre>${htmlEscape(pretty(inlineFields))}</pre>
+               </details>`
+            : ""
+        }
+
+        ${
+          Array.isArray(item.artifact_keys) && item.artifact_keys.length
+            ? `<details>
+                 <summary>Artifact keys</summary>
+                 <pre>${htmlEscape(pretty(item.artifact_keys))}</pre>
+               </details>`
+            : ""
+        }
+      </div>
+    `;
   }).join("");
 }
 
@@ -706,54 +770,87 @@ ${htmlEscape(item.new_text || "")}</pre>
   }).join("");
 }
 
-async function copyCandidate(candidate) {
-  if (!candidate) return;
-  const text = candidate.text || "";
+async function copyCandidate(candidateId) {
+  const candidate = findCodeProduct(candidateId);
+  if (!candidate) {
+    setStatus("candidate_not_found");
+    return;
+  }
   try {
-    await navigator.clipboard.writeText(text);
-    setStatus("copied_candidate");
+    await navigator.clipboard.writeText(pretty(candidate));
+    setStatus("candidate_copied");
   } catch (err) {
-    console.error("Copy failed:", err);
+    setStatus("candidate_copy_failed");
+    console.error("Copy candidate failed:", err);
   }
 }
 
-async function copyApplyToolCall(toolCall) {
-  if (!toolCall) return;
-  const text = JSON.stringify(toolCall, null, 2);
+async function copyApplyToolCall(candidateId) {
+  const candidate = findCodeProduct(candidateId);
+  const toolCall = candidate?.apply_tool_call;
+  if (!toolCall) {
+    setStatus("apply_tool_call_missing");
+    return;
+  }
   try {
-    await navigator.clipboard.writeText(text);
-    setStatus("copied_tool_call");
+    await navigator.clipboard.writeText(pretty(toolCall));
+    setStatus("apply_tool_call_copied");
   } catch (err) {
-    console.error("Copy failed:", err);
+    setStatus("apply_tool_call_copy_failed");
+    console.error("Copy apply call failed:", err);
   }
 }
 
-async function applyCandidate(candidate) {
-  if (!candidate) return {ok: false, error: "No candidate"};
-  
-  const candidateId = candidate.candidate_id || "";
-  const confirmApply = candidate.confirm_apply ?? true;
-  const userConsent = candidate.user_consent || "confirm planner-lab exact old_text/new_text patch";
-  
-  if (!candidateId) {
-    return {ok: false, error: "Missing candidate_id"};
+async function applyCandidate(candidateId) {
+  const candidate = findCodeProduct(candidateId);
+  if (!candidate) {
+    setStatus("candidate_not_found");
+    return {ok: false, error: "candidate_not_found"};
   }
-  
+  if (!candidate.apply_supported) {
+    setStatus("candidate_apply_unsupported");
+    return {
+      ok: false,
+      error: candidate.apply_block_reason || "apply_unsupported",
+    };
+  }
+  if (!window.confirm(
+    "Confermi apply interno repo_apply_patch per il candidato selezionato?"
+  )) {
+    setStatus("apply_cancelled");
+    return {ok: false, error: "apply_cancelled"};
+  }
   try {
-    const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/planner-lab/apply`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        candidate_id: candidateId,
-        confirm_apply: confirmApply,
-        user_consent: userConsent,
-      }),
-    });
-    
-    const data = await res.json();
+    const response = await fetch(
+      `/jobs/${encodeURIComponent(currentJobId)}/planner-lab/apply`,
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          candidate_id: String(candidate.candidate_id),
+          confirm_apply: true,
+          user_consent:
+            "confirm planner-lab exact old_text/new_text patch",
+        }),
+      }
+    );
+    const data = await response.json();
+    const output = document.getElementById("apply-result");
+    if (output) output.textContent = pretty(data);
+    setStatus(data.ok ? "apply_done" : "apply_blocked");
+    if (data.ok) {
+      await loadJob(true);
+    }
     return data;
   } catch (err) {
-    return {ok: false, error: err.message};
+    const data = {
+      ok: false,
+      error: String(err?.message || err),
+    };
+    const output = document.getElementById("apply-result");
+    if (output) output.textContent = pretty(data);
+    setStatus("apply_failed");
+    return data;
   }
 }
 

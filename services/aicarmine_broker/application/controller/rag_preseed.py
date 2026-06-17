@@ -436,7 +436,7 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
 
 
 # Re-export for use in loop.py
-def _query_plan_continue_without_model(
+def query_plan_continue_without_model(
     report: Mapping[str, Any],
     *,
     reason: str,
@@ -893,7 +893,7 @@ def controller_preplanner_rag_query_plan(
             last_sanitized = {**report, "status": "failed", "reason": "non_mapping_response"}
             break
         if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
-            return _query_plan_continue_without_model(
+            return query_plan_continue_without_model(
                 report,
                 reason="planner_query_plan_request_failed",
                 attempt=attempt,
@@ -939,7 +939,7 @@ def controller_preplanner_rag_query_plan(
         if sanitized.get("ok"):
             return sanitized
     if last_sanitized.get("json_parse_error_type") or last_sanitized.get("original_json_parse_error_type"):
-        return _query_plan_continue_without_model(
+        return query_plan_continue_without_model(
             report,
             reason="planner_query_plan_invalid_json_after_repair",
             attempt=attempts,

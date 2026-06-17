@@ -7,7 +7,7 @@ import traceback
 from typing import Any, Mapping
 
 from ..controller.rag_preseed import query_plan_continue_without_model
-from services.aicarmine_broker.config import AGENTIC_PLANNER_STEP_TIMEOUT
+from ...config import AGENTIC_PLANNER_STEP_TIMEOUT
 
 from .state import PlannerLoopState
 from ..shared.evidence_contract_summary import (
@@ -971,8 +971,8 @@ def run_agentic_planner_job(
             and preplanner_query_plan.get("ok") is not True
         ):
             # Issue 1: Use fallback deterministico instead of blocking
-            # Use _query_plan_continue_without_model() for semantic intent failures
-            preplanner_query_plan = _query_plan_continue_without_model(
+            # Use query_plan_continue_without_model() for semantic intent failures
+            preplanner_query_plan = query_plan_continue_without_model(
                 preplanner_query_plan,
                 reason=preplanner_query_plan.get("reason") or "planner_query_plan_semantic_intent_unusable_after_retry",
                 attempt=1,

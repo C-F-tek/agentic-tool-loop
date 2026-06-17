@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .job_html_assets import BASE_CSS, BASE_JS, render_page_shell, render_json_page, render_json_section, render_status_badge, render_metric_grid, render_pre_block, render_section_link, render_toolbar, render_job_nav, render_active_job_panel, render_recent_job_card
+from .job_html_assets import BASE_CSS, BASE_JS, render_page_shell, render_json_page, render_json_section, render_status_badge, render_metric_grid, render_pre_block, render_section_link, render_toolbar, render_job_nav, render_active_job_panel
 from .job_store import agent_job_root, compact_agent_status, list_agent_jobs, load_agent_job_state, read_agent_events, read_json
 
 
