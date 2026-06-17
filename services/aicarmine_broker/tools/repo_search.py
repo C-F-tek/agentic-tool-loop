@@ -57,9 +57,10 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "tool": "repo_search", "error": "missing query"}
 
     requested_mode = str(args.get("mode") or "rg").strip().lower()
-    if requested_mode not in {"rg", "git_grep", "fd"}:
-        requested_mode = "rg"
     mode = requested_mode
+
+    if mode not in {"rg", "git_grep", "fd"}:
+        mode = "rg"
     path = str(args.get("path") or ".").strip()
     try:
         max_results = min(1000, max(1, int(args.get("max_results") or args.get("limit") or 80)))
