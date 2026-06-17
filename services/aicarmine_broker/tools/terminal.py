@@ -17,6 +17,16 @@ from aicarmine_broker.tools.command_safety import classify_command, dangerous_co
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
+def _terminal_input_error(tool: str, exc: Exception) -> dict[str, Any]:
+    """Helper locale per errori di input senza dipendenze circolari."""
+    return {
+        "ok": False,
+        "tool": tool,
+        "error": str(exc),
+        "error_type": type(exc).__name__,
+    }
+
+
 def _bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:
     """Helper locale per parsing bounded int senza dipendenze circolari."""
     keys = (names,) if isinstance(names, str) else names
@@ -227,7 +237,7 @@ def terminal_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         limit = _bounded_int_arg(args, ("limit", "max_files"), default=200, minimum=1, maximum=2000)
     except Exception as exc:
-        return deterministic_input_error("terminal_list_files", exc)
+        return _terminal_input_error("terminal_list_files", exc)
     recurse = parse_bool(args.get("recurse", args.get("recursive", False)), False)
     pattern = str(args.get("pattern") or args.get("glob") or "*").strip() or "*"
 
@@ -290,7 +300,7 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         limit = _bounded_int_arg(args, ("limit", "max_results"), default=200, minimum=1, maximum=2000)
     except Exception as exc:
-        return deterministic_input_error("terminal_search_files", exc)
+        return _terminal_input_error("terminal_search_files", exc)
     content = parse_bool(args.get("content", False), False)
 
     if not query:
@@ -399,7 +409,7 @@ def terminal_run_command_wait(
     try:
         timeout = _bounded_int_arg(args, ("timeout_seconds", "timeout"), default=COMMAND_TIMEOUT_SECONDS, minimum=1, maximum=3600)
     except Exception as exc:
-        return deterministic_input_error("terminal_run_command_wait", exc)
+        return _terminal_input_error("terminal_run_command_wait", exc)
     cwd_details = normalize_terminal_path_details(args.get("cwd") or args.get("directory") or args.get("path"), base=terminal_preferred_cwd())
     cwd = cwd_details["resolved_path_obj"]
     if not cwd.exists() or not cwd.is_dir():
