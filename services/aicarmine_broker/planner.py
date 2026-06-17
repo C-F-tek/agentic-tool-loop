@@ -5524,66 +5524,57 @@ def judge_blocked_job(
     # S3: Separate terminal_judge_report from terminal_judge_artifact
     judge_report["persistence_ok"] = True
     result["terminal_judge_report"] = judge_report
-    
-    # S3: Write terminal-judge.json artifact with try/except for non-blocking write
+
     judge_path = root / "terminal-judge.json"
+    judge_artifact = {
+        "schema": "terminal_judge_artifact.v1",
+        "job_id": job_id,
+        "root_path": str(root),
+        "status": status,
+        "report": judge_report,
+    }
+
     try:
-        write_json(judge_path, result)
-        judge_report["persistence_ok"] = True
-    except Exception as e:
-        # Non-blocking failure: log but continue
+        write_json(judge_path, judge_artifact)
+    except Exception as exc:
         judge_report["persistence_ok"] = False
-        judge_report["persistence_error"] = str(e)
-        append_agent_event(
-            job_id,
-            "terminal_judge_failed",
-            f"Failed to write terminal-judge.json artifact: {e}",
-            {
-                "schema": "terminal_judge_artifact.v1",
-                "job_id": job_id,
-                "root_path": str(root),
-                "status": status,
-                "persistence_ok": False,
-                "persistence_error": str(e),
-            },
-        )
+        judge_report["persistence_error_type"] = type(exc).__name__
+        judge_report["persistence_error"] = str(exc)[:1000]
+        try:
+            append_agent_event(
+                job_id,
+                "terminal_judge_failed",
+                f"Terminal judge artifact persistence failed for status={status}.",
+                judge_report,
+            )
+        except Exception:
+            pass
         return result
-    
-    # S3: Emit terminal_judge_completed event with try/except for non-blocking emit
+
+    result["terminal_judge_artifact"] = str(judge_path)
+
     try:
         append_agent_event(
             job_id,
             "terminal_judge_completed",
             f"Terminal judge completed for status={status}.",
-            {
-                "schema": "terminal_judge_blocked.v1",
-                "job_id": job_id,
-                "root_path": str(root),
-                "status": status,
-                "goal": goal,
-                "artifacts_count": len(artifacts),
-                "history_rows": len(history),
-                "judge_report": judge_report,
-            },
+            judge_artifact,
         )
-    except Exception as e:
-        # Non-blocking failure: emit failed event instead
-        append_agent_event(
-            job_id,
-            "terminal_judge_failed",
-            f"Failed to emit terminal_judge_completed event: {e}",
-            {
-                "schema": "terminal_judge_blocked.v1",
-                "job_id": job_id,
-                "root_path": str(root),
-                "status": status,
-                "goal": goal,
-                "artifacts_count": len(artifacts),
-                "history_rows": len(history),
-                "error": str(e),
-            },
-        )
-    
+        judge_report["event_emit_ok"] = True
+    except Exception as exc:
+        judge_report["event_emit_ok"] = False
+        judge_report["event_emit_error_type"] = type(exc).__name__
+        judge_report["event_emit_error"] = str(exc)[:1000]
+        try:
+            append_agent_event(
+                job_id,
+                "terminal_judge_failed",
+                f"Terminal judge event emission failed for status={status}.",
+                judge_report,
+            )
+        except Exception:
+            pass
+
     return result
 
 
