@@ -81,18 +81,20 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "repo_search": _tool_schema(
         "repo_search",
-        "Search repo code/docs by query/pattern/symbol. Requires query, pattern or symbol.",
+        "Search repo code/docs by query/pattern/symbol/needle/text. Requires one of query, pattern, symbol, needle or text.",
         {
             "query": {"type": "string"},
             "pattern": {"type": "string"},
             "symbol": {"type": "string"},
+            "needle": {"type": "string"},
+            "text": {"type": "string"},
             "path": {"type": "string", "default": "."},
             "mode": {"type": "string", "enum": ["rg", "git_grep", "fd"], "default": "rg"},
             "max_results": {"type": "integer", "default": 80},
         },
         argument_contract={
-            "requires_one_of": [["query"], ["pattern"], ["symbol"]],
-            "violation": "repo_search_missing_query_pattern_or_symbol",
+            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["needle"], ["text"]],
+            "violation": "repo_search_missing_query_pattern_symbol_needle_or_text",
         },
     ),
     "repo_semantic_search": _tool_schema(

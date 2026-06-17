@@ -4059,7 +4059,7 @@ def _sanitize_replan_required_next_tool_call(value: Any) -> dict[str, Any]:
         if raw_args.get(key) not in (None, "", [], {})
     }
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"} and not (
-        args.get("query") or args.get("pattern") or args.get("symbol")
+        args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
     ):
         return {}
     if tool == "repo_read" and not (args.get("path") or args.get("paths")):

@@ -394,7 +394,7 @@ def _required_next_route_has_deterministic_proof(
             return True
         return not _route_token_is_prose_or_metric(path) and path in _known_contract_repo_dirs(contract)
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
-        query = args.get("query") or args.get("pattern") or args.get("symbol")
+        query = args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
         if not _search_query_is_concrete(query):
             return False
         path = _repo_path_token(args.get("path")) if args.get("path") else ""
@@ -886,7 +886,7 @@ def validate_planner_decision_against_evidence(
                     else {}
                 )
                 path_token = _repo_path_token(args.get("path")) if args.get("path") else ""
-                query_text = str(args.get("query") or args.get("pattern") or args.get("symbol") or "").strip()
+                query_text = str(args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text") or "").strip()
                 if path_token:
                     contract["invalid_required_next_tool_call_paths"] = [path_token]
                 if query_text:

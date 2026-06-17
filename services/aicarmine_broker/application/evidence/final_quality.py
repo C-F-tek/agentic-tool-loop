@@ -1056,15 +1056,15 @@ def _sanitize_required_next_tool_call(
     }
     invalid_paths: list[str] = []
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"} and not (
-        args.get("query") or args.get("pattern") or args.get("symbol")
+        args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
     ):
         _record_invalid_required_next_tool_call(
             diagnostics,
-            reason=f"{tool} required_next_tool_call was missing query, pattern, or symbol",
+            reason=f"{tool} required_next_tool_call was missing query, pattern, symbol, needle, or text",
         )
         return {}
     if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
-        query_value = args.get("query") or args.get("pattern") or args.get("symbol")
+        query_value = args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
         if not _search_query_is_concrete(query_value):
             _record_invalid_required_next_tool_call(
                 diagnostics,
