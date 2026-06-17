@@ -1424,62 +1424,83 @@ class EvidenceBuilder:
         latest_required_next_tool_call: dict[str, Any] = {}
         latest_required_next_progress = ""
         latest_evidence_contract_overlay: dict[str, Any] = {}
+        latest_evidence_contract_overlay_required_call: dict[str, Any] = {}
         stale_required_next_tool_calls: list[dict[str, Any]] = []
+
         for row in reversed(validation_rejections):
             overlay = row.get("evidence_contract_overlay")
-            if isinstance(overlay, dict) and overlay and not latest_evidence_contract_overlay:
+            if (
+                isinstance(overlay, dict)
+                and overlay
+                and not latest_evidence_contract_overlay
+            ):
                 latest_evidence_contract_overlay = overlay
+
+                overlay_required_call = row.get(
+                    "required_next_tool_call"
+                )
+                if (
+                    isinstance(overlay_required_call, dict)
+                    and overlay_required_call
+                ):
+                    latest_evidence_contract_overlay_required_call = (
+                        overlay_required_call
+                    )
+
             required_call = row.get("required_next_tool_call")
-            if isinstance(required_call, dict) and required_call and not latest_required_next_tool_call:
+            if (
+                isinstance(required_call, dict)
+                and required_call
+                and not latest_required_next_tool_call
+            ):
                 satisfaction = required_next_tool_call_satisfaction(
                     required_call,
                     history,
                     successful_repo_read_paths=successful_repo_read_paths,
-                    successful_window_signatures=_successful_window_signatures,
-                    repo_read_window_signature=_repo_read_window_signature,
-                    planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
-                    decision_paths=lambda call_args: _agentic_v2_decision_paths("repo_read", call_args),
+                    successful_window_signatures=(
+                        _successful_window_signatures
+                    ),
+                    repo_read_window_signature=(
+                        _repo_read_window_signature
+                    ),
+                    planner_scratchpad_window_signature=(
+                        _planner_scratchpad_window_signature
+                    ),
+                    decision_paths=lambda call_args: (
+                        _agentic_v2_decision_paths(
+                            "repo_read",
+                            call_args,
+                        )
+                    ),
                 )
+
                 if satisfaction.get("satisfied") is True:
-                    row["required_next_tool_call_satisfied"] = satisfaction
-                    stale_required_next_tool_calls.append(satisfaction)
+                    row["required_next_tool_call_satisfied"] = (
+                        satisfaction
+                    )
+                    stale_required_next_tool_calls.append(
+                        satisfaction
+                    )
                 else:
                     latest_required_next_tool_call = required_call
-                    latest_required_next_progress = str(row.get("next_instruction") or "").strip()
-            candidate = str(row.get("action_plan_candidate") or "").strip()
+                    latest_required_next_progress = str(
+                        row.get("next_instruction") or ""
+                    ).strip()
+
+            candidate = str(
+                row.get("action_plan_candidate") or ""
+            ).strip()
             if candidate:
                 action_plan_candidate = candidate
+
             if action_plan_candidate and latest_required_next_tool_call:
                 break
-        # _disallowed_invalid_decision_signatures: restituisce una lista vuota (non usata)
-        def _disallowed_invalid_decision_signatures(rejections: list[dict[str, Any]]) -> list[str]:
-            """Restituisce una lista vuota - non usata."""
-            return []
 
-        disallowed_invalid_decision_signatures = _disallowed_invalid_decision_signatures(
-            validation_rejections
-        )
-
-        # Fix S4: Consumare required route soddisfatte
-        required_route_consumed = bool(stale_required_next_tool_calls)
-        if required_route_consumed:
-            contract["post_final_required_route_satisfied"] = True
-            contract["planner_cuda_rewrite_required"] = False
-            contract["final_rewrite_latch"] = "inactive"
-            contract["planner_may_choose_final"] = bool(coverage_satisfied)
-            contract["planner_may_choose_block"] = False
-            
-            final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
-            final_contract["final_allowed"] = bool(coverage_satisfied)
-            final_contract["planner_may_choose_final"] = bool(coverage_satisfied)
-            final_contract["planner_may_choose_block"] = False
-            final_contract["reason"] = "post_final_required_route_satisfied"
-            
-            contract["required_next_progress"] = (
-                "The required post-final evidence route succeeded. "
-                "Rewrite the final using verified evidence; do not repeat the satisfied tool call."
+        disallowed_invalid_decision_signatures = (
+            _disallowed_invalid_code_product_signatures(
+                validation_rejections
             )
-
+        )
         contract = {
             "contract_type": "planner_decides_controller_validates",
             "planner_must_decide_next_action": True,
@@ -2148,7 +2169,73 @@ class EvidenceBuilder:
             contract["required_next_progress"] = (
                 "Use prior evidence. If enough, final with concrete cited paths; otherwise choose a new evidence-bound tool."
             )
-        if latest_evidence_contract_overlay:
+        overlay_required_route_status: dict[str, Any] = {}
+
+        if latest_evidence_contract_overlay_required_call:
+            overlay_required_route_status = (
+                required_next_tool_call_satisfaction(
+                    latest_evidence_contract_overlay_required_call,
+                    history,
+                    successful_repo_read_paths=(
+                        successful_repo_read_paths
+                    ),
+                    successful_window_signatures=(
+                        _successful_window_signatures
+                    ),
+                    repo_read_window_signature=(
+                        _repo_read_window_signature
+                    ),
+                    planner_scratchpad_window_signature=(
+                        _planner_scratchpad_window_signature
+                    ),
+                    decision_paths=lambda call_args: (
+                        _agentic_v2_decision_paths(
+                            "repo_read",
+                            call_args,
+                        )
+                    ),
+                )
+            )
+
+        overlay_required_route_consumed = (
+            overlay_required_route_status.get("satisfied") is True
+        )
+
+        if overlay_required_route_consumed:
+            append_stale_required_call_marker(
+                contract,
+                overlay_required_route_status,
+            )
+
+            contract["post_final_required_route_satisfied"] = (
+                overlay_required_route_status
+            )
+
+            if (
+                not latest_required_next_tool_call
+                and contract.get("planner_may_choose_final") is True
+            ):
+                contract["required_next_progress"] = (
+                    "The required post-final evidence route succeeded. "
+                    "Rewrite the final using verified evidence; do not "
+                    "repeat the satisfied tool call."
+                )
+            elif (
+                not latest_required_next_tool_call
+                and not str(
+                    contract.get("required_next_progress") or ""
+                ).strip()
+            ):
+                contract["required_next_progress"] = (
+                    "The previous required post-final route succeeded. "
+                    "Continue from the current evidence contract without "
+                    "repeating that tool call."
+                )
+
+        if (
+            latest_evidence_contract_overlay
+            and not overlay_required_route_consumed
+        ):
             overlay_latch = str(latest_evidence_contract_overlay.get("final_rewrite_latch") or "").strip()
             overlay_cuda_required = latest_evidence_contract_overlay.get("planner_cuda_rewrite_required") is True
             if overlay_latch or overlay_cuda_required:

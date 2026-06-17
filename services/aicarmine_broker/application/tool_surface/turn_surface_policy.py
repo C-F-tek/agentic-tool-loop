@@ -161,25 +161,12 @@ class ToolSurfacePolicy:
         )
         progress = safe_text(contract.get("required_next_progress"), limit=4000).strip().lower()
 
-        # Fix S5: Filtrare candidate actions stale dopo aver copiato dall'overlay
-        # Definiamo policy prima di filtrare le candidate actions
         policy: dict[str, Any] = {
             "schema": "planner_turn_tool_surface_policy.v1",
             "reason": "",
             "allowed_tool_names": [],
             "candidate_actions_filtered": False,
         }
-        allowed = set(policy.get("allowed_tool_names") or [])
-        if isinstance(contract.get("candidate_next_actions"), list):
-            contract["candidate_next_actions"] = [
-                action
-                for action in contract.get("candidate_next_actions")
-                if candidate_action_tool(action) in allowed
-            ]
-
-        # Se la superficie è intenzionalmente vuota
-        if not allowed:
-            contract["candidate_next_actions"] = []
         strict_code_product_payload = any(
             token in progress
             for token in (
@@ -942,13 +929,73 @@ class ToolSurfacePolicy:
         *,
         suppress_support_expansion: bool = False,
     ) -> None:
-        policy["candidate_actions_filtered"] = False
-        policy["reason"] = reason
-        if suppress_support_expansion:
-            policy["suppress_non_terminal_support_expansion"] = True
-        policy["allowed_tool_names"] = self._ordered(allowed_names)
-        contract["turn_tool_surface_policy"] = policy
+        normalized_allowed = {
+            normalize_tool_name(safe_text(name, limit=160))
+            for name in allowed_names
+            if normalize_tool_name(safe_text(name, limit=160))
+        }
 
+        existing_actions = (
+            contract.get("candidate_next_actions")
+            if isinstance(
+                contract.get("candidate_next_actions"),
+                list,
+            )
+            else []
+        )
+
+        kept_actions = [
+            action
+            for action in existing_actions
+            if candidate_action_tool(action) in normalized_allowed
+        ]
+        removed_actions = [
+            action
+            for action in existing_actions
+            if candidate_action_tool(action) not in normalized_allowed
+        ]
+
+        contract["candidate_next_actions"] = (
+            dedupe_candidate_actions(kept_actions)
+        )
+
+        if removed_actions:
+            stale_actions = (
+                contract.get("stale_candidate_next_actions")
+                if isinstance(
+                    contract.get("stale_candidate_next_actions"),
+                    list,
+                )
+                else []
+            )
+
+            contract["stale_candidate_next_actions"] = (
+                dedupe_candidate_actions(
+                    [
+                        *removed_actions,
+                        *stale_actions,
+                    ]
+                )[:32]
+            )
+
+        policy["candidate_actions_filtered"] = bool(
+            removed_actions
+        )
+        policy["reason"] = reason
+
+        if suppress_support_expansion:
+            policy[
+                "suppress_non_terminal_support_expansion"
+            ] = True
+
+        policy["allowed_tool_names"] = self._ordered(
+            normalized_allowed
+        )
+
+        if not normalized_allowed:
+            policy["locked_empty_tool_surface"] = True
+
+        contract["turn_tool_surface_policy"] = policy
     def _add_allowed_tools(
         self,
         contract: dict[str, Any],
