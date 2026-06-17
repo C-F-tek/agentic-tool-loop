@@ -396,11 +396,67 @@ function renderResultRows(rows) {
   return html;
 }
 
-function renderOwnerPayloadFocus(payload) {
-  if (!payload) return "";
-  const owner = payload.owner || "unknown";
-  const status = payload.status || "unknown";
-  return `<div class="pill">${htmlEscape(owner)}</div> <span class="muted">(${htmlEscape(status)})</span>`;
+function renderOwnerPayloadFocus(focus) {
+  if (!focus || !focus.primary_field) {
+    return "<p class='muted'>No owner-specific payload focus.</p>";
+  }
+
+  const field = focus.primary_field || {};
+  const body =
+    field.text ||
+    field.json_preview ||
+    field.preview ||
+    pretty(field);
+
+  const supporting = Array.isArray(focus.supporting_fields)
+    ? focus.supporting_fields
+    : [];
+
+  return `
+    <div class="step-card ok">
+      <h3>Owner useful payload</h3>
+
+      <div class="metric-row">
+        <div class="metric">
+          <span>owner</span>
+          <b>${htmlEscape(focus.owner || field.owner || "")}</b>
+        </div>
+
+        <div class="metric">
+          <span>request_type</span>
+          <b>${htmlEscape(
+            focus.request_type || field.request_type || ""
+          )}</b>
+        </div>
+
+        <div class="metric">
+          <span>payload_kind</span>
+          <b>${htmlEscape(field.payload_kind || "")}</b>
+        </div>
+
+        <div class="metric">
+          <span>field</span>
+          <b>${htmlEscape(field.field || "")}</b>
+        </div>
+      </div>
+
+      <p class="muted">${htmlEscape(field.reason || "")}</p>
+
+      <details open>
+        <summary>${htmlEscape(field.path || "")}</summary>
+        <pre>${htmlEscape(body)}</pre>
+      </details>
+
+      ${
+        supporting.length
+          ? `<details>
+               <summary>Supporting fields</summary>
+               <pre>${htmlEscape(pretty(supporting))}</pre>
+             </details>`
+          : ""
+      }
+    </div>
+  `;
 }
 
 function renderPriorityRows(items) {
@@ -428,20 +484,79 @@ function renderStructureRows(structure) {
   if (!structure) return "";
   const lines = [];
   for (const [key, value] of Object.entries(structure)) {
-    lines.push(`<div class="pill">${htmlEscape(key)}: ${pretty(value)}</div>`);
+    lines.push(
+      `<div class="pill">` +
+      `${htmlEscape(key)}: ${htmlEscape(pretty(value))}` +
+      `</div>`
+    );
   }
   return lines.join("");
 }
 
-function renderPublicToolResponse(response) {
-  if (!response) return "";
-  const tool = response.tool || "unknown";
-  const ok = response.ok ?? false;
-  const statusClass = ok ? "ok" : "bad";
-  return `<div class="step-card ${statusClass}">
-    <b>${htmlEscape(tool)}</b>
-    <div>${htmlEscape(response.reason || '')}</div>
-  </div>`;
+function renderPublicToolResponse(view) {
+  if (!view || !view.schema) return "";
+
+  const topFields = Array.isArray(view.top_level_fields)
+    ? view.top_level_fields
+    : [];
+
+  const navigation = view.navigation || {};
+  const structure = view.structure_map || {};
+
+  return `
+    <div class="card">
+      <h2>Public tool response</h2>
+
+      <div class="metric-row">
+        <div class="metric">
+          <span>status</span>
+          <b>${htmlEscape(view.status || "")}</b>
+        </div>
+
+        <div class="metric">
+          <span>job completed</span>
+          <b>${htmlEscape(view.job_completed)}</b>
+        </div>
+
+        <div class="metric">
+          <span>top-level fields</span>
+          <b>${htmlEscape(topFields.length)}</b>
+        </div>
+
+        <div class="metric">
+          <span>structure nodes</span>
+          <b>${htmlEscape(structure.rendered_nodes || 0)}</b>
+        </div>
+      </div>
+
+      <details open>
+        <summary>Human answer</summary>
+        <pre>${htmlEscape(
+          (view.human_answer || {}).text || ""
+        )}</pre>
+      </details>
+
+      <details>
+        <summary>Concrete results</summary>
+        ${renderResultRows(navigation.concrete_results || [])}
+      </details>
+
+      <details>
+        <summary>Priority evidence</summary>
+        ${renderPriorityRows(view.priority_evidence_items || [])}
+      </details>
+
+      <details>
+        <summary>Tool-context artifacts</summary>
+        ${renderArtifactRows(view.tool_context_artifacts || [])}
+      </details>
+
+      <details>
+        <summary>Structure map</summary>
+        ${renderStructureRows(structure.rows || [])}
+      </details>
+    </div>
+  `;
 }
 
 function renderPendingChat(task) {
@@ -460,23 +575,134 @@ function renderChatTurn(role, kind, text) {
 }
 
 function renderSteps(steps) {
-  if (!steps || !Array.isArray(steps)) return "";
-  return steps.map((step, i) => {
-    const stepId = step.step_id ?? `step-${i}`;
-    const status = step.status ?? "unknown";
-    return `<div class="step-card">
-      <b>${stepId}</b>
-      <span class="muted">${status}</span>
-    </div>`;
-  }).join("");
+  if (!steps || !Array.isArray(steps)) {
+    return "<p class='muted'>No steps yet.</p>";
+  }
+
+  return `<div class="timeline">${steps.map(step => {
+    const violations = Array.isArray(step.violations)
+      ? step.violations
+      : [];
+
+    return `
+      <div class="step-card">
+        <b>
+          Step ${htmlEscape(step.step ?? "")}
+          · ${htmlEscape(step.planner_action || "")}
+          ${htmlEscape(step.planner_tool || "")}
+        </b>
+
+        <div class="muted">
+          result=${htmlEscape(step.tool_result_tool || "")}
+          ok=${htmlEscape(step.tool_result_ok)}
+          events=${htmlEscape(step.events ?? 0)}
+          coverage=${htmlEscape(step.coverage_score ?? "")}
+        </div>
+
+        <div>
+          ${htmlEscape(
+            step.validator_guard ||
+            violations.join(", ")
+          )}
+        </div>
+
+        ${
+          step.required_next_progress
+            ? `<pre>${htmlEscape(step.required_next_progress)}</pre>`
+            : ""
+        }
+      </div>
+    `;
+  }).join("")}</div>`;
 }
 
 function renderCodeProducts(products) {
-  if (!products) return "";
-  return products.map(p => {
-    const target = p.target_file || "unknown";
-    const status = p.status ?? "unknown";
-    return `<div class="pill">🔧 ${target} (${status})</div>`;
+  if (!Array.isArray(products) || !products.length) {
+    return "<p class='muted'>No code product extracted.</p>";
+  }
+
+  return products.map(item => {
+    const candidateId = String(item.candidate_id || "");
+    const title =
+      item.target_file ||
+      item.edit_kind ||
+      candidateId ||
+      "candidate";
+
+    const disabled = item.apply_supported ? "" : "disabled";
+
+    return `
+      <div class="card ${item.apply_supported ? "ok" : "warn"}">
+        <h3>${htmlEscape(title)}</h3>
+
+        <p class="muted">
+          candidate=${htmlEscape(candidateId)}
+          source=${htmlEscape(item.source_path || "")}
+          kind=${htmlEscape(item.edit_kind || item.kind || "")}
+        </p>
+
+        <div class="toolbar">
+          <button
+            class="secondary"
+            onclick='copyCandidate(${JSON.stringify(candidateId)})'
+          >
+            Copy candidate
+          </button>
+
+          <button
+            class="secondary"
+            ${disabled}
+            onclick='copyApplyToolCall(${JSON.stringify(candidateId)})'
+          >
+            Copy apply call
+          </button>
+
+          <button
+            class="danger"
+            ${disabled}
+            onclick='applyCandidate(${JSON.stringify(candidateId)})'
+          >
+            Apply exact patch
+          </button>
+        </div>
+
+        ${
+          item.apply_block_reason
+            ? `<p>${htmlEscape(item.apply_block_reason)}</p>`
+            : ""
+        }
+
+        ${
+          item.unified_diff
+            ? `<details>
+                 <summary>Unified diff</summary>
+                 <pre>${htmlEscape(item.unified_diff)}</pre>
+               </details>`
+            : ""
+        }
+
+        ${
+          item.has_old_new_text
+            ? `<details>
+                 <summary>old_text / new_text</summary>
+                 <pre>${htmlEscape(item.old_text || "")}
+
+--- new_text ---
+${htmlEscape(item.new_text || "")}</pre>
+               </details>`
+            : ""
+        }
+
+        ${
+          item.apply_tool_call
+            ? `<details>
+                 <summary>repo_apply_patch call</summary>
+                 <pre>${htmlEscape(pretty(item.apply_tool_call))}</pre>
+               </details>`
+            : ""
+        }
+      </div>
+    `;
   }).join("");
 }
 
