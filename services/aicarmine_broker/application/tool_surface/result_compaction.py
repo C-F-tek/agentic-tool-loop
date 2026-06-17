@@ -205,7 +205,7 @@ def compact_tool_result_for_planner(
         "validation_candidates",
         "command", "query", "mode", "success_count", "failed_count", "all_ok",
         "max_paths", "requested_limit", "candidate_limit", "suggested_next_tool",
-        "suggested_repo_read", "suggested_next_tool_calls", "coverage_status",
+        "suggested_repo_read", "suggested_next_tool_calls", "suggested_next_actions", "coverage_status",
         "repair_hints", "db", "record_id", "expires_at",
         "dry_run", "written", "deleted_count", "schema", "document_id",
         "section", "target_file", "status", "complete_payload_ready", "sha256",
