@@ -12,7 +12,14 @@ from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
 
 
 def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    query = str(args.get("query") or "").strip()
+    query = str(
+        args.get("query")
+        or args.get("pattern")
+        or args.get("symbol")
+        or args.get("needle")
+        or args.get("text")
+        or ""
+    ).strip()
     if re.fullmatch(r"\*\.[A-Za-z0-9_]+", query.strip()):
         return {
             "ok": False,
@@ -33,7 +40,10 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     mode = str(args.get("mode") or "rg").strip()
     path = str(args.get("path") or ".").strip()
-    max_results = max(1, int(args.get("max_results") or 80))
+    try:
+        max_results = max(1, int(args.get("max_results") or 80))
+    except (TypeError, ValueError, OverflowError):
+        max_results = 80
 
     q = json.dumps(query)
     target = json.dumps(path)
