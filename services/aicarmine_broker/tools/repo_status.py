@@ -95,7 +95,7 @@ def repo_capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "name": "repo_semantic_search",
             "risk": "read_only",
             "when_to_use": "Rank repo files/chunks with the delta RAG index when lexical search is too broad; follow with repo_read on returned paths.",
-            "required_args": ["query"],
+            "required_args": ["query|pattern|symbol|text"],
         },
         {
             "name": "repo_read",

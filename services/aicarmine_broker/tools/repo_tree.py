@@ -109,12 +109,17 @@ def repo_tree(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "source": source,
         "gitignore_respected": source == "git_ls_files_exclude_standard",
         "coverage_status": "truncated" if entries_total > len(entries) else "complete",
-        "suggested_next_tool_calls": (
+        "suggested_next_actions": (
             [
                 {
                     "tool": "repo_semantic_search",
-                    "arguments": {"query": "find entry point", "path": rel},
-                    "reason": "narrow_down_large_directory",
+                    "argument_hints": {
+                        "path": rel,
+                        "query": "derive_from_current_goal",
+                    },
+                    "reason": "directory_or_file_list_truncated_use_goal_specific_query",
+                    "requires_goal_specific_query": True,
+                    "not_runnable_without_query": True,
                 }
             ]
             if entries_total > len(entries)

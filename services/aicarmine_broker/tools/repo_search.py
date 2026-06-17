@@ -41,7 +41,7 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     mode = str(args.get("mode") or "rg").strip()
     path = str(args.get("path") or ".").strip()
     try:
-        max_results = max(1, int(args.get("max_results") or 80))
+        max_results = min(1000, max(1, int(args.get("max_results") or args.get("limit") or 80)))
     except (TypeError, ValueError, OverflowError):
         max_results = 80
 
