@@ -1,424 +1,195 @@
 # Implementation Plan
 
-## Overview
+## [Overview]
+Analisi e risoluzione dei problemi di congruenza nelle richieste all'IA nel job-3f4635af.
 
-Fix quality regressions introduced in job view optimization by correcting renderMetrics(), renderResultRows(), renderStructureRows(), restoring lost operator surfaces, fixing escaping issues, and updating documentation. This implementation addresses P1 (high priority) issues while preserving the 3571/3572 contracts.
+Questo documento descrive l'analisi approfondita del job `job-3f4635af` che è stato bloccato a causa di problemi di congruenza tra le richieste dell'IA e le risposte del controller. Il job aveva come obiettivo "Analizza il progetto e trova re-factoring potenziali da fare" ed è stato bloccato al step 20 con lo stato `blocked_needs_attention`.
 
-## Types
+### Problemi Identificati
 
-### renderMetrics() Function (P1)
-```javascript
-function renderMetrics(metrics) {
-  if (!metrics || typeof metrics !== "object") {
-    return "";
-  }
+1. **Violazione del contratto di finalizzazione**: Il planner ha emesso una risposta `final` senza aver completato le letture richieste dal contratto di evidenza
+2. **Affermazioni speculative**: Il planner ha fatto affermazioni su duplicazioni di codice senza aver letto i file candidati
+3. **Ignoramento delle route degli strumenti pendenti**: Il planner non ha seguito le indicazioni del controller per leggere i file candidati
+4. **Mancata verifica delle affermazioni**: Il planner menziona file senza averli letti completamente
 
-  const rows = Object.entries(metrics).filter(
-    ([key]) => key !== "warnings"
-  );
+### Cause Radice
 
-  if (!rows.length) {
-    return "<p class='muted'>No readiness metrics.</p>";
-  }
+- Il planner decide di finalizzare prima che il controller abbia validato il contratto
+- Il controller rifiuta la final con `planner_cuda_rewrite_required`
+- Il loop entra in uno stato di blocco perché il planner non esegue le letture candidate richieste
 
-  return `
-    <div class="metric-row">
-      ${rows.map(([key, value]) => `
-        <div class="metric">
-          <span>${htmlEscape(key)}</span>
-          <b>${htmlEscape(
-            typeof value === "object" ? pretty(value) : String(value)
-          )}</b>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-```
+## [Types]
 
-### renderResultRows() Function (P1)
-```javascript
-function renderResultRows(rows) {
-  if (!Array.isArray(rows) || !rows.length) {
-    return "<p class='muted'>No concrete results.</p>";
-  }
-
-  return rows.map(row => {
-    const accepted =
-      row.ok !== false &&
-      row.validator_accepted !== false &&
-      row.payload_is_complete !== false;
-
-    const kind =
-      row.kind ||
-      row.payload_type ||
-      row.tool ||
-      "result";
-
-    const path =
-      row.path ||
-      row.target_file ||
-      row.repo_path ||
-      "";
-
-    const locationValue =
-      row.primary_location ??
-      row.full_context_location ??
-      row.metadata_location ??
-      "";
-
-    const location =
-      typeof locationValue === "object"
-        ? pretty(locationValue)
-        : String(locationValue);
-
-    return `
-      <div class="step-card ${accepted ? "ok" : "warn"}">
-        <b>${htmlEscape(kind)}</b>
-
-        <div class="muted">
-          tool=${htmlEscape(row.tool || "")}
-          step=${htmlEscape(row.step ?? "")}
-          complete=${htmlEscape(row.payload_is_complete)}
-          validator=${htmlEscape(row.validator_accepted)}
-        </div>
-
-        ${
-          path
-            ? `<div><code>${htmlEscape(path)}</code></div>`
-            : ""
-        }
-
-        ${
-          location
-            ? `<details>
-                 <summary>Payload location</summary>
-                 <pre>${htmlEscape(location)}</pre>
-               </details>`
-            : ""
-        }
-      </div>
-    `;
-  }).join("");
-}
-```
-
-### renderStructureRows() Function (P1)
-```javascript
-function renderStructureRows(value) {
-  const rows = Array.isArray(value)
-    ? value
-    : Array.isArray(value?.rows)
-      ? value.rows
-      : [];
-
-  if (!rows.length) {
-    return "<p class='muted'>No structure map.</p>";
-  }
-
-  const visible = rows.slice(0, 260);
-
-  return `
-    <table>
-      <thead>
-        <tr>
-          <th>Depth</th>
-          <th>Path</th>
-          <th>Role</th>
-          <th>Type / size</th>
-          <th>Inline</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${visible.map(row => {
-          const size =
-            row.chars ??
-            row.items ??
-            row.keys ??
-            row.size ??
-            "";
-
-          return `
-            <tr>
-              <td>${htmlEscape(row.depth ?? "")}</td>
-              <td>${htmlEscape(row.path || "")}</td>
-              <td>${htmlEscape(row.role || "")}</td>
-              <td>${htmlEscape(
-                `${row.type || ""}${size !== "" ? ` ${size}` : ""}`
-              )}</td>
-              <td>${htmlEscape(row.inline_payload_candidate)}</td>
-            </tr>
-          `;
-        }).join("")}
-      </tbody>
-    </table>
-  `;
-}
-```
-
-### renderChainItem() Function (P2 - Escaping Fix)
-```javascript
-function renderChainItem(stepIndex, role, kind, text) {
-  const roleLabel = role === "user" ? "Operator" : role === "assistant" ? "Assistant" : role;
-  const kindLabel = kind === "followup" ? "Follow-up" : kind === "compose" ? "Compose Answer" : kind;
-  return `<div class="planner-lab-chain-item">
-    <div class="planner-lab-chain-label">${stepIndex}. ${htmlEscape(roleLabel)}: ${htmlEscape(kindLabel)}</div>
-    <div class="planner-lab-chain-text">${htmlEscape(text)}</div>
-  </div>`;
-}
-```
-
-### renderPreBlock() Function (P2 - Escaping Fix)
+### EvidenceContractSummary
 ```python
-def render_pre_block(value: Any, language: str = "json") -> str:
-    """Render a pre-formatted code block with HTML escaping."""
-    text = _json_pretty(value) if isinstance(value, (dict, list)) else str(value)
-    return f'<pre class="{html.escape(language)}">{html.escape(text)}</pre>'
+@dataclass
+class EvidenceContractSummary:
+    schema: str = "planner_evidence_contract_storage_summary.v1"
+    full_contract_not_duplicated_here: bool = True
+    evidence_contract_chars: int = 0
+    evidence_contract_sha256: str = ""
+    coverage_satisfied: bool = False
+    minimum_read_coverage: MinimumReadCoverage
+    candidate_next_actions: list[Action]
+    finalization_contract: FinalizationContract
 ```
 
-### renderJsonPage() Function (P2 - Escaping Fix)
+### FinalizationContract
 ```python
-def render_json_page(title: str, payload: Any, *, section_url: str = "", max_chars: int = 300_000) -> str:
-    """Render a JSON diagnostic page with title and pretty JSON."""
-    json_text = _json_pretty(payload, max_chars=max_chars)
-    body = f"""
-<div class="card">
-  <h2>{html.escape(title)}</h2>
-  <pre>{html.escape(json_text)}</pre>
-</div>
-"""
-    if section_url:
-        body += f'<a href="{html.escape(section_url)}">← Back</a>'
-    return render_page_shell(title, body)
+@dataclass
+class FinalizationContract:
+    final_allowed: bool = False
+    reason: str = ""
+    planner_may_choose_final: bool = False
+    coverage_satisfied: bool = False
+    minimum_read_coverage: MinimumReadCoverage
+    code_product_required: bool = False
+    planner_forced_terminal_block: bool = False
+    planner_may_choose_block: bool = False
 ```
 
-### renderJsonSection() Function (P2 - Escaping Fix)
+### MinimumReadCoverage
 ```python
-def render_json_section(title: str, payload: Any, *, parent_url: str = "", max_chars: int = 300_000) -> str:
-    """Render a JSON section (child of a parent page)."""
-    json_text = _json_pretty(payload, max_chars=max_chars)
-    body = f"""
-<h3>{html.escape(title)}</h3>
-<pre>{html.escape(json_text)}</pre>
-"""
-    if parent_url:
-        body += f'<a href="{html.escape(parent_url)}">↑ Parent</a>'
-    return body
+@dataclass
+class MinimumReadCoverage:
+    required: bool = True
+    coverage_satisfied: bool = False
+    target_kind: str = "repo_owner_core"
+    required_count: int = 2
+    covered_count: int = 0
+    missing_owner_paths: list[str]
+    covered_owner_paths: list[str]
+    candidate_owner_paths: list[str]
 ```
 
-### renderTopLevelSurface() Function (P1 - Lost Surface)
-```javascript
-function renderTopLevelSurface(payload) {
-  const div = document.createElement("div");
-  div.className = "planner-lab-content";
-  div.innerHTML = `
-    <h3>Job Overview</h3>
-    <pre>${htmlEscape(pretty(payload))}</pre>
-  `;
-  return div.outerHTML;
-}
-```
+## [Files]
 
-### renderRedundancyAudit() Function (P1 - Lost Surface)
-```javascript
-function renderRedundancyAudit(payload) {
-  const items = [];
-  for (const [key, value] of Object.entries(payload)) {
-    if (key === "redundancy_audit") {
-      items.push(`<div class="pill">${htmlEscape(key)}: ${htmlEscape(value)}</div>`);
-    }
-  }
-  return items.join("");
-}
-```
+### New Files to be Created
+- `implementation_plan.md` - Questo documento di pianificazione
 
-### renderPartialResults() Function (P1 - Lost Surface)
-```javascript
-function renderPartialResults(payload) {
-  const partial = payload.partial_results || [];
-  if (!partial.length) return "";
-  
-  return `<details>
-    <summary>Partial results</summary>
-    <pre>${htmlEscape(pretty(partial))}</pre>
-  </details>`;
-}
-```
+### Existing Files to be Modified
+- Nessuno - L'analisi è completa e i problemi sono stati identificati
 
-### renderDescriptiveOnly() Function (P1 - Lost Surface)
-```javascript
-function renderDescriptiveOnly(payload) {
-  const desc = payload.descriptive_only || [];
-  if (!desc.length) return "";
-  
-  return `<details>
-    <summary>Descriptive only fields</summary>
-    <pre>${htmlEscape(pretty(desc))}</pre>
-  </details>`;
-}
-```
+### Files to be Deleted or Moved
+- Nessuno
 
-### renderSearchOrder() Function (P1 - Lost Surface)
-```javascript
-function renderSearchOrder(payload) {
-  const order = payload.search_order || [];
-  if (!order.length) return "";
-  
-  return `<details>
-    <summary>Search order</summary>
-    <pre>${htmlEscape(pretty(order))}</pre>
-  </details>`;
-}
-```
+### Configuration File Updates
+- Nessuno - I problemi sono di logica del loop, non di configurazione
 
-### renderDeepInlineLocations() Function (P1 - Lost Surface)
-```javascript
-function renderDeepInlineLocations(payload) {
-  const locations = payload.deep_inline_locations || [];
-  if (!locations.length) return "";
-  
-  return `<details>
-    <summary>Deep inline locations</summary>
-    <pre>${htmlEscape(pretty(locations))}</pre>
-  </details>`;
-}
-```
-
-### renderPayloadIndex() Function (P1 - Lost Surface)
-```javascript
-function renderPayloadIndex(payload) {
-  const index = payload.payload_index || {};
-  if (!index || Object.keys(index).length === 0) return "";
-  
-  return `<details>
-    <summary>Payload index raw</summary>
-    <pre>${htmlEscape(pretty(index))}</pre>
-  </details>`;
-}
-```
-
-### renderPriorityEvidence() Function (P1 - Lost Surface)
-```javascript
-function renderPriorityEvidence(payload) {
-  const evidence = payload.priority_evidence || [];
-  if (!evidence.length) return "";
-  
-  return `<details>
-    <summary>Priority evidence raw</summary>
-    <pre>${htmlEscape(pretty(evidence))}</pre>
-  </details>`;
-}
-```
-
-### renderClearGuidedChat() Function (P1 - Lost Surface)
-```javascript
-function renderClearGuidedChat() {
-  return `<button onclick="guidedConversation = []; guidedDraftText = ''; renderGuidedConversation()">Clear guided chat</button>`;
-}
-```
-
-## Files
-
-### New Files
-- None (all fixes are in-place modifications)
-
-### Modified Files
-1. **services/aicarmine_broker/job_html_assets.py**
-   - Fix `renderMetrics()` to produce `.metric` cards inside `.metric-row` containers and filter out warnings
-   - Fix `renderResultRows()` to use actual fields: kind, payload_type, path, tool, step, validator_accepted, payload_is_complete
-   - Fix `renderStructureRows()` to handle array rows correctly and render as table
-   - Add lost surfaces: `renderTopLevelSurface()`, `renderRedundancyAudit()`, `renderPartialResults()`, `renderDescriptiveOnly()`, `renderSearchOrder()`, `renderDeepInlineLocations()`, `renderPayloadIndex()`, `renderPriorityEvidence()`, `renderClearGuidedChat()`
-   - Fix escaping in `renderChainItem()` for `role_label` and `kind_label`
-   - Line count change: ~+200 lines (adding lost functions)
-
-2. **services/aicarmine_broker/job_html.py**
-   - No changes needed (P0 `_html_pre()` already exists)
-   - Remove unused first `_html_page()` definition if present (shadowed by second one)
-
-3. **services/aicarmine_broker/job_html_assets.py** (Python helpers)
-   - Fix `render_pre_block()` to escape content
-   - Fix `render_json_page()` to escape JSON text
-   - Fix `render_json_section()` to escape JSON text
-   - Line count change: +0 (just escaping fixes)
-
-### Configuration Files
-- **services/aicarmine_broker/JOB_VIEW_OPTIMIZATION_NOTES.md**
-   - Update to reflect actual implementation state
-   - Mark P1 items as still open until runtime verification
-   - Document lost surfaces as operator-relevant (not optional)
-   - Update asset size references
-
-## Functions
+## [Functions]
 
 ### New Functions
-| Name | File | Purpose |
-|------|------|---------|
-| `renderTopLevelSurface()` | job_html_assets.py | Restore lost job overview surface |
-| `renderRedundancyAudit()` | job_html_assets.py | Restore redundancy audit display |
-| `renderPartialResults()` | job_html_assets.py | Restore partial results display |
-| `renderDescriptiveOnly()` | job_html_assets.py | Restore descriptive-only fields display |
-| `renderSearchOrder()` | job_html_assets.py | Restore search order display |
-| `renderDeepInlineLocations()` | job_html_assets.py | Restore deep inline locations display |
-| `renderPayloadIndex()` | job_html_assets.py | Restore payload index raw display |
-| `renderPriorityEvidence()` | job_html_assets.py | Restore priority evidence raw display |
-| `renderClearGuidedChat()` | job_html_assets.py | Restore clear guided chat button |
+- Nessuna - L'analisi è basata su letture esistenti
 
 ### Modified Functions
-| Name | File | Changes |
-|------|------|---------|
-| `renderMetrics()` | job_html_assets.py | Produce `.metric` cards inside `.metric-row` containers; filter out warnings |
-| `renderResultRows()` | job_html_assets.py | Use actual fields: kind, payload_type, path, tool, step, validator_accepted, payload_is_complete |
-| `renderStructureRows()` | job_html_assets.py | Handle array rows with depth/path/role/type fields; render as table |
-| `renderChainItem()` | job_html_assets.py | Escape `role_label` and `kind_label` |
-| `render_pre_block()` | job_html_assets.py | Escape content before inserting into `<pre>` |
-| `render_json_page()` | job_html_assets.py | Escape JSON text before inserting into `<pre>` |
-| `render_json_section()` | job_html_assets.py | Escape JSON text before inserting into `<pre>` |
+- Nessuna - L'analisi è basata su letture esistenti
 
 ### Removed Functions
-- None (no functions removed, only fixes)
+- Nessuna - L'analisi è basata su letture esistenti
 
-## Classes
-- No classes modified
+## [Classes]
 
-## Dependencies
-- No new dependencies
-- No version changes
-- All fixes use existing Python standard library and JavaScript
+### New Classes
+- Nessuna - L'analisi è basata su letture esistenti
 
-## Testing
-- Manual verification: Render each view type (dashboard, status_json, final_json, events, planner_stream, ia_view, planner_lab)
-- Check HTML structure for proper escaping
-- Verify metrics display correctly with `.metric` cards
-- Confirm stopPolling preserves panel content
-- Test renderResultRows with actual navigation.concrete_results data
-- Run `python -m py_compile` on modified files
-- Check `git diff --check` for syntax errors
+### Modified Classes
+- Nessuna - L'analisi è basata su letture esistenti
 
-## Implementation Order
+### Removed Classes
+- Nessuna - L'analisi è basata su letture esistenti
 
-1. **Patch A — P0 Immediate Fix**
-   - Verify `_html_pre()` exists in correct location in job_html.py
-   - No action needed if function is present (it is)
+## [Dependencies]
 
-2. **Patch B — Planner-Lab Equivalence (P1 Fixes)**
-   - Fix `renderResultRows()` to use actual data structure fields (kind, payload_type, path, tool, step, validator_accepted, payload_is_complete)
-   - Fix `renderMetrics()` to produce proper `.metric` cards and filter out warnings
-   - Fix `stopPolling()` to preserve panel and update status only
-   - Fix `renderStructureRows()` to handle array rows correctly and render as table
-   - Add lost surfaces: `renderTopLevelSurface()`, `renderRedundancyAudit()`, `renderPartialResults()`, `renderDescriptiveOnly()`, `renderSearchOrder()`, `renderDeepInlineLocations()`, `renderPayloadIndex()`, `renderPriorityEvidence()`, `renderClearGuidedChat()`
-   - Fix escaping in `renderChainItem()` for `role_label` and `kind_label`
-   - Fix escaping in Python helpers: `render_pre_block()`, `render_json_page()`, `render_json_section()`
+### New Packages
+- Nessuno - L'analisi è basata su letture esistenti
 
-3. **Patch C — Documentation Update**
-   - Update `JOB_VIEW_OPTIMIZATION_NOTES.md` to reflect actual state
-   - Mark P1 items as still open until runtime verification
-   - Document lost surfaces as operator-relevant (not optional)
-   - Update asset size references
+### Version Changes
+- Nessuno - L'analisi è basata su letture esistenti
 
-4. **Verification**
-   - Render all view types: job_dashboard, status_json, final_json, final_markdown, events, planner_stream, ia_view, planner_lab
-   - Verify HTML structure and escaping
-   - Confirm metrics display correctly with `.metric` cards
-   - Check that stopPolling preserves panel content
-   - Run `python -m py_compile` on modified files
-   - Check `git diff --check` for syntax errors
+### Integration Requirements
+- Nessuno - L'analisi è basata su letture esistenti
+
+## [Testing]
+
+### Test File Requirements
+- Nessuno - L'analisi è basata su letture esistenti
+
+### Existing Test Modifications
+- Nessuno - L'analisi è basata su letture esistenti
+
+### Validation Strategies
+- Analisi degli eventi del job tramite `aicarmine_job_artifact_events`
+- Lettura del final.json tramite `aicarmine_job_artifact_final`
+- Verifica dello stato del job tramite `aicarmine_job_artifact_list_jobs`
+
+## [Implementation Order]
+
+1. **Analisi degli eventi del job**: Lettura completa di `events.ndjson` per tracciare il flusso del loop
+2. **Analisi del final.json**: Lettura del file finale per identificare le violazioni del contratto
+3. **Identificazione delle violazioni**: Mappatura delle violazioni del contratto di finalizzazione
+4. **Documentazione dei problemi**: Creazione di questo documento di pianificazione
+5. **Raccomandazioni**: Fornire raccomandazioni per risolvere i problemi di congruenza
+
+---
+
+## Dettagli dei Problemi di Congruenza
+
+### Problema 1: Violazione del Contratto di Finalizzazione
+
+**Sintomo**: Il planner emette `action=final` ma il controller rifiuta con `planner_cuda_rewrite_required`
+
+**Evidenza**:
+- Evento step=6: `planner_decision_rejected` con `guard_type=planner_cuda_rewrite_required`
+- Violazione: `final_not_allowed_by_evidence_contract:Need root/ranked orientation + baseline markdown/config reads + one meaningful non-infra/code area/read set + 43/10 verified concrete readable reads + semantic owner target coverage 7/2 for analysis/action-plan finalization`
+
+**Causa**: Il planner decide di finalizzare senza aver completato le letture richieste dal contratto
+
+### Problema 2: Affermazioni Speculative
+
+**Sintomo**: Il planner fa affermazioni su duplicazioni di codice senza aver letto i file candidati
+
+**Evidenza**:
+- Violazione: `speculative_claims_without_verification`
+- Violazione: `repo_analysis_final_mentions_unverified_paths:application/planner/validator.py,application/evidence/final_quality.py,application/planner/loop.py,application/controller/memory.py`
+
+**Causa**: Il planner fa affermazioni su file che non ha letto completamente o che non sono stati verificati
+
+### Problema 3: Ignoramento delle Route degli Strumenti Pendenti
+
+**Sintomo**: Il planner non segue le indicazioni del controller per leggere i file candidati
+
+**Evidenza**:
+- Violazione: `ignores_pending_tool_routes`
+- `required_next_tool_call` indica di leggere `pack_builder.py`, `text_windows.py`, `tool_contract.py`
+
+**Causa**: Il planner ignora le indicazioni del controller e continua con altre letture non prioritarie
+
+### Problema 4: Mancata Verifica delle Affermazioni
+
+**Sintomo**: Il planner menziona file senza averli letti completamente
+
+**Evidenza**:
+- Violazione: `shallow_analysis_of_large_files`
+- Il planner menziona duplicazioni tra file che non ha confrontato
+
+**Causa**: Il planner fa affermazioni basate su letture parziali o incomplete
+
+## Raccomandazioni
+
+1. **Rispettare il contratto di finalizzazione**: Il planner deve completare tutte le letture richieste prima di emettere una final answer
+2. **Verificare le affermazioni**: Prima di fare affermazioni su duplicazioni, leggere e confrontare i file candidati
+3. **Seguire le route degli strumenti pendenti**: Il planner deve seguire le indicazioni del controller per leggere i file candidati
+4. **Completare le letture candidate**: Leggere i file indicati in `candidate_next_actions` prima di finalizzare
+5. **Documentare le letture**: Tenere traccia di quali file sono stati letti e quali affermazioni sono state verificate
+
+## Stato Attuale del Job
+
+- **Job ID**: job-3f4635af
+- **Stato**: blocked_needs_attention
+- **Step corrente**: 20
+- **Goal**: Analizza il progetto e trova re-factoring potenziali da fare
+- **Ultimo evento**: planner_decision_rejected con `planner_cuda_rewrite_required:final`
+
+## File Modificati
+
+Nessun file è stato modificato. L'analisi è stata effettuata tramite letture esistenti degli eventi del job.
