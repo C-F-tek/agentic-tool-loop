@@ -123,6 +123,7 @@ let guidedConversation = [];
 let guidedTurnCounter = 0;
 let guidedDraftText = "";
 let guidedComposeInFlight = false;
+let currentPlannerLabPayload = null;
 
 function stopPolling() {
   if (pollTimer) {
@@ -192,6 +193,7 @@ function selectJob(jobId, autoPoll = true) {
   if (currentJobId && currentJobId !== cleanJob) {
     guidedConversation = [];
     guidedDraftText = "";
+    currentPlannerLabPayload = null;
   }
   
   currentJobId = cleanJob;
@@ -1096,6 +1098,8 @@ function findCodeProduct(candidateId) {
 function renderLab(data) {
   const labOutput = document.getElementById("lab-output");
   if (!labOutput) return;
+
+  currentPlannerLabPayload = data;
   
   const job = data.job || {};
   const jobId = String(job.job_id || currentJobId || "");
