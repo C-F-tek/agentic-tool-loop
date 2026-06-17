@@ -101,12 +101,13 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "repo_semantic_search",
         (
             "Semantic repo search over the delta RAG index. Use before targeted repo_read "
-            "when lexical search or repo_tree is too broad. Requires query or one of pattern, symbol, text."
+            "when lexical search or repo_tree is too broad. Requires query or one of pattern, symbol, text, needle."
         ),
         {
             "query": {"type": "string"},
             "pattern": {"type": "string"},
             "symbol": {"type": "string"},
+            "needle": {"type": "string"},
             "text": {"type": "string"},
             "path": {"type": "string", "default": "."},
             "limit": {"type": "integer", "default": 8},
@@ -121,7 +122,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "rerank_timeout_seconds": {"type": "number", "default": 30.0},
         },
         argument_contract={
-            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["text"]],
+            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["needle"], ["text"]],
             "violation": "repo_semantic_search_missing_query",
         },
     ),

@@ -50,10 +50,9 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
         max_paths = bounded_int_arg(args, ("max_paths", "limit"), default=200, minimum=1, maximum=200)
         before = bounded_int_arg(args, "before", default=40, minimum=0, maximum=1000)
         after = bounded_int_arg(args, "after", default=120, minimum=0, maximum=1000)
+        line = bounded_int_arg(args, "line", default=0, minimum=0, maximum=10_000_000)
     except Exception as exc:
         return deterministic_input_error("repo_read", exc)
-
-    line = args.get("line")
     items: list[dict[str, Any]] = []
 
     for raw in paths[:max_paths]:

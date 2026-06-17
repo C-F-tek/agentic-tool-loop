@@ -78,15 +78,16 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         }
 
     q = json.dumps(query)
-    target = str(full)
+    target_q = json.dumps(str(full))
+    rel_q = json.dumps(rel)
     if mode == "git_grep":
-        command = f"git grep -n -- {q} -- {rel}"
+        command = f"git grep -n -- {q} -- {rel_q}"
     elif mode == "fd":
-        command = f"fd {q} {target}"
+        command = f"fd {q} {target_q}"
     else:
         command = (
             f"rg -n --hidden --glob '!**/__pycache__/**' "
-            f"--glob '!output/**' {q} {target}"
+            f"--glob '!output/**' {q} {target_q}"
         )
 
     classification = classify_command(command)
@@ -104,7 +105,7 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "matches": result["stdout"].splitlines()[:max_results],
         "stderr_tail": result["stderr_tail"],
         "path": rel,
-        "target": target,
+        "target": target_q,
     }
     artifact = root / "tool-results" / f"{now()}-repo_search.json"
     write_json(artifact, payload)
