@@ -209,7 +209,7 @@ def compact_tool_result_for_planner(
         "repair_hints", "db", "record_id", "expires_at",
         "dry_run", "written", "deleted_count", "schema", "document_id",
         "section", "target_file", "status", "complete_payload_ready", "sha256",
-        "warnings", "error", "error_type",
+        "warnings", "error", "error_type", "target",
     )
     for key in scalar_keys:
         if key not in result:

@@ -47,7 +47,14 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     try:
         max_chars = bounded_int_arg(args, "max_chars", default=80000, minimum=1, maximum=200000)
-        max_paths = bounded_int_arg(args, ("max_paths", "limit"), default=200, minimum=1, maximum=200)
+        requested_max_paths = bounded_int_arg(
+            args,
+            ("max_paths", "limit"),
+            default=len(paths) or 1,
+            minimum=1,
+            maximum=max(1, len(paths)),
+        )
+        max_paths = min(requested_max_paths, len(paths))
         before = bounded_int_arg(args, "before", default=40, minimum=0, maximum=1000)
         after = bounded_int_arg(args, "after", default=120, minimum=0, maximum=1000)
         line = bounded_int_arg(args, "line", default=0, minimum=0, maximum=10_000_000)

@@ -56,7 +56,10 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if not query:
         return {"ok": False, "tool": "repo_search", "error": "missing query"}
 
-    mode = str(args.get("mode") or "rg").strip()
+    requested_mode = str(args.get("mode") or "rg").strip().lower()
+    if requested_mode not in {"rg", "git_grep", "fd"}:
+        requested_mode = "rg"
+    mode = requested_mode
     path = str(args.get("path") or ".").strip()
     try:
         max_results = min(1000, max(1, int(args.get("max_results") or args.get("limit") or 80)))
@@ -93,10 +96,20 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     classification = classify_command(command)
     result = _run_ps(command, timeout=120)
+    if mode in {"rg", "git_grep"}:
+        ok = result["returncode"] in (0, 1)
+        no_matches = result["returncode"] == 1
+    else:
+        ok = result["returncode"] == 0
+        no_matches = ok and not result["stdout"].strip()
+
     payload = {
-        "ok": result["returncode"] in (0, 1),
+        "ok": ok,
         "tool": "repo_search",
         "mode": mode,
+        "requested_mode": requested_mode,
+        "mode_defaulted": mode != requested_mode,
+        "no_matches": no_matches,
         "query": query,
         "command": command,
         "command_class": classification.command_class,
