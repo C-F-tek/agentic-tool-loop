@@ -160,6 +160,26 @@ class ToolSurfacePolicy:
             else []
         )
         progress = safe_text(contract.get("required_next_progress"), limit=4000).strip().lower()
+
+        # Fix S5: Filtrare candidate actions stale dopo aver copiato dall'overlay
+        # Definiamo policy prima di filtrare le candidate actions
+        policy: dict[str, Any] = {
+            "schema": "planner_turn_tool_surface_policy.v1",
+            "reason": "",
+            "allowed_tool_names": [],
+            "candidate_actions_filtered": False,
+        }
+        allowed = set(policy.get("allowed_tool_names") or [])
+        if isinstance(contract.get("candidate_next_actions"), list):
+            contract["candidate_next_actions"] = [
+                action
+                for action in contract.get("candidate_next_actions")
+                if candidate_action_tool(action) in allowed
+            ]
+
+        # Se la superficie è intenzionalmente vuota
+        if not allowed:
+            contract["candidate_next_actions"] = []
         strict_code_product_payload = any(
             token in progress
             for token in (
@@ -173,12 +193,6 @@ class ToolSurfacePolicy:
                 "code_product_route_shift_target_already_read",
             )
         )
-        policy: dict[str, Any] = {
-            "schema": "planner_turn_tool_surface_policy.v1",
-            "reason": "",
-            "allowed_tool_names": [],
-            "candidate_actions_filtered": False,
-        }
         if surface_diagnostics:
             policy["tool_surface_diagnostics"] = surface_diagnostics
         required = (

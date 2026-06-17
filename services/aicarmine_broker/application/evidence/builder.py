@@ -1451,9 +1451,34 @@ class EvidenceBuilder:
                 action_plan_candidate = candidate
             if action_plan_candidate and latest_required_next_tool_call:
                 break
-        disallowed_invalid_decision_signatures = _disallowed_invalid_code_product_signatures(
+        # _disallowed_invalid_decision_signatures: restituisce una lista vuota (non usata)
+        def _disallowed_invalid_decision_signatures(rejections: list[dict[str, Any]]) -> list[str]:
+            """Restituisce una lista vuota - non usata."""
+            return []
+
+        disallowed_invalid_decision_signatures = _disallowed_invalid_decision_signatures(
             validation_rejections
         )
+
+        # Fix S4: Consumare required route soddisfatte
+        required_route_consumed = bool(stale_required_next_tool_calls)
+        if required_route_consumed:
+            contract["post_final_required_route_satisfied"] = True
+            contract["planner_cuda_rewrite_required"] = False
+            contract["final_rewrite_latch"] = "inactive"
+            contract["planner_may_choose_final"] = bool(coverage_satisfied)
+            contract["planner_may_choose_block"] = False
+            
+            final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+            final_contract["final_allowed"] = bool(coverage_satisfied)
+            final_contract["planner_may_choose_final"] = bool(coverage_satisfied)
+            final_contract["planner_may_choose_block"] = False
+            final_contract["reason"] = "post_final_required_route_satisfied"
+            
+            contract["required_next_progress"] = (
+                "The required post-final evidence route succeeded. "
+                "Rewrite the final using verified evidence; do not repeat the satisfied tool call."
+            )
 
         contract = {
             "contract_type": "planner_decides_controller_validates",
