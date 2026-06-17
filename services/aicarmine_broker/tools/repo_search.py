@@ -23,7 +23,17 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         or ""
     ).strip()
     if re.fullmatch(r"\*\.[A-Za-z0-9_]+", query.strip()):
-        suggested_path = str(args.get("path") or ".").strip() or "."
+        raw_suggested_path = str(args.get("path") or ".").strip() or "."
+        try:
+            suggested_rel = (
+                "."
+                if raw_suggested_path in {"", "."}
+                else safe_rel_path(raw_suggested_path)
+            )
+            suggested_full = (LAB_REPO / suggested_rel).resolve(strict=False)
+            suggested_full.relative_to(LAB_REPO)
+        except Exception:
+            suggested_rel = "."
         return {
             "ok": False,
             "tool": "repo_search",
@@ -34,12 +44,12 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 {
                     "tool": "repo_list_files",
                     "argument_hints": {
-                        "path": suggested_path,
+                        "path": suggested_rel,
                         "suffix": query.strip()[1:],
                         "limit": 20,
                     },
                     "reason": "glob_pattern_is_file_listing_not_text_search",
-                    "not_runnable_without_path_validation": False,
+                    "not_runnable_without_path_validation": True,
                 }
             ],
         }
@@ -70,7 +80,7 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     q = json.dumps(query)
     target = str(full)
     if mode == "git_grep":
-        command = f"git grep -n -- {q}"
+        command = f"git grep -n -- {q} -- {rel}"
     elif mode == "fd":
         command = f"fd {q} {target}"
     else:
@@ -93,6 +103,8 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "returncode": result["returncode"],
         "matches": result["stdout"].splitlines()[:max_results],
         "stderr_tail": result["stderr_tail"],
+        "path": rel,
+        "target": target,
     }
     artifact = root / "tool-results" / f"{now()}-repo_search.json"
     write_json(artifact, payload)
