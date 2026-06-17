@@ -117,7 +117,7 @@ PLANNER_LAB_EXTRA_CSS = """
 .planner-lab-faq-item { margin: 4px 0; }
 """
 
-# Planner Lab extra JavaScript (specific to the lab UI) - COMPLETE OPERATIONAL SURFACE
+# Planner Lab extra JavaScript (specific to the lab UI) - COMPLETE OPERATIONAL SURFACE WITH CORRECTED PATHS
 PLANNER_LAB_JS = r"""
 let guidedConversation = [];
 let guidedTurnCounter = 0;
@@ -399,18 +399,19 @@ function renderTopLevelSurface(payload) {
   return div.outerHTML;
 }
 
-function renderRedundancyAudit(payload) {
-  const items = [];
-  for (const [key, value] of Object.entries(payload)) {
-    if (key === "redundancy_audit") {
-      items.push(`<div class="pill">${htmlEscape(key)}: ${htmlEscape(value)}</div>`);
-    }
-  }
-  return items.join("");
+function renderRedundancyAudit(data) {
+  // Use actual path: data.redundancy_audit
+  const audit = data.redundancy_audit;
+  if (!audit) return "";
+  
+  // Convert object to JSON string first, then escape
+  const jsonStr = typeof audit === "object" ? JSON.stringify(audit, null, 2) : String(audit);
+  return `<div class="pill">${htmlEscape(jsonStr)}</div>`;
 }
 
-function renderPartialResults(payload) {
-  const partial = payload.partial_results || [];
+function renderPartialResults(data) {
+  // Use actual path: data.public_tool_response_view.navigation.partial_results
+  const partial = data.public_tool_response_view?.navigation?.partial_results || [];
   if (!partial.length) return "";
 
   return `<details>
@@ -419,8 +420,9 @@ function renderPartialResults(payload) {
   </details>`;
 }
 
-function renderDescriptiveOnly(payload) {
-  const desc = payload.descriptive_only || [];
+function renderDescriptiveOnly(data) {
+  // Use actual path: data.public_tool_response_view.navigation.descriptive_only
+  const desc = data.public_tool_response_view?.navigation?.descriptive_only || [];
   if (!desc.length) return "";
 
   return `<details>
@@ -429,8 +431,9 @@ function renderDescriptiveOnly(payload) {
   </details>`;
 }
 
-function renderSearchOrder(payload) {
-  const order = payload.search_order || [];
+function renderSearchOrder(data) {
+  // Use actual path: data.public_tool_response_view.navigation.search_order
+  const order = data.public_tool_response_view?.navigation?.search_order || [];
   if (!order.length) return "";
 
   return `<details>
@@ -439,8 +442,9 @@ function renderSearchOrder(payload) {
   </details>`;
 }
 
-function renderDeepInlineLocations(payload) {
-  const locations = payload.deep_inline_locations || [];
+function renderDeepInlineLocations(data) {
+  // Use actual path: data.public_tool_response_view.structure_map.deep_inline_locations
+  const locations = data.public_tool_response_view?.structure_map?.deep_inline_locations || [];
   if (!locations.length) return "";
 
   return `<details>
@@ -449,8 +453,9 @@ function renderDeepInlineLocations(payload) {
   </details>`;
 }
 
-function renderPayloadIndex(payload) {
-  const index = payload.payload_index || {};
+function renderPayloadIndex(data) {
+  // Use actual path: data.payload_index_for_30b
+  const index = data.payload_index_for_30b || {};
   if (!index || Object.keys(index).length === 0) return "";
 
   return `<details>
@@ -459,8 +464,9 @@ function renderPayloadIndex(payload) {
   </details>`;
 }
 
-function renderPriorityEvidence(payload) {
-  const evidence = payload.priority_evidence || [];
+function renderPriorityEvidence(data) {
+  // Use actual path: data.priority_evidence_for_30b
+  const evidence = data.priority_evidence_for_30b || [];
   if (!evidence.length) return "";
 
   return `<details>
@@ -1294,7 +1300,42 @@ function renderLab(data) {
       </div>
       
       <div class="planner-lab-section">
+        <h2>Redundancy audit</h2>
+        ${renderRedundancyAudit(data)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Partial results</h2>
+        ${renderPartialResults(data)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Descriptive only fields</h2>
+        ${renderDescriptiveOnly(data)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Search order</h2>
+        ${renderSearchOrder(data)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Deep inline locations</h2>
+        ${renderDeepInlineLocations(data)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Payload index</h2>
+        ${renderPayloadIndex(data)}
+      </div>
+      
+      <div class="planner-lab-section">
         <h2>Priority evidence</h2>
+        ${renderPriorityEvidence(data)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Priority evidence items</h2>
         ${renderPriorityRows(priorityItems)}
       </div>
       
@@ -1346,6 +1387,7 @@ function renderLab(data) {
         >
         
         <button onclick="composeFromPayload()">Ask follow-up</button>
+        ${renderClearGuidedChat()}
       </div>
       
       <div id="guided-conversation"></div>
