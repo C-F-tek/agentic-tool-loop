@@ -538,35 +538,118 @@ function captureGuidedDraft() {
 }
 
 async function composeFromPayload() {
+  if (!currentJobId || guidedComposeInFlight) return;
+  
   captureGuidedDraft();
-  
   const instruction = guidedDraftText.trim();
-  if (!instruction || !currentJobId) return;
   
-  const payload = {
-    instruction,
-    conversation: guidedConversation.filter(
-      turn => turn.status !== "waiting"
-    ).slice(-8),
-    think: Boolean(document.getElementById("compose-think")?.checked),
-    summary_chars: Number(document.getElementById("summary-chars")?.value || 4000),
-    step_limit: Number(document.getElementById("step-limit")?.value || 80),
-    code_product_limit: Number(document.getElementById("code-product-limit")?.value || 40),
-    max_payload_chars: Number(document.getElementById("compose-payload-chars")?.value || 30000),
-    timeout_seconds: Number(document.getElementById("compose-timeout")?.value || 60),
-  };
+  if (!instruction) {
+    setStatus("operator_prompt_missing");
+    return;
+  }
+  
+  const turnId = `turn-${Date.now()}-${guidedTurnCounter++}`;
+  const priorConversation = guidedConversation
+    .filter(turn => turn.status !== "waiting")
+    .slice(-8);
+  
+  guidedConversation.push({
+    role: "operator",
+    turn_id: turnId,
+    content: instruction,
+    status: "ok",
+    ts: new Date().toISOString(),
+  });
+  
+  guidedConversation.push({
+    role: "assistant",
+    turn_id: `${turnId}-waiting`,
+    waiting_for: turnId,
+    status: "waiting",
+    content: "Waiting for structured response...",
+    ts: new Date().toISOString(),
+  });
+  
+  guidedDraftText = "";
+  guidedComposeInFlight = true;
+  renderGuidedConversation();
+  setStatus("compose_waiting_for_ollama");
   
   try {
-    const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/planner-lab/compose`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(payload),
+    const payload = {
+      instruction,
+      conversation: priorConversation,
+      think: Boolean(
+        document.getElementById("compose-think")?.checked
+      ),
+      summary_chars: Number(
+        document.getElementById("summary-chars")?.value || 4000
+      ),
+      step_limit: Number(
+        document.getElementById("step-limit")?.value || 80
+      ),
+      code_product_limit: Number(
+        document.getElementById("code-product-limit")?.value || 40
+      ),
+      max_payload_chars: Number(
+        document.getElementById("compose-payload-chars")?.value || 30000
+      ),
+      timeout_seconds: Number(
+        document.getElementById("compose-timeout")?.value || 60
+      ),
+    };
+    
+    const response = await fetch(
+      `/jobs/${encodeURIComponent(currentJobId)}/planner-lab/compose`,
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      }
+    );
+    
+    const data = await response.json();
+    
+    guidedConversation = guidedConversation.filter(
+      turn => turn.waiting_for !== turnId
+    );
+    
+    const result = data.result || {};
+    const structured = result.structured_answer || {};
+    
+    guidedConversation.push({
+      role: "assistant",
+      turn_id: `${turnId}-assistant`,
+      status: data.ok ? "ok" : "failed",
+      content:
+        structured.answer_markdown ||
+        result.content ||
+        data.error ||
+        "No structured answer returned.",
+      structured_answer: structured,
+      thinking: result.thinking || "",
+      raw: data,
+      ts: new Date().toISOString(),
     });
     
-    const data = await res.json();
-    return data;
+    setStatus(data.ok ? "compose_done" : "compose_failed");
   } catch (err) {
-    return {ok: false, error: err.message};
+    guidedConversation = guidedConversation.filter(
+      turn => turn.waiting_for !== turnId
+    );
+    
+    guidedConversation.push({
+      role: "assistant",
+      turn_id: `${turnId}-error`,
+      status: "failed",
+      content: String(err?.message || err),
+      ts: new Date().toISOString(),
+    });
+    
+    setStatus("compose_failed");
+  } finally {
+    guidedComposeInFlight = false;
+    renderGuidedConversation();
   }
 }
 
@@ -579,54 +662,137 @@ function renderGuidedTurn(turn) {
   return renderChatTurn(turn.role, turn.kind, turn.text);
 }
 
-function renderLab(jobId, payload) {
+function renderLab(data) {
   const labOutput = document.getElementById("lab-output");
   if (!labOutput) return;
   
-  const div = document.createElement("div");
-  div.className = "planner-lab-container";
-  div.innerHTML = `
-    <div class="planner-lab-section">
-      <h3>Job: ${htmlEscape(jobId)}</h3>
-      ${renderOwnerPayloadFocus(payload)}
-      ${renderMetrics(payload.metrics || {})}
-      ${renderInlineFields(payload.fields || {})}
-      ${renderResultRows(payload.chat_turn || payload.repair_hints || payload.suggested_next_tool_calls || [])}
-      ${renderPriorityRows(payload.priority_evidence_for_30b || payload.priority_items || [])}
-      ${renderArtifactRows(payload.artifacts || [])}
-      ${renderStructureRows(payload.payload_index_for_30b || payload.structure || {})}
-      ${renderPublicToolResponse(payload.public_tool_response_view || payload.public_tool_response || {})}
-    </div>
-    
-    <div class="planner-lab-section">
-      <h3>Chat</h3>
-      ${renderGuidedConversation(payload.chat_turn || payload.thread || guidedConversation)}
-      ${renderPendingChat(payload.pending_task || "")}
-    </div>
-    
-    <div class="planner-lab-section">
-      <h3>Step Summaries</h3>
-      ${renderSteps(payload.step_summaries || payload.steps || [])}
-    </div>
-    
-    <div class="planner-lab-section">
-      <h3>Code Products</h3>
-      ${renderCodeProducts(payload.code_products || [])}
-    </div>
-    
-    <div class="planner-lab-followup-panel">
-      <h4>Follow-up</h4>
-      <textarea id="planner-lab-followup" class="planner-lab-followup-input" placeholder="Enter follow-up instruction...">${guidedDraftText}</textarea>
-      <button id="planner-lab-followup-btn" class="planner-lab-followup-btn" onclick="composeFromPayload()">Compose</button>
-    </div>
-    
-    <div class="planner-lab-chain">
-      <h4>Thread</h4>
-      ${renderThread(payload.chat_turn || payload.thread || guidedConversation)}
+  const job = data.job || {};
+  const jobId = String(job.job_id || currentJobId || "");
+  const readiness = data.payload_readiness || {};
+  const chat = data.chat_turn || {};
+  const priorityEvidence = data.priority_evidence_for_30b || {};
+  const priorityItems = Array.isArray(priorityEvidence.items)
+    ? priorityEvidence.items
+    : [];
+  const steps = Array.isArray(data.step_summaries)
+    ? data.step_summaries
+    : [];
+  const products = Array.isArray(data.code_products)
+    ? data.code_products
+    : [];
+  
+  labOutput.innerHTML = `
+    <div class="planner-lab-container">
+      <div class="planner-lab-section">
+        <h3>Job: ${htmlEscape(jobId)}</h3>
+        ${renderOwnerPayloadFocus(data.owner_payload_focus || {})}
+        ${renderPublicToolResponse(data.public_tool_response_view || {})}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Payload readiness</h2>
+        ${renderMetrics(readiness)}
+        <pre>${htmlEscape((readiness.warnings || []).join("\n"))}</pre>
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Priority evidence</h2>
+        ${renderPriorityRows(priorityItems)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Step summaries</h2>
+        ${renderSteps(steps)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Code products</h2>
+        ${renderCodeProducts(products)}
+      </div>
+      
+      <div class="planner-lab-section">
+        <h2>Job conversation</h2>
+        ${renderChatTurnSummary(chat)}
+      </div>
+      
+      <div class="planner-lab-followup-panel">
+        <h4>Operator follow-up</h4>
+        <textarea
+          id="guided-operator-prompt"
+          class="planner-lab-followup-input"
+          oninput="captureGuidedDraft()"
+          placeholder="Chiedi dettagli, correzioni o integrazioni sulla risposta..."
+        >${htmlEscape(guidedDraftText)}</textarea>
+        
+        <label>
+          <input id="compose-think" type="checkbox">
+          request thinking trace
+        </label>
+        
+        <label>max_payload_chars</label>
+        <input
+          id="compose-payload-chars"
+          type="number"
+          min="5000"
+          max="80000"
+          value="30000"
+        >
+        
+        <label>timeout_seconds</label>
+        <input
+          id="compose-timeout"
+          type="number"
+          min="15"
+          max="180"
+          value="60"
+        >
+        
+        <button onclick="composeFromPayload()">Ask follow-up</button>
+      </div>
+      
+      <div id="guided-conversation"></div>
     </div>
   `;
   
-  labOutput.innerHTML = div.outerHTML;
+  renderGuidedConversation();
+  updateActiveJob(jobId, job.status || "loaded");
+  setStatus(`loaded ${jobId}`);
+}
+
+function renderChatTurnSummary(chat) {
+  const gaps = Array.isArray(chat.payload_gaps)
+    ? chat.payload_gaps
+    : [];
+  
+  return `
+    <div class="card">
+      <h2>Job conversation</h2>
+      
+      <div class="chat-grid">
+        <div class="bubble user">
+          <b>User request</b>
+          <pre>${htmlEscape(chat.user_message || "")}</pre>
+        </div>
+        
+        <div class="bubble assistant">
+          <b>Terminal assistant response</b>
+          <pre>${htmlEscape(
+            chat.assistant_message ||
+            "No assistant response available."
+          )}</pre>
+        </div>
+        
+        ${
+          gaps.length
+            ? `<div class="bubble warn">
+                 <b>Payload gaps</b>
+                 <pre>${htmlEscape(gaps.join("\n"))}</pre>
+               </div>`
+            : ""
+        }
+      </div>
+    </div>
+  `;
 }
 
 function renderThread(thread) {
@@ -651,13 +817,10 @@ function renderChainItem(stepIndex, role, kind, text) {
 }
 
 // Bootstrap: handle initial job ID from URL or query param
-const urlParams = new URLSearchParams(window.location.search);
-const initialJobId = urlParams.get("job_id") || urlParams.get("id") || "";
-
 if (initialJobId) {
-  document.getElementById("job-id").value = initialJobId;
-  updateActiveJob(initialJobId, "polling");
-  startPolling();
+  const input = document.getElementById("job-id");
+  if (input) input.value = initialJobId;
+  selectJob(initialJobId, true);
 } else {
   updateActiveJob("", "");
 }
