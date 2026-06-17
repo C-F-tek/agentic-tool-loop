@@ -6,6 +6,8 @@ from typing import Any
 
 import json
 
+from aicarmine_broker.config import LAB_REPO
+from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.command_safety import classify_command
 from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
@@ -21,19 +23,25 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         or ""
     ).strip()
     if re.fullmatch(r"\*\.[A-Za-z0-9_]+", query.strip()):
+        suggested_path = str(args.get("path") or ".").strip() or "."
         return {
             "ok": False,
             "tool": "repo_search",
             "error": "glob_pattern_is_not_text_search",
             "query": query,
             "hint": "Use repo_list_files with suffix instead of repo_search for glob-like file listing.",
-            "suggested_tool": "repo_list_files",
-            "suggested_arguments": {
-                "path": "ia_carmine",
-                "suffix": query.strip()[1:],
-                "limit": 20,
-                "core": True,
-            },
+            "suggested_next_actions": [
+                {
+                    "tool": "repo_list_files",
+                    "argument_hints": {
+                        "path": suggested_path,
+                        "suffix": query.strip()[1:],
+                        "limit": 20,
+                    },
+                    "reason": "glob_pattern_is_file_listing_not_text_search",
+                    "not_runnable_without_path_validation": False,
+                }
+            ],
         }
     if not query:
         return {"ok": False, "tool": "repo_search", "error": "missing query"}
@@ -45,8 +53,22 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     except (TypeError, ValueError, OverflowError):
         max_results = 80
 
+    try:
+        rel = "." if path in {"", "."} else safe_rel_path(path)
+        full = (LAB_REPO / rel).resolve(strict=False)
+        full.relative_to(LAB_REPO)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "tool": "repo_search",
+            "path": path,
+            "error": "invalid_repo_path",
+            "error_type": type(exc).__name__,
+            "detail": str(exc),
+        }
+
     q = json.dumps(query)
-    target = json.dumps(path)
+    target = str(full)
     if mode == "git_grep":
         command = f"git grep -n -- {q}"
     elif mode == "fd":

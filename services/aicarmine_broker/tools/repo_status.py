@@ -93,8 +93,12 @@ def repo_capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         },
         {
             "name": "repo_semantic_search",
-            "risk": "read_only",
-            "when_to_use": "Rank repo files/chunks with the delta RAG index when lexical search is too broad; follow with repo_read on returned paths.",
+            "risk": "state_mutating_rag_reindex_by_default",
+            "when_to_use": (
+                "Rank repo files/chunks with the delta RAG index when lexical search is too broad; "
+                "default reindex=true may update the local RAG SQLite index; "
+                "follow with repo_read on returned paths."
+            ),
             "required_args": ["query|pattern|symbol|text"],
         },
         {
