@@ -35,9 +35,13 @@ let currentJobId = initialJobId || "";
 let pollTimer = null;
 let activeRequestText = "";
 {js}
-</script>
-</body>
-</html>"""
+function updateActiveJob(cleanJob, statusText = "") {{
+  const target = document.getElementById("active-job-panel");
+  if (!target) return;
+    if (!cleanJob) {{
+      target.innerHTML = "";
+      return;
+    }}
   target.innerHTML = `<div class="card active-job">
     <div class="shell-header">
       <div>
