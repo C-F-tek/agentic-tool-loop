@@ -136,44 +136,75 @@ function stopPolling() {
   }
 }
 
-function updateActiveJob(jobId, status) {
+function updateActiveJob(jobId = "", statusText = "") {
   const panel = document.getElementById("active-job-panel");
   if (!panel) return;
   
-  if (!jobId) {
-    panel.innerHTML = "<div class='muted'>No job loaded. Use 'Load' or enter a job ID above.</div>";
+  const cleanJob = String(jobId || "").trim();
+  
+  if (!cleanJob) {
+    panel.innerHTML = `
+      <div class="card active-job">
+        <h2>Active loop</h2>
+        <p class="muted">No job selected.</p>
+      </div>
+    `;
     return;
   }
   
-  const statusEl = document.getElementById("lab-status");
-  if (statusEl) statusEl.textContent = status || "loading";
-  
-  // Load job data
-  fetch(`/jobs/${encodeURIComponent(jobId)}/planner-lab.json`)
-    .then(res => res.json())
-    .then(data => {
-      if (data.ok) {
-        renderLab(jobId, data);
-      } else {
-        panel.innerHTML = `<div class='bad'>Error loading job: ${data.error || 'Unknown error'}</div>`;
-      }
-    })
-    .catch(err => {
-      panel.innerHTML = `<div class='bad'>Failed to load job: ${err.message}</div>`;
-    });
+  panel.innerHTML = `
+    <div class="card active-job">
+      <div class="shell-header">
+        <div>
+          <h2 class="shell-title">Active loop</h2>
+          <div class="status-line">
+            <span>job</span>
+            <b>${htmlEscape(cleanJob)}</b>
+            <span class="muted">${htmlEscape(statusText)}</span>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button onclick="loadJob(true)">Load</button>
+          <button class="secondary" onclick="startPolling()">Poll</button>
+          <button class="secondary" onclick="stopPolling()">Stop poll</button>
+        </div>
+      </div>
+      <div class="job-actions">
+        <a href="${jobPath(cleanJob, "/planner-lab")}">job lab</a>
+        <a href="${jobPath(cleanJob, "/ia-view")}">IA view</a>
+        <a href="${jobPath(cleanJob, "/events")}">events</a>
+        <a href="${jobPath(cleanJob, "/planner-stream")}">planner stream</a>
+        <a href="${jobPath(cleanJob, "/final.json")}">final json</a>
+        <a href="${jobPath(cleanJob, "/json")}">status json</a>
+      </div>
+    </div>
+  `;
 }
 
-function selectJob(jobId, autoPoll) {
-  const input = document.getElementById("job-id");
-  if (input) input.value = jobId;
+function selectJob(jobId, autoPoll = true) {
+  const cleanJob = String(jobId || "").trim();
   
-  currentJobId = cleanJob || jobId;
+  if (!cleanJob) {
+    setStatus("job_id_missing");
+    return;
+  }
+  
+  if (currentJobId && currentJobId !== cleanJob) {
+    guidedConversation = [];
+    guidedDraftText = "";
+  }
+  
+  currentJobId = cleanJob;
+  
+  const input = document.getElementById("job-id");
+  if (input) input.value = cleanJob;
+  
+  updateActiveJob(cleanJob, autoPoll ? "polling" : "selected");
   
   if (autoPoll) {
-    updateActiveJob(jobId, "polling");
     startPolling();
   } else {
-    updateActiveJob(jobId, "loaded");
+    loadJob(true);
   }
 }
 
@@ -221,23 +252,25 @@ async function startPlannerJob(mode) {
     
     data = await res.json();
     
-    if (data.ok) {
-      const jobId = data.job_id;
-      resultEl.innerHTML = `<div class='ok'>Job started: <b>${jobId}</b></div>`;
+    if (data.ok && data.job_id) {
+      const jobId = String(data.job_id).trim();
       
-      if (mode === "wait") {
-        await new Promise(r => setTimeout(r, waitSeconds * 1000));
-        updateActiveJob(jobId, "polling");
-        startPolling();
-      } else {
-        updateActiveJob(jobId, "background");
-      }
+      resultEl.textContent = pretty(data);
+      selectJob(jobId, true);
+      
+      setStatus(
+        mode === "wait"
+          ? "started_wait_result_loaded"
+          : "started_polling"
+      );
     } else {
-      resultEl.innerHTML = `<div class='bad'>${data.error || 'Failed to start job'}</div>`;
+      resultEl.textContent = pretty(data);
+      setStatus("start_failed");
     }
   } catch (err) {
     data = {ok: false, error: err.message};
-    resultEl.innerHTML = `<div class='bad'>Error: ${err.message}</div>`;
+    resultEl.textContent = pretty(data);
+    setStatus("start_failed");
   } finally {
     setLaunchBusy(false);
   }
@@ -245,38 +278,64 @@ async function startPlannerJob(mode) {
   return data;
 }
 
-async function loadJob(reset) {
+async function loadJob(force = false) {
+  captureGuidedDraft();
+  
+  const guidedPrompt = document.getElementById("guided-operator-prompt");
+  const guidedInputFocused =
+    guidedPrompt && document.activeElement === guidedPrompt;
+  
+  if (
+    !force &&
+    (guidedComposeInFlight ||
+      guidedInputFocused ||
+      guidedDraftText.trim())
+  ) {
+    setStatus(
+      guidedComposeInFlight
+        ? "poll_paused_composing"
+        : "poll_paused_guided_input"
+    );
+    return;
+  }
+  
   const input = document.getElementById("job-id");
-  const jobId = input ? input.value.trim() : "";
-  const resultEl = document.getElementById("apply-result");
+  const jobId = String(input?.value || currentJobId || "").trim();
   
   if (!jobId) {
-    if (resultEl) resultEl.innerHTML = "<div class='bad'>Enter a job ID first.</div>";
-    return {ok: false, error: "No job ID"};
+    setStatus("job_id_missing");
+    return;
   }
   
-  let data = {ok: false, error: "Request failed"};
+  currentJobId = jobId;
+  updateActiveJob(jobId, "loading");
+  
+  const params = labLimitParams();
   
   try {
-    const res = await fetch(`/jobs/${encodeURIComponent(jobId)}/planner-lab.json`);
-    data = await res.json();
+    const response = await fetch(
+      `/jobs/${encodeURIComponent(jobId)}/planner-lab.json?${params.toString()}`
+    );
+    const data = await response.json();
     
-    if (data.ok) {
-      renderLab(jobId, data);
-      if (reset) {
-        const activePanel = document.getElementById("active-job-panel");
-        if (activePanel) activePanel.innerHTML = "";
-      }
-      return {ok: true, job_id: jobId};
-    } else {
-      if (resultEl) resultEl.innerHTML = `<div class='bad'>${data.error || 'Failed to load'}</div>`;
+    if (!response.ok || data.ok === false) {
+      document.getElementById("lab-output").innerHTML =
+        `<div class="card bad"><h2>Load failed</h2>` +
+        `<pre>${htmlEscape(pretty(data))}</pre></div>`;
+      setStatus("load_failed");
+      updateActiveJob(jobId, "load failed");
+      return;
     }
+    
+    renderLab(data);
+    updateActiveJob(jobId, data.job?.status || "loaded");
   } catch (err) {
-    data = {ok: false, error: err.message};
-    if (resultEl) resultEl.innerHTML = `<div class='bad'>Error: ${err.message}</div>`;
+    document.getElementById("lab-output").innerHTML =
+      `<div class="card bad"><h2>Load failed</h2>` +
+      `<pre>${htmlEscape(String(err?.message || err))}</pre></div>`;
+    setStatus("load_failed");
+    updateActiveJob(jobId, "load failed");
   }
-  
-  return data;
 }
 
 function labLimitParams() {
