@@ -14,6 +14,7 @@ _PUBLIC_EXPORTS = {
     'controller_guard_rejection_signature': 'guards',
     'controller_initial_doc_preseed_plan': 'preseed',
     'controller_memory_lesson_text': 'memory',
+    'query_plan_continue_without_model': 'rag_preseed',
 
 }
 

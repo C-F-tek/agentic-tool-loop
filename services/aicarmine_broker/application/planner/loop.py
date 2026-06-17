@@ -6,7 +6,7 @@ import itertools
 import traceback
 from typing import Any, Mapping
 
-from services.aicarmine_broker.application.controller.rag_preseed import _query_plan_continue_without_model
+from ..controller import query_plan_continue_without_model
 from services.aicarmine_broker.config import AGENTIC_PLANNER_STEP_TIMEOUT
 
 from .state import PlannerLoopState
@@ -979,17 +979,22 @@ def run_agentic_planner_job(
                 planner_model=PLANNER_MODEL,
                 timeout_seconds=AGENTIC_PLANNER_STEP_TIMEOUT,
             )
+            # Issue 1.1: Propagate fallback to state and args before calling _controller_preplanner_rag_preseed_plan
+            state["controller_preplanner_rag_query_plan"] = preplanner_query_plan
+            preplanner_args["controller_rag_query_plan"] = preplanner_query_plan
+            write_agent_job_state(state)
+            
             row = {
                 "step": 0,
                 "decision": {
-                    "action": "block",
-                    "reason": "preplanner_semantic_intent_unusable",
+                    "action": "controller_fallback",
+                    "reason": "preplanner_semantic_intent_unusable_continue_deterministically",
                 },
                 "tool_result": {
                     "tool": "controller_guard",
                     "ok": True,
-                    "guard_type": "preplanner_semantic_intent_unusable",
-                    "summary": "preplanner_semantic_intent_unusable",
+                    "guard_type": "preplanner_semantic_intent_fallback",
+                    "summary": "semantic preplanner unavailable; deterministic RAG preseed remains enabled",
                     "preplanner_query_plan": preplanner_query_plan,
                 },
             }
