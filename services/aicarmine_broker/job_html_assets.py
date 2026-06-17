@@ -71,7 +71,7 @@ td, th { border-bottom: 1px solid #333; padding: 7px; vertical-align: top; overf
 BASE_JS = """
 function htmlEscape(value) {
   return String(value ?? "").replace(/[&<>"']/g, ch => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '\\': "&#92;", "'": "&#39;"
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[ch]);
 }
 

@@ -31,24 +31,13 @@ def _html_page(title: str, body: str, *, initial_job_id: str = "") -> str:
 {body}
 <script>
 const initialJobId = {initial};
+let currentJobId = initialJobId || "";
+let pollTimer = null;
+let activeRequestText = "";
 {js}
 </script>
-function stopPolling() {{
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = null;
-  setStatus(currentJobId ? `poll_stopped ${{currentJobId}}` : "poll_stopped");
-}}
-function updateActiveJob(jobId = "", statusText = "") {{
-  const target = document.getElementById("active-job-panel");
-  if (!target) return;
-  const cleanJob = String(jobId || "").trim();
-  if (!cleanJob) {{
-    target.innerHTML = `<div class="card active-job">
-      <h2>Active loop</h2>
-      <p class="muted">No job selected.</p>
-    </div>`;
-    return;
-  }}
+</body>
+</html>"""
   target.innerHTML = `<div class="card active-job">
     <div class="shell-header">
       <div>
