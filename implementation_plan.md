@@ -1,356 +1,77 @@
 # Implementation Plan
 
-## Overview
+## [Overview]
 
-Fix JavaScript runtime issues in `services/aicarmine_broker/job_html_assets.py` by updating the planner-lab UI to correctly handle code product candidates and their associated fields.
+Fix S3 (terminal judge) issues in `judge_blocked_job()` to ensure non-blocking failure handling and proper artifact separation.
 
-## Types
+This implementation addresses three critical issues in the terminal judge flow:
+1. **Artifact separation**: `terminal_judge_report` should contain the report directly, not the envelope with persistence path
+2. **Non-blocking persistence**: Writing `terminal-judge.json` must not block job finalization if it fails
+3. **Non-blocking event emission**: Both `terminal_judge_completed` and fallback `terminal_judge_failed` events must be wrapped in try/except
 
-No type system changes required. The fix involves adding a new helper function `findCodeProduct(candidateId)` and updating four JavaScript functions (`copyCandidate`, `copyApplyToolCall`, `applyCandidate`, `renderPriorityRows`, `renderArtifactRows`) to use the correct payload structure from `currentPlannerLabPayload`.
+The fix ensures that job finalization always completes successfully, even when artifact persistence or event emission fails. The terminal judge artifact is written separately from the result, keeping the report consumable without requiring file reload.
 
-## Files
+## [Types]
 
-- **Modified**: `services/aicarmine_broker/job_html_assets.py` (1432 lines)
-  - Add `findCodeProduct(candidateId)` helper function before `renderLab()`
-  - Update `copyCandidate()`, `copyApplyToolCall()`, `applyCandidate()` to use `findCodeProduct()`
-  - Update `renderPriorityRows()` to use correct fields (`tool`, `kind`, `ok`, `payload_is_complete`, `validator_accepted`)
-  - Update `renderArtifactRows()` to use correct fields (`tool`, `kind`, `ok`, `payload_is_complete`, `artifact_keys`)
+No new types are introduced. Existing types are reused:
+- `terminal_judge_blocked.v1` - Schema for judge report (existing)
+- `terminal_judge_artifact.v1` - Schema for persistence artifact (existing)
 
-## Functions
-
-### New Functions
-
-| Name | Signature | File Path | Purpose |
-|------|-----------|-----------|---------|
-| `findCodeProduct` | `function findCodeProduct(candidateId)` | `services/aicarmine_broker/job_html_assets.py` | Find a code product by candidate_id from `currentPlannerLabPayload.code_products` |
-
-### Modified Functions
-
-| Name | Current File Path | Required Changes |
-|------|-------------------|------------------|
-| `copyCandidate` | `services/aicarmine_broker/job_html_assets.py:773` | Accept `candidateId` string, use `findCodeProduct()` to lookup, handle missing candidate gracefully |
-| `copyApplyToolCall` | `services/aicarmine_broker/job_html_assets.py:788` | Accept `candidateId` string, use `findCodeProduct()` to lookup, extract `apply_tool_call`, handle missing tool call |
-| `applyCandidate` | `services/aicarmine_broker/job_html_assets.py:804` | Accept `candidateId` string, use `findCodeProduct()` to lookup, validate `apply_supported`, make POST request with correct payload |
-| `renderPriorityRows` | `services/aicarmine_broker/job_html_assets.py:462` | Use `item.tool`, `item.kind`, `item.ok`, `item.payload_is_complete`, `item.validator_accepted`, `item.repo_path`, `item.inline_fields` |
-| `renderArtifactRows` | `services/aicarmine_broker/job_html_assets.py:503` | Use `item.tool`, `item.kind`, `item.ok`, `item.payload_is_complete`, `item.repo_path`, `item.inline_fields`, `item.artifact_keys` |
-
-## Classes
-
-No class modifications required.
-
-## Dependencies
-
-No new dependencies. The fix uses existing payload structure from `currentPlannerLabPayload`.
-
-## Testing
-
-Manual verification using the verification commands specified in the task:
-1. Run ripgrep to confirm bad patterns are absent from the modified functions
-2. Run ripgrep to confirm required patterns are present
-3. Run Python syntax validation on the modified file
-4. Run Node.js syntax validation on the extracted JavaScript
-5. Verify `git diff --check` passes
-
-## Implementation Order
-
-1. Add `findCodeProduct(candidateId)` helper function before `renderLab()` (line ~1084)
-2. Update `copyCandidate()` signature and implementation to use `findCodeProduct()`
-3. Update `copyApplyToolCall()` signature and implementation to use `findCodeProduct()`
-4. Update `applyCandidate()` signature and implementation to use `findCodeProduct()`
-5. Update `renderPriorityRows()` to use correct payload fields
-6. Update `renderArtifactRows()` to use correct payload fields
-7. Verify syntax with Python and Node.js
-8. Verify with git diff check
-
----
-
-## Detailed Implementation Steps
-
-### Step 1: Add findCodeProduct helper function
-
-Insert before `function renderLab(data)` (around line 1084):
-
-```javascript
-function findCodeProduct(candidateId) {
-  const cleanId = String(candidateId || "").trim();
-
-  const products = Array.isArray(currentPlannerLabPayload?.code_products)
-    ? currentPlannerLabPayload.code_products
-    : [];
-
-  return products.find(
-    item => String(item?.candidate_id || "") === cleanId
-  ) || null;
+The artifact envelope structure remains:
+```python
+{
+    "schema": "terminal_judge_artifact.v1",
+    "job_id": str,
+    "root_path": str,
+    "status": str,
+    "report": dict  # Direct report, not envelope
 }
 ```
 
-### Step 2: Update copyCandidate()
+## [Files]
 
-Replace current implementation (lines 773-786):
+- **Modified**: `services/aicarmine_broker/planner.py`
+  - Function `judge_blocked_job()` (lines 5477-5589)
+  - Changes:
+    1. Separate `terminal_judge_report` from `terminal_judge_artifact`
+    2. Wrap `write_json()` in try/except with non-blocking fallback
+    3. Update `terminal_judge_report` to contain `judge_report` directly
+    4. Update `terminal_judge_artifact` to contain path string instead of full envelope
+    5. Wrap `terminal_judge_completed` event emission in try/except with fallback to `terminal_judge_failed`
 
-```javascript
-async function copyCandidate(candidateId) {
-  const candidate = findCodeProduct(candidateId);
-  if (!candidate) {
-    setStatus("candidate_not_found");
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(pretty(candidate));
-    setStatus("candidate_copied");
-  } catch (err) {
-    setStatus("candidate_copy_failed");
-    console.error("Copy candidate failed:", err);
-  }
-}
-```
+## [Functions]
 
-### Step 3: Update copyApplyToolCall()
+- **Modified**: `judge_blocked_job()` in `services/aicarmine_broker/planner.py`
+  - Current signature: `judge_blocked_job(job_id, root, state, status, result, tool_context)`
+  - Changes:
+    1. Line 5532: Change `result["terminal_judge_report"] = judge_artifact` to `result["terminal_judge_report"] = judge_report`
+    2. Line 5537: Wrap `write_json(judge_path, judge_artifact)` in try/except
+    3. Lines 5540-5551: Update failed write handler to set `judge_report["persistence_ok"] = False` and error details
+    4. Line 5568: Change event payload from `{..., "judge_report": judge_artifact}` to `{..., "judge_report": judge_artifact}` (keep as is, but artifact now has path string)
+    5. Lines 5571-5587: Wrap `terminal_judge_completed` emit in try/except, fallback to `terminal_judge_failed`
 
-Replace current implementation (lines 788-802):
+## [Classes]
 
-```javascript
-async function copyApplyToolCall(candidateId) {
-  const candidate = findCodeProduct(candidateId);
-  const toolCall = candidate?.apply_tool_call;
-  if (!toolCall) {
-    setStatus("apply_tool_call_missing");
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(pretty(toolCall));
-    setStatus("apply_tool_call_copied");
-  } catch (err) {
-    setStatus("apply_tool_call_copy_failed");
-    console.error("Copy apply call failed:", err);
-  }
-}
-```
+No classes are modified or created.
 
-### Step 4: Update applyCandidate()
+## [Dependencies]
 
-Replace current implementation (lines 804-855):
+No new dependencies. Uses existing:
+- `write_json()` from `job_store`
+- `append_agent_event()` from `job_store`
 
-```javascript
-async function applyCandidate(candidateId) {
-  const candidate = findCodeProduct(candidateId);
-  if (!candidate) {
-    setStatus("candidate_not_found");
-    return {ok: false, error: "candidate_not_found"};
-  }
-  if (!candidate.apply_supported) {
-    setStatus("candidate_apply_unsupported");
-    return {
-      ok: false,
-      error: candidate.apply_block_reason || "apply_unsupported",
-    };
-  }
-  if (!window.confirm(
-    "Confermi apply interno repo_apply_patch per il candidato selezionato?"
-  )) {
-    setStatus("apply_cancelled");
-    return {ok: false, error: "apply_cancelled"};
-  }
-  try {
-    const response = await fetch(
-      `/jobs/${encodeURIComponent(currentJobId)}/planner-lab/apply`,
-      {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          candidate_id: String(candidate.candidate_id),
-          confirm_apply: true,
-          user_consent:
-            "confirm planner-lab exact old_text/new_text patch",
-        }),
-      }
-    );
-    const data = await response.json();
-    const output = document.getElementById("apply-result");
-    if (output) output.textContent = pretty(data);
-    setStatus(data.ok ? "apply_done" : "apply_blocked");
-    if (data.ok) {
-      await loadJob(true);
-    }
-    return data;
-  } catch (err) {
-    const data = {
-      ok: false,
-      error: String(err?.message || err),
-    };
-    const output = document.getElementById("apply-result");
-    if (output) output.textContent = pretty(data);
-    setStatus("apply_failed");
-    return data;
-  }
-}
-```
+## [Testing]
 
-### Step 5: Update renderPriorityRows()
+No test files are created per the ban on unrequested tests. Verification is done via:
+- Static code review of the unified diff
+- `git diff --check` after patch application
+- Manual inspection of the modified function
 
-Replace current implementation (lines 462-501):
+## [Implementation Order]
 
-```javascript
-function renderPriorityRows(items) {
-  if (!items || !items.length) {
-    return "<p class='muted'>No priority evidence.</p>";
-  }
-
-  return items.map(item => {
-    const accepted =
-      item.ok !== false &&
-      item.validator_accepted !== false;
-
-    const inlineFields = Array.isArray(item.inline_fields)
-      ? item.inline_fields
-      : [];
-
-    return `
-      <div class="step-card ${accepted ? "ok" : "warn"}">
-        <b>
-          ${htmlEscape(
-            item.tool ||
-            item.kind ||
-            "evidence"
-          )}
-        </b>
-
-        <div class="muted">
-          kind=${htmlEscape(item.kind || "")}
-          ok=${htmlEscape(item.ok)}
-          complete=${htmlEscape(item.payload_is_complete)}
-          validator=${htmlEscape(item.validator_accepted)}
-        </div>
-
-        <div>
-          ${htmlEscape(item.repo_path || item.path || "")}
-        </div>
-
-        ${
-          inlineFields.length
-            ? `<details>
-                 <summary>Inline fields</summary>
-                 <pre>${htmlEscape(pretty(inlineFields))}</pre>
-               </details>`
-            : ""
-        }
-      </div>
-    `;
-  }).join("");
-}
-```
-
-### Step 6: Update renderArtifactRows()
-
-Replace current implementation (lines 503-545):
-
-```javascript
-function renderArtifactRows(artifacts) {
-  if (!artifacts || !artifacts.length) {
-    return "<p class='muted'>No tool-context artifacts.</p>";
-  }
-
-  return artifacts.map(item => {
-    const inlineFields = Array.isArray(item.inline_fields)
-      ? item.inline_fields
-      : [];
-
-    const artifactKeys = Array.isArray(item.artifact_keys)
-      ? item.artifact_keys
-      : [];
-
-    return `
-      <div class="step-card ${item.ok === false ? "warn" : "ok"}">
-        <b>
-          ${htmlEscape(
-            item.tool ||
-            item.kind ||
-            "artifact"
-          )}
-        </b>
-
-        <div class="muted">
-          kind=${htmlEscape(item.kind || "")}
-          ok=${htmlEscape(item.ok)}
-          complete=${htmlEscape(item.payload_is_complete)}
-        </div>
-
-        <div>
-          ${htmlEscape(item.repo_path || item.path || "")}
-        </div>
-
-        ${
-          inlineFields.length
-            ? `<details>
-                 <summary>Inline fields</summary>
-                 <pre>${htmlEscape(pretty(inlineFields))}</pre>
-               </details>`
-            : ""
-        }
-
-        ${
-          artifactKeys.length
-            ? `<details>
-                 <summary>Artifact keys</summary>
-                 <pre>${htmlEscape(pretty(artifactKeys))}</pre>
-               </details>`
-            : ""
-        }
-      </div>
-    `;
-  }).join("");
-}
-```
-
----
-
-## Verification Commands
-
-After applying the patch, run these verification commands:
-
-### 1. Verify bad patterns are absent from modified functions
-
-```powershell
-$Path = "services/aicarmine_broker/job_html_assets.py"
-Select-String -Path $Path -Pattern 'copyCandidate\(candidate\)|copyApplyToolCall\(toolCall\)|applyCandidate\(candidate\)|candidate\.candidate_id|item\.priority|size_bytes' -Path "services/aicarmine_broker/job_html_assets.py" | Select-Object -First 5
-```
-
-Expected: Only matches in unrelated code (not in the modified functions).
-
-### 2. Verify required patterns are present
-
-```powershell
-Select-String -Path $Path -Pattern 'currentPlannerLabPayload|findCodeProduct\(candidateId\)|copyCandidate\(candidateId\)|copyApplyToolCall\(candidateId\)|applyCandidate\(candidateId\)|validator_accepted|artifact_keys|inline_fields'
-```
-
-Expected: Multiple matches in the modified file.
-
-### 3. Python syntax check
-
-```powershell
-python -m py_compile services/aicarmine_broker/job_html_assets.py
-```
-
-### 4. Node.js syntax check
-
-```powershell
-$env:PLANNER_JS_OUT = "$env:TEMP\planner_lab_rendered.js"
-# Extract JS from HTML and validate
-node --check $env:PLANNER_JS_OUT
-```
-
-### 5. Git diff check
-
-```powershell
-git diff --check
-```
-
-Expected: No warnings.
-
-### 6. Line count verification
-
-```powershell
-(Get-Content $Path).Count
-```
-
-Expected: 1432 lines (unchanged file size).
+1. Read current `judge_blocked_job()` implementation to confirm exact old text
+2. Create SEARCH/REPLACE block with all required changes
+3. Validate unified diff with `aicarmine_repo_code_unidiff_validate`
+4. Check git apply with `aicarmine_repo_code_git_apply_check`
+5. Apply patch with `aicarmine_repo_code_apply_patch`
+6. Verify modified file line count matches expected

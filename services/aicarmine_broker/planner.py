@@ -5521,22 +5521,19 @@ def judge_blocked_job(
             "and produced a final report before termination."
         )
     
-    # S3: Create envelope for artifact instead of writing result directly
-    judge_artifact = {
-        "schema": "terminal_judge_artifact.v1",
-        "job_id": job_id,
-        "root_path": str(root),
-        "status": status,
-        "report": judge_report,
-    }
-    result["terminal_judge_report"] = judge_artifact
+    # S3: Separate terminal_judge_report from terminal_judge_artifact
+    judge_report["persistence_ok"] = True
+    result["terminal_judge_report"] = judge_report
     
     # S3: Write terminal-judge.json artifact with try/except for non-blocking write
     judge_path = root / "terminal-judge.json"
     try:
         write_json(judge_path, result)
+        judge_report["persistence_ok"] = True
     except Exception as e:
         # Non-blocking failure: log but continue
+        judge_report["persistence_ok"] = False
+        judge_report["persistence_error"] = str(e)
         append_agent_event(
             job_id,
             "terminal_judge_failed",
@@ -5546,7 +5543,8 @@ def judge_blocked_job(
                 "job_id": job_id,
                 "root_path": str(root),
                 "status": status,
-                "error": str(e),
+                "persistence_ok": False,
+                "persistence_error": str(e),
             },
         )
         return result
@@ -5565,7 +5563,7 @@ def judge_blocked_job(
                 "goal": goal,
                 "artifacts_count": len(artifacts),
                 "history_rows": len(history),
-                "judge_report": judge_artifact,
+                "judge_report": judge_report,
             },
         )
     except Exception as e:
