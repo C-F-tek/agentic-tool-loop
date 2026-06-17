@@ -6,7 +6,7 @@ import itertools
 import traceback
 from typing import Any, Mapping
 
-from ..controller import query_plan_continue_without_model
+from ..controller.rag_preseed import query_plan_continue_without_model
 from services.aicarmine_broker.config import AGENTIC_PLANNER_STEP_TIMEOUT
 
 from .state import PlannerLoopState
