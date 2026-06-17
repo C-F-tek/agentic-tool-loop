@@ -89,70 +89,6 @@ function setStatus(text) {
 function jobPath(jobId, suffix = "") {
   return `/jobs/${encodeURIComponent(jobId)}${suffix}`;
 }
-
-function stopPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = null;
-  setStatus(currentJobId ? `poll_stopped ${currentJobId}` : "poll_stopped");
-}
-
-function updateActiveJob(jobId = "", statusText = "") {
-  const target = document.getElementById("active-job-panel");
-  if (!target) return;
-  const cleanJob = String(jobId || "").trim();
-  if (!cleanJob) {
-    target.innerHTML = `<div class="card active-job">
-      <h2>Active loop</h2>
-      <p class="muted">No job selected.</p>
-    </div>`;
-    return;
-  }
-  target.innerHTML = `<div class="card active-job">
-    <div class="shell-header">
-      <div>
-        <h2 class="shell-title">Active loop</h2>
-        <div class="status-line"><span>job</span><b>${htmlEscape(cleanJob)}</b><span class="muted">${htmlEscape(statusText || "")}</span></div>
-      </div>
-      <div class="toolbar">
-        <button onclick="loadJob(true)">Load</button>
-        <button class="secondary" onclick="startPolling()">Poll</button>
-        <button class="secondary" onclick="stopPolling()">Stop poll</button>
-      </div>
-    </div>
-    <div class="job-actions">
-      <a href="${jobPath(cleanJob, "/planner-lab")}">job lab</a>
-      <a href="${jobPath(cleanJob, "/ia-view")}">IA view</a>
-      <a href="${jobPath(cleanJob, "/events")}">events</a>
-      <a href="${jobPath(cleanJob, "/planner-stream")}">planner stream</a>
-      <a href="${jobPath(cleanJob, "/final.json")}">final json</a>
-      <a href="${jobPath(cleanJob, "/json")}">status json</a>
-    </div>
-  </div>`;
-}
-
-function selectJob(jobId, poll = true) {
-  const cleanJob = String(jobId || "").trim();
-  if (!cleanJob) {
-    setStatus("job_id_missing");
-    return;
-  }
-  if (currentJobId && currentJobId !== cleanJob) {
-    guidedConversation = [];
-    guidedDraftText = "";
-  }
-  currentJobId = cleanJob;
-  const input = document.getElementById("job-id");
-  if (input) input.value = cleanJob;
-  updateActiveJob(cleanJob, poll ? "polling" : "selected");
-  if (poll) startPolling();
-  else loadJob(true);
-}
-
-function setLaunchBusy(busy) {
-  document.querySelectorAll("[data-launch-button]").forEach(button => {
-    button.disabled = !!busy;
-  });
-}
 """
 
 # Planner Lab extra CSS (specific to the lab UI)
@@ -298,6 +234,7 @@ function submitFollowUp(instruction) {
   });
 }
 """
+
 
 def render_page_shell(title: str, body: str, *, extra_css: str = "", extra_js: str = "") -> str:
     """Render a basic page shell with title and body."""
