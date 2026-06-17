@@ -6,6 +6,7 @@ import html
 import json
 from typing import Any
 
+from .job_html_assets import BASE_CSS, BASE_JS, PLANNER_LAB_EXTRA_CSS, PLANNER_LAB_JS
 from .job_store import list_agent_jobs
 
 
@@ -15,98 +16,23 @@ def _json_pretty(value: Any) -> str:
 
 def _html_page(title: str, body: str, *, initial_job_id: str = "") -> str:
     initial = json.dumps(str(initial_job_id or ""))
+    css = BASE_CSS + PLANNER_LAB_EXTRA_CSS
+    js = BASE_JS + PLANNER_LAB_JS
     return f"""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>{html.escape(title)}</title>
 <style>
-* {{ box-sizing: border-box; }}
-body {{ font-family: Segoe UI, Arial, sans-serif; margin: 18px; background: #101112; color: #e3e3e3; overflow-x: hidden; }}
-a {{ color: #8fd3ff; }}
-.grid {{ display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.42fr); gap: 14px; align-items: start; min-width: 0; }}
-.card {{ border: 1px solid #3a3a3a; border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #1b1c1f; min-width: 0; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; }}
-textarea, input {{ width: 100%; box-sizing: border-box; background: #0f1012; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; }}
-input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
-label {{ display: block; margin-top: 8px; color: #c8c8c8; }}
-textarea {{ min-height: 145px; resize: vertical; }}
-button {{ background: #2b6ca3; color: white; border: 0; border-radius: 6px; padding: 8px 11px; margin: 4px 4px 4px 0; cursor: pointer; }}
-button.secondary {{ background: #3d4651; }}
-button.danger {{ background: #9a3d3d; }}
-button:disabled {{ opacity: 0.45; cursor: not-allowed; }}
-pre {{ white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: auto; max-width: 100%; margin: 0; font-size: 12px; line-height: 1.35; }}
-table {{ border-collapse: collapse; width: 100%; table-layout: fixed; }}
-td, th {{ border-bottom: 1px solid #333; padding: 7px; vertical-align: top; overflow-wrap: anywhere; }}
-.metric-row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 8px; min-width: 0; }}
-.metric {{ border: 1px solid #333; border-radius: 6px; padding: 8px; background: #141519; }}
-.metric span {{ color: #aaa; display: block; font-size: 11px; }}
-.metric b {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
-.pill {{ display: inline-block; border: 1px solid #3c4d5f; border-radius: 999px; padding: 3px 8px; margin: 2px 4px 2px 0; background: #131820; color: #dbeeff; font-size: 12px; }}
-.shell-header {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }}
-.shell-title {{ margin: 0; }}
-.toolbar {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }}
-.toolbar a, .toolbar button {{ margin: 0; }}
-.job-actions {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }}
-.job-actions a {{ display: inline-block; border: 1px solid #3d5368; border-radius: 6px; padding: 7px 9px; background: #13202a; color: #d8efff; text-decoration: none; }}
-.active-job {{ border-left: 4px solid #6fb3e8; }}
-.status-line {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }}
-.status-line b {{ color: #f0f0f0; }}
-.recent-actions {{ white-space: nowrap; }}
-.recent-actions button, .recent-actions a {{ margin: 2px; }}
-.mini-link {{ display: inline-block; color: #bfe5ff; text-decoration: none; border-bottom: 1px solid #44657d; }}
-.recent-job-list {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 8px; max-height: min(52vh, 620px); overflow: auto; padding-right: 2px; }}
-.recent-job {{ border: 1px solid #303a43; border-radius: 7px; background: #14171b; padding: 9px; min-width: 0; }}
-.recent-job-head {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }}
-.recent-job-id {{ font-family: Consolas, monospace; overflow-wrap: anywhere; }}
-.recent-job-goal {{ color: #c9d1d8; margin: 7px 0; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }}
-.recent-job-actions {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-.recent-job-actions button, .recent-job-actions a {{ margin: 0; }}
-.chat-grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
-.bubble {{ border-radius: 8px; padding: 11px; border: 1px solid #333; }}
-.bubble.user {{ background: #182331; border-left: 4px solid #6fb3e8; }}
-.bubble.assistant {{ background: #18281f; border-left: 4px solid #64b773; }}
-.bubble.warn {{ background: #2a2417; border-left: 4px solid #d0a34d; }}
-.timeline {{ display: grid; gap: 8px; }}
-.step-card {{ border: 1px solid #333; border-radius: 7px; padding: 9px; background: #141519; }}
-.step-card b {{ color: #f0f0f0; }}
-.ok {{ border-left: 4px solid #45a75a; }}
-.warn {{ border-left: 4px solid #d0a34d; }}
-.bad {{ border-left: 4px solid #d15b5b; }}
-.muted {{ color: #aaa; }}
-@media (max-width: 980px) {{
-  body {{ margin: 10px; }}
-  .grid {{ grid-template-columns: minmax(0, 1fr); }}
-  .recent-job-list {{ max-height: none; }}
-}}
+{css}
 </style>
 </head>
 <body>
 {body}
 <script>
 const initialJobId = {initial};
-let currentJobId = initialJobId || "";
-let pollTimer = null;
-let activeRequestText = "";
-let guidedConversation = [];
-let guidedTurnCounter = 0;
-let guidedDraftText = "";
-let guidedComposeInFlight = false;
-
-function htmlEscape(value) {{
-  return String(value ?? "").replace(/[&<>"']/g, ch => ({{"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}}[ch]));
-}}
-function pretty(value) {{
-  return JSON.stringify(value ?? {{}}, null, 2);
-}}
-function setStatus(text) {{
-  const target = document.getElementById("lab-status");
-  if (!target) return;
-  target.textContent = text;
-  target.setAttribute("data-status", text);
-}}
-function jobPath(jobId, suffix = "") {{
-  return `/jobs/${{encodeURIComponent(jobId)}}${{suffix}}`;
-}}
+{js}
+</script>
 function stopPolling() {{
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
