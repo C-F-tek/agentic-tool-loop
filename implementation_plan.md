@@ -1,69 +1,356 @@
 # Implementation Plan
 
-## [Overview]
+## Overview
 
-Fixare tre difetti nella patch S3 di `judge_blocked_job()` in `services/aicarmine_broker/planner.py`: rendere non-bloccante la scrittura dell'artifact e dell'evento, scrivere un envelope dedicato invece di `result` intero, e implementare `terminal_judge_failed`.
+Fix JavaScript runtime issues in `services/aicarmine_broker/job_html_assets.py` by updating the planner-lab UI to correctly handle code product candidates and their associated fields.
 
-## [Types]
+## Types
 
-Nessun nuovo tipo. Si usano i tipi esistenti:
-- `dict[str, Any]` per report e artifact
-- `str` per job_id, status, goal
-- `list[dict[str, Any]]` per history e artifacts
+No type system changes required. The fix involves adding a new helper function `findCodeProduct(candidateId)` and updating four JavaScript functions (`copyCandidate`, `copyApplyToolCall`, `applyCandidate`, `renderPriorityRows`, `renderArtifactRows`) to use the correct payload structure from `currentPlannerLabPayload`.
 
-Envelope per l'artifact:
-```python
-judge_artifact = {
-    "schema": "terminal_judge_artifact.v1",
-    "job_id": job_id,
-    "root_path": str(root),
-    "status": status,
-    "report": judge_report,
+## Files
+
+- **Modified**: `services/aicarmine_broker/job_html_assets.py` (1432 lines)
+  - Add `findCodeProduct(candidateId)` helper function before `renderLab()`
+  - Update `copyCandidate()`, `copyApplyToolCall()`, `applyCandidate()` to use `findCodeProduct()`
+  - Update `renderPriorityRows()` to use correct fields (`tool`, `kind`, `ok`, `payload_is_complete`, `validator_accepted`)
+  - Update `renderArtifactRows()` to use correct fields (`tool`, `kind`, `ok`, `payload_is_complete`, `artifact_keys`)
+
+## Functions
+
+### New Functions
+
+| Name | Signature | File Path | Purpose |
+|------|-----------|-----------|---------|
+| `findCodeProduct` | `function findCodeProduct(candidateId)` | `services/aicarmine_broker/job_html_assets.py` | Find a code product by candidate_id from `currentPlannerLabPayload.code_products` |
+
+### Modified Functions
+
+| Name | Current File Path | Required Changes |
+|------|-------------------|------------------|
+| `copyCandidate` | `services/aicarmine_broker/job_html_assets.py:773` | Accept `candidateId` string, use `findCodeProduct()` to lookup, handle missing candidate gracefully |
+| `copyApplyToolCall` | `services/aicarmine_broker/job_html_assets.py:788` | Accept `candidateId` string, use `findCodeProduct()` to lookup, extract `apply_tool_call`, handle missing tool call |
+| `applyCandidate` | `services/aicarmine_broker/job_html_assets.py:804` | Accept `candidateId` string, use `findCodeProduct()` to lookup, validate `apply_supported`, make POST request with correct payload |
+| `renderPriorityRows` | `services/aicarmine_broker/job_html_assets.py:462` | Use `item.tool`, `item.kind`, `item.ok`, `item.payload_is_complete`, `item.validator_accepted`, `item.repo_path`, `item.inline_fields` |
+| `renderArtifactRows` | `services/aicarmine_broker/job_html_assets.py:503` | Use `item.tool`, `item.kind`, `item.ok`, `item.payload_is_complete`, `item.repo_path`, `item.inline_fields`, `item.artifact_keys` |
+
+## Classes
+
+No class modifications required.
+
+## Dependencies
+
+No new dependencies. The fix uses existing payload structure from `currentPlannerLabPayload`.
+
+## Testing
+
+Manual verification using the verification commands specified in the task:
+1. Run ripgrep to confirm bad patterns are absent from the modified functions
+2. Run ripgrep to confirm required patterns are present
+3. Run Python syntax validation on the modified file
+4. Run Node.js syntax validation on the extracted JavaScript
+5. Verify `git diff --check` passes
+
+## Implementation Order
+
+1. Add `findCodeProduct(candidateId)` helper function before `renderLab()` (line ~1084)
+2. Update `copyCandidate()` signature and implementation to use `findCodeProduct()`
+3. Update `copyApplyToolCall()` signature and implementation to use `findCodeProduct()`
+4. Update `applyCandidate()` signature and implementation to use `findCodeProduct()`
+5. Update `renderPriorityRows()` to use correct payload fields
+6. Update `renderArtifactRows()` to use correct payload fields
+7. Verify syntax with Python and Node.js
+8. Verify with git diff check
+
+---
+
+## Detailed Implementation Steps
+
+### Step 1: Add findCodeProduct helper function
+
+Insert before `function renderLab(data)` (around line 1084):
+
+```javascript
+function findCodeProduct(candidateId) {
+  const cleanId = String(candidateId || "").trim();
+
+  const products = Array.isArray(currentPlannerLabPayload?.code_products)
+    ? currentPlannerLabPayload.code_products
+    : [];
+
+  return products.find(
+    item => String(item?.candidate_id || "") === cleanId
+  ) || null;
 }
 ```
 
-## [Files]
+### Step 2: Update copyCandidate()
 
-- **Modificare**: `services/aicarmine_broker/planner.py`
-  - Funzione `judge_blocked_job()` (linee 5476-5545)
-  - Aggiungere try/except attorno a `write_json()` e `append_agent_event()`
-  - Cambiare `write_json(judge_path, result)` in `write_json(judge_path, judge_artifact)`
-  - Implementare `terminal_judge_failed` evento
-  - Aggiungere `job_id` e `root_path` all'artifact envelope
+Replace current implementation (lines 773-786):
 
-- **Nessun nuovo file**: L'implementazione è inline nella funzione esistente.
+```javascript
+async function copyCandidate(candidateId) {
+  const candidate = findCodeProduct(candidateId);
+  if (!candidate) {
+    setStatus("candidate_not_found");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(pretty(candidate));
+    setStatus("candidate_copied");
+  } catch (err) {
+    setStatus("candidate_copy_failed");
+    console.error("Copy candidate failed:", err);
+  }
+}
+```
 
-## [Functions]
+### Step 3: Update copyApplyToolCall()
 
-- **Modificare**: `judge_blocked_job()` (linee 5476-5545)
-  - Aggiungere try/except per rendere non-bloccante
-  - Cambiare la scrittura dell'artifact da `result` a `judge_artifact`
-  - Implementare emissione di `terminal_judge_failed` evento
+Replace current implementation (lines 788-802):
 
-## [Classes]
+```javascript
+async function copyApplyToolCall(candidateId) {
+  const candidate = findCodeProduct(candidateId);
+  const toolCall = candidate?.apply_tool_call;
+  if (!toolCall) {
+    setStatus("apply_tool_call_missing");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(pretty(toolCall));
+    setStatus("apply_tool_call_copied");
+  } catch (err) {
+    setStatus("apply_tool_call_copy_failed");
+    console.error("Copy apply call failed:", err);
+  }
+}
+```
 
-Nessuna classe modificata.
+### Step 4: Update applyCandidate()
 
-## [Dependencies]
+Replace current implementation (lines 804-855):
 
-Nessuna dipendenza aggiuntiva. Si usano le funzioni importate esistenti:
-- `write_json` da `.job_store`
-- `append_agent_event` da `.job_store`
+```javascript
+async function applyCandidate(candidateId) {
+  const candidate = findCodeProduct(candidateId);
+  if (!candidate) {
+    setStatus("candidate_not_found");
+    return {ok: false, error: "candidate_not_found"};
+  }
+  if (!candidate.apply_supported) {
+    setStatus("candidate_apply_unsupported");
+    return {
+      ok: false,
+      error: candidate.apply_block_reason || "apply_unsupported",
+    };
+  }
+  if (!window.confirm(
+    "Confermi apply interno repo_apply_patch per il candidato selezionato?"
+  )) {
+    setStatus("apply_cancelled");
+    return {ok: false, error: "apply_cancelled"};
+  }
+  try {
+    const response = await fetch(
+      `/jobs/${encodeURIComponent(currentJobId)}/planner-lab/apply`,
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          candidate_id: String(candidate.candidate_id),
+          confirm_apply: true,
+          user_consent:
+            "confirm planner-lab exact old_text/new_text patch",
+        }),
+      }
+    );
+    const data = await response.json();
+    const output = document.getElementById("apply-result");
+    if (output) output.textContent = pretty(data);
+    setStatus(data.ok ? "apply_done" : "apply_blocked");
+    if (data.ok) {
+      await loadJob(true);
+    }
+    return data;
+  } catch (err) {
+    const data = {
+      ok: false,
+      error: String(err?.message || err),
+    };
+    const output = document.getElementById("apply-result");
+    if (output) output.textContent = pretty(data);
+    setStatus("apply_failed");
+    return data;
+  }
+}
+```
 
-## [Testing]
+### Step 5: Update renderPriorityRows()
 
-Nessun test da creare (policy: no smoke tests). La verifica è fatta tramite:
-- `aicarmine_repo_validate_diffcheck` per validare il unified diff
-- Esecuzione manuale di un job che termina con `blocked_needs_attention` o `max_steps_reached`
+Replace current implementation (lines 462-501):
 
-## [Implementation Order]
+```javascript
+function renderPriorityRows(items) {
+  if (!items || !items.length) {
+    return "<p class='muted'>No priority evidence.</p>";
+  }
 
-1. Leggere la funzione `judge_blocked_job()` attuale per confermare il contesto
-2. Modificare la funzione per:
-   - Creare l'envelope `judge_artifact` invece di scrivere `result`
-   - Aggiungere try/except attorno a `write_json()` e `append_agent_event()`
-   - Implementare `terminal_judge_failed` evento
-3. Validare il unified diff con `aicarmine_repo_code_unidiff_validate`
-4. Verificare con `aicarmine_repo_code_git_apply_check`
-5. Applicare il patch con `aicarmine_repo_code_apply_patch`
-6. Verificare che il file modificato abbia la linea corretta
+  return items.map(item => {
+    const accepted =
+      item.ok !== false &&
+      item.validator_accepted !== false;
+
+    const inlineFields = Array.isArray(item.inline_fields)
+      ? item.inline_fields
+      : [];
+
+    return `
+      <div class="step-card ${accepted ? "ok" : "warn"}">
+        <b>
+          ${htmlEscape(
+            item.tool ||
+            item.kind ||
+            "evidence"
+          )}
+        </b>
+
+        <div class="muted">
+          kind=${htmlEscape(item.kind || "")}
+          ok=${htmlEscape(item.ok)}
+          complete=${htmlEscape(item.payload_is_complete)}
+          validator=${htmlEscape(item.validator_accepted)}
+        </div>
+
+        <div>
+          ${htmlEscape(item.repo_path || item.path || "")}
+        </div>
+
+        ${
+          inlineFields.length
+            ? `<details>
+                 <summary>Inline fields</summary>
+                 <pre>${htmlEscape(pretty(inlineFields))}</pre>
+               </details>`
+            : ""
+        }
+      </div>
+    `;
+  }).join("");
+}
+```
+
+### Step 6: Update renderArtifactRows()
+
+Replace current implementation (lines 503-545):
+
+```javascript
+function renderArtifactRows(artifacts) {
+  if (!artifacts || !artifacts.length) {
+    return "<p class='muted'>No tool-context artifacts.</p>";
+  }
+
+  return artifacts.map(item => {
+    const inlineFields = Array.isArray(item.inline_fields)
+      ? item.inline_fields
+      : [];
+
+    const artifactKeys = Array.isArray(item.artifact_keys)
+      ? item.artifact_keys
+      : [];
+
+    return `
+      <div class="step-card ${item.ok === false ? "warn" : "ok"}">
+        <b>
+          ${htmlEscape(
+            item.tool ||
+            item.kind ||
+            "artifact"
+          )}
+        </b>
+
+        <div class="muted">
+          kind=${htmlEscape(item.kind || "")}
+          ok=${htmlEscape(item.ok)}
+          complete=${htmlEscape(item.payload_is_complete)}
+        </div>
+
+        <div>
+          ${htmlEscape(item.repo_path || item.path || "")}
+        </div>
+
+        ${
+          inlineFields.length
+            ? `<details>
+                 <summary>Inline fields</summary>
+                 <pre>${htmlEscape(pretty(inlineFields))}</pre>
+               </details>`
+            : ""
+        }
+
+        ${
+          artifactKeys.length
+            ? `<details>
+                 <summary>Artifact keys</summary>
+                 <pre>${htmlEscape(pretty(artifactKeys))}</pre>
+               </details>`
+            : ""
+        }
+      </div>
+    `;
+  }).join("");
+}
+```
+
+---
+
+## Verification Commands
+
+After applying the patch, run these verification commands:
+
+### 1. Verify bad patterns are absent from modified functions
+
+```powershell
+$Path = "services/aicarmine_broker/job_html_assets.py"
+Select-String -Path $Path -Pattern 'copyCandidate\(candidate\)|copyApplyToolCall\(toolCall\)|applyCandidate\(candidate\)|candidate\.candidate_id|item\.priority|size_bytes' -Path "services/aicarmine_broker/job_html_assets.py" | Select-Object -First 5
+```
+
+Expected: Only matches in unrelated code (not in the modified functions).
+
+### 2. Verify required patterns are present
+
+```powershell
+Select-String -Path $Path -Pattern 'currentPlannerLabPayload|findCodeProduct\(candidateId\)|copyCandidate\(candidateId\)|copyApplyToolCall\(candidateId\)|applyCandidate\(candidateId\)|validator_accepted|artifact_keys|inline_fields'
+```
+
+Expected: Multiple matches in the modified file.
+
+### 3. Python syntax check
+
+```powershell
+python -m py_compile services/aicarmine_broker/job_html_assets.py
+```
+
+### 4. Node.js syntax check
+
+```powershell
+$env:PLANNER_JS_OUT = "$env:TEMP\planner_lab_rendered.js"
+# Extract JS from HTML and validate
+node --check $env:PLANNER_JS_OUT
+```
+
+### 5. Git diff check
+
+```powershell
+git diff --check
+```
+
+Expected: No warnings.
+
+### 6. Line count verification
+
+```powershell
+(Get-Content $Path).Count
+```
+
+Expected: 1432 lines (unchanged file size).

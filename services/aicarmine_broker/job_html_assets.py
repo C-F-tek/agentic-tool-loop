@@ -1081,6 +1081,18 @@ function renderGuidedTurn(turn, index) {
   `;
 }
 
+function findCodeProduct(candidateId) {
+  const cleanId = String(candidateId || "").trim();
+
+  const products = Array.isArray(currentPlannerLabPayload?.code_products)
+    ? currentPlannerLabPayload.code_products
+    : [];
+
+  return products.find(
+    item => String(item?.candidate_id || "") === cleanId
+  ) || null;
+}
+
 function renderLab(data) {
   const labOutput = document.getElementById("lab-output");
   if (!labOutput) return;
