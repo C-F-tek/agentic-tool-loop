@@ -5474,17 +5474,27 @@ def _write_loop_turn_memory(
 
 
 # Patch A: judge report per blocked_needs_attention
-def judge_blocked_job(result: dict[str, Any], status: str) -> dict[str, Any]:
+def judge_blocked_job(
+    job_id: str,
+    root: Path,
+    state: dict[str, Any],
+    status: str,
+    result: dict[str, Any],
+    tool_context: dict[str, Any],
+) -> dict[str, Any]:
     """Terminal judge for blocked_needs_attention and max_steps_reached.
     
     Produces analysis without reopening the loop, modifying evidence contract,
     or executing tools. Saves an artifact and adds an event. Fails non-blockingly.
+    
+    S3: Reads goal from state, not from result. Receives tool_context directly.
+    Writes terminal-judge.json. Emits terminal_judge_completed/failed event.
+    Does not modify evidence_contract, latch, or required_next_tool_call.
     """
     result = dict(result) if isinstance(result, dict) else {}
-    goal = result.get("goal") or ""
+    goal = str(state.get("goal") or "")
     history = result.get("history") or []
-    tool_results = result.get("tool_context_for_30b", {})
-    artifacts = tool_results.get("artifacts") or []
+    artifacts = tool_context.get("artifacts") or []
     
     judge_report = {
         "schema": "terminal_judge_blocked.v1",
@@ -5512,6 +5522,26 @@ def judge_blocked_job(result: dict[str, Any], status: str) -> dict[str, Any]:
         )
     
     result["terminal_judge_report"] = judge_report
+    
+    # S3: Write terminal-judge.json artifact
+    judge_path = root / "terminal-judge.json"
+    write_json(judge_path, result)
+    
+    # S3: Emit terminal_judge_completed event
+    append_agent_event(
+        job_id,
+        "terminal_judge_completed",
+        f"Terminal judge completed for status={status}.",
+        {
+            "schema": "terminal_judge_blocked.v1",
+            "status": status,
+            "goal": goal,
+            "artifacts_count": len(artifacts),
+            "history_rows": len(history),
+            "judge_report": judge_report,
+        },
+    )
+    
     return result
 
 
@@ -5526,7 +5556,15 @@ def finalize_agentic_job(
     result = dict(result or {})
     # Issue 2: Call judge_blocked_job for blocked_needs_attention and max_steps_reached
     if status in {"blocked_needs_attention", "max_steps_reached"}:
-        result = judge_blocked_job(result, status)
+        tool_context = build_tool_context_for_30b(job_id, state, status, final_summary, result)
+        result = judge_blocked_job(
+            job_id=job_id,
+            root=root,
+            state=state,
+            status=status,
+            result=result,
+            tool_context=tool_context,
+        )
     final_summary_with_turns = _final_summary_with_ollama_done_reasons(status, final_summary, result)
     controller_memory = _write_controller_memory_lesson(
         job_id, state, status, final_summary_with_turns, result, root
