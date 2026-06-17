@@ -435,6 +435,7 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return decoded if isinstance(decoded, dict) else None
 
 
+# Re-export for use in loop.py
 def _query_plan_continue_without_model(
     report: Mapping[str, Any],
     *,

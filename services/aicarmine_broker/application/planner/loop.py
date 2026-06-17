@@ -6,6 +6,9 @@ import itertools
 import traceback
 from typing import Any, Mapping
 
+from services.aicarmine_broker.application.controller.rag_preseed import _query_plan_continue_without_model
+from services.aicarmine_broker.config import AGENTIC_PLANNER_STEP_TIMEOUT
+
 from .state import PlannerLoopState
 from ..shared.evidence_contract_summary import (
     evidence_contract_summary_triplet,
@@ -967,6 +970,15 @@ def run_agentic_planner_job(
             preplanner_query_plan.get("semantic_intent_required") is True
             and preplanner_query_plan.get("ok") is not True
         ):
+            # Issue 1: Use fallback deterministico instead of blocking
+            # Use _query_plan_continue_without_model() for semantic intent failures
+            preplanner_query_plan = _query_plan_continue_without_model(
+                preplanner_query_plan,
+                reason=preplanner_query_plan.get("reason") or "planner_query_plan_semantic_intent_unusable_after_retry",
+                attempt=1,
+                planner_model=PLANNER_MODEL,
+                timeout_seconds=AGENTIC_PLANNER_STEP_TIMEOUT,
+            )
             row = {
                 "step": 0,
                 "decision": {
@@ -984,21 +996,8 @@ def run_agentic_planner_job(
             loop_state.append_history_row(row)
             persist_loop_turn_memory(row)
             write_agent_job_state(state)
-            return finalize_agentic_job(
-                job_id,
-                state,
-                "blocked_needs_attention",
-                (
-                    "preplanner_semantic_intent_unusable: the controlled preplanner did not "
-                    "return a usable semantic_intent after retry. The controller did not fall "
-                    "back to regex/static goal routing."
-                ),
-                {
-                    "history": history,
-                    "blocked_by": "preplanner_semantic_intent_unusable",
-                    "preplanner_query_plan": preplanner_query_plan,
-                },
-            )
+            # Continue with deterministic RAG preseed instead of blocking
+            preplanner_plan = None
 
     preplanner_plan: dict[str, Any] | None = None
     preplanner_report: dict[str, Any] = {}
@@ -1033,6 +1032,7 @@ def run_agentic_planner_job(
     )
     add_initial_orientation_skipped(preplanner_skipped)
 
+    # Issue 7: Fix RAG preseed success measurement - use success_count > 0 instead of just ranked_paths count
     ranked_preseed_success = False
     ranked_paths: list[str] = []
     if preplanner_plan:
@@ -1044,9 +1044,10 @@ def run_agentic_planner_job(
             str(path) for path in ranked_path_items
             if str(path).strip()
         ]
+        # Use success_count from preplanner_compact instead of just counting ranked_paths
         ranked_preseed_success = bool(
             preplanner_compact.get("ok")
-            and len(ranked_paths) >= 2
+            and int(preplanner_compact.get("success_count") or 0) > 0
         )
 
     preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)

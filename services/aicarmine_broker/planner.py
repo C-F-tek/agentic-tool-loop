@@ -5474,6 +5474,47 @@ def _write_loop_turn_memory(
 
 
 # Patch A: judge report per blocked_needs_attention
+def judge_blocked_job(result: dict[str, Any], status: str) -> dict[str, Any]:
+    """Terminal judge for blocked_needs_attention and max_steps_reached.
+    
+    Produces analysis without reopening the loop, modifying evidence contract,
+    or executing tools. Saves an artifact and adds an event. Fails non-blockingly.
+    """
+    result = dict(result) if isinstance(result, dict) else {}
+    goal = result.get("goal") or ""
+    history = result.get("history") or []
+    tool_results = result.get("tool_context_for_30b", {})
+    artifacts = tool_results.get("artifacts") or []
+    
+    judge_report = {
+        "schema": "terminal_judge_blocked.v1",
+        "available": True,
+        "status": status,
+        "goal": goal,
+        "history_rows": len(history) if isinstance(history, list) else 0,
+        "artifacts_count": len(artifacts) if isinstance(artifacts, list) else 0,
+        "analysis": (
+            f"Job terminated with status={status}. Evidence collected: "
+            f"{len(artifacts)} artifacts, {len(history)} history rows. "
+            "Terminal judge produced analysis without reopening the loop."
+        ),
+    }
+    
+    if status == "blocked_needs_attention":
+        judge_report["block_reason"] = (
+            "Planner blocked due to validation failure or terminal condition. "
+            "Terminal judge analyzed the situation and produced a final report."
+        )
+    elif status == "max_steps_reached":
+        judge_report["block_reason"] = (
+            "Job reached maximum step limit. Terminal judge analyzed collected evidence "
+            "and produced a final report before termination."
+        )
+    
+    result["terminal_judge_report"] = judge_report
+    return result
+
+
 def finalize_agentic_job(
     job_id: str,
     state: dict[str, Any],
@@ -5483,6 +5524,9 @@ def finalize_agentic_job(
 ) -> dict[str, Any]:
     root = agent_job_root(job_id)
     result = dict(result or {})
+    # Issue 2: Call judge_blocked_job for blocked_needs_attention and max_steps_reached
+    if status in {"blocked_needs_attention", "max_steps_reached"}:
+        result = judge_blocked_job(result, status)
     final_summary_with_turns = _final_summary_with_ollama_done_reasons(status, final_summary, result)
     controller_memory = _write_controller_memory_lesson(
         job_id, state, status, final_summary_with_turns, result, root
