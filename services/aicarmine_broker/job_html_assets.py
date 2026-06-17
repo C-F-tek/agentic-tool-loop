@@ -149,7 +149,7 @@ function updateActiveJob(jobId, status) {
   if (statusEl) statusEl.textContent = status || "loading";
   
   // Load job data
-  fetch(`/jobs/${encodeURIComponent(jobId)}/final.json`)
+  fetch(`/jobs/${encodeURIComponent(jobId)}/planner-lab.json`)
     .then(res => res.json())
     .then(data => {
       if (data.ok) {
@@ -166,6 +166,8 @@ function updateActiveJob(jobId, status) {
 function selectJob(jobId, autoPoll) {
   const input = document.getElementById("job-id");
   if (input) input.value = jobId;
+  
+  currentJobId = cleanJob || jobId;
   
   if (autoPoll) {
     updateActiveJob(jobId, "polling");
@@ -202,13 +204,10 @@ async function startPlannerJob(mode) {
   setStatus("starting");
   
   const payload = {
-    instruction: request,
+    task: request,
+    request: request,
+    return_mode: mode || "background",
     wait_seconds: waitSeconds,
-    summary_chars: 4000,
-    step_limit: 80,
-    code_product_limit: 40,
-    think: false,
-    persist_thread: true,
   };
   
   let data = {ok: false, error: "Request failed"};
@@ -259,7 +258,7 @@ async function loadJob(reset) {
   let data = {ok: false, error: "Request failed"};
   
   try {
-    const res = await fetch(`/jobs/${encodeURIComponent(jobId)}/final.json`);
+    const res = await fetch(`/jobs/${encodeURIComponent(jobId)}/planner-lab.json`);
     data = await res.json();
     
     if (data.ok) {
@@ -281,42 +280,18 @@ async function loadJob(reset) {
 }
 
 function labLimitParams() {
-  const summaryChars = parseInt(document.getElementById("summary-chars")?.value, 10) || 4000;
-  const stepLimit = parseInt(document.getElementById("step-limit")?.value, 10) || 80;
-  const codeProductLimit = parseInt(document.getElementById("code-product-limit")?.value, 10) || 40;
-  return {summary_chars: summaryChars, step_limit: stepLimit, code_product_limit: codeProductLimit};
+  const params = new URLSearchParams();
+  params.set("summary_chars", document.getElementById("summary-chars")?.value || "4000");
+  params.set("step_limit", document.getElementById("step-limit")?.value || "80");
+  params.set("code_product_limit", document.getElementById("code-product-limit")?.value || "40");
+  return params;
 }
 
 async function startPolling() {
-  const jobId = currentJobId || "";
-  if (!jobId) {
-    setStatus("no_job");
-    return;
-  }
+  if (pollTimer) clearInterval(pollTimer);
   
-  if (pollTimer) {
-    clearInterval(pollTimer);
-  }
-  
-  pollTimer = setInterval(async () => {
-    try {
-      const res = await fetch(`/jobs/${encodeURIComponent(jobId)}/final.json`);
-      const data = await res.json();
-      
-      if (data.ok) {
-        renderLab(jobId, data);
-        const statusEl = document.getElementById("lab-status");
-        if (statusEl) statusEl.textContent = data.status || "running";
-      } else {
-        const resultEl = document.getElementById("apply-result");
-        if (resultEl) resultEl.innerHTML = `<div class='bad'>${data.error || 'Poll error'}</div>`;
-      }
-    } catch (err) {
-      // Ignore poll errors
-    }
-  }, 2000);
-  
-  setStatus("polling");
+  loadJob(true);
+  pollTimer = setInterval(() => loadJob(false), 2500);
 }
 
 function renderMetrics(metrics) {
@@ -471,22 +446,22 @@ async function copyApplyToolCall(toolCall) {
 async function applyCandidate(candidate) {
   if (!candidate) return {ok: false, error: "No candidate"};
   
-  const targetFile = candidate.target_file || "";
-  const oldText = candidate.old_text || "";
-  const newText = candidate.new_text || "";
+  const candidateId = candidate.candidate_id || "";
+  const confirmApply = candidate.confirm_apply ?? true;
+  const userConsent = candidate.user_consent || "confirm planner-lab exact old_text/new_text patch";
   
-  if (!targetFile || !oldText || !newText) {
-    return {ok: false, error: "Missing required fields"};
+  if (!candidateId) {
+    return {ok: false, error: "Missing candidate_id"};
   }
   
   try {
-    const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/apply_patch`, {
+    const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/planner-lab/apply`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        path: targetFile,
-        old_text: oldText,
-        new_text: newText,
+        candidate_id: candidateId,
+        confirm_apply: confirmApply,
+        user_consent: userConsent,
       }),
     });
     
@@ -497,29 +472,36 @@ async function applyCandidate(candidate) {
   }
 }
 
-function captureGuidedDraft(text) {
-  guidedDraftText = text ?? "";
+function captureGuidedDraft() {
+  const input = document.getElementById("guided-operator-prompt");
+  if (input) guidedDraftText = input.value || "";
   return guidedDraftText;
 }
 
-async function composeFromPayload(payload) {
-  if (!payload) return {ok: false, error: "No payload"};
+async function composeFromPayload() {
+  captureGuidedDraft();
   
-  const {instruction, conversation, summary_chars, step_limit, code_product_limit, think, persist_thread} = payload;
+  const instruction = guidedDraftText.trim();
+  if (!instruction || !currentJobId) return;
+  
+  const payload = {
+    instruction,
+    conversation: guidedConversation.filter(
+      turn => turn.status !== "waiting"
+    ).slice(-8),
+    think: Boolean(document.getElementById("compose-think")?.checked),
+    summary_chars: Number(document.getElementById("summary-chars")?.value || 4000),
+    step_limit: Number(document.getElementById("step-limit")?.value || 80),
+    code_product_limit: Number(document.getElementById("code-product-limit")?.value || 40),
+    max_payload_chars: Number(document.getElementById("compose-payload-chars")?.value || 30000),
+    timeout_seconds: Number(document.getElementById("compose-timeout")?.value || 60),
+  };
   
   try {
     const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/planner-lab/compose`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        instruction,
-        conversation,
-        summary_chars,
-        step_limit,
-        code_product_limit,
-        think,
-        persist_thread,
-      }),
+      body: JSON.stringify(payload),
     });
     
     const data = await res.json();
@@ -539,8 +521,8 @@ function renderGuidedTurn(turn) {
 }
 
 function renderLab(jobId, payload) {
-  const panel = document.getElementById("active-job-panel");
-  if (!panel) return;
+  const labOutput = document.getElementById("lab-output");
+  if (!labOutput) return;
   
   const div = document.createElement("div");
   div.className = "planner-lab-container";
@@ -550,22 +532,22 @@ function renderLab(jobId, payload) {
       ${renderOwnerPayloadFocus(payload)}
       ${renderMetrics(payload.metrics || {})}
       ${renderInlineFields(payload.fields || {})}
-      ${renderResultRows(payload.repair_hints || payload.suggested_next_tool_calls || [])}
-      ${renderPriorityRows(payload.priority_items || [])}
+      ${renderResultRows(payload.chat_turn || payload.repair_hints || payload.suggested_next_tool_calls || [])}
+      ${renderPriorityRows(payload.priority_evidence_for_30b || payload.priority_items || [])}
       ${renderArtifactRows(payload.artifacts || [])}
-      ${renderStructureRows(payload.structure || {})}
-      ${renderPublicToolResponse(payload.public_tool_response || {})}
+      ${renderStructureRows(payload.payload_index_for_30b || payload.structure || {})}
+      ${renderPublicToolResponse(payload.public_tool_response_view || payload.public_tool_response || {})}
     </div>
     
     <div class="planner-lab-section">
       <h3>Chat</h3>
-      ${renderGuidedConversation(payload.thread || guidedConversation)}
+      ${renderGuidedConversation(payload.chat_turn || payload.thread || guidedConversation)}
       ${renderPendingChat(payload.pending_task || "")}
     </div>
     
     <div class="planner-lab-section">
-      <h3>Steps</h3>
-      ${renderSteps(payload.steps || [])}
+      <h3>Step Summaries</h3>
+      ${renderSteps(payload.step_summaries || payload.steps || [])}
     </div>
     
     <div class="planner-lab-section">
@@ -576,16 +558,16 @@ function renderLab(jobId, payload) {
     <div class="planner-lab-followup-panel">
       <h4>Follow-up</h4>
       <textarea id="planner-lab-followup" class="planner-lab-followup-input" placeholder="Enter follow-up instruction...">${guidedDraftText}</textarea>
-      <button id="planner-lab-followup-btn" class="planner-lab-followup-btn" onclick="submitFollowUp(document.getElementById('planner-lab-followup').value)">Send</button>
+      <button id="planner-lab-followup-btn" class="planner-lab-followup-btn" onclick="composeFromPayload()">Compose</button>
     </div>
     
     <div class="planner-lab-chain">
       <h4>Thread</h4>
-      ${renderThread(payload.thread || guidedConversation)}
+      ${renderThread(payload.chat_turn || payload.thread || guidedConversation)}
     </div>
   `;
   
-  panel.innerHTML = div.outerHTML;
+  labOutput.innerHTML = div.outerHTML;
 }
 
 function renderThread(thread) {
