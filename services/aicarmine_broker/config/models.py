@@ -96,7 +96,7 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
 
-DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding"
+DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding-v4"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 
