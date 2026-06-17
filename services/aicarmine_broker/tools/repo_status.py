@@ -97,9 +97,9 @@ def repo_capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "when_to_use": (
                 "Rank repo files/chunks with the delta RAG index when lexical search is too broad; "
                 "default reindex=true may update the local RAG SQLite index; "
-                "follow with repo_read on returned paths."
+                "follow with repo_read on returned paths. Accepts query, pattern, symbol, text or needle."
             ),
-            "required_args": ["query|pattern|symbol|text"],
+            "required_args": ["query|pattern|symbol|text|needle"],
         },
         {
             "name": "repo_read",

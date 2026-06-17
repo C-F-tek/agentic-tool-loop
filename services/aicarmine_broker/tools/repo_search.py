@@ -78,7 +78,8 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         }
 
     q = json.dumps(query)
-    target_q = json.dumps(str(full))
+    target = str(full)
+    target_q = json.dumps(target)
     rel_q = json.dumps(rel)
     if mode == "git_grep":
         command = f"git grep -n -- {q} -- {rel_q}"
@@ -105,7 +106,7 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "matches": result["stdout"].splitlines()[:max_results],
         "stderr_tail": result["stderr_tail"],
         "path": rel,
-        "target": target_q,
+        "target": target,
     }
     artifact = root / "tool-results" / f"{now()}-repo_search.json"
     write_json(artifact, payload)
