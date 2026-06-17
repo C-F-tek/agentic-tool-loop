@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import html
 import json
+from itertools import count
 from typing import Any
+
+
+_THREAD_COUNTER = count(1)
 
 
 # Base CSS shared across all job views
@@ -389,24 +393,67 @@ function renderMetrics(metrics) {
   `;
 }
 
-function renderTopLevelSurface(payload) {
-  const div = document.createElement("div");
-  div.className = "planner-lab-content";
-  div.innerHTML = `
-    <h3>Job Overview</h3>
-    <pre>${htmlEscape(pretty(payload))}</pre>
+function renderTopLevelSurface(data) {
+  const visible = data.model_visible_text || {};
+  const fields = Object.keys(data || {}).sort();
+
+  return `
+    <div class="card">
+      <h2>Model-visible surface</h2>
+
+      <div>
+        ${
+          fields.length
+            ? fields
+                .map(field => (
+                  `<span class="pill">${htmlEscape(field)}</span>`
+                ))
+                .join("")
+            : "<span class='muted'>No top-level fields.</span>"
+        }
+      </div>
+
+      <details open>
+        <summary>Visible narrative fields</summary>
+        <pre>${htmlEscape(pretty(visible))}</pre>
+      </details>
+    </div>
   `;
-  return div.outerHTML;
 }
 
 function renderRedundancyAudit(data) {
-  // Use actual path: data.redundancy_audit
   const audit = data.redundancy_audit;
-  if (!audit) return "";
-  
-  // Convert object to JSON string first, then escape
-  const jsonStr = typeof audit === "object" ? JSON.stringify(audit, null, 2) : String(audit);
-  return `<div class="pill">${htmlEscape(jsonStr)}</div>`;
+
+  if (!audit || typeof audit !== "object") {
+    return "";
+  }
+
+  const violations = Array.isArray(audit.violations)
+    ? audit.violations
+    : [];
+
+  return `
+    <div class="card ${audit.ok === false ? "warn" : "ok"}">
+      <h2>Redundancy audit</h2>
+
+      <div class="metric-row">
+        <div class="metric">
+          <span>status</span>
+          <b>${htmlEscape(audit.ok ? "ok" : "violations")}</b>
+        </div>
+
+        <div class="metric">
+          <span>violations</span>
+          <b>${htmlEscape(violations.length)}</b>
+        </div>
+      </div>
+
+      <details>
+        <summary>Audit payload</summary>
+        <pre>${htmlEscape(pretty(audit))}</pre>
+      </details>
+    </div>
+  `;
 }
 
 function renderPartialResults(data) {
@@ -465,9 +512,15 @@ function renderPayloadIndex(data) {
 }
 
 function renderPriorityEvidence(data) {
-  // Use actual path: data.priority_evidence_for_30b
-  const evidence = data.priority_evidence_for_30b || [];
-  if (!evidence.length) return "";
+  const evidence = data.priority_evidence_for_30b;
+
+  if (
+    !evidence ||
+    typeof evidence !== "object" ||
+    !Object.keys(evidence).length
+  ) {
+    return "<p class='muted'>No raw priority evidence.</p>";
+  }
 
   return `<details>
     <summary>Priority evidence raw</summary>
@@ -475,8 +528,31 @@ function renderPriorityEvidence(data) {
   </details>`;
 }
 
+function clearGuidedChat() {
+  guidedConversation = [];
+  guidedDraftText = "";
+
+  const input = document.getElementById(
+    "guided-operator-prompt"
+  );
+
+  if (input) {
+    input.value = "";
+  }
+
+  renderGuidedConversation();
+  setStatus("guided_chat_cleared");
+}
+
 function renderClearGuidedChat() {
-  return `<button onclick="guidedConversation = []; guidedDraftText = ''; renderGuidedConversation()">Clear guided chat</button>`;
+  return `
+    <button
+      class="secondary"
+      onclick="clearGuidedChat()"
+    >
+      Clear guided chat
+    </button>
+  `;
 }
 
 function renderInlineFields(fields) {
@@ -1289,6 +1365,7 @@ function renderLab(data) {
     <div class="planner-lab-container">
       <div class="planner-lab-section">
         <h3>Job: ${htmlEscape(jobId)}</h3>
+        ${renderTopLevelSurface(data)}
         ${renderOwnerPayloadFocus(data.owner_payload_focus || {})}
         ${renderPublicToolResponse(data.public_tool_response_view || {})}
       </div>
@@ -1299,41 +1376,14 @@ function renderLab(data) {
         <pre>${htmlEscape((readiness.warnings || []).join("\n"))}</pre>
       </div>
       
-      <div class="planner-lab-section">
-        <h2>Redundancy audit</h2>
-        ${renderRedundancyAudit(data)}
-      </div>
-      
-      <div class="planner-lab-section">
-        <h2>Partial results</h2>
-        ${renderPartialResults(data)}
-      </div>
-      
-      <div class="planner-lab-section">
-        <h2>Descriptive only fields</h2>
-        ${renderDescriptiveOnly(data)}
-      </div>
-      
-      <div class="planner-lab-section">
-        <h2>Search order</h2>
-        ${renderSearchOrder(data)}
-      </div>
-      
-      <div class="planner-lab-section">
-        <h2>Deep inline locations</h2>
-        ${renderDeepInlineLocations(data)}
-      </div>
-      
-      <div class="planner-lab-section">
-        <h2>Payload index</h2>
-        ${renderPayloadIndex(data)}
-      </div>
-      
-      <div class="planner-lab-section">
-        <h2>Priority evidence</h2>
-        ${renderPriorityEvidence(data)}
-      </div>
-      
+      ${renderRedundancyAudit(data)}
+      ${renderPartialResults(data)}
+      ${renderDescriptiveOnly(data)}
+      ${renderSearchOrder(data)}
+      ${renderDeepInlineLocations(data)}
+      ${renderPayloadIndex(data)}
+      ${renderPriorityEvidence(data)}
+
       <div class="planner-lab-section">
         <h2>Priority evidence items</h2>
         ${renderPriorityRows(priorityItems)}
@@ -1522,14 +1572,27 @@ def render_status_badge(ok: bool) -> str:
 
 
 def render_metric_grid(metrics: dict[str, Any]) -> str:
-    """Render a grid of metrics."""
+    """Render metrics using the BASE_CSS grid contract."""
     if not metrics:
         return ""
-    rows = []
-    for key, value in sorted(metrics.items()):
-        rows.append(f'<div class="metric-row"><span>{html.escape(key)}</span><b>{html.escape(str(value))}</b></div>')
-    return "\n".join(rows)
 
+    cards: list[str] = []
+
+    for key, value in sorted(metrics.items()):
+        if key == "warnings":
+            continue
+
+        cards.append(
+            '<div class="metric">'
+            f"<span>{html.escape(str(key))}</span>"
+            f"<b>{html.escape(str(value))}</b>"
+            "</div>"
+        )
+
+    if not cards:
+        return ""
+
+    return '<div class="metric-row">' + "".join(cards) + "</div>"
 
 def render_pre_block(value: Any, language: str = "json") -> str:
     """Render a pre-formatted code block with HTML escaping."""
@@ -1614,27 +1677,51 @@ def render_thread(thread: list[dict[str, Any]]) -> str:
     return "\n".join(render_chain_item(index + 1, item.get("role", "unknown"), item.get("kind", "message"), item.get("text", item.get("content", ""))) for index, item in enumerate(thread))
 
 
-def render_chain_item(step_index: int, role: str, kind: str, text: str) -> str:
-    """Render a chain item."""
-    role_label = role if role in ("user", "assistant") else role
-    kind_label = kind if kind in ("followup", "compose", "message") else kind
+def render_chain_item(
+    step_index: int,
+    role: str,
+    kind: str,
+    text: str,
+) -> str:
+    """Render a chain item with escaped dynamic values."""
+    role_label = (
+        "Operator"
+        if role == "user"
+        else "Assistant"
+        if role == "assistant"
+        else role
+    )
+
+    kind_label = (
+        "Follow-up"
+        if kind == "followup"
+        else "Compose Answer"
+        if kind == "compose"
+        else kind
+    )
+
     return f"""<div class="planner-lab-chain-item">
-    <div class="planner-lab-chain-label">{step_index}. {role_label}: {kind_label}</div>
-    <div class="planner-lab-chain-text">{html.escape(text)}</div>
+    <div class="planner-lab-chain-label">{int(step_index)}. {html.escape(str(role_label))}: {html.escape(str(kind_label))}</div>
+    <div class="planner-lab-chain-text">{html.escape(str(text))}</div>
   </div>"""
 
-
-def append_thread_item(role: str, kind: str, text: str) -> dict[str, Any]:
-    """Append an item to the thread."""
+def append_thread_item(
+    role: str,
+    kind: str,
+    text: str,
+) -> dict[str, Any]:
+    """Create a thread item with a monotonic process-local ID."""
     import datetime
+
     return {
         "role": role,
         "kind": kind,
         "text": text,
-        "created_at": datetime.datetime.now().isoformat(),
-        "turn_id": getattr(globals(), "_thread_counter", 0) + 1,
+        "created_at": datetime.datetime.now(
+            datetime.UTC
+        ).isoformat(),
+        "turn_id": next(_THREAD_COUNTER),
     }
-
 
 def submit_follow_up(instruction: str, job_id: str, conversation: list, persist_thread: bool = True) -> dict[str, Any]:
     """Submit a follow-up instruction."""
