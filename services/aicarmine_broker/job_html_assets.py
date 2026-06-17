@@ -68,12 +68,13 @@ td, th { border-bottom: 1px solid #333; padding: 7px; vertical-align: top; overf
 """
 
 # Base JavaScript utilities shared across all job views
-BASE_JS = """
+BASE_JS = r"""
 function htmlEscape(value) {
   return String(value ?? "").replace(/[&<>"']/g, ch => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[ch]);
 }
+
 
 function pretty(value) {
   return JSON.stringify(value ?? {}, null, 2);
@@ -116,12 +117,298 @@ PLANNER_LAB_EXTRA_CSS = """
 .planner-lab-faq-item { margin: 4px 0; }
 """
 
-# Planner Lab extra JavaScript (specific to the lab UI)
-PLANNER_LAB_JS = """
+# Planner Lab extra JavaScript (specific to the lab UI) - COMPLETE OPERATIONAL SURFACE
+PLANNER_LAB_JS = r"""
 let guidedConversation = [];
 let guidedTurnCounter = 0;
 let guidedDraftText = "";
 let guidedComposeInFlight = false;
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    setStatus("stopped");
+    const panel = document.getElementById("active-job-panel");
+    if (panel) {
+      panel.innerHTML = "<div class='muted'>Polling stopped. Use 'Load' or 'Poll' to resume.</div>";
+    }
+  }
+}
+
+function updateActiveJob(jobId, status) {
+  const panel = document.getElementById("active-job-panel");
+  if (!panel) return;
+  
+  if (!jobId) {
+    panel.innerHTML = "<div class='muted'>No job loaded. Use 'Load' or enter a job ID above.</div>";
+    return;
+  }
+  
+  const statusEl = document.getElementById("lab-status");
+  if (statusEl) statusEl.textContent = status || "loading";
+  
+  // Load job data
+  fetch(`/jobs/${encodeURIComponent(jobId)}/final.json`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.ok) {
+        renderLab(jobId, data);
+      } else {
+        panel.innerHTML = `<div class='bad'>Error loading job: ${data.error || 'Unknown error'}</div>`;
+      }
+    })
+    .catch(err => {
+      panel.innerHTML = `<div class='bad'>Failed to load job: ${err.message}</div>`;
+    });
+}
+
+function selectJob(jobId, autoPoll) {
+  const input = document.getElementById("job-id");
+  if (input) input.value = jobId;
+  
+  if (autoPoll) {
+    updateActiveJob(jobId, "polling");
+    startPolling();
+  } else {
+    updateActiveJob(jobId, "loaded");
+  }
+}
+
+function setLaunchBusy(isBusy) {
+  const btns = document.querySelectorAll('[data-launch-button]');
+  btns.forEach(btn => {
+    btn.disabled = isBusy;
+    btn.setAttribute('data-busy', String(isBusy));
+  });
+}
+
+async function startPlannerJob(mode) {
+  const requestEl = document.getElementById("planner-request");
+  const waitSecsEl = document.getElementById("wait-seconds");
+  const resultEl = document.getElementById("start-result");
+  
+  if (!requestEl || !waitSecsEl || !resultEl) return {ok: false, error: "Missing UI elements"};
+  
+  const request = requestEl.value.trim();
+  const waitSeconds = parseInt(waitSecsEl.value, 10);
+  
+  if (!request) {
+    resultEl.innerHTML = "<div class='bad'>Enter a request first.</div>";
+    return {ok: false, error: "Empty request"};
+  }
+  
+  setLaunchBusy(true);
+  setStatus("starting");
+  
+  const payload = {
+    instruction: request,
+    wait_seconds: waitSeconds,
+    summary_chars: 4000,
+    step_limit: 80,
+    code_product_limit: 40,
+    think: false,
+    persist_thread: true,
+  };
+  
+  let data = {ok: false, error: "Request failed"};
+  
+  try {
+    const res = await fetch(`/planner-lab/start`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    
+    data = await res.json();
+    
+    if (data.ok) {
+      const jobId = data.job_id;
+      resultEl.innerHTML = `<div class='ok'>Job started: <b>${jobId}</b></div>`;
+      
+      if (mode === "wait") {
+        await new Promise(r => setTimeout(r, waitSeconds * 1000));
+        updateActiveJob(jobId, "polling");
+        startPolling();
+      } else {
+        updateActiveJob(jobId, "background");
+      }
+    } else {
+      resultEl.innerHTML = `<div class='bad'>${data.error || 'Failed to start job'}</div>`;
+    }
+  } catch (err) {
+    data = {ok: false, error: err.message};
+    resultEl.innerHTML = `<div class='bad'>Error: ${err.message}</div>`;
+  } finally {
+    setLaunchBusy(false);
+  }
+  
+  return data;
+}
+
+async function loadJob(reset) {
+  const input = document.getElementById("job-id");
+  const jobId = input ? input.value.trim() : "";
+  const resultEl = document.getElementById("apply-result");
+  
+  if (!jobId) {
+    if (resultEl) resultEl.innerHTML = "<div class='bad'>Enter a job ID first.</div>";
+    return {ok: false, error: "No job ID"};
+  }
+  
+  let data = {ok: false, error: "Request failed"};
+  
+  try {
+    const res = await fetch(`/jobs/${encodeURIComponent(jobId)}/final.json`);
+    data = await res.json();
+    
+    if (data.ok) {
+      renderLab(jobId, data);
+      if (reset) {
+        const activePanel = document.getElementById("active-job-panel");
+        if (activePanel) activePanel.innerHTML = "";
+      }
+      return {ok: true, job_id: jobId};
+    } else {
+      if (resultEl) resultEl.innerHTML = `<div class='bad'>${data.error || 'Failed to load'}</div>`;
+    }
+  } catch (err) {
+    data = {ok: false, error: err.message};
+    if (resultEl) resultEl.innerHTML = `<div class='bad'>Error: ${err.message}</div>`;
+  }
+  
+  return data;
+}
+
+function labLimitParams() {
+  const summaryChars = parseInt(document.getElementById("summary-chars")?.value, 10) || 4000;
+  const stepLimit = parseInt(document.getElementById("step-limit")?.value, 10) || 80;
+  const codeProductLimit = parseInt(document.getElementById("code-product-limit")?.value, 10) || 40;
+  return {summary_chars: summaryChars, step_limit: stepLimit, code_product_limit: codeProductLimit};
+}
+
+async function startPolling() {
+  const jobId = currentJobId || "";
+  if (!jobId) {
+    setStatus("no_job");
+    return;
+  }
+  
+  if (pollTimer) {
+    clearInterval(pollTimer);
+  }
+  
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await fetch(`/jobs/${encodeURIComponent(jobId)}/final.json`);
+      const data = await res.json();
+      
+      if (data.ok) {
+        renderLab(jobId, data);
+        const statusEl = document.getElementById("lab-status");
+        if (statusEl) statusEl.textContent = data.status || "running";
+      } else {
+        const resultEl = document.getElementById("apply-result");
+        if (resultEl) resultEl.innerHTML = `<div class='bad'>${data.error || 'Poll error'}</div>`;
+      }
+    } catch (err) {
+      // Ignore poll errors
+    }
+  }, 2000);
+  
+  setStatus("polling");
+}
+
+function renderMetrics(metrics) {
+  if (!metrics) return "";
+  const rows = [];
+  for (const [key, value] of Object.entries(metrics)) {
+    rows.push(`<div class="metric-row"><span>${htmlEscape(key)}</span><b>${htmlEscape(String(value))}</b></div>`);
+  }
+  return rows.join("");
+}
+
+function renderTopLevelSurface(payload) {
+  const div = document.createElement("div");
+  div.className = "planner-lab-content";
+  div.innerHTML = `
+    <h3>Job Overview</h3>
+    <pre>${pretty(payload)}</pre>
+  `;
+  return div.outerHTML;
+}
+
+function renderInlineFields(fields) {
+  if (!fields) return "";
+  const items = [];
+  for (const [key, value] of Object.entries(fields)) {
+    items.push(`<div class="pill">${htmlEscape(key)}: ${htmlEscape(String(value))}</div>`);
+  }
+  return items.join("");
+}
+
+function renderResultRows(rows) {
+  if (!rows || !Array.isArray(rows)) return "";
+  const html = rows.map(row => {
+    const ok = row.ok ?? true;
+    const statusClass = ok ? "ok" : "bad";
+    const statusIcon = ok ? "✓" : "✗";
+    return `<div class="step-card ${statusClass}">
+      <b>${statusIcon} ${row.tool || 'unknown'}</b>
+      <div>${htmlEscape(row.reason || '')}</div>
+      ${row.output ? `<pre>${pretty(row.output)}</pre>` : ''}
+    </div>`;
+  }).join("");
+  return html;
+}
+
+function renderOwnerPayloadFocus(payload) {
+  if (!payload) return "";
+  const owner = payload.owner || "unknown";
+  const status = payload.status || "unknown";
+  return `<div class="pill">${owner}</div> <span class="muted">(${status})</span>`;
+}
+
+function renderPriorityRows(items) {
+  if (!items) return "";
+  return items.map(item => {
+    const priority = item.priority ?? "normal";
+    const priorityClass = priority === "high" ? "bad" : priority === "low" ? "ok" : "";
+    return `<div class="step-card ${priorityClass}">
+      <b>${item.tool || 'unknown'}</b>
+      <span class="muted">priority: ${priority}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderArtifactRows(artifacts) {
+  if (!artifacts) return "";
+  return artifacts.map(a => {
+    const path = a.path || "unknown";
+    const size = a.size_bytes ?? 0;
+    return `<div class="pill">📄 ${htmlEscape(path)} (${size} bytes)</div>`;
+  }).join("");
+}
+
+function renderStructureRows(structure) {
+  if (!structure) return "";
+  const lines = [];
+  for (const [key, value] of Object.entries(structure)) {
+    lines.push(`<div class="pill">${htmlEscape(key)}: ${pretty(value)}</div>`);
+  }
+  return lines.join("");
+}
+
+function renderPublicToolResponse(response) {
+  if (!response) return "";
+  const tool = response.tool || "unknown";
+  const ok = response.ok ?? false;
+  const statusClass = ok ? "ok" : "bad";
+  return `<div class="step-card ${statusClass}">
+    <b>${tool}</b>
+    <div>${htmlEscape(response.reason || '')}</div>
+  </div>`;
+}
 
 function renderPendingChat(task) {
   return `<div class="bubble warn">
@@ -130,7 +417,7 @@ function renderPendingChat(task) {
   </div>`;
 }
 
-function renderChatBubble(role, kind, text) {
+function renderChatTurn(role, kind, text) {
   const bubbleClass = role === "user" ? "user" : role === "assistant" ? "assistant" : "";
   const kindClass = kind === "warn" ? "warn" : "";
   return `<div class="bubble ${bubbleClass} ${kindClass}">
@@ -138,13 +425,167 @@ function renderChatBubble(role, kind, text) {
   </div>`;
 }
 
-function renderChainItem(stepIndex, role, kind, text) {
-  const roleLabel = role === "user" ? "Operator" : role === "assistant" ? "Assistant" : role;
-  const kindLabel = kind === "followup" ? "Follow-up" : kind === "compose" ? "Compose Answer" : kind;
-  return `<div class="planner-lab-chain-item">
-    <div class="planner-lab-chain-label">${stepIndex}. ${roleLabel}: ${kindLabel}</div>
-    <div class="planner-lab-chain-text">${htmlEscape(text)}</div>
-  </div>`;
+function renderSteps(steps) {
+  if (!steps || !Array.isArray(steps)) return "";
+  return steps.map((step, i) => {
+    const stepId = step.step_id ?? `step-${i}`;
+    const status = step.status ?? "unknown";
+    return `<div class="step-card">
+      <b>${stepId}</b>
+      <span class="muted">${status}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderCodeProducts(products) {
+  if (!products) return "";
+  return products.map(p => {
+    const target = p.target_file || "unknown";
+    const status = p.status ?? "unknown";
+    return `<div class="pill">🔧 ${target} (${status})</div>`;
+  }).join("");
+}
+
+async function copyCandidate(candidate) {
+  if (!candidate) return;
+  const text = candidate.text || "";
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("copied_candidate");
+  } catch (err) {
+    console.error("Copy failed:", err);
+  }
+}
+
+async function copyApplyToolCall(toolCall) {
+  if (!toolCall) return;
+  const text = JSON.stringify(toolCall, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("copied_tool_call");
+  } catch (err) {
+    console.error("Copy failed:", err);
+  }
+}
+
+async function applyCandidate(candidate) {
+  if (!candidate) return {ok: false, error: "No candidate"};
+  
+  const targetFile = candidate.target_file || "";
+  const oldText = candidate.old_text || "";
+  const newText = candidate.new_text || "";
+  
+  if (!targetFile || !oldText || !newText) {
+    return {ok: false, error: "Missing required fields"};
+  }
+  
+  try {
+    const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/apply_patch`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        path: targetFile,
+        old_text: oldText,
+        new_text: newText,
+      }),
+    });
+    
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return {ok: false, error: err.message};
+  }
+}
+
+function captureGuidedDraft(text) {
+  guidedDraftText = text ?? "";
+  return guidedDraftText;
+}
+
+async function composeFromPayload(payload) {
+  if (!payload) return {ok: false, error: "No payload"};
+  
+  const {instruction, conversation, summary_chars, step_limit, code_product_limit, think, persist_thread} = payload;
+  
+  try {
+    const res = await fetch(`/jobs/${encodeURIComponent(currentJobId)}/planner-lab/compose`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        instruction,
+        conversation,
+        summary_chars,
+        step_limit,
+        code_product_limit,
+        think,
+        persist_thread,
+      }),
+    });
+    
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return {ok: false, error: err.message};
+  }
+}
+
+function renderGuidedConversation(conversation) {
+  if (!conversation || !Array.isArray(conversation)) return "";
+  return conversation.map(turn => renderChatTurn(turn.role, turn.kind, turn.text)).join("");
+}
+
+function renderGuidedTurn(turn) {
+  return renderChatTurn(turn.role, turn.kind, turn.text);
+}
+
+function renderLab(jobId, payload) {
+  const panel = document.getElementById("active-job-panel");
+  if (!panel) return;
+  
+  const div = document.createElement("div");
+  div.className = "planner-lab-container";
+  div.innerHTML = `
+    <div class="planner-lab-section">
+      <h3>Job: ${htmlEscape(jobId)}</h3>
+      ${renderOwnerPayloadFocus(payload)}
+      ${renderMetrics(payload.metrics || {})}
+      ${renderInlineFields(payload.fields || {})}
+      ${renderResultRows(payload.repair_hints || payload.suggested_next_tool_calls || [])}
+      ${renderPriorityRows(payload.priority_items || [])}
+      ${renderArtifactRows(payload.artifacts || [])}
+      ${renderStructureRows(payload.structure || {})}
+      ${renderPublicToolResponse(payload.public_tool_response || {})}
+    </div>
+    
+    <div class="planner-lab-section">
+      <h3>Chat</h3>
+      ${renderGuidedConversation(payload.thread || guidedConversation)}
+      ${renderPendingChat(payload.pending_task || "")}
+    </div>
+    
+    <div class="planner-lab-section">
+      <h3>Steps</h3>
+      ${renderSteps(payload.steps || [])}
+    </div>
+    
+    <div class="planner-lab-section">
+      <h3>Code Products</h3>
+      ${renderCodeProducts(payload.code_products || [])}
+    </div>
+    
+    <div class="planner-lab-followup-panel">
+      <h4>Follow-up</h4>
+      <textarea id="planner-lab-followup" class="planner-lab-followup-input" placeholder="Enter follow-up instruction...">${guidedDraftText}</textarea>
+      <button id="planner-lab-followup-btn" class="planner-lab-followup-btn" onclick="submitFollowUp(document.getElementById('planner-lab-followup').value)">Send</button>
+    </div>
+    
+    <div class="planner-lab-chain">
+      <h4>Thread</h4>
+      ${renderThread(payload.thread || guidedConversation)}
+    </div>
+  `;
+  
+  panel.innerHTML = div.outerHTML;
 }
 
 function renderThread(thread) {
@@ -159,79 +600,25 @@ function renderThread(thread) {
   }).join("");
 }
 
-function appendThreadItem(role, kind, text) {
-  const newItem = {
-    role,
-    kind,
-    text,
-    created_at: new Date().toISOString(),
-    turn_id: ++guidedTurnCounter,
-  };
-  guidedConversation.push(newItem);
-  return newItem;
+function renderChainItem(stepIndex, role, kind, text) {
+  const roleLabel = role === "user" ? "Operator" : role === "assistant" ? "Assistant" : role;
+  const kindLabel = kind === "followup" ? "Follow-up" : kind === "compose" ? "Compose Answer" : kind;
+  return `<div class="planner-lab-chain-item">
+    <div class="planner-lab-chain-label">${stepIndex}. ${roleLabel}: ${kindLabel}</div>
+    <div class="planner-lab-chain-text">${htmlEscape(text)}</div>
+  </div>`;
 }
 
-function submitFollowUp(instruction) {
-  if (!instruction || !instruction.trim()) {
-    setStatus("followup_empty");
-    return;
-  }
-  if (guidedComposeInFlight) {
-    setStatus("compose_in_flight");
-    return;
-  }
-  guidedComposeInFlight = true;
-  setStatus("sending_followup");
-  
-  const payload = {
-    instruction: instruction.trim(),
-    conversation: guidedConversation,
-    summary_chars: 4000,
-    step_limit: 80,
-    code_product_limit: 40,
-    think: false,
-    persist_thread: true,
-  };
-  
-  fetch(`/jobs/${encodeURIComponent(currentJobId)}/planner-lab/compose`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  })
-  .then(res => res.json())
-  .then(data => {
-    guidedComposeInFlight = false;
-    if (data.ok) {
-      const threadDiv = document.getElementById("planner-lab-thread");
-      if (threadDiv) {
-        threadDiv.innerHTML = renderThread(data.thread || guidedConversation);
-      }
-      const resultDiv = document.getElementById("planner-lab-result");
-      if (resultDiv) {
-        resultDiv.innerHTML = renderChatBubble("assistant", "ok", data.answer_markdown || "");
-      }
-      if (data.follow_up_questions && data.follow_up_questions.length) {
-        const faqDiv = document.getElementById("planner-lab-faq");
-        if (faqDiv) {
-          faqDiv.innerHTML = data.follow_up_questions.map(q => 
-            `<div class="planner-lab-faq-item">❓ ${htmlEscape(q)}</div>`
-          ).join("");
-        }
-      }
-      setStatus("followup_sent_success");
-    } else {
-      const errorDiv = document.getElementById("planner-lab-error");
-      if (errorDiv) {
-        errorDiv.textContent = data.error || "Compose failed.";
-      }
-      setStatus("followup_sent_failed");
-    }
-  })
-  .catch(err => {
-    guidedComposeInFlight = false;
-    setStatus("followup_send_error");
-    console.error("Follow-up error:", err);
-  });
+// Bootstrap: handle initial job ID from URL or query param
+const urlParams = new URLSearchParams(window.location.search);
+const initialJobId = urlParams.get("job_id") || urlParams.get("id") || "";
+
+if (initialJobId) {
+  document.getElementById("job-id").value = initialJobId;
+  updateActiveJob(initialJobId, "polling");
+  startPolling();
+} else {
+  updateActiveJob("", "");
 }
 """
 
@@ -417,3 +804,7 @@ def submit_follow_up(instruction: str, job_id: str, conversation: list, persist_
         "persist_thread": persist_thread,
     }
     return payload
+
+
+def _json_pretty(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
