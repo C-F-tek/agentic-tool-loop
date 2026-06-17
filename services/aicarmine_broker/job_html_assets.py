@@ -367,7 +367,7 @@ function renderTopLevelSurface(payload) {
   div.className = "planner-lab-content";
   div.innerHTML = `
     <h3>Job Overview</h3>
-    <pre>${pretty(payload)}</pre>
+    <pre>${htmlEscape(pretty(payload))}</pre>
   `;
   return div.outerHTML;
 }
@@ -388,9 +388,9 @@ function renderResultRows(rows) {
     const statusClass = ok ? "ok" : "bad";
     const statusIcon = ok ? "✓" : "✗";
     return `<div class="step-card ${statusClass}">
-      <b>${statusIcon} ${row.tool || 'unknown'}</b>
+      <b>${htmlEscape(statusIcon)} ${htmlEscape(row.tool || 'unknown')}</b>
       <div>${htmlEscape(row.reason || '')}</div>
-      ${row.output ? `<pre>${pretty(row.output)}</pre>` : ''}
+      ${row.output ? `<pre>${htmlEscape(pretty(row.output))}</pre>` : ''}
     </div>`;
   }).join("");
   return html;
@@ -400,7 +400,7 @@ function renderOwnerPayloadFocus(payload) {
   if (!payload) return "";
   const owner = payload.owner || "unknown";
   const status = payload.status || "unknown";
-  return `<div class="pill">${owner}</div> <span class="muted">(${status})</span>`;
+  return `<div class="pill">${htmlEscape(owner)}</div> <span class="muted">(${htmlEscape(status)})</span>`;
 }
 
 function renderPriorityRows(items) {
@@ -409,8 +409,8 @@ function renderPriorityRows(items) {
     const priority = item.priority ?? "normal";
     const priorityClass = priority === "high" ? "bad" : priority === "low" ? "ok" : "";
     return `<div class="step-card ${priorityClass}">
-      <b>${item.tool || 'unknown'}</b>
-      <span class="muted">priority: ${priority}</span>
+      <b>${htmlEscape(item.tool || 'unknown')}</b>
+      <span class="muted">priority: ${htmlEscape(priority)}</span>
     </div>`;
   }).join("");
 }
@@ -439,7 +439,7 @@ function renderPublicToolResponse(response) {
   const ok = response.ok ?? false;
   const statusClass = ok ? "ok" : "bad";
   return `<div class="step-card ${statusClass}">
-    <b>${tool}</b>
+    <b>${htmlEscape(tool)}</b>
     <div>${htmlEscape(response.reason || '')}</div>
   </div>`;
 }
@@ -653,13 +653,109 @@ async function composeFromPayload() {
   }
 }
 
-function renderGuidedConversation(conversation) {
-  if (!conversation || !Array.isArray(conversation)) return "";
-  return conversation.map(turn => renderChatTurn(turn.role, turn.kind, turn.text)).join("");
+function renderGuidedConversation() {
+  const target = document.getElementById("guided-conversation");
+  if (!target) return;
+
+  const prompt = document.getElementById("guided-operator-prompt");
+  if (prompt && document.activeElement !== prompt) {
+    prompt.value = guidedDraftText;
+  }
+
+  if (!guidedConversation.length) {
+    target.innerHTML =
+      "<p class='muted'>" +
+      "Nessun follow-up. Chiedi dettagli, correzioni o integrazioni " +
+      "sulla risposta terminale." +
+      "</p>";
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="chat-grid">
+      ${guidedConversation
+        .map((turn, index) => renderGuidedTurn(turn, index + 1))
+        .join("")}
+    </div>
+  `;
 }
 
-function renderGuidedTurn(turn) {
-  return renderChatTurn(turn.role, turn.kind, turn.text);
+function renderGuidedTurn(turn, index) {
+  const role = String(turn?.role || "");
+  const status = String(turn?.status || "");
+  const isOperator = role === "operator" || role === "user";
+
+  const cssClass = isOperator
+    ? "user"
+    : status === "failed" || status === "waiting"
+      ? "warn"
+      : "assistant";
+
+  const title = isOperator
+    ? `Operator #${index}`
+    : `Payload assistant #${index}`;
+
+  const content = String(turn?.content || turn?.text || "");
+  const structured = turn?.structured_answer || {};
+
+  const structuredDetails = isOperator
+    ? ""
+    : `
+      <details open>
+        <summary>answer_markdown</summary>
+        <pre>${htmlEscape(content)}</pre>
+      </details>
+
+      <details>
+        <summary>payload assessment</summary>
+        <pre>${htmlEscape(
+          pretty(structured.payload_assessment || {})
+        )}</pre>
+      </details>
+
+      <details>
+        <summary>missing payload</summary>
+        <pre>${htmlEscape(
+          pretty(structured.missing_payload || [])
+        )}</pre>
+      </details>
+
+      <details>
+        <summary>code products / apply readiness</summary>
+        <pre>${htmlEscape(
+          pretty({
+            code_products: structured.code_products || [],
+            apply_readiness: structured.apply_readiness || {},
+          })
+        )}</pre>
+      </details>
+
+      <details>
+        <summary>thinking / raw response</summary>
+        <pre>${htmlEscape(
+          pretty({
+            thinking: turn?.thinking || "",
+            raw: turn?.raw || {},
+          })
+        )}</pre>
+      </details>
+    `;
+
+  return `
+    <div class="bubble ${cssClass}">
+      <b>${htmlEscape(title)}</b>
+      <span class="muted">
+        ${htmlEscape(status)}
+        ${htmlEscape(turn?.ts || "")}
+      </span>
+
+      ${
+        isOperator
+          ? `<pre>${htmlEscape(content)}</pre>`
+          : structuredDetails
+      }
+    </div>
+  `;
 }
 
 function renderLab(data) {
@@ -766,7 +862,6 @@ function renderChatTurnSummary(chat) {
   
   return `
     <div class="card">
-      <h2>Job conversation</h2>
       
       <div class="chat-grid">
         <div class="bubble user">
