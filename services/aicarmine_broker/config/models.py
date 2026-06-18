@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
-from typing import Any
 
 from .env_loader import EnvMapping, env_bool, env_error_context, env_first, env_float, env_int, env_int_any, env_str
 
@@ -283,9 +282,11 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
             env,
         ),
         v6_marker="public_x_v6_vulkan_select_dispatcher_execute_deterministic_wrap",
-        orientation_lane_mode=env_str(
-            "AICARMINE_ORIENTATION_LANE_MODE",
-            "legacy",
-            env,
+        orientation_lane_mode=_normalized_lane_mode(
+            env_str(
+                "AICARMINE_ORIENTATION_LANE_MODE",
+                "legacy",
+                env,
+            ),
         ),
     )
