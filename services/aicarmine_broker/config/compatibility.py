@@ -65,6 +65,10 @@ AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY: int = (
     BROKER_CONFIG.native_max_parallel_readonly
 )
 
+AICARMINE_ORIENTATION_LANE_MODE: str = (
+    BROKER_CONFIG.orientation_lane_mode
+)
+
 AGENT_DEFAULT_MAX_STEPS: int = BROKER_CONFIG.agent_default_max_steps
 AGENT_MAX_STEPS: int = BROKER_CONFIG.agent_max_steps
 AGENT_RETURN_WAIT_SECONDS: int = BROKER_CONFIG.agent_return_wait_seconds

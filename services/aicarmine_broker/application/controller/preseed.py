@@ -170,6 +170,99 @@ def controller_initial_area_list_plans(
     ]
     return plans, skipped
 
+def controller_initial_orientation_candidate_pool(
+    root_result: dict[str, Any],
+    *,
+    repo_root: Path,
+    safe_rel_path: SafeRelPath,
+    named_read_priority: Mapping[str, int],
+) -> list[dict[str, Any]]:
+    """Deterministic candidate pool for orientation.
+    Contract:
+    1. Usa esclusivamente helper già esistenti nel file:
+       - root_surface_file_paths
+       - root_surface_dir_paths
+       - initial_doc_sort_key
+       - initial_area_sort_key
+       - repo_doc_or_config
+       - low_signal_top_dir
+       - top_dir
+       - repo_existing_dir
+       - repo_existing_file
+    2. Non duplicare path-check o normalizzazione già esistenti.
+    
+    3. Candidati documento:
+       {
+           "candidate_id": "root_doc:<path normalizzato>",
+           "path": "<path>",
+           "kind": "file",
+           "candidate_class": "root_doc",
+           "static_rank": <indice intero>,
+           "signals": ["existing_file", "doc_or_config"]
+       }
+    4. Candidati directory:
+       {
+           "candidate_id": "root_area:<top-dir normalizzato>",
+           "path": "<top-dir>",
+           "kind": "dir",
+           "candidate_class": "root_area",
+           "static_rank": <indice intero>,
+           "signals": ["existing_dir", "non_low_signal"]
+       }
+    5. Requisiti:
+       - nessun path inesistente;
+       - nessun duplicato;
+       - nessuna directory low signal;
+       - documenti ordinati come l'attuale logica documentale;
+       - directory ordinate come l'attuale logica area;
+       - candidate_id stabile e derivato dal path già validato;
+       - nessun limite arbitrario a 3 in questa funzione: deve restituire il pool, non la selezione;
+       - documenti prima, directory dopo;
+       - nessun model call;
+       - nessun environment;
+       - nessun evento;
+       - nessuna scrittura su disco;
+       - nessuna modifica del root_result.
+    """
+    # Documenti
+    files = root_surface_file_paths(root_result, repo_root=repo_root, safe_rel_path=safe_rel_path)
+    docs = [path for path in files if repo_doc_or_config(path, repo_root=repo_root)]
+    docs_sorted = sorted(docs, key=lambda path: initial_doc_sort_key(path, named_read_priority=named_read_priority))
+    
+    doc_candidates: list[dict[str, Any]] = []
+    for static_rank, path in enumerate(docs_sorted):
+        if repo_existing_file(path, repo_root=repo_root, safe_rel_path=safe_rel_path):
+            doc_candidates.append({
+                "candidate_id": f"root_doc:{safe_rel_path(path)}",
+                "path": path,
+                "kind": "file",
+                "candidate_class": "root_doc",
+                "static_rank": static_rank,
+                "signals": ["existing_file", "doc_or_config"],
+            })
+    # Directory
+    dirs = root_surface_dir_paths(root_result, repo_root=repo_root, safe_rel_path=safe_rel_path)
+    valid_dirs = []
+    for path in dirs:
+        top = top_dir(path)
+        if top and not low_signal_top_dir(top) and repo_existing_dir(top, repo_root=repo_root, safe_rel_path=safe_rel_path):
+            valid_dirs.append(top)
+    
+    dirs_sorted = sorted(valid_dirs, key=initial_area_sort_key)
+    
+    dir_candidates: list[dict[str, Any]] = []
+    for static_rank, path in enumerate(dirs_sorted):
+        dir_candidates.append({
+            "candidate_id": f"root_area:{safe_rel_path(path)}",
+            "path": path,
+            "kind": "dir",
+            "candidate_class": "root_area",
+            "static_rank": static_rank,
+            "signals": ["existing_dir", "non_low_signal"],
+        })
+    # Unisci: documenti prima, directory dopo
+    return doc_candidates + dir_candidates
+
 
 def list_result_file_paths(
     result: dict[str, Any],
@@ -194,7 +287,6 @@ def list_result_file_paths(
                     paths.append(path)
     return paths
 
-
 def initial_area_file_sort_key(
     path: str,
     *,
@@ -211,7 +303,6 @@ def initial_area_file_sort_key(
     else:
         kind_rank = 2
     return (priority, kind_rank, p.lower())
-
 
 def controller_initial_area_read_plan(
     list_result: dict[str, Any],

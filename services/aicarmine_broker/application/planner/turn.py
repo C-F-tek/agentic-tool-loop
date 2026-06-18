@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
+from ..planner.lane_catalog import control_lane_event_metadata
 from ..prompt.pack_builder import explicit_request_context_from_state
 from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
@@ -462,6 +463,21 @@ def planner_decision(
 
     goal = str(state.get("goal") or "")
     planner_role_override = _planner_role_override_from_state(state)
+
+    # Compute planner_lane_id based on planner_role_override
+    if planner_role_override and planner_role_override.get("role") == "planner_cuda_rewrite":
+        planner_lane_id = "planner.cuda_rewrite"
+        trigger = "planner_role_override"
+    else:
+        planner_lane_id = "planner.primary"
+        trigger = "planner_turn"
+
+    planner_lane_metadata = control_lane_event_metadata(
+        planner_lane_id,
+        step=step,
+        attempt=1,
+        trigger=trigger,
+    )
     if _input_error_goal(goal):
         return {
             "action": "block",
@@ -954,6 +970,7 @@ def planner_decision(
             "runtime_roots": runtime_roots,
             "runtime_roots_mismatch": runtime_roots_mismatch,
             "planner_payload_capture": prompt_capture,
+            "lane": planner_lane_metadata,
         },
         step=step,
     )
