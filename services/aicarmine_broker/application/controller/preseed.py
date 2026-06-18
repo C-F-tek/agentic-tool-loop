@@ -245,7 +245,7 @@ def controller_initial_orientation_candidate_pool(
     valid_dirs = []
     for path in dirs:
         top = top_dir(path)
-        if top and not low_signal_top_dir(top) and repo_existing_dir(top, repo_root=repo_root, safe_rel_path=safe_rel_path):
+        if top and top not in valid_dirs and not low_signal_top_dir(top) and repo_existing_dir(top, repo_root=repo_root, safe_rel_path=safe_rel_path):
             valid_dirs.append(top)
     
     dirs_sorted = sorted(valid_dirs, key=initial_area_sort_key)
