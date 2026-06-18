@@ -196,31 +196,52 @@ Project memory is secondary evidence:
 
 ## MCP Failure Diagnosis
 
-When an MCP call fails:
+## Project Memory Warmup
 
-1. Preserve the exact server, tool, arguments and error.
-2. Call the relevant health tool when available.
-3. Use `aicarmine_mcp_inventory_probe` when appropriate.
-4. Distinguish:
+At the start of every repository task, after reading the applicable
+`AGENTS.md` and required contracts and after confirming repository
+state:
 
-   * process startup failure;
-   * Python import failure;
-   * environment failure;
-   * MCP initialization failure;
-   * discovery failure;
-   * invalid arguments;
-   * tool execution failure;
-   * timeout;
-   * client routing failure.
+1. Call `aicarmine_project_memory_health`.
+2. Search active project memory for the exact key
+   `project.memory.manifest`.
+3. Select only an exact key match and retrieve it through its
+   `record_id`.
+4. Load the manifest records assigned to the `always` warmup group.
+5. Load additional records whose warmup group matches the current task.
+6. For control-lane work, also load:
+   * `project.architecture.stable_owners`;
+   * `initiative.control_lanes.target_architecture`;
+   * `initiative.control_lanes.inventory_summary`;
+   * `initiative.control_lanes.current_handoff`.
+7. Keep the warmup bounded. Do not load every memory record.
+8. Prefer the `record_id` returned by search over scope/key lookup so
+   branch-specific records are not resolved ambiguously.
+9. Use only active records. Do not silently use stale, superseded or
+   rejected memory.
+10. Treat memory as orientation and historical context, not as proof of
+    current source or runtime behavior.
+11. Reconfirm load-bearing memory claims using current source, Git or
+    runtime evidence.
+12. `source_ok=true` proves only that a source is reachable; it does not
+    prove that the stored memory is still semantically current.
+13. When memory conflicts with current evidence, follow current
+    evidence and report the record as a stale candidate.
+14. Do not call `upsert_verified`, `mark_stale` or `supersede` during a
+    normal task. Memory writes require a dedicated memory-maintenance
+    task explicitly authorized by Carmine.
+15. Run `audit_sources` only when source validity is relevant or memory
+    is load-bearing; do not run a full audit mechanically on every task.
+16. In the final report list the memory keys and record IDs actually
+    used, plus any records ignored because they were stale, conflicting,
+    branch-inapplicable or insufficiently verified.
 
-For `Connection closed`, inspect the child process exit code and `stderr` before blaming Cline.
+If project memory is unavailable:
 
-Do not classify a failure as a client bug until the server passes:
-
-1. process startup;
-2. MCP `initialize`;
-3. `tools/list`;
-4. the relevant `tools/call`.
+* preserve the concrete MCP error;
+* continue using current repository and runtime evidence;
+* do not replace project memory with direct SQLite access;
+* do not create an ad hoc memory file, database or wrapper.
 
 ## Fallback Policy
 
