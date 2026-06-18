@@ -194,8 +194,6 @@ Project memory is secondary evidence:
 
 `live runtime > current source > current Git state > verified memory > plausible explanation`
 
-## MCP Failure Diagnosis
-
 ## Project Memory Warmup
 
 At the start of every repository task, after reading the applicable
@@ -242,6 +240,35 @@ If project memory is unavailable:
 * continue using current repository and runtime evidence;
 * do not replace project memory with direct SQLite access;
 * do not create an ad hoc memory file, database or wrapper.
+
+## MCP Failure Diagnosis
+
+When an MCP call fails:
+
+1. Preserve the exact server, tool, arguments and error.
+2. Call the relevant health tool when available.
+3. Use `aicarmine_mcp_inventory_probe` when appropriate.
+4. Distinguish:
+
+   * process startup failure;
+   * Python import failure;
+   * environment failure;
+   * MCP initialization failure;
+   * discovery failure;
+   * invalid arguments;
+   * tool execution failure;
+   * timeout;
+   * client routing failure.
+
+For `Connection closed`, inspect the child process exit code and
+`stderr` before blaming Cline.
+
+Do not classify a failure as a client bug until the server passes:
+
+1. process startup;
+2. MCP `initialize`;
+3. `tools/list`;
+4. the relevant `tools/call`.
 
 ## Fallback Policy
 
