@@ -69,11 +69,97 @@ If behavior reappears, investigate stale processes, cache, duplicate configurati
 
 ## MCP-First Policy
 
-Use the AICarmine MCP tool that owns the operation before Cline built-in tools or terminal commands.
+POLICY MCP DELLA TASK
 
-The current MCP `tools/list` result is authoritative. Do not assume availability from old configuration or documentation.
+Cline ha accesso ai server MCP della repository. Usa MCP come superficie primaria, ma soltanto entro lo scope della task.
 
-Do not treat `resources/list` or `resources/read` failures as proof that a server is broken. AICarmine servers primarily expose tools.
+Regole:
+
+Non usare resources/list come prova di disponibilità.
+Usa tools/list o i tool health/capabilities specifici soltanto quando serve verificare il server.
+Non attivare il loop agentico della repository.
+Non usare local_subagent per delegare la task: il modello corrente è già l’esecutore.
+Non usare tool state-mutating, memory write o project-memory write salvo autorizzazione esplicita.
+Non usare RAG come prova finale di una proprietà del codice.
+Ogni risultato RAG rilevante deve essere confermato tramite ricerca deterministica e lettura del file reale.
+Non usare la disponibilità degli MCP per ampliare file, simboli o obiettivi autorizzati.
+Non applicare patch tramite shell se repo_code offre già propose/edit validation/apply per quella modifica.
+Non dichiarare una verifica riuscita sulla base del solo output del modello o del RAG.
+
+Ordine preferenziale:
+
+A. aicarmine_repo_state
+
+verifica repository root, branch, commit e stato runtime;
+usa health/status/capabilities quando necessario.
+
+B. aicarmine_rag
+
+usa per orientamento semantico, owner candidati e relazioni cross-file;
+query piccole e focalizzate;
+conserva query, risultati e score rilevanti;
+non trattare un risultato RAG come evidenza conclusiva.
+
+C. aicarmine_repo_search_det
+
+usa rg/fd/ctags/tree-sitter/ast-grep per:
+definizioni,
+caller,
+reader,
+writer,
+import,
+assegnazioni,
+delete/pop/reset,
+riferimenti testuali esatti.
+
+D. aicarmine_git_readonly
+
+usa log/show/diff/blame/branch_compare quando la task richiede storia o regressioni;
+non dedurre il comportamento corrente dal solo codice storico.
+
+E. aicarmine_repo_code
+
+usa propose_edit/unidiff_validate/git_apply_check/apply_patch;
+prima valida la patch;
+applica soltanto ai file autorizzati;
+non generare file patch temporanei nel repository.
+
+F. aicarmine_repo_validate
+
+usa diffcheck e le verifiche mirate disponibili;
+non eseguire l’intera suite se la task richiede soltanto una verifica locale;
+non modificare test per ottenere esito verde.
+
+G. aicarmine_job_artifact e aicarmine_job_view
+
+usa soltanto per verificare job, eventi, planner payload, rejection, final e artifact reali;
+non usarli durante patch puramente statiche se non necessari.
+
+H. aicarmine_sqlite_readonly
+
+usa soltanto per verifiche read-only su DB già autorizzati;
+nessuna query mutante.
+
+I. aicarmine_project_memory
+
+search/get consentiti quando pertinenti;
+upsert, supersede, mark_stale o altre scritture vietate salvo task esplicita.
+
+Per ogni evidenza riporta:
+
+tool MCP usato;
+query o simbolo cercato;
+risultato rilevante;
+file e linee confermate deterministicamente;
+eventuale discrepanza tra RAG e codice reale.
+
+Se un MCP fallisce:
+
+registra il fallimento concreto;
+prova il tool deterministico equivalente, se esiste;
+non inventare il risultato;
+non creare nuovi wrapper;
+non correggere il server MCP salvo che sia l’obiettivo esplicito della task.
 
 ### Routing
 
