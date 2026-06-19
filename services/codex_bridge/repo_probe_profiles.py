@@ -690,6 +690,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
                 ],
             },
         ]
+        candidates_before = deepcopy(candidates)
 
         def capture_request(url, body, timeout):
             return {
@@ -727,14 +728,13 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         assert candidate.get("static_rank") == 0, candidate
 
         signals = candidate.get("signals", [])
-        # Dopo la normalizzazione, i signal composti da un singolo carattere vengono esclusi.
-        # Solo "normal" rimane dopo strip.
+        # Preserve every non-empty bounded string after strip.
+        # Do not apply semantic filtering based on repeated characters.
         expected_signals = ["x", "aaa", "normal", "z" * 80]
         assert signals == expected_signals, f"Expected {expected_signals!r}, got {signals!r}"
         assert all(len(s) <= 80 for s in signals), signals
         assert all(s for s in signals), signals
 
-        candidates_before = deepcopy(candidates)
         assert candidates == candidates_before, (candidates, candidates_before)
 
         return {}
