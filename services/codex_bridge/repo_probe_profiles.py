@@ -727,12 +727,12 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         assert candidate.get("static_rank") == 0, candidate
 
         signals = candidate.get("signals", [])
-        assert len(signals) == 3, f"Expected 3 signals, got {len(signals)}"
-        assert signals[0] == "x", f"Expected 'x', got {signals[0]!r}"
-        assert signals[1] == "aaa", f"Expected 'aaa', got {signals[1]!r}"
-        assert signals[2] == "normal", f"Expected 'normal', got {signals[2]!r}"
+        # Dopo la normalizzazione, i signal composti da un singolo carattere vengono esclusi.
+        # Solo "normal" rimane dopo strip.
+        assert len(signals) == 1, f"Expected 1 signal after filtering, got {len(signals)}"
+        assert signals[0] == "normal", f"Expected 'normal', got {signals[0]!r}"
         assert all(len(s) <= 80 for s in signals), signals
-        assert not any(s == "" for s in signals), signals
+        assert all(s for s in signals), signals
 
         candidates_before = deepcopy(candidates)
         assert candidates == candidates_before, (candidates, candidates_before)
