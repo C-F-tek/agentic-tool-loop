@@ -123,6 +123,9 @@ E. aicarmine_repo_code
 usa propose_edit/unidiff_validate/git_apply_check/apply_patch;
 prima valida la patch;
 applica soltanto ai file autorizzati;
+considera la unified diff il change-set canonico: inviala a `propose_edit`,
+poi propaga il `change_set_id` restituito alle chiamate successive;
+non ricostruire o riscrivere file completi per trasferire la modifica tra tool;
 non generare file patch temporanei nel repository.
 
 F. aicarmine_repo_validate
@@ -363,6 +366,11 @@ Required MCP patch sequence:
 4. `aicarmine_repo_code_apply_patch`
 
 Do not call `apply_patch` before both validation and apply-check succeed.
+
+For unified-diff changes, pass the complete diff once to `propose_edit` and use
+the returned `change_set_id` for steps 2-4. Inline diffs remain supported, and
+the legacy exact `path`/`old_text`/`new_text` apply mode remains available.
+Never substitute a whole-file rewrite for a propagatable change-set.
 
 After editing:
 

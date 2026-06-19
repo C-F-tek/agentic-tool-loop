@@ -177,20 +177,38 @@ def run_argv(
     cwd: Path | None = None,
     timeout: int = COMMAND_TIMEOUT_SECONDS,
     stdin: str | None = None,
+    stdin_bytes: bytes | None = None,
 ) -> dict[str, Any]:
+    if stdin is not None and stdin_bytes is not None:
+        return {
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
+            "stdout_tail": "",
+            "stderr_tail": "",
+            "timed_out": False,
+            "error": "stdin and stdin_bytes are mutually exclusive",
+            "error_type": "ValueError",
+        }
     try:
-        completed = subprocess.run(
-            argv,
-            cwd=str((cwd or LAB_REPO).resolve(strict=False)),
-            input=stdin,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-        stdout = strip_terminal_ansi(completed.stdout)
-        stderr = strip_terminal_ansi(completed.stderr)
+        common_kwargs: dict[str, Any] = {
+            "cwd": str((cwd or LAB_REPO).resolve(strict=False)),
+            "capture_output": True,
+            "timeout": timeout,
+        }
+        if stdin_bytes is not None:
+            completed = subprocess.run(argv, input=stdin_bytes, **common_kwargs)
+        else:
+            completed = subprocess.run(
+                argv,
+                input=stdin,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                **common_kwargs,
+            )
+        stdout = strip_terminal_ansi(subprocess_text(completed.stdout))
+        stderr = strip_terminal_ansi(subprocess_text(completed.stderr))
         return {
             "returncode": completed.returncode,
             "stdout": bounded_text(stdout),

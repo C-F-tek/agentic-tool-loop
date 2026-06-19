@@ -30,7 +30,8 @@ ownership and runtime constraints.
 | `repo_state_mcp_server.py` | Dedicated deterministic repo-state MCP server exposing health, status and capability tools. It imports broker repo-status helpers only after `repo_mcp_common.py` has normalized the MCP process root. |
 | `repo_search_det_mcp_server.py` | Dedicated deterministic repo-search MCP server exposing fd/rg/jq/ast-grep/tree-sitter/ctags helpers. It is tool-only and uses the Codex-selected root, not the OpenWebUI lab shadow. |
 | `repo_validate_mcp_server.py` | Dedicated deterministic repo-validation MCP server exposing diffcheck, ruff, pyright, shellcheck and semgrep helpers. It is tool-only and does not call broker HTTP or the agentic loop. Pytest/test execution is not an active default workflow and must not be used unless Carmine explicitly asks. |
-| `repo_code_mcp_server.py` | Incubating repo-code MCP server for candidate code-edit tools. It stays separate from the stable repo MCPs, exposes proposal/diff-check helpers as report-only tools and exposes exact `old_text` to `new_text` source patching only when `allow_source_write=true` is supplied. |
+| `repo_code_change_set.py` | Content-addressed unified-diff owner for the incubating repo-code MCP. It normalizes and validates bounded text diffs, records repository/commit/preimage metadata under ignored `state/repo_code/change_sets/`, and resolves verified `change_set_id` values without exposing arbitrary filesystem paths. |
+| `repo_code_mcp_server.py` | Incubating repo-code MCP server for candidate code-edit tools. It stays separate from stable MCPs, propagates unified diffs through verified change-set IDs, preserves exact `old_text`/`new_text`, and requires `allow_source_write=true` for both exact and atomic multi-file apply modes. |
 | `ops_mcp_server.py` | Incubating Codex ops MCP server for local MCP inventory and service-state inspection. It reads Windows process/port/log state without HTTP probes and redacts command-line secrets before returning process rows. It does not own project test/smoke scripts. |
 | `sqlite_readonly_mcp_server.py` | Dedicated read-only SQLite MCP server for Codex diagnostics. It lists allowlisted repo-local SQLite databases, reads schemas and runs bounded single-statement `SELECT`/`WITH` queries only. It opens databases with SQLite read-only mode, blocks write keywords, rejects user PRAGMA, enforces row/time/cell limits and never calls broker HTTP or the agentic loop. |
 | `job_artifact_mcp_server.py` | Dedicated read-only job artifact MCP server. It reads persisted filesystem artifacts under allowlisted job roots such as `qwen-agent-workspace/vulkan-broker/agent-jobs`, normalizes `job.json`, `events.ndjson`, `final.json`, `tool-results/` and `planner-prompts/` payloads, and does not call 3571, 3572 or `vulkan_helper`. |
@@ -75,7 +76,9 @@ ownership and runtime constraints.
 - `repo_code_mcp_server.py` is an incubator, not a promotion into the stable
   state/search/validation MCPs. New code-edit tools should live there first
   with explicit write flags and concrete runtime evidence before being moved
-  into a semantic MCP server.
+  into a semantic MCP server. A unified diff is persisted once as a verified
+  change-set and its ID is propagated through proposal, validation, apply-check
+  and apply; callers must not rebuild whole files between those phases.
 - `ops_mcp_server.py` is an incubator for Codex-side operational checks only.
   Its service-state tools must not call `/health`, 3571, 3572,
   `vulkan_helper` or the agentic loop. MCP inventory probes are allowlisted

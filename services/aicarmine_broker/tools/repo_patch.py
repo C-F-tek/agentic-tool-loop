@@ -7,7 +7,12 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error
+from aicarmine_broker.tools.deterministic_common import (
+    bounded_int_arg,
+    deterministic_input_error,
+    resolve_deterministic_executable,
+    run_argv,
+)
 
 
 def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -73,8 +78,8 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     safe_name = rel.replace("/", "__").replace("\\", "__")
     backup = root / "artifacts" / f"{safe_name}.{now()}.before.txt"
     backup.parent.mkdir(parents=True, exist_ok=True)
-    backup.write_text(original, encoding="utf-8")
-    full.write_text(updated, encoding="utf-8")
+    backup.write_bytes(original_bytes)
+    full.write_text(updated, encoding="utf-8", newline="")
     after_bytes = full.read_bytes()
     after_sha256 = hashlib.sha256(after_bytes).hexdigest()
 
@@ -107,6 +112,194 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "backup_artifact": str(backup),
     }
     write_json(root / "tool-results" / f"{now()}-repo_apply_patch.json", payload)
+    return payload
+
+
+def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    from repo_code_change_set import (
+        normalize_unified_diff_text,
+        verify_change_set_preimages,
+    )
+
+    diff_text = args.get("unified_diff")
+    metadata = args.get("_change_set_metadata")
+    change_set_id = str(args.get("change_set_id") or "").strip()
+    if not isinstance(diff_text, str) or not diff_text.strip():
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "missing_unified_diff",
+        }
+    if not isinstance(metadata, dict) or not change_set_id:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "missing_resolved_change_set",
+        }
+
+    mismatches = verify_change_set_preimages(root, metadata)
+    if mismatches:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "change_set_preimage_mismatch",
+            "change_set_id": change_set_id,
+            "mismatches": mismatches,
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    git_executable = resolve_deterministic_executable("git")
+    if not git_executable:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "git_not_available",
+        }
+
+    normalized_diff = normalize_unified_diff_text(diff_text)
+    diff_bytes = normalized_diff.encode("utf-8")
+    check_result = run_argv(
+        [git_executable, "apply", "--check", "--whitespace=error", "-"],
+        cwd=root,
+        timeout=120,
+        stdin_bytes=diff_bytes,
+    )
+    if check_result.get("returncode") != 0:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "git_apply_check_failed",
+            "change_set_id": change_set_id,
+            "returncode": check_result.get("returncode"),
+            "stdout_tail": check_result.get("stdout_tail", ""),
+            "stderr_tail": check_result.get("stderr_tail", ""),
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    backup_root = root / "state" / "repo_code" / "backups" / f"{change_set_id}-{now()}"
+    backup_root.mkdir(parents=True, exist_ok=True)
+    backup_records: list[dict[str, Any]] = []
+    for item in metadata.get("files") if isinstance(metadata.get("files"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        relative_path = str(item.get("path") or "")
+        full_path = (root / relative_path).resolve(strict=False)
+        full_path.relative_to(root.resolve())
+        if full_path.is_file():
+            backup_path = backup_root / f"{relative_path}.before"
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            backup_path.write_bytes(full_path.read_bytes())
+            backup_records.append(
+                {
+                    "path": relative_path,
+                    "existed": True,
+                    "backup_path": str(backup_path),
+                }
+            )
+        else:
+            backup_records.append(
+                {
+                    "path": relative_path,
+                    "existed": False,
+                    "backup_path": None,
+                }
+            )
+
+    apply_result = run_argv(
+        [git_executable, "apply", "--whitespace=error", "-"],
+        cwd=root,
+        timeout=120,
+        stdin_bytes=diff_bytes,
+    )
+    rollback_performed = False
+    if apply_result.get("returncode") != 0:
+        for record in backup_records:
+            full_path = (root / record["path"]).resolve(strict=False)
+            full_path.relative_to(root.resolve())
+            if record["existed"]:
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                full_path.write_bytes(Path(str(record["backup_path"])).read_bytes())
+            elif full_path.exists() and full_path.is_file():
+                full_path.unlink()
+        rollback_performed = True
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "git_apply_failed",
+            "change_set_id": change_set_id,
+            "returncode": apply_result.get("returncode"),
+            "stdout_tail": apply_result.get("stdout_tail", ""),
+            "stderr_tail": apply_result.get("stderr_tail", ""),
+            "rollback_performed": rollback_performed,
+            "backup_root": str(backup_root),
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    modified_paths: list[str] = []
+    added_paths: list[str] = []
+    file_results: list[dict[str, Any]] = []
+    changed = False
+    for item in metadata.get("files") if isinstance(metadata.get("files"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        relative_path = str(item.get("path") or "")
+        full_path = (root / relative_path).resolve(strict=False)
+        full_path.relative_to(root.resolve())
+        after_bytes = full_path.read_bytes()
+        after_sha256 = hashlib.sha256(after_bytes).hexdigest()
+        before_sha256 = item.get("preimage_sha256")
+        item_changed = before_sha256 != after_sha256
+        changed = changed or item_changed
+        if item.get("change_type") == "added":
+            added_paths.append(relative_path)
+        else:
+            modified_paths.append(relative_path)
+        file_results.append(
+            {
+                "path": relative_path,
+                "change_type": item.get("change_type"),
+                "before_sha256": before_sha256,
+                "after_sha256": after_sha256,
+                "line_count_before": item.get("preimage_line_count"),
+                "line_count_after": len(
+                    after_bytes.decode("utf-8", errors="replace").splitlines()
+                ),
+            }
+        )
+
+    payload = {
+        "ok": True,
+        "tool": "repo_apply_unified_diff",
+        "change_set_id": change_set_id,
+        "write_scope": "unified_diff",
+        "changed": changed,
+        "modified_paths": modified_paths,
+        "added_paths": added_paths,
+        "files": file_results,
+        "backup_root": str(backup_root),
+        "rollback_performed": rollback_performed,
+        "post_write_validation_required": changed,
+        "validation_candidates": (
+            [
+                {
+                    "tool": "repo_validate",
+                    "arguments": {
+                        "paths": [*modified_paths, *added_paths],
+                        "timeout_seconds": 300,
+                    },
+                    "reason": "validate_modified_files_after_repo_apply_unified_diff",
+                }
+            ]
+            if changed
+            else []
+        ),
+    }
+    artifact = root / "tool-results" / f"{now()}-repo_apply_unified_diff.json"
+    write_json(artifact, payload)
+    payload["artifact"] = str(artifact)
     return payload
 
 

@@ -7,6 +7,63 @@ from aicarmine_broker.config import LAB_REPO, parse_bool
 from aicarmine_broker.job_store import now, write_json
 
 
+def repo_propose_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    from repo_code_change_set import (
+        change_set_error_payload,
+        public_change_set_fields,
+        resolve_change_set,
+    )
+
+    rationale = str(args.get("rationale") or args.get("reason") or "").strip()
+    edit_kind = str(args.get("edit_kind") or "unified_diff").strip()
+    if edit_kind != "unified_diff":
+        return {
+            "ok": False,
+            "tool": "repo_propose_unified_diff",
+            "error": "edit_kind_invalid_for_change_set",
+            "allowed": ["unified_diff"],
+            "actual": edit_kind,
+        }
+    if not rationale:
+        return {
+            "ok": False,
+            "tool": "repo_propose_unified_diff",
+            "error": "rationale_missing",
+        }
+
+    try:
+        change_set = resolve_change_set(args, root)
+    except Exception as exc:
+        return change_set_error_payload("repo_propose_unified_diff", exc)
+
+    validation_commands = (
+        [str(command) for command in args.get("validation_commands") if str(command).strip()]
+        if isinstance(args.get("validation_commands"), list)
+        else ["git diff --check"]
+    )
+    payload = {
+        "ok": True,
+        "tool": "repo_propose_unified_diff",
+        **public_change_set_fields(change_set, "proposed"),
+        "kind": "unified_diff_proposal",
+        "proposal_mode": "multi_file_unified_diff",
+        "edit_kind": "unified_diff",
+        "rationale": rationale,
+        "source_writes_performed": False,
+        "patch_application_performed": False,
+        "manual_review_required": True,
+        "validation_commands": validation_commands,
+        "diff_inline": False,
+        "change_set_resolvable": True,
+        "errors": [],
+        "warnings": [],
+    }
+    artifact = root / "tool-results" / f"{now()}-repo_propose_unified_diff.json"
+    write_json(artifact, payload)
+    payload["artifact"] = str(artifact)
+    return payload
+
+
 def repo_propose_code_edit(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         from aicarmine_broker.code_edit_proposal_contract import build_code_edit_proposal
