@@ -9,10 +9,65 @@ No filesystem access, no dispatch, no events, no state modification.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 
-PostJson = Any  # type: ignore[assignment]
+PostJson = Callable[
+    [str, dict[str, Any], int],
+    dict[str, Any],
+]
+
+
+def _extract_orientation_response_object(
+    response: Any,
+) -> tuple[dict[str, Any] | None, str]:
+    """Extract Ollama response object from envelope.
+
+    Contract:
+    - se response non è dict: restituisce (None, "response_not_dict");
+    - se response contiene già una decisione top-level valida: può restituire direttamente;
+    - altrimenti estrae testo in quest'ordine:
+      response["response"]
+      response["message"]["content"]
+      response["partial_content"]
+    - se il testo è vuoto: restituisce (None, "empty_model_content");
+    - esegue json.loads sul testo completo;
+    - accetta soltanto un oggetto JSON dict;
+    - JSON invalido: restituisce (None, "invalid_json_response");
+    - JSON valido ma non dict: restituisce (None, "json_response_not_object");
+    - non recuperare oggetti embedded da prosa;
+    - non usare regex;
+    - non fare JSON repair;
+    - non sollevare eccezioni per output modello invalido.
+    """
+    if not isinstance(response, dict):
+        return None, "response_not_dict"
+
+    # Prova a restituire direttamente se è già un decision object
+    if response.get("decision") == "select":
+        return response, "direct_decision"
+
+    # Estrai testo in ordine
+    text = (
+        response.get("response")
+        or response.get("message", {}).get("content")
+        or response.get("partial_content")
+        or ""
+    )
+
+    if not text:
+        return None, "empty_model_content"
+
+    try:
+        decoded = json.loads(text)
+    except json.JSONDecodeError:
+        return None, "invalid_json_response"
+
+    if not isinstance(decoded, dict):
+        return None, "json_response_not_object"
+
+    return decoded, "parsed_json_object"
 
 
 def sanitize_orientation_selection(
@@ -57,9 +112,6 @@ def sanitize_orientation_selection(
         "duplicate_candidate_ids": [],
         "rationale": "",
         "confidence": None,
-        "planner_model": "",
-        "planner_url": "",
-        "timeout_seconds": 0,
     }
 
     # Non è un dict => invalid
@@ -113,17 +165,8 @@ def sanitize_orientation_selection(
     if not isinstance(rationale, str):
         rationale = ""
     confidence = value.get("confidence")
-    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+    if not isinstance(confidence, bool) and (not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1):
         confidence = None
-    planner_model = value.get("planner_model", "")
-    if not isinstance(planner_model, str):
-        planner_model = ""
-    planner_url = value.get("planner_url", "")
-    if not isinstance(planner_url, str):
-        planner_url = ""
-    timeout_seconds = value.get("timeout_seconds", 0)
-    if not isinstance(timeout_seconds, int):
-        timeout_seconds = 0
 
     # Ok solo se abbiamo almeno un ID valido selezionato
     if not selected:
@@ -138,9 +181,6 @@ def sanitize_orientation_selection(
     result["duplicate_candidate_ids"] = duplicates
     result["rationale"] = rationale
     result["confidence"] = confidence
-    result["planner_model"] = planner_model
-    result["planner_url"] = planner_url
-    result["timeout_seconds"] = timeout_seconds
 
     return result
 
@@ -197,9 +237,6 @@ def controller_orientation_model_select(
         "duplicate_candidate_ids": [],
         "rationale": "",
         "confidence": None,
-        "planner_model": "",
-        "planner_url": "",
-        "timeout_seconds": 0,
     }
 
     # Valid candidate ids dai candidates
@@ -213,15 +250,56 @@ def controller_orientation_model_select(
         result["rationale"] = "no_valid_candidates_in_pool"
         return result
 
-    # Costruisci prompt bounded
-    # Nessun tool schema, nessuna tool call, nessun file content, nessuna history completa
-    prompt_text = (
-        f"Select only candidate_ids from this pool for goal: {goal!r}. "
-        f"Semantic intent: {json.dumps(semantic_intent, ensure_ascii=False)[:500]!r}. "
-        f"Available candidate_ids: {', '.join(valid_candidate_ids)[:200]!r}. "
-        f"Respond ONLY with JSON: {{\"decision\": \"select\", \"selected_candidate_ids\": [...]}}. "
-        f"Do NOT generate paths, tools, or explanations."
-    )
+    # Preserva ordine dei candidati
+    ordered_candidate_ids: list[str] = []
+    seen_candidate_ids: set[str] = set()
+    prompt_candidates: list[dict[str, Any]] = []
+    for candidate in candidates:
+        cid = str(candidate.get("candidate_id") or "")
+        if cid and cid not in seen_candidate_ids:
+            seen_candidate_ids.add(cid)
+            prompt_candidates.append({
+                "candidate_id": cid,
+                "kind": candidate.get("kind", "file"),
+                "candidate_class": candidate.get("candidate_class", "root_doc"),
+                "static_rank": candidate.get("static_rank", 0),
+                "signals": [
+                    s for s in (candidate.get("signals") or [])
+                    if isinstance(s, str) and s and len(s) <= 80
+                ][:8],
+            })
+
+    # Bound goal
+    goal_bounded = str(goal)[:4000]
+
+    # Bound semantic_intent
+    semantic_intent_raw = json.dumps(semantic_intent, ensure_ascii=False)
+    if len(semantic_intent_raw) > 4000:
+        semantic_intent_bounded = {
+            "truncated": True,
+            "preview": semantic_intent_raw[:4000],
+        }
+    else:
+        semantic_intent_bounded = semantic_intent
+
+    orientation_request = {
+        "schema": "orientation_model_selection_request.v1",
+        "goal": goal_bounded,
+        "semantic_intent": semantic_intent_bounded,
+        "candidates": prompt_candidates,
+        "required_output": {
+            "decision": "select",
+            "selected_candidate_ids": ["candidate_id"],
+            "rationale": "short rationale",
+            "confidence": 0.0,
+        },
+        "constraints": [
+            "Choose only candidate_id values present in candidates.",
+            "Do not generate paths.",
+            "Do not generate tools.",
+            "Do not answer the repository task.",
+        ],
+    }
 
     # Request body
     request_body: dict[str, Any] = {
@@ -233,29 +311,59 @@ def controller_orientation_model_select(
             },
             {
                 "role": "user",
-                "content": prompt_text,
+                "content": json.dumps(orientation_request, ensure_ascii=False, default=str),
             },
         ],
         "format": "json",
         "stream": False,
         "think": False,
-        "temperature": 0,
+        "options": {
+            "temperature": 0,
+        },
+        "keep_alive": keep_alive,
     }
 
     # POST
     try:
         response = post_json(planner_url, request_body, timeout_seconds)
     except Exception:
-        result["rationale"] = "backend_error"
+        result["rationale"] = "backend_exception"
+        result["error_type"] = type(Exception).__name__
+        result["error"] = ""
+        result["planner_model"] = planner_model
+        result["planner_url"] = planner_url
+        result["timeout_seconds"] = timeout_seconds
+        result["keep_alive"] = keep_alive
         return result
 
     if not isinstance(response, dict):
         result["rationale"] = "response_not_dict"
+        result["planner_model"] = planner_model
+        result["planner_url"] = planner_url
+        result["timeout_seconds"] = timeout_seconds
+        result["keep_alive"] = keep_alive
         return result
+
+    # Estrai oggetto Ollama
+    extracted, extraction_reason = _extract_orientation_response_object(response)
+
+    if extracted is None:
+        result["rationale"] = extraction_reason
+        result["planner_model"] = planner_model
+        result["planner_url"] = planner_url
+        result["timeout_seconds"] = timeout_seconds
+        result["keep_alive"] = keep_alive
+        return result
+
+    # Applica metadata autorevoli
+    extracted["planner_model"] = planner_model
+    extracted["planner_url"] = planner_url
+    extracted["timeout_seconds"] = timeout_seconds
+    extracted["keep_alive"] = keep_alive
 
     # Sanitize
     return sanitize_orientation_selection(
-        response,
+        extracted,
         valid_candidate_ids=valid_candidate_ids,
         max_selected=max_selected,
     )
