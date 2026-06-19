@@ -24,6 +24,52 @@ _PROFILE_SPECS: tuple[dict[str, Any], ...] = (
         "network_calls": False,
         "source_writes": False,
         "arbitrary_python": False,
+        "properties": [
+            {
+                "name": "valid_ollama_envelope_and_request",
+                "description": "Valid Ollama envelope and request body structure",
+            },
+            {
+                "name": "model_selection_never_escapes_allowlist",
+                "description": "Model selection stays within authorized candidate pool",
+            },
+            {
+                "name": "runtime_metadata_cannot_be_forged",
+                "description": "Runtime metadata cannot be forged by model output",
+            },
+            {
+                "name": "empty_authorized_pool_skips_backend",
+                "description": "Empty authorized pool skips backend call",
+            },
+            {
+                "name": "input_and_model_duplicates_are_distinct",
+                "description": "Input and model duplicates are tracked separately",
+            },
+            {
+                "name": "first_non_empty_ollama_content_precedence",
+                "description": "First non-empty Ollama content field takes precedence",
+            },
+            {
+                "name": "candidate_prompt_fields_are_bounded",
+                "description": "Candidate prompt fields are bounded before sending to model",
+            },
+            {
+                "name": "valid_bounded_signals_are_preserved",
+                "description": "Valid bounded signals are preserved in prompt",
+            },
+            {
+                "name": "backend_errors_are_bounded",
+                "description": "Backend errors are bounded in size",
+            },
+            {
+                "name": "extractor_never_raises_for_json_like_values",
+                "description": "Extractor never raises for JSON-like values",
+            },
+            {
+                "name": "sanitizer_never_escapes_allowlist",
+                "description": "Sanitizer never escapes allowlist",
+            },
+        ],
     },
 )
 
@@ -450,6 +496,250 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         return {}
 
     cases.append(_case("direct_dict_compatibility", direct_dict_compatibility))
+
+    def first_non_empty_ollama_content() -> dict[str, Any]:
+        """Caso: first_non_empty_ollama_content_precedence
+
+        Il mock response deve essere:
+        {
+          "response": "",
+          "message": {
+            "content": json.dumps({
+              "decision": "select",
+              "selected_candidate_ids": [
+                "root_doc:README.md"
+              ]
+            })
+          },
+          "partial_content": "{invalid"
+        }
+
+        Assert:
+        - ok=True;
+        - status="ready";
+        - selected_candidate_ids == ["root_doc:README.md"].
+        """
+        result, _captured = _orientation_call(
+            selector,
+            lambda _url, _body, _timeout: {
+                "response": "",
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "decision": "select",
+                            "selected_candidate_ids": [
+                                "root_doc:README.md",
+                            ],
+                        }
+                    ),
+                },
+                "partial_content": "{invalid",
+            },
+        )
+        assert result.get("ok") is True, result
+        assert result.get("status") == "ready", result
+        assert result.get("selected_candidate_ids") == [
+            "root_doc:README.md",
+        ], result
+        return {}
+
+    cases.append(_case("first_non_empty_ollama_content_precedence", first_non_empty_ollama_content))
+
+    def duplicate_input_candidate_ids_are_unique() -> dict[str, Any]:
+        """Caso: duplicate_input_candidate_ids_are_unique
+
+        Candidate input:
+        [
+          README,
+          README,
+          README,
+          services
+        ]
+
+        Il mock modello deve selezionare:
+        [
+          README,
+          README,
+          INVENTED,
+          services
+        ]
+
+        Assert:
+        - duplicate_input_candidate_ids == ["root_doc:README.md"];
+        - duplicate_candidate_ids == ["root_doc:README.md"];
+        - unknown_candidate_ids == ["root_doc:INVENTED.md"];
+        - selected_candidate_ids == [
+            "root_doc:README.md",
+            "root_area:services"
+          ].
+
+        Le due diagnostiche non devono sovrascriversi.
+        """
+        candidates = [
+            {
+                "candidate_id": "root_doc:README.md",
+                "kind": "file",
+                "candidate_class": "root_doc",
+            },
+            {
+                "candidate_id": "root_doc:README.md",
+                "kind": "file",
+                "candidate_class": "root_doc",
+            },
+            {
+                "candidate_id": "root_doc:README.md",
+                "kind": "file",
+                "candidate_class": "root_doc",
+            },
+            {
+                "candidate_id": "root_area:services",
+                "kind": "dir",
+                "candidate_class": "root_area",
+            },
+        ]
+
+        def model_response(url, body, timeout):
+            parsed = json.loads(body["messages"][1]["content"])
+            prompt_ids = [c["candidate_id"] for c in parsed["candidates"]]
+            # Il modello emette: README due volte + INVENTED + services
+            return {
+                "model": "qwen3.5:9b-coding-v5-1",
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps({
+                        "decision": "select",
+                        "selected_candidate_ids": [
+                            "root_doc:README.md",
+                            "root_doc:README.md",
+                            "root_doc:INVENTED.md",
+                            "root_area:services",
+                        ],
+                        "rationale": "bounded selection",
+                        "confidence": 0.9,
+                    }),
+                },
+                "done": True,
+            }
+
+        result, _captured = _orientation_call(
+            selector,
+            model_response,
+            candidates=candidates,
+        )
+
+        assert result.get("ok") is True, result
+        assert result.get("duplicate_input_candidate_ids") == [
+            "root_doc:README.md",
+        ], result
+        assert result.get("duplicate_candidate_ids") == [
+            "root_doc:README.md",
+        ], result
+        assert result.get("unknown_candidate_ids") == [
+            "root_doc:INVENTED.md",
+        ], result
+        assert result.get("selected_candidate_ids") == [
+            "root_doc:README.md",
+            "root_area:services",
+        ], result
+        return {}
+
+    cases.append(_case("duplicate_input_candidate_ids_are_unique", duplicate_input_candidate_ids_are_unique))
+
+    def valid_bounded_signals_are_preserved() -> dict[str, Any]:
+        """Caso: valid_bounded_signals_are_preserved
+
+        Candidate input:
+        {
+          "candidate_id": "root_doc:README.md",
+          "kind": "  file  ",
+          "candidate_class": "  root_doc  ",
+          "static_rank": true,
+          "signals": [
+            "x",
+            "aaa",
+            "  normal  ",
+            "",
+            "z" ripetuto 100 volte
+          ]
+        }
+
+        Assert sul candidato inviato nel JSON user:
+        - kind == "file";
+        - candidate_class == "root_doc";
+        - static_rank == 0;
+        - signals == ["x", "aaa", "normal", primi 80 caratteri della stringa di z];
+        - nessuna stringa vuota;
+        - ogni signal ha lunghezza <= 80;
+        - ordine preservato;
+        - input originale immutato.
+
+        Il profilo non deve giudicare semanticamente il contenuto dei signal.
+        """
+        candidates = [
+            {
+                "candidate_id": "root_doc:README.md",
+                "kind": "  file  ",
+                "candidate_class": "  root_doc  ",
+                "static_rank": True,
+                "signals": [
+                    "x",
+                    "aaa",
+                    "  normal  ",
+                    "",
+                    "z" * 100,
+                ],
+            },
+        ]
+
+        def capture_request(url, body, timeout):
+            return {
+                "model": "qwen3.5:9b-coding-v5-1",
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps({
+                        "decision": "select",
+                        "selected_candidate_ids": ["root_doc:README.md"],
+                        "rationale": "bounded selection",
+                        "confidence": 0.9,
+                    }),
+                },
+                "done": True,
+            }
+
+        result, captured = _orientation_call(
+            selector,
+            capture_request,
+            candidates=candidates,
+        )
+
+        assert result.get("ok") is True, result
+
+        body = captured.get("body")
+        messages = body.get("messages") if isinstance(body, dict) else []
+        request = json.loads(messages[-1]["content"])
+        prompt_candidates = request.get("candidates")
+
+        assert len(prompt_candidates) == 1, prompt_candidates
+        candidate = prompt_candidates[0]
+
+        assert candidate.get("kind") == "file", candidate
+        assert candidate.get("candidate_class") == "root_doc", candidate
+        assert candidate.get("static_rank") == 0, candidate
+
+        signals = candidate.get("signals", [])
+        assert len(signals) == 3, f"Expected 3 signals, got {len(signals)}"
+        assert signals[0] == "x", f"Expected 'x', got {signals[0]!r}"
+        assert signals[1] == "aaa", f"Expected 'aaa', got {signals[1]!r}"
+        assert signals[2] == "normal", f"Expected 'normal', got {signals[2]!r}"
+        assert all(len(s) <= 80 for s in signals), signals
+        assert not any(s == "" for s in signals), signals
+
+        candidates_before = deepcopy(candidates)
+        assert candidates == candidates_before, (candidates, candidates_before)
+
+        return {}
+
+    cases.append(_case("valid_bounded_signals_are_preserved", valid_bounded_signals_are_preserved))
 
     def oversized_candidate_id() -> dict[str, Any]:
         oversized = "x" * 501
