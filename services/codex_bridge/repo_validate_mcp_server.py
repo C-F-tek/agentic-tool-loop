@@ -14,9 +14,14 @@ from repo_mcp_common import (
     self_test,
     serve,
 )
+from repo_probe_profiles import (
+    PROFILE_ORIENTATION_SELECTOR,
+    repo_probe_profiles,
+    repo_probe_run,
+)
 
 SERVER_NAME = "aicarmine-repo-validate-mcp"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 
 
 def string_prop(default: str | None = None) -> dict[str, Any]:
@@ -27,7 +32,12 @@ def string_prop(default: str | None = None) -> dict[str, Any]:
 
 
 def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
+    return {
+        "type": "integer",
+        "default": default,
+        "minimum": minimum,
+        "maximum": maximum,
+    }
 
 
 def paths_schema(*, default_path: str | None = None) -> dict[str, Any]:
@@ -51,11 +61,19 @@ def _tools() -> dict[str, ToolSpec]:
     tools: dict[str, ToolSpec] = {}
 
     def health(args: dict[str, Any], root):
-        return health_payload(SERVER_NAME, list(tools))
+        del args
+        payload = health_payload(SERVER_NAME, list(tools))
+        payload["probe_profiles_available"] = True
+        payload["arbitrary_python_probe_allowed"] = False
+        payload["probe_source_writes_performed"] = False
+        return payload
 
     tools["aicarmine_repo_validate_health"] = ToolSpec(
         name="aicarmine_repo_validate_health",
-        description="Report Python executable, cwd, repo root, branch, commit, and no-loop guarantees.",
+        description=(
+            "Report Python executable, cwd, repo root, branch, commit, "
+            "available tools, and no-loop guarantees."
+        ),
         input_schema=object_schema(),
         handler=health,
     )
@@ -66,7 +84,10 @@ def _tools() -> dict[str, ToolSpec]:
             {
                 "commands": {"type": "array", "items": {"type": "string"}},
                 "timeout_seconds": integer_prop(300, 1, 1800),
-                "continue_on_failure": {"type": "boolean", "default": False},
+                "continue_on_failure": {
+                    "type": "boolean",
+                    "default": False,
+                },
             }
         ),
         handler=repo_validate,
@@ -95,7 +116,10 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_repo_validate_pytest"] = ToolSpec(
         name="aicarmine_repo_validate_pytest",
-        description="Run pytest on selected paths only when explicitly requested by the user.",
+        description=(
+            "Run pytest on selected paths only when explicitly requested "
+            "by the user."
+        ),
         input_schema=object_schema(
             {
                 **paths_schema(default_path="."),
@@ -120,7 +144,9 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_repo_validate_semgrep"] = ToolSpec(
         name="aicarmine_repo_validate_semgrep",
-        description="Run semgrep JSON diagnostics with a pattern or config.",
+        description=(
+            "Run semgrep JSON diagnostics with a pattern or config."
+        ),
         input_schema=object_schema(
             {
                 "pattern": string_prop(),
@@ -133,6 +159,40 @@ def _tools() -> dict[str, ToolSpec]:
         ),
         handler=repo_semgrep_scan,
         required_one_of=[["pattern"], ["config"]],
+    )
+    tools["aicarmine_repo_validate_probe_profiles"] = ToolSpec(
+        name="aicarmine_repo_validate_probe_profiles",
+        description=(
+            "List static read-only probe profiles and report optional "
+            "Hypothesis availability. Does not execute arbitrary Python."
+        ),
+        input_schema=object_schema(),
+        handler=repo_probe_profiles,
+    )
+    tools["aicarmine_repo_validate_probe_run"] = ToolSpec(
+        name="aicarmine_repo_validate_probe_run",
+        description=(
+            "Run a reviewed read-only probe profile with deterministic "
+            "cases, Hypothesis-generated cases, or both. No network calls "
+            "or source writes are permitted by the profile."
+        ),
+        input_schema=object_schema(
+            {
+                "profile_id": {
+                    "type": "string",
+                    "default": PROFILE_ORIENTATION_SELECTOR,
+                    "enum": [PROFILE_ORIENTATION_SELECTOR],
+                },
+                "engine": {
+                    "type": "string",
+                    "default": "deterministic",
+                    "enum": ["deterministic", "hypothesis", "both"],
+                },
+                "max_examples": integer_prop(200, 1, 1000),
+                "seed": integer_prop(42, 0, 2_147_483_647),
+            }
+        ),
+        handler=repo_probe_run,
     )
     return tools
 
@@ -147,9 +207,19 @@ def main(argv: list[str] | None = None) -> int:
             tools=tools,
             health_tool="aicarmine_repo_validate_health",
             real_tool="aicarmine_repo_validate_diffcheck",
-            real_args={"continue_on_failure": True, "timeout_seconds": 60},
+            real_args={
+                "continue_on_failure": True,
+                "timeout_seconds": 60,
+            },
         )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0 if result.get("ok") else 1
     return serve(SERVER_NAME, SERVER_VERSION, tools)
 

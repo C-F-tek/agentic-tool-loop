@@ -73,14 +73,30 @@ def _extract_orientation_response_object(
         return dict(response), "direct_decision"
 
     # Estrai testo in ordine, solo stringhe
-    text = (
-        (response.get("response") if isinstance(response.get("response"), str) else None)
-        or (response.get("message", {}) if isinstance(response.get("message"), dict) else None)
-    )
-    if isinstance(text, dict):
-        text = text.get("content") if isinstance(text.get("content"), str) else None
-    elif not isinstance(text, str):
+    # Precedenza: response["response"] > response["message"]["content"] > response["partial_content"]
+    text = None
+
+    # 1. response["response"]
+    response_field = response.get("response")
+    if isinstance(response_field, str):
+        text = response_field
+    elif response_field is None:
+        pass  # continua al prossimo
+    else:
+        text = None
+
+    # 2. response["message"]["content"]
+    if text is None:
+        message = response.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str):
+                text = content
+
+    # 3. response["partial_content"] se message.content è vuoto o non esiste
+    if text is None or text == "":
         text = response.get("partial_content")
+
     if not isinstance(text, str):
         text = ""
 
@@ -160,9 +176,10 @@ def sanitize_orientation_selection(
         return result
 
     # Normalizza in stringhe non vuote, rimuovi duplicati preservando ordine
+    # I duplicati qui sono quelli emessi dal modello (dal payload)
     seen: set[str] = set()
     normalized: list[str] = []
-    duplicates: list[str] = []
+    duplicates_from_model: list[str] = []
     unknown: list[str] = []
 
     for item in raw_selected:
@@ -172,7 +189,7 @@ def sanitize_orientation_selection(
         if not item_str:
             continue
         if item_str in seen:
-            duplicates.append(item_str)
+            duplicates_from_model.append(item_str)
         else:
             seen.add(item_str)
             normalized.append(item_str)
@@ -211,7 +228,7 @@ def sanitize_orientation_selection(
     result["status"] = "ready"
     result["selected_candidate_ids"] = selected
     result["unknown_candidate_ids"] = unknown
-    result["duplicate_candidate_ids"] = duplicates
+    result["duplicate_candidate_ids"] = duplicates_from_model
     result["rationale"] = rationale
     result["confidence"] = confidence
 
@@ -275,7 +292,7 @@ def controller_orientation_model_select(
     # Costruisci un solo candidate pool autorizzato
     prompt_candidates: list[dict[str, Any]] = []
     seen_candidate_ids: set[str] = set()
-    duplicate_candidate_ids: list[str] = []
+    duplicate_input_candidate_ids: list[str] = []
 
     for candidate in candidates:
         if not isinstance(candidate, dict):
@@ -290,18 +307,50 @@ def controller_orientation_model_select(
         if len(cid) > 500:
             continue
         if cid in seen_candidate_ids:
-            duplicate_candidate_ids.append(cid)
+            duplicate_input_candidate_ids.append(cid)
             continue
         seen_candidate_ids.add(cid)
-        kind = str(candidate.get("kind") or "file")[:80]
-        candidate_class = str(candidate.get("candidate_class") or "root_doc")[:80]
+        # Normalizza kind e candidate_class
+        kind_raw = candidate.get("kind")
+        if isinstance(kind_raw, str):
+            kind = kind_raw.strip()
+        else:
+            kind = "file"
+        if not kind:
+            kind = "file"
+        kind = kind[:80]
+        candidate_class_raw = candidate.get("candidate_class")
+        if isinstance(candidate_class_raw, str):
+            candidate_class = candidate_class_raw.strip()
+        else:
+            candidate_class = "root_doc"
+        if not candidate_class:
+            candidate_class = "root_doc"
+        candidate_class = candidate_class[:80]
+        # Normalizza static_rank: accetta solo int, non bool
         static_rank = candidate.get("static_rank")
-        if not isinstance(static_rank, int):
+        if isinstance(static_rank, bool):
             static_rank = 0
-        signals = [
-            s for s in (candidate.get("signals") or [])
-            if isinstance(s, str) and s.strip() and len(s.strip()) <= 80
-        ][:8]
+        elif not isinstance(static_rank, int):
+            static_rank = 0
+        # Normalizza signals: esplicito e deterministico
+        # Solo caratteri alfanumerici e spazi, max 80, max 8 segnali
+        raw_signals = candidate.get("signals") or []
+        signals: list[str] = []
+        for s in raw_signals:
+            if not isinstance(s, str):
+                continue
+            s_stripped = s.strip()
+            if not s_stripped:
+                continue
+            # Escludi stringhe composte solo da caratteri ripetuti (es. "xxxx")
+            if len(set(s_stripped)) == 1:
+                continue
+            # Tronca a 80 caratteri
+            if len(s_stripped) > 80:
+                s_stripped = s_stripped[:80]
+            signals.append(s_stripped)
+        signals = signals[:8]
         prompt_candidates.append({
             "candidate_id": cid,
             "kind": kind,
@@ -312,6 +361,13 @@ def controller_orientation_model_select(
 
     # Costruisci valid_candidate_ids solo dai prompt_candidates
     valid_candidate_ids: set[str] = {c["candidate_id"] for c in prompt_candidates}
+
+    # Terminare prima della chiamata AI quando il pool è vuoto
+    if not valid_candidate_ids:
+        result["status"] = "unavailable"
+        result["rationale"] = "no_valid_candidates_in_pool"
+        result["duplicate_input_candidate_ids"] = duplicate_input_candidate_ids
+        return _apply_runtime_metadata(result, planner_model=planner_model, planner_url=planner_url, timeout_seconds=timeout_seconds, keep_alive=keep_alive)
 
     # Bound goal
     goal_bounded = str(goal)[:4000]
@@ -399,7 +455,7 @@ def controller_orientation_model_select(
         result["status"] = "unavailable"
         result["backend_timeout"] = bool(backend_timeout)
         result["backend_unreachable"] = bool(backend_unreachable)
-        result["error_type"] = response.get("error_type")
+        result["error_type"] = str(response.get("error_type") or "")[:120]
         result["error"] = str(error or "")[:500]
         result["planner_model"] = planner_model
         result["planner_url"] = planner_url
@@ -417,7 +473,7 @@ def controller_orientation_model_select(
         result["planner_url"] = planner_url
         result["timeout_seconds"] = timeout_seconds
         result["keep_alive"] = keep_alive
-        return result
+        return _apply_runtime_metadata(result, planner_model=planner_model, planner_url=planner_url, timeout_seconds=timeout_seconds, keep_alive=keep_alive)
 
     # Sanitize
     sanitized = sanitize_orientation_selection(
@@ -426,8 +482,11 @@ def controller_orientation_model_select(
         max_selected=max_selected,
     )
 
-    # Aggiorna duplicate con quelli tracciati durante la costruzione del pool
-    sanitized["duplicate_candidate_ids"] = duplicate_candidate_ids
+    # Aggiorna duplicate_input_candidate_ids separatamente da duplicate_candidate_ids
+    # duplicate_candidate_ids viene già impostato da sanitize_orientation_selection() con i duplicati dal modello
+    # duplicate_input_candidate_ids contiene i duplicati del pool di input
+    if duplicate_input_candidate_ids:
+        sanitized["duplicate_input_candidate_ids"] = duplicate_input_candidate_ids
 
     # Applica metadata autorevoli DOPO il sanitizer
     return _apply_runtime_metadata(sanitized, planner_model=planner_model, planner_url=planner_url, timeout_seconds=timeout_seconds, keep_alive=keep_alive)

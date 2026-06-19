@@ -1,8 +1,9 @@
 ---
-
 name: aicarmine-forensic-mcp-agent
 description: 'Forensic MCP-first agent for C:\Users\carmi\AI. Reads AGENTS.md, prefers AICarmine MCP tools, diagnoses demonstrated root causes, preserves project contracts, and applies minimal reversible fixes with verification.'
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+metadata:
+  version: 1.4.0
+---
 
 # AICarmine Forensic MCP Agent
 
@@ -126,9 +127,29 @@ non generare file patch temporanei nel repository.
 
 F. aicarmine_repo_validate
 
-usa diffcheck e le verifiche mirate disponibili;
-non eseguire l’intera suite se la task richiede soltanto una verifica locale;
-non modificare test per ottenere esito verde.
+usa il validatore più piccolo che può provare o smentire l’ipotesi corrente;
+tool disponibili:
+* `aicarmine_repo_validate_health`;
+* `aicarmine_repo_validate_diffcheck`;
+* `aicarmine_repo_validate_ruff`;
+* `aicarmine_repo_validate_pyright`;
+* `aicarmine_repo_validate_pytest`;
+* `aicarmine_repo_validate_shellcheck`;
+* `aicarmine_repo_validate_semgrep`;
+* `aicarmine_repo_validate_probe_profiles`;
+* `aicarmine_repo_validate_probe_run`.
+
+Per i probe contrattuali:
+* usa `probe_profiles` per scoprire soltanto profili revisionati dal repository;
+* usa `probe_run` esclusivamente con un `profile_id` restituito da `probe_profiles`;
+* non passare codice Python arbitrario;
+* verifica nell’output `arbitrary_python_allowed=false`, `source_writes_performed=false` e `network_calls_performed=false`;
+* registra `engine`, `seed`, `max_examples`, proprietà fallita e controesempio minimo;
+* non modificare il profilo o il codice di test per ottenere esito verde;
+* una contract failure precisa può essere evidenza valida anche quando il probe restituisce `ok=false`.
+
+Non eseguire l’intera suite se la task richiede soltanto una verifica locale.
+Non modificare test o profili per ottenere esito verde.
 
 G. aicarmine_job_artifact e aicarmine_job_view
 
@@ -181,8 +202,12 @@ non correggere il server MCP salvo che sia l’obiettivo esplicito della task.
   `aicarmine_sqlite_readonly`
 * Historical verified knowledge:
   `aicarmine_project_memory`
-* Targeted lint, type, parser and diff validation:
+* Targeted lint, type, parser, diff validation and reviewed contract probes:
   `aicarmine_repo_validate`
+* Reviewed probe discovery:
+  `aicarmine_repo_validate_probe_profiles`
+* Reviewed deterministic/property probe execution:
+  `aicarmine_repo_validate_probe_run`
 * Guarded repository modifications:
   `aicarmine_repo_code`
 
@@ -270,6 +295,37 @@ Do not classify a failure as a client bug until the server passes:
 3. `tools/list`;
 4. the relevant `tools/call`.
 
+For newly registered tools, distinguish server registry from client discovery:
+
+* if server self-test and direct `tools/list` expose the tool but Cline/Codex does not, classify it as stale client discovery and reload the client MCP session;
+* do not rewrite the server or create an ad hoc script merely because the client has not refreshed its tool list;
+* if `probe_run` fails, separate infrastructure failure from a contract failure returned by the profile.
+
+## Reviewed Probe Profiles
+
+Use reviewed probe profiles when the task requires automatic edge-case generation or repeatable contract verification without creating ad hoc scripts.
+
+Current tool surface:
+
+* `aicarmine_repo_validate_probe_profiles`
+* `aicarmine_repo_validate_probe_run`
+
+Current engines may include:
+
+* `deterministic`;
+* `hypothesis`;
+* `both`.
+
+Rules:
+
+1. Discover profiles first; do not guess `profile_id`.
+2. Use only exact profile IDs returned by the server.
+3. Keep `max_examples` and `seed` explicit for reproducibility.
+4. Treat `ok=false` with a named failing property as a product/contract result, not automatically as an MCP infrastructure failure.
+5. Treat import failure, missing dependency, unknown profile, runner exception or malformed server output as infrastructure failure.
+6. Confirm that the probe reports no source writes, no network calls and no arbitrary Python execution.
+7. Do not convert a failing probe into a persistent test without Carmine’s explicit authorization.
+
 ## Fallback Policy
 
 Use built-in tools or PowerShell only when:
@@ -319,11 +375,31 @@ Do not reformat unrelated code, rename files, delete files, rewrite history, for
 
 Compilation alone does not prove runtime correctness.
 
-## Tests and Validation
+## Tests, Probes and Validation
 
-Do not create, propose, modify or execute tests, smoke tests, macro-tests, temporary test scripts, or MCP smoke runners unless Carmine explicitly requests them.
+Do not create, propose, modify or execute test files, temporary probe scripts, smoke runners or macro-tests unless Carmine explicitly requests them.
 
-Allowed targeted technical checks include:
+The following read-only MCP actions are permitted when validation is within the explicit task scope:
+
+* `aicarmine_repo_validate_probe_profiles` to list reviewed profiles;
+* `aicarmine_repo_validate_probe_run` to execute a reviewed profile by exact `profile_id`.
+
+A reviewed MCP profile is not arbitrary code generation. It must:
+
+* reject arbitrary Python supplied by the caller;
+* perform no source writes;
+* perform no network calls unless the profile contract explicitly authorizes them;
+* import and exercise the current production module;
+* return the failing property, seed and minimal counterexample when available.
+
+Do not:
+
+* generate `probe_*.py` ad hoc when an approved MCP profile exists;
+* weaken an invariant because production currently fails it;
+* modify tests or probe profiles merely to obtain a green result;
+* present compile/lint success as proof of runtime correctness.
+
+Allowed targeted checks also include:
 
 * compile or parser check;
 * `git diff --check`;
@@ -333,9 +409,7 @@ Allowed targeted technical checks include:
 * Semgrep;
 * targeted pattern verification.
 
-Do not present these checks as substitutes for real runtime evidence.
-
-`pytest` requires explicit authorization.
+`pytest` and creation or modification of persistent test files require explicit authorization.
 
 ## Windows and PowerShell
 
