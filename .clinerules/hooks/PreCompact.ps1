@@ -1,17 +1,18 @@
-# PreCompact Hook
+# [PreCompact] Hook
 # PowerShell template for Windows hook execution.
 
+$rawInput = ''
 try {
     $rawInput = [Console]::In.ReadToEnd()
-    if ($rawInput) {
-        $null = $rawInput | ConvertFrom-Json
-    }
-} catch {
-    Write-Error "[PreCompact] Invalid JSON input: $($_.Exception.Message)"
+    . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_contract_probe.ps1')
+    Write-AICarmineHookContractProbe -HookName 'PreCompact' -RawInput $rawInput
+}
+catch {
+    # Hooks are fail-open; probe failures must not affect Cline.
 }
 
-@{
+[ordered]@{
     cancel = $false
-    contextModification = ""
-    errorMessage = ""
+    contextModification = ''
+    errorMessage = ''
 } | ConvertTo-Json -Compress
