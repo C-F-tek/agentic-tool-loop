@@ -74,28 +74,28 @@ def _extract_orientation_response_object(
 
     # Estrai testo in ordine, solo stringhe
     # Precedenza: response["response"] > response["message"]["content"] > response["partial_content"]
-    text = None
+    # Costruisci lista di candidati in ordine
+    text_candidates: list[str | None] = []
 
     # 1. response["response"]
     response_field = response.get("response")
     if isinstance(response_field, str):
-        text = response_field
-    elif response_field is None:
-        pass  # continua al prossimo
-    else:
-        text = None
+        text_candidates.append(response_field)
 
     # 2. response["message"]["content"]
-    if text is None:
-        message = response.get("message")
-        if isinstance(message, dict):
-            content = message.get("content")
-            if isinstance(content, str):
-                text = content
+    message = response.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            text_candidates.append(content)
 
-    # 3. response["partial_content"] se message.content è vuoto o non esiste
-    if text is None or text == "":
-        text = response.get("partial_content")
+    # 3. response["partial_content"]
+    partial = response.get("partial_content")
+    if isinstance(partial, str):
+        text_candidates.append(partial)
+
+    # Seleziona primo valore non vuoto
+    text = next((t for t in text_candidates if isinstance(t, str) and t.strip()), None)
 
     if not isinstance(text, str):
         text = ""
@@ -218,6 +218,10 @@ def sanitize_orientation_selection(
     ):
         confidence = None
 
+    # Assegna diagnostica PRIMA del ramo no_valid_selection
+    result["unknown_candidate_ids"] = unknown
+    result["duplicate_candidate_ids"] = duplicates_from_model
+
     # Ok solo se abbiamo almeno un ID valido selezionato
     if not selected:
         result["ok"] = False
@@ -227,8 +231,6 @@ def sanitize_orientation_selection(
     result["ok"] = True
     result["status"] = "ready"
     result["selected_candidate_ids"] = selected
-    result["unknown_candidate_ids"] = unknown
-    result["duplicate_candidate_ids"] = duplicates_from_model
     result["rationale"] = rationale
     result["confidence"] = confidence
 
@@ -293,6 +295,7 @@ def controller_orientation_model_select(
     prompt_candidates: list[dict[str, Any]] = []
     seen_candidate_ids: set[str] = set()
     duplicate_input_candidate_ids: list[str] = []
+    seen_duplicate_ids: set[str] = set()  # Evita duplicati nella diagnostica
 
     for candidate in candidates:
         if not isinstance(candidate, dict):
@@ -307,7 +310,10 @@ def controller_orientation_model_select(
         if len(cid) > 500:
             continue
         if cid in seen_candidate_ids:
-            duplicate_input_candidate_ids.append(cid)
+            # Registra duplicato SOLO se non già registrato
+            if cid not in seen_duplicate_ids:
+                duplicate_input_candidate_ids.append(cid)
+                seen_duplicate_ids.add(cid)
             continue
         seen_candidate_ids.add(cid)
         # Normalizza kind e candidate_class
@@ -334,7 +340,7 @@ def controller_orientation_model_select(
         elif not isinstance(static_rank, int):
             static_rank = 0
         # Normalizza signals: esplicito e deterministico
-        # Solo caratteri alfanumerici e spazi, max 80, max 8 segnali
+        # Caratteri qualsiasi, max 80, max 8 segnali
         raw_signals = candidate.get("signals") or []
         signals: list[str] = []
         for s in raw_signals:
@@ -342,9 +348,6 @@ def controller_orientation_model_select(
                 continue
             s_stripped = s.strip()
             if not s_stripped:
-                continue
-            # Escludi stringhe composte solo da caratteri ripetuti (es. "xxxx")
-            if len(set(s_stripped)) == 1:
                 continue
             # Tronca a 80 caratteri
             if len(s_stripped) > 80:
