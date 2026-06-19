@@ -729,8 +729,8 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         signals = candidate.get("signals", [])
         # Dopo la normalizzazione, i signal composti da un singolo carattere vengono esclusi.
         # Solo "normal" rimane dopo strip.
-        assert len(signals) == 1, f"Expected 1 signal after filtering, got {len(signals)}"
-        assert signals[0] == "normal", f"Expected 'normal', got {signals[0]!r}"
+        expected_signals = ["x", "aaa", "normal", "z" * 80]
+        assert signals == expected_signals, f"Expected {expected_signals!r}, got {signals!r}"
         assert all(len(s) <= 80 for s in signals), signals
         assert all(s for s in signals), signals
 
@@ -782,6 +782,116 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         return {"prompt_candidate_ids": prompt_ids}
 
     cases.append(_case("oversized_candidate_id_excluded", oversized_candidate_id))
+
+    def empty_authorized_pool() -> dict[str, Any]:
+        """Caso: empty_authorized_pool_skips_backend
+
+        Candidate input:
+        [
+          {"candidate_id": ""},
+          {"candidate_id": "x" * 501},
+          "not-a-dict"
+        ]
+
+        La response factory deve sollevare:
+        AssertionError(
+            "backend must not be called for an empty authorized pool"
+        )
+
+        Assert:
+        - result["ok"] is False;
+        - result["status"] == "unavailable";
+        - result["rationale"] == "no_valid_candidates_in_pool";
+        - captured == {};
+        - planner_model autorevole presente;
+        - planner_url autorevole presente;
+        - timeout_seconds autorevole presente;
+        - keep_alive autorevole presente;
+        - candidates invariati.
+        """
+        candidates = [
+            {"candidate_id": ""},
+            {"candidate_id": "x" * 501},
+            "not-a-dict",
+        ]
+        candidates_before = deepcopy(candidates)
+
+        def raise_empty_pool_error(url, body, timeout):
+            raise AssertionError(
+                "backend must not be called for an empty authorized pool"
+            )
+
+        result, captured = _orientation_call(
+            selector,
+            raise_empty_pool_error,
+            candidates=candidates,
+        )
+
+        assert result.get("ok") is False, result
+        assert result.get("status") == "unavailable", result
+        assert result.get("rationale") == "no_valid_candidates_in_pool", result
+        assert captured == {}, captured
+        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", result
+        assert result.get("planner_url") == "http://127.0.0.1:11434/api/chat", result
+        assert result.get("timeout_seconds") == 37, result
+        assert result.get("keep_alive") == "30m", result
+        assert candidates == candidates_before, (candidates, candidates_before)
+
+        return {}
+
+    cases.append(_case("empty_authorized_pool_skips_backend", empty_authorized_pool))
+
+    def backend_errors_are_bounded() -> dict[str, Any]:
+        """Caso: backend_errors_are_bounded
+
+        Mock response:
+        {
+            "ok": False,
+            "backend_unreachable": True,
+            "error_type": "X" * 500,
+            "error": "Y" * 1000,
+        }
+
+        Assert:
+        - result["ok"] is False;
+        - result["status"] == "unavailable";
+        - result["rationale"] == "backend_request_failed";
+        - result["backend_unreachable"] is True;
+        - result["error_type"] == "X" * 120;
+        - len(result["error_type"]) == 120;
+        - result["error"] == "Y" * 500;
+        - len(result["error"]) == 500;
+        - metadata runtime autorevoli presenti.
+        """
+        result, _captured = _orientation_call(
+            selector,
+            lambda _url, _body, _timeout: {
+                "ok": False,
+                "backend_unreachable": True,
+                "error_type": "X" * 500,
+                "error": "Y" * 1000,
+            },
+        )
+
+        assert result.get("ok") is False, result
+        assert result.get("status") == "unavailable", result
+        assert result.get("rationale") == "backend_request_failed", result
+        assert result.get("backend_unreachable") is True, result
+        assert result.get("error_type") == "X" * 120, result
+        assert len(result.get("error_type")) == 120, result
+        assert result.get("error") == "Y" * 500, result
+        assert len(result.get("error")) == 500, result
+        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", result
+        assert result.get("planner_url") == "http://127.0.0.1:11434/api/chat", result
+        assert result.get("timeout_seconds") == 37, result
+        assert result.get("keep_alive") == "30m", result
+
+        return {
+            "error_type": result.get("error_type"),
+            "error": result.get("error"),
+        }
+
+    cases.append(_case("backend_errors_are_bounded", backend_errors_are_bounded))
 
     def semantic_intent_non_json_native() -> dict[str, Any]:
         semantic_intent = {"path": Path("services")}
