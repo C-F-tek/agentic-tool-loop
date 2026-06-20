@@ -15,6 +15,48 @@ from aicarmine_broker.tools.deterministic_common import (
 )
 
 
+def _newline_policy_bytes(data: bytes) -> str:
+    crlf_count = data.count(b"\r\n")
+    lf_count = data.count(b"\n") - crlf_count
+    cr_count = data.count(b"\r") - crlf_count
+    policies = [
+        name
+        for name, count in (
+            ("crlf", crlf_count),
+            ("lf", lf_count),
+            ("cr", cr_count),
+        )
+        if count
+    ]
+    if not policies:
+        return "none"
+    if len(policies) > 1:
+        return "mixed"
+    return policies[0]
+
+
+def _apply_newline_policy_bytes(data: bytes, policy: str) -> bytes:
+    if policy not in {"crlf", "lf", "cr"}:
+        return data
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if policy == "crlf":
+        return normalized.replace(b"\n", b"\r\n")
+    if policy == "cr":
+        return normalized.replace(b"\n", b"\r")
+    return normalized
+
+
+def _rollback_change_set_files(root: Path, records: list[dict[str, Any]]) -> None:
+    for record in records:
+        full_path = (root / record["path"]).resolve(strict=False)
+        full_path.relative_to(root.resolve())
+        if record["existed"]:
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_bytes(Path(str(record["backup_path"])).read_bytes())
+        elif full_path.exists() and full_path.is_file():
+            full_path.unlink()
+
+
 def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or "").strip()
     old_text = args.get("old_text")
@@ -159,8 +201,20 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     normalized_diff = normalize_unified_diff_text(diff_text)
     diff_bytes = normalized_diff.encode("utf-8")
+    matching_args = (
+        ["--ignore-space-change"]
+        if args.get("_verified_change_set") is True
+        else []
+    )
     check_result = run_argv(
-        [git_executable, "apply", "--check", "--whitespace=error", "-"],
+        [
+            git_executable,
+            "apply",
+            "--check",
+            *matching_args,
+            "--whitespace=error",
+            "-",
+        ],
         cwd=root,
         timeout=120,
         stdin_bytes=diff_bytes,
@@ -190,12 +244,14 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
         if full_path.is_file():
             backup_path = backup_root / f"{relative_path}.before"
             backup_path.parent.mkdir(parents=True, exist_ok=True)
-            backup_path.write_bytes(full_path.read_bytes())
+            before_bytes = full_path.read_bytes()
+            backup_path.write_bytes(before_bytes)
             backup_records.append(
                 {
                     "path": relative_path,
                     "existed": True,
                     "backup_path": str(backup_path),
+                    "newline_policy": _newline_policy_bytes(before_bytes),
                 }
             )
         else:
@@ -204,25 +260,25 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
                     "path": relative_path,
                     "existed": False,
                     "backup_path": None,
+                    "newline_policy": "lf",
                 }
             )
 
     apply_result = run_argv(
-        [git_executable, "apply", "--whitespace=error", "-"],
+        [
+            git_executable,
+            "apply",
+            *matching_args,
+            "--whitespace=error",
+            "-",
+        ],
         cwd=root,
         timeout=120,
         stdin_bytes=diff_bytes,
     )
     rollback_performed = False
     if apply_result.get("returncode") != 0:
-        for record in backup_records:
-            full_path = (root / record["path"]).resolve(strict=False)
-            full_path.relative_to(root.resolve())
-            if record["existed"]:
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                full_path.write_bytes(Path(str(record["backup_path"])).read_bytes())
-            elif full_path.exists() and full_path.is_file():
-                full_path.unlink()
+        _rollback_change_set_files(root, backup_records)
         rollback_performed = True
         return {
             "ok": False,
@@ -232,6 +288,35 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "returncode": apply_result.get("returncode"),
             "stdout_tail": apply_result.get("stdout_tail", ""),
             "stderr_tail": apply_result.get("stderr_tail", ""),
+            "rollback_performed": rollback_performed,
+            "backup_root": str(backup_root),
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    try:
+        for record in backup_records:
+            full_path = (root / record["path"]).resolve(strict=False)
+            full_path.relative_to(root.resolve())
+            if not full_path.is_file():
+                continue
+            after_apply_bytes = full_path.read_bytes()
+            normalized_bytes = _apply_newline_policy_bytes(
+                after_apply_bytes,
+                str(record.get("newline_policy") or ""),
+            )
+            if normalized_bytes != after_apply_bytes:
+                full_path.write_bytes(normalized_bytes)
+    except Exception as exc:
+        _rollback_change_set_files(root, backup_records)
+        rollback_performed = True
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "newline_policy_restore_failed",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+            "change_set_id": change_set_id,
             "rollback_performed": rollback_performed,
             "backup_root": str(backup_root),
             "source_writes_performed": False,

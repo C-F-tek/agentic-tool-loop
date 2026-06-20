@@ -112,7 +112,7 @@ dedicated broker or write project-local state require explicit arguments:
 | `aicarmine_project_memory_upsert_verified` | `confirm_write` | `project_memory_upsert_verified` | Writes verified memory to the repo-local memory DB. |
 | `aicarmine_project_memory_mark_stale` | `confirm_stale` | `project_memory_mark_stale` | Marks memory records stale by verified source. |
 | `aicarmine_project_memory_supersede` | `confirm_supersede` | `project_memory_supersede` | Supersedes existing memory through the memory DB. |
-| `aicarmine_repo_code_apply_patch` | `allow_source_write` | `true` | Applies exact `old_text` -> `new_text` replacement only. |
+| `aicarmine_repo_code_apply_patch` | `allow_source_write` | `true` | Applies a verified `change_set_id` atomically or the legacy exact `old_text` -> `new_text` mode. |
 
 The direct `mcp_server.py` facade may list legacy write-like tool names, but
 its Codex direct-dispatch policy keeps command execution disabled and reports
@@ -134,22 +134,51 @@ exists.
 | `project_memory_mcp_server.py` | `aicarmine_project_memory_search`, `aicarmine_project_memory_get`, `aicarmine_project_memory_upsert_verified`, `aicarmine_project_memory_mark_stale`, `aicarmine_project_memory_supersede`, `aicarmine_project_memory_audit_sources` | Persistent project-local memory with source metadata. | Write silently, store unverified assumptions or reuse RAG/job/planner DBs. |
 | `local_subagent_mcp_server.py` | `aicarmine_local_subagent_health`, `aicarmine_local_subagent_capabilities`, `aicarmine_local_subagent_run_readonly` | Bounded read-only subagent analysis through the dedicated 3579 loop. | Call Ollama directly, use 11434/11435, call 3571/3572 or write source. |
 | `agentic_loop_client_mcp_server.py` | `aicarmine_agentic_loop_health`, `aicarmine_agentic_loop_capabilities`, `aicarmine_agentic_loop_ensure_reranker`, `aicarmine_agentic_loop_ensure_broker`, `aicarmine_agentic_loop_run`, `aicarmine_agentic_loop_status`, `aicarmine_agentic_loop_result` | Dedicated Codex agentic-loop jobs on non-shared 3579. | Reuse shared 3571/3572, reload/restart a live broker, hide oversized payloads as if fully read. |
-| `repo_code_mcp_server.py` | `aicarmine_repo_code_propose_edit`, `aicarmine_repo_code_unidiff_validate`, `aicarmine_repo_code_git_apply_check`, `aicarmine_repo_code_apply_patch` | Content-addressed unified-diff change sets propagated by `change_set_id`; exact legacy and atomic multi-file apply modes require explicit confirmation. | Promote into stable tools, reconstruct whole files between calls or write source without `allow_source_write=true`. |
+| `repo_code_mcp_server.py` | `aicarmine_repo_code_propose_edit`, `aicarmine_repo_code_unidiff_validate`, `aicarmine_repo_code_git_apply_check`, `aicarmine_repo_code_apply_patch` | Preferred multi-file `structured_edit` authoring with server-generated content-addressed diffs; unified-diff and exact legacy modes remain compatible. | Build hunk headers client-side, create transport `.diff` files, mix authoring modes or write source without `allow_source_write=true`. |
 | `ops_mcp_server.py` | `aicarmine_mcp_inventory_*`, `aicarmine_service_state_*` | Read-only local MCP/process/port/log inventory. | HTTP smoke against services, broker calls or unredacted command output. |
 | `mcp_server.py` | Direct `aicarmine_tools` facade including repo/status/search/memory helpers | Compatibility/direct dispatch when no dedicated MCP fits. | Bypass dedicated MCPs, enable command execution, call 3571 or broker HTTP loop. |
 
 ### Repo-code Change-set Flow
 
-1. Send the complete contextual unified diff once to
-   `aicarmine_repo_code_propose_edit` and retain its `change_set_id`.
+Prefer structured authoring:
+
+```json
+{
+  "edit_kind": "structured_edit",
+  "edits": [
+    {
+      "path": "relative/existing.txt",
+      "operation": "replace_exact",
+      "old_text": "before",
+      "new_text": "after",
+      "expected_occurrences": 1
+    },
+    {
+      "path": "relative/new.txt",
+      "operation": "create_file",
+      "content": "new content\n"
+    }
+  ],
+  "rationale": "bounded change"
+}
+```
+
+The supported operations are `replace_exact`, `insert_before_exact`,
+`insert_after_exact` and `create_file`. The server reads current preimages,
+checks exact occurrence counts and constructs canonical hunk headers. Clients
+must not create hunk headers or transport `.diff` files.
+
+1. Call `aicarmine_repo_code_propose_edit` and retain its `change_set_id`.
 2. Call `aicarmine_repo_code_unidiff_validate` and
-   `aicarmine_repo_code_git_apply_check` with that ID.
+   `aicarmine_repo_code_git_apply_check` with only that ID.
 3. After both succeed, call `aicarmine_repo_code_apply_patch` with the same ID
    and `allow_source_write=true`.
 
+Use `unified_diff` authoring only when the client already owns a valid diff.
 Inline diffs remain accepted at every diff-aware phase. Supplying both an ID
-and an inline diff requires their hashes to match. The legacy exact
-`path`/`old_text`/`new_text` apply contract remains unchanged.
+and an inline diff requires matching hashes. The legacy exact
+`path`/`old_text`/`new_text` contract remains unchanged; payloads that mix
+structured edits, inline diffs and legacy text authoring are rejected.
 
 ## Debug Playbooks
 

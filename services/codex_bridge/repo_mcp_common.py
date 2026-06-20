@@ -58,10 +58,11 @@ def json_dumps(value: Any, *, compact: bool = False) -> str:
 
 
 def compact_text(value: Any, limit: int = MAX_TEXT) -> str:
-    text = value if isinstance(value, str) else json_dumps(value)
-    if len(text) <= limit:
-        return text
-    return text[: max(0, limit - 170)].rstrip() + "\n\n...[truncated by aicarmine_repo_mcp]"
+    if not isinstance(value, str):
+        return json_dumps(value)
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 170)].rstrip() + "\n\n...[truncated by aicarmine_repo_mcp]"
 
 
 def tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:

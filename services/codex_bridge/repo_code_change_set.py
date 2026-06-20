@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import difflib
 import hashlib
 import json
 import os
@@ -17,8 +18,15 @@ from uuid import uuid4
 CHANGE_SET_SCHEMA = "aicarmine.repo_code.change_set.v1"
 MAX_DIFF_BYTES = 2 * 1024 * 1024
 MAX_DIFF_FILES = 100
+MAX_STRUCTURED_EDITS = 1000
 CHANGE_SET_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 DIFF_ARGUMENT_NAMES = ("unified_diff", "diff", "patch")
+STRUCTURED_EDIT_OPERATIONS = (
+    "replace_exact",
+    "insert_before_exact",
+    "insert_after_exact",
+    "create_file",
+)
 
 
 class ChangeSetError(ValueError):
@@ -44,6 +52,328 @@ def inline_diff_from_args(args: dict[str, Any]) -> str:
     if any(value != first for value in values[1:]):
         raise ChangeSetError("ambiguous_diff_arguments")
     return first
+
+
+def _structured_text(
+    edit: dict[str, Any],
+    *,
+    index: int,
+    field: str,
+    allow_empty: bool = True,
+) -> str:
+    value = edit.get(field)
+    if not isinstance(value, str):
+        raise ChangeSetError(
+            "structured_edit_text_required",
+            edit_index=index,
+            field=field,
+        )
+    if not allow_empty and not value:
+        raise ChangeSetError(
+            "structured_edit_anchor_empty",
+            edit_index=index,
+            field=field,
+        )
+    if "\x00" in value:
+        raise ChangeSetError(
+            "structured_edit_non_text_content",
+            edit_index=index,
+            field=field,
+        )
+    return value
+
+
+def _newline_policy(text: str) -> str:
+    crlf_count = text.count("\r\n")
+    lf_count = text.count("\n") - crlf_count
+    cr_count = text.count("\r") - crlf_count
+    policies = [
+        name
+        for name, count in (
+            ("crlf", crlf_count),
+            ("lf", lf_count),
+            ("cr", cr_count),
+        )
+        if count
+    ]
+    if not policies:
+        return "none"
+    if len(policies) > 1:
+        return "mixed"
+    return policies[0]
+
+
+def _normalize_inserted_newlines(value: str, policy: str) -> str:
+    if policy not in {"crlf", "lf", "cr"}:
+        return value
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    if policy == "crlf":
+        return normalized.replace("\n", "\r\n")
+    if policy == "cr":
+        return normalized.replace("\n", "\r")
+    return normalized
+
+
+def _complete_unified_diff_lines(lines: list[str]) -> str:
+    completed: list[str] = []
+    for line in lines:
+        if line.endswith("\n"):
+            completed.append(line)
+        elif line.endswith("\r"):
+            completed.append(f"{line}\n")
+        else:
+            completed.append(f"{line}\n")
+            completed.append("\\ No newline at end of file\n")
+    return "".join(completed)
+
+
+def _structured_file_diff(
+    *,
+    path: str,
+    before: str,
+    after: str,
+    create_file: bool,
+) -> str:
+    git_header = f"diff --git a/{path} b/{path}\n"
+    if create_file and not after:
+        return (
+            f"{git_header}"
+            "new file mode 100644\n"
+            "index 0000000..e69de29\n"
+        )
+    diff_lines = list(
+        difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile="/dev/null" if create_file else f"a/{path}",
+            tofile=f"b/{path}",
+            lineterm="\n",
+        )
+    )
+    if not diff_lines:
+        return ""
+    mode_header = "new file mode 100644\n" if create_file else ""
+    return f"{git_header}{mode_header}{_complete_unified_diff_lines(diff_lines)}"
+
+
+def build_structured_edit_diff(
+    root: Path,
+    edits: Any,
+) -> dict[str, Any]:
+    if not isinstance(edits, list):
+        raise ChangeSetError("structured_edits_must_be_list")
+    if not edits:
+        raise ChangeSetError("structured_edits_empty")
+    if len(edits) > MAX_STRUCTURED_EDITS:
+        raise ChangeSetError(
+            "structured_edit_count_above_maximum",
+            maximum=MAX_STRUCTURED_EDITS,
+            actual=len(edits),
+        )
+
+    states: dict[str, dict[str, Any]] = {}
+    for index, raw_edit in enumerate(edits):
+        if not isinstance(raw_edit, dict):
+            raise ChangeSetError(
+                "structured_edit_must_be_object",
+                edit_index=index,
+            )
+        edit = dict(raw_edit)
+        raw_path = edit.get("path")
+        if not isinstance(raw_path, str):
+            raise ChangeSetError(
+                "structured_edit_path_required",
+                edit_index=index,
+            )
+        relative_path, full_path = _safe_target_path(root, raw_path)
+        operation = str(edit.get("operation") or "").strip()
+        if operation not in STRUCTURED_EDIT_OPERATIONS:
+            raise ChangeSetError(
+                "structured_edit_operation_invalid",
+                edit_index=index,
+                operation=operation,
+                allowed=list(STRUCTURED_EDIT_OPERATIONS),
+            )
+
+        state = states.get(relative_path)
+        if operation == "create_file":
+            if state is not None or full_path.exists():
+                raise ChangeSetError(
+                    "structured_edit_create_target_exists",
+                    edit_index=index,
+                    path=relative_path,
+                )
+            content = _structured_text(
+                edit,
+                index=index,
+                field="content",
+            )
+            states[relative_path] = {
+                "path": relative_path,
+                "original": "",
+                "current": content,
+                "create_file": True,
+                "newline_policy": _newline_policy(content),
+                "operations": [operation],
+            }
+            if len(states) > MAX_DIFF_FILES:
+                raise ChangeSetError(
+                    "structured_edit_file_count_above_maximum",
+                    maximum=MAX_DIFF_FILES,
+                    actual=len(states),
+                )
+            continue
+
+        if state is None:
+            if not full_path.exists():
+                raise ChangeSetError(
+                    "structured_edit_target_not_found",
+                    edit_index=index,
+                    path=relative_path,
+                )
+            if not full_path.is_file():
+                raise ChangeSetError(
+                    "structured_edit_target_not_file",
+                    edit_index=index,
+                    path=relative_path,
+                )
+            raw_bytes = full_path.read_bytes()
+            try:
+                original = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ChangeSetError(
+                    "structured_edit_target_not_utf8",
+                    edit_index=index,
+                    path=relative_path,
+                ) from exc
+            state = {
+                "path": relative_path,
+                "original": original,
+                "current": original,
+                "create_file": False,
+                "newline_policy": _newline_policy(original),
+                "operations": [],
+            }
+            states[relative_path] = state
+            if len(states) > MAX_DIFF_FILES:
+                raise ChangeSetError(
+                    "structured_edit_file_count_above_maximum",
+                    maximum=MAX_DIFF_FILES,
+                    actual=len(states),
+                )
+
+        expected = edit.get("expected_occurrences", 1)
+        if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
+            raise ChangeSetError(
+                "structured_edit_expected_occurrences_invalid",
+                edit_index=index,
+                path=relative_path,
+                actual=expected,
+            )
+
+        if operation == "replace_exact":
+            anchor_field = "old_text"
+            replacement_field = "new_text"
+        else:
+            anchor_field = "anchor"
+            replacement_field = "content"
+        anchor = _structured_text(
+            edit,
+            index=index,
+            field=anchor_field,
+            allow_empty=False,
+        )
+        replacement = _structured_text(
+            edit,
+            index=index,
+            field=replacement_field,
+        )
+        replacement = _normalize_inserted_newlines(
+            replacement,
+            str(state["newline_policy"]),
+        )
+
+        current = str(state["current"])
+        occurrences = current.count(anchor)
+        if occurrences == 0:
+            raise ChangeSetError(
+                "structured_edit_anchor_not_found",
+                edit_index=index,
+                path=relative_path,
+                expected_occurrences=expected,
+                actual_occurrences=0,
+            )
+        if occurrences > expected:
+            raise ChangeSetError(
+                "structured_edit_ambiguous",
+                edit_index=index,
+                path=relative_path,
+                expected_occurrences=expected,
+                actual_occurrences=occurrences,
+            )
+        if occurrences != expected:
+            raise ChangeSetError(
+                "structured_edit_occurrence_mismatch",
+                edit_index=index,
+                path=relative_path,
+                expected_occurrences=expected,
+                actual_occurrences=occurrences,
+            )
+
+        if operation == "replace_exact":
+            updated = current.replace(anchor, replacement, expected)
+        elif operation == "insert_before_exact":
+            updated = current.replace(anchor, f"{replacement}{anchor}", expected)
+        else:
+            updated = current.replace(anchor, f"{anchor}{replacement}", expected)
+        if updated == current:
+            raise ChangeSetError(
+                "structured_edit_no_change",
+                edit_index=index,
+                path=relative_path,
+            )
+        state["current"] = updated
+        state["operations"].append(operation)
+
+    diff_parts: list[str] = []
+    files: list[dict[str, Any]] = []
+    for state in states.values():
+        before = str(state["original"])
+        after = str(state["current"])
+        if before == after:
+            raise ChangeSetError(
+                "structured_edit_no_change",
+                path=state["path"],
+            )
+        file_diff = _structured_file_diff(
+            path=str(state["path"]),
+            before=before,
+            after=after,
+            create_file=bool(state["create_file"]),
+        )
+        if not file_diff:
+            raise ChangeSetError(
+                "structured_edit_diff_empty",
+                path=state["path"],
+            )
+        diff_parts.append(file_diff)
+        files.append(
+            {
+                "path": state["path"],
+                "change_type": "added" if state["create_file"] else "modified",
+                "operation_count": len(state["operations"]),
+                "operations": list(state["operations"]),
+                "newline_policy": state["newline_policy"],
+            }
+        )
+
+    normalized_diff = normalize_unified_diff_text("".join(diff_parts))
+    return {
+        "unified_diff": normalized_diff,
+        "edit_count": len(edits),
+        "file_count": len(files),
+        "files": files,
+    }
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -105,7 +435,12 @@ def _line_count(data: bytes) -> int:
     return text.count("\n") + (0 if text.endswith("\n") else 1)
 
 
-def inspect_unified_diff(root: Path, diff_text: str) -> dict[str, Any]:
+def inspect_unified_diff(
+    root: Path,
+    diff_text: str,
+    *,
+    capture_preimages: bool = True,
+) -> dict[str, Any]:
     try:
         from unidiff import PatchSet
     except Exception as exc:
@@ -168,32 +503,41 @@ def inspect_unified_diff(root: Path, diff_text: str) -> dict[str, Any]:
             )
 
         relative_path, full_path = _safe_target_path(root, target_path)
-        exists = full_path.exists()
-        if patched.is_added_file and exists:
-            raise ChangeSetError(
-                "added_file_already_exists",
-                path=relative_path,
+        file_info: dict[str, Any] = {
+            "path": relative_path,
+            "change_type": "added" if patched.is_added_file else "modified",
+            "added": patched.added,
+            "removed": patched.removed,
+            "hunks": len(patched),
+        }
+        if capture_preimages:
+            exists = full_path.exists()
+            if patched.is_added_file and exists:
+                raise ChangeSetError(
+                    "added_file_already_exists",
+                    path=relative_path,
+                )
+            if not patched.is_added_file and (not exists or not full_path.is_file()):
+                raise ChangeSetError(
+                    "modified_file_not_found",
+                    path=relative_path,
+                )
+            before_bytes = (
+                full_path.read_bytes()
+                if exists and full_path.is_file()
+                else b""
             )
-        if not patched.is_added_file and (not exists or not full_path.is_file()):
-            raise ChangeSetError(
-                "modified_file_not_found",
-                path=relative_path,
+            file_info.update(
+                {
+                    "preimage_exists": exists,
+                    "preimage_sha256": (
+                        _sha256_bytes(before_bytes) if exists else None
+                    ),
+                    "preimage_bytes": len(before_bytes),
+                    "preimage_line_count": _line_count(before_bytes),
+                }
             )
-
-        before_bytes = full_path.read_bytes() if exists and full_path.is_file() else b""
-        files.append(
-            {
-                "path": relative_path,
-                "change_type": "added" if patched.is_added_file else "modified",
-                "added": patched.added,
-                "removed": patched.removed,
-                "hunks": len(patched),
-                "preimage_exists": exists,
-                "preimage_sha256": _sha256_bytes(before_bytes) if exists else None,
-                "preimage_bytes": len(before_bytes),
-                "preimage_line_count": _line_count(before_bytes),
-            }
-        )
+        files.append(file_info)
 
     return {
         "normalized_diff": normalized,
@@ -299,19 +643,30 @@ def _load_change_set(root: Path, change_set_id: str) -> dict[str, Any]:
     if expected_id != change_set_id:
         raise ChangeSetError("change_set_identity_mismatch")
 
-    inspection = inspect_unified_diff(root, patch_bytes.decode("utf-8"))
+    inspection = inspect_unified_diff(
+        root,
+        patch_bytes.decode("utf-8"),
+        capture_preimages=False,
+    )
     if metadata.get("diff_bytes") != len(patch_bytes):
         raise ChangeSetError("change_set_metadata_diff_bytes_mismatch")
     if metadata.get("file_count") != inspection["file_count"]:
         raise ChangeSetError("change_set_metadata_file_count_mismatch")
-    if metadata.get("files") != inspection["files"]:
-        raise ChangeSetError("change_set_metadata_files_mismatch")
+    metadata_files = metadata.get("files")
+    if not isinstance(metadata_files, list) or len(metadata_files) != inspection["file_count"]:
+        raise ChangeSetError("change_set_metadata_files_invalid")
+    static_keys = ("path", "change_type", "added", "removed", "hunks")
+    for expected, actual in zip(metadata_files, inspection["files"], strict=True):
+        if not isinstance(expected, dict) or any(
+            expected.get(key) != actual.get(key) for key in static_keys
+        ):
+            raise ChangeSetError("change_set_metadata_files_mismatch")
     return {
         "ok": True,
         "change_set_id": change_set_id,
         "diff_sha256": diff_sha256,
         "file_count": inspection["file_count"],
-        "files": inspection["files"],
+        "files": metadata_files,
         "base_commit": current_commit,
         "diff_bytes": len(patch_bytes),
         "normalized_diff": inspection["normalized_diff"],
