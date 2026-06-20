@@ -1597,6 +1597,61 @@ def run_agentic_planner_job(
             if area_read_plan:
                 execute_controller_preseed(area_read_plan, preseed_index)
                 preseed_index += 1
+
+        # Shadow evaluator invocation after legacy flow completes
+        if AICARMINE_ORIENTATION_LANE_MODE == "shadow":
+            semantic_intent = (
+                preplanner_query_plan.get("semantic_intent")
+                if (
+                    isinstance(preplanner_query_plan, dict)
+                    and isinstance(
+                        preplanner_query_plan.get("semantic_intent"),
+                        dict,
+                    )
+                )
+                else {}
+            )
+            try:
+                shadow_evaluation = evaluate_initial_orientation_shadow(
+                    requested_mode=AICARMINE_ORIENTATION_LANE_MODE,
+                    root_result=root_result,
+                    goal=state.get("goal"),
+                    semantic_intent=semantic_intent,
+                    doc_plan=doc_plan,
+                    area_plans=area_plans,
+                    candidate_pool_fn=(
+                        _controller_initial_orientation_candidate_pool
+                    ),
+                    selector_fn=_controller_orientation_model_select,
+                    effective_mode_fn=_orientation_shadow_effective_mode,
+                    legacy_selected_ids_fn=(
+                        _orientation_legacy_selected_candidate_ids
+                    ),
+                    selection_metrics_fn=(
+                        _orientation_shadow_selection_metrics
+                    ),
+                )
+            except Exception:
+                shadow_evaluation = None
+            if isinstance(shadow_evaluation, dict):
+                shadow_event_payload = deepcopy(shadow_evaluation)
+                shadow_event_payload["preseed_index_after_legacy"] = int(
+                    preseed_index
+                )
+                try:
+                    append_agent_event(
+                        job_id,
+                        "orientation_shadow_evaluated",
+                        (
+                            "Initial orientation shadow evaluation completed "
+                            f"with status={shadow_evaluation.get('status')}."
+                        ),
+                        shadow_event_payload,
+                        step=0,
+                    )
+                except Exception:
+                    pass
+
         return preseed_index
 
     preseed_index = 1
