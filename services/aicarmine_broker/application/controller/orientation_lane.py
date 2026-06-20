@@ -19,6 +19,259 @@ PostJson = Callable[
 ]
 
 
+def orientation_shadow_effective_mode(
+    requested_mode: object,
+) -> str:
+    """Determin effective mode from requested_mode.
+    
+    Contract:
+    - Se requested_mode non è str: restituisce "legacy";
+    - normalizza: strip().lower();
+    - Soltanto "shadow" restituisce "shadow";
+    - Tutti gli altri valori restituiscono "legacy".
+    
+    Inclusi: legacy, active, stringa vuota, unknown, shadowing,
+    active-shadow, None, bool, numeri, dict.
+    
+    Vincoli: nessun environment, logging, side effect, eccezione.
+    Active è fail-closed a legacy.
+    """
+    if not isinstance(requested_mode, str):
+        return "legacy"
+    
+    normalized = requested_mode.strip().lower()
+    if normalized == "shadow":
+        return "shadow"
+    
+    return "legacy"
+
+
+def orientation_legacy_selected_candidate_ids(
+    *,
+    candidates: list[dict[str, Any]],
+    doc_plan: dict[str, Any] | None,
+    area_plans: list[dict[str, Any]],
+) -> list[str]:
+    """Traduce i path già selezionati dai plan legacy in candidate_id.
+    
+    Obiettivo: tradurre i path già selezionati dai plan legacy in
+    candidate_id già presenti nel candidate pool. Non ricostruire o
+    rieseguire la policy legacy.
+    
+    Candidate allowlist: costruire mapping deterministici esclusivamente
+    da candidates. Accettare un candidato soltanto se:
+    - candidate è dict;
+    - candidate_id è str;
+    - candidate_id.strip() non è vuoto;
+    - len(candidate_id.strip()) <= 500;
+    - path è str;
+    - path.strip() non è vuoto;
+    - candidate_class è root_doc o root_area.
+    
+    Usare come chiave: (candidate_class, path) e come valore: candidate_id.
+    
+    Regole: preservare il primo mapping valido; non sostituirlo con
+    duplicati successivi; non generare candidate_id dal path; non usare
+    filesystem; non normalizzare semanticamente i path; applicare
+    soltanto strip; candidate pool malformato ignorato, non sollevare.
+    
+    Document plan: valida se doc_plan è dict, doc_plan["arguments"] è dict,
+    arguments["paths"] è list. Per ogni elemento di paths: accettare
+    soltanto str non vuote dopo strip; cercare ("root_doc", path) nel
+    mapping autorizzato; se trovato aggiungere il candidate_id; se
+    sconosciuto ignorarlo. Non sorting, nuovi budget, repo existence check,
+    file classification. Il budget è già stato applicato dal legacy plan.
+    
+    Area plans: valida se area_plans è list. Per ciascun elemento: deve
+    essere dict, element["arguments"] deve essere dict, arguments["path"]
+    deve essere str non vuota; cercare ("root_area", path) nel mapping
+    autorizzato; se trovato aggiungere il candidate_id; se sconosciuto
+    ignorarlo. Se area_plans non è list: ignorare soltanto la sezione aree,
+    non eliminare documenti validi già selezionati.
+    
+    Output: ordine obbligatorio: 1) documenti nell'ordine di
+    doc_plan["arguments"]["paths"]; 2) aree nell'ordine di area_plans.
+    Deduplicare candidate_id preservando la prima occorrenza globale.
+    
+    Non includere: area read plan, path, candidate non presenti nel pool,
+    ID inventati. Non modificare: candidates, doc_plan, area_plans.
+    Non sollevare per shape malformate.
+    """
+    # Costruisci mapping deterministico da candidates
+    mapping: dict[tuple[str, str], str] = {}
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        candidate_id = candidate.get("candidate_id", "")
+        path = candidate.get("path", "")
+        candidate_class = candidate.get("candidate_class", "")
+        
+        if not isinstance(candidate_id, str):
+            continue
+        candidate_id_stripped = candidate_id.strip()
+        if not candidate_id_stripped or len(candidate_id_stripped) > 500:
+            continue
+        
+        if not isinstance(path, str):
+            continue
+        path_stripped = path.strip()
+        if not path_stripped:
+            continue
+        
+        if candidate_class not in {"root_doc", "root_area"}:
+            continue
+        
+        key = (candidate_class, path_stripped)
+        if key not in mapping:
+            mapping[key] = candidate_id_stripped
+    
+    # Process document plan
+    doc_paths: list[str] = []
+    if doc_plan is not None and isinstance(doc_plan, dict):
+        arguments = doc_plan.get("arguments")
+        if isinstance(arguments, dict):
+            paths = arguments.get("paths")
+            if isinstance(paths, list):
+                for item in paths:
+                    if isinstance(item, str):
+                        item_stripped = item.strip()
+                        if item_stripped:
+                            doc_paths.append(item_stripped)
+    
+    # Process area plans
+    area_paths: list[str] = []
+    if isinstance(area_plans, list):
+        for element in area_plans:
+            if not isinstance(element, dict):
+                continue
+            arguments = element.get("arguments")
+            if not isinstance(arguments, dict):
+                continue
+            path = arguments.get("path")
+            if isinstance(path, str):
+                path_stripped = path.strip()
+                if path_stripped:
+                    area_paths.append(path_stripped)
+    
+    # Build result with deduplication
+    seen: set[str] = set()
+    result: list[str] = []
+    
+    for path in doc_paths + area_paths:
+        key = ("root_doc", path) if any(p == path for p in doc_paths) else ("root_area", path)
+        # Determine class based on whether it's in doc_paths or area_paths
+        if path in doc_paths:
+            key = ("root_doc", path)
+        elif path in area_paths:
+            key = ("root_area", path)
+        
+        candidate_id = mapping.get(key)
+        if candidate_id and candidate_id not in seen:
+            seen.add(candidate_id)
+            result.append(candidate_id)
+    
+    return result
+
+
+def orientation_shadow_selection_metrics(
+    *,
+    legacy_selected_candidate_ids: list[str],
+    model_selected_candidate_ids: list[str],
+) -> dict[str, Any]:
+    """Calcola metriche di selezione shadow.
+
+    Sanitizzazione indipendente dei due lati:
+    - se input non è list: trattare come lista vuota;
+    - accettare soltanto elementi str;
+    - applicare strip;
+    - ignorare stringhe vuote;
+    - ignorare ID con len > 500;
+    - deduplicare preservando la prima occorrenza;
+    - fermarsi dopo 13 ID validi distinti.
+
+    Non convertire valori non-stringa tramite str(). Non modificare gli input.
+
+    Metriche:
+    - legacy_count: len(legacy_bounded)
+    - model_count: len(model_bounded)
+    - selection_overlap: ID presenti in entrambi i lati, nell'ordine di legacy_bounded
+    - selection_overlap_count: len(selection_overlap)
+    - top1_match: true solo se entrambe le liste sono non vuote e legacy_bounded[0] == model_bounded[0]
+    - exact_match: legacy_bounded == model_bounded
+    - would_change_selection: not exact_match
+
+    Output esatto minimo:
+    {
+        "legacy_count": int,
+        "model_count": int,
+        "selection_overlap": list[str],
+        "selection_overlap_count": int,
+        "top1_match": bool,
+        "exact_match": bool,
+        "would_change_selection": bool,
+    }
+
+    Non aggiungere: model call, rationale, provider metadata, state, artifact, evento, path.
+    L'output deve essere deterministico.
+    """
+
+    def sanitize(ids: list[str]) -> list[str]:
+        """Sanitize a bounded list of IDs."""
+        if not isinstance(ids, list):
+            ids = []
+        
+        bounded: list[str] = []
+        seen: set[str] = set()
+        
+        for id_ in ids:
+            if not isinstance(id_, str):
+                continue
+            
+            id_stripped = id_.strip()
+            if not id_stripped:
+                continue
+            
+            if len(id_stripped) > 500:
+                continue
+            
+            if id_stripped not in seen:
+                seen.add(id_stripped)
+                bounded.append(id_stripped)
+            
+            if len(bounded) >= 13:
+                break
+        
+        return bounded
+    
+    legacy_bounded = sanitize(legacy_selected_candidate_ids)
+    model_bounded = sanitize(model_selected_candidate_ids)
+    
+    legacy_count = len(legacy_bounded)
+    model_count = len(model_bounded)
+    
+    overlap = [id_ for id_ in legacy_bounded if id_ in model_bounded]
+    overlap_count = len(overlap)
+    
+    top1_match = (
+        len(legacy_bounded) > 0 
+        and len(model_bounded) > 0 
+        and legacy_bounded[0] == model_bounded[0]
+    )
+    
+    exact_match = legacy_bounded == model_bounded
+    would_change_selection = not exact_match
+    
+    return {
+        "legacy_count": legacy_count,
+        "model_count": model_count,
+        "selection_overlap": overlap,
+        "selection_overlap_count": overlap_count,
+        "top1_match": top1_match,
+        "exact_match": exact_match,
+        "would_change_selection": would_change_selection,
+    }
+
+
 def _apply_runtime_metadata(
     result: dict[str, Any],
     *,
