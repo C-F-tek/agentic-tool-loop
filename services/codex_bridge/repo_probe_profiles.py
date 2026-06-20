@@ -1817,10 +1817,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         "orientation_shadow_selection_metrics",
     )
 
-    evaluator = _required_callable(
-        module,
-        "evaluate_initial_orientation_shadow",
-    )
 
     def invoke(
         evaluator: Callable[..., dict[str, Any]],
@@ -1849,6 +1845,13 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             legacy_selected_ids_fn=legacy_selected_ids_fn,
             selection_metrics_fn=selection_metrics_fn,
         )
+
+    expected_legacy_ids = [
+        "root_doc:README.md",
+        "root_doc:AGENTS.md",
+        "root_area:services",
+        "root_area:docs",
+    ]
 
     fixture_pool = [
         {
@@ -1962,7 +1965,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="legacy",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -1993,7 +1995,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode=" ACTIVE ",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2027,7 +2028,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
                 evaluator=evaluator,
                 requested_mode="shadow",
                 root_result=scenario,
-                candidates=fixture_pool,
                 semantic_intent={"target_kind": "repository"},
                 doc_plan=doc_plan_ok,
                 area_plans=area_plans_ok,
@@ -2055,7 +2055,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2106,7 +2105,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2206,7 +2204,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=order_pool_different,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2239,7 +2236,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2274,7 +2270,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2309,7 +2304,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2345,7 +2339,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2371,7 +2364,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=fixture_pool,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2431,7 +2423,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
-            candidates=bounded_pool_with_oversized,
             semantic_intent={"target_kind": "repository"},
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
@@ -2439,8 +2430,8 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             selector_fn=lambda **kw: deepcopy(oversized_selector_result),
         )
 
-        assert result["candidate_count"] == len(bounded_pool), \
-            f"expected {len(bounded_pool)}, got {result['candidate_count']}"
+        assert result["candidate_count"] == 45, \
+            f"expected 45, got {result['candidate_count']}"
         assert len(result["candidate_ids"]) == 32, f"expected 32, got {len(result['candidate_ids'])}"
         assert all(len(id_) <= 500 for id_ in result.get("candidate_ids", [])), \
             "all candidate IDs should be <= 500 chars"
