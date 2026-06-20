@@ -151,12 +151,52 @@ try {
     Assert-AICarmine (-not ($case4 -match '(?i)python\s+inline')) 'Case 4 mentioned Python inline.'
 
     $case5 = Get-AICarmineMcpRoutingHint -RawInput (
-        ConvertTo-AICarmineRawInput -Prompt 'Esegui il warmup della memoria persistente usando exact-key e record_id'
+        ConvertTo-AICarmineRawInput -Prompt 'Esegui il warmup della memoria persistente con exact-key e record_id'
     )
     Assert-AICarmine ($case5.Contains('aicarmine_project_memory_health')) 'Case 5 missing memory health.'
     Assert-AICarmine ($case5.Contains('aicarmine_project_memory_search')) 'Case 5 missing memory search.'
     Assert-AICarmine ($case5.Contains('aicarmine_project_memory_get')) 'Case 5 missing memory get.'
     Assert-AICarmine (-not ($case5 -match 'upsert|supersede|mark_stale')) 'Case 5 suggested a memory write.'
+
+    $memoryCaseA = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Analizza la project memory e verifica il manifest'
+    )
+    Assert-AICarmine ($memoryCaseA.Contains('aicarmine_project_memory_health')) 'Memory case A missing health.'
+    Assert-AICarmine ($memoryCaseA.Contains('aicarmine_project_memory_search')) 'Memory case A missing search.'
+    Assert-AICarmine ($memoryCaseA.Contains('aicarmine_project_memory_get')) 'Memory case A missing get.'
+    Assert-AICarmine (-not ($memoryCaseA -match 'upsert_verified|supersede|mark_stale')) 'Memory case A suggested a write.'
+
+    $memoryCaseC = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Aggiorna la project memory creando un record verificato'
+    )
+    Assert-AICarmine ($memoryCaseC.Contains('aicarmine_project_memory_upsert_verified')) 'Memory case C missing upsert_verified.'
+    Assert-AICarmine (-not $memoryCaseC.Contains('aicarmine_project_memory_supersede')) 'Memory case C suggested supersede.'
+    Assert-AICarmine (-not $memoryCaseC.Contains('aicarmine_project_memory_mark_stale')) 'Memory case C suggested mark_stale.'
+
+    $memoryCaseD = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Supersede il vecchio record della project memory'
+    )
+    Assert-AICarmine ($memoryCaseD.Contains('aicarmine_project_memory_supersede')) 'Memory case D missing supersede.'
+    Assert-AICarmine (-not $memoryCaseD.Contains('aicarmine_project_memory_upsert_verified')) 'Memory case D suggested upsert_verified.'
+    Assert-AICarmine (-not $memoryCaseD.Contains('aicarmine_project_memory_mark_stale')) 'Memory case D suggested mark_stale.'
+
+    $memoryCaseE = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Marca stale il record obsoleto nella project memory'
+    )
+    Assert-AICarmine ($memoryCaseE.Contains('aicarmine_project_memory_mark_stale')) 'Memory case E missing mark_stale.'
+    Assert-AICarmine (-not $memoryCaseE.Contains('aicarmine_project_memory_upsert_verified')) 'Memory case E suggested upsert_verified.'
+    Assert-AICarmine (-not $memoryCaseE.Contains('aicarmine_project_memory_supersede')) 'Memory case E suggested supersede.'
+
+    $memoryCaseF = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Audit read-only: aggiorna la project memory ma non effettuare scritture'
+    )
+    Assert-AICarmine (-not ($memoryCaseF -match 'upsert_verified|supersede|mark_stale')) 'Memory case F suggested a write.'
+    Assert-AICarmine ($memoryCaseF.Contains('Read-only:')) 'Memory case F missing read-only constraint.'
+
+    $memoryCaseG = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Update del file README'
+    )
+    Assert-AICarmine (-not ($memoryCaseG -match 'aicarmine_project_memory_(upsert_verified|supersede|mark_stale)')) 'Memory case G suggested a memory write.'
 
     $case6 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Spiegami che ore sono'

@@ -176,6 +176,8 @@ from .application.controller.preseed import (
     controller_initial_area_list_plans as _controller_initial_area_list_plans_impl,
     controller_initial_area_read_plan as _controller_initial_area_read_plan_impl,
     controller_initial_doc_preseed_plan as _controller_initial_doc_preseed_plan_impl,
+    controller_initial_orientation_candidate_pool
+    as _controller_initial_orientation_candidate_pool_impl,
     initial_area_file_sort_key as _initial_area_file_sort_key_impl,
     initial_area_sort_key as _initial_area_sort_key_impl,
     initial_doc_sort_key as _initial_doc_sort_key_impl,
@@ -3491,6 +3493,7 @@ def validate_planner_decision_against_evidence(
             "AGENTIC_PLANNER_NATIVE_TOOLS": AGENTIC_PLANNER_NATIVE_TOOLS,
             "CODE_PRODUCT_BUILD_STATE_KIND": CODE_PRODUCT_BUILD_STATE_KIND,
             "VALID_INTERNAL_TOOLS": VALID_INTERNAL_TOOLS,
+            "AICARMINE_ORIENTATION_LANE_MODE": AICARMINE_ORIENTATION_LANE_MODE,
         },
     )
 
@@ -5991,8 +5994,13 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "controller_preseed_plan": _controller_preseed_plan,
             "decision_memory_claim_text": _decision_memory_claim_text,
             "decision_raw_planner_text": _decision_raw_planner_text,
-            "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
-            "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
+              "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
+              "controller_initial_orientation_candidate_pool": _controller_initial_orientation_candidate_pool,
+              "controller_orientation_model_select": _controller_orientation_model_select,
+              "orientation_shadow_effective_mode": _orientation_shadow_effective_mode_impl,
+              "orientation_legacy_selected_candidate_ids": _orientation_legacy_selected_candidate_ids_impl,
+              "orientation_shadow_selection_metrics": _orientation_shadow_selection_metrics_impl,
+              "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
             "native_required_repaired_tool_decision_disallowed": _native_required_repaired_tool_decision_disallowed,
             "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
             "planner_cuda_rewrite_guard_for_validation": planner_cuda_rewrite_guard_for_validation,
@@ -6037,6 +6045,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "PLANNER_MODEL": PLANNER_MODEL,
             "PLANNER_URL": PLANNER_URL,
             "VALID_INTERNAL_TOOLS": VALID_INTERNAL_TOOLS,
+            "AICARMINE_ORIENTATION_LANE_MODE": AICARMINE_ORIENTATION_LANE_MODE,
         },
     )
 

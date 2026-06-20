@@ -105,7 +105,12 @@ function Get-AICarmineMcpRoutingHint {
         $readOnly = $normalized -match '(\bread[\s-]?only\b|\breadonly\b|\bsola lettura\b|\bnon modificare\b|\bnon applicare\b|\bno patch\b|\bno write\b|\banalysis only\b|\bsolo analisi\b|\baudit\b)'
         $positiveText = $normalized -replace '(\bread[\s-]?only\b|\breadonly\b|\bsola lettura\b|\bnon modificare\b|\bnon applicare\b|\bno patch\b|\bno write\b|\banalysis only\b|\bsolo analisi\b|\baudit\b)', ' '
 
-        $projectMemory = $normalized -match '(\bproject[\s-]+memory\b|\bmemoria persistente\b|\bwarmup\b|\brecord_id\b|\bexact[\s-]key\b|\bmanifest\b)'
+        $memoryUpsertRequested = $normalized -match '(\bupsert(?:_verified)?\b|\bmemory write\b|\bupdate project[\s-]+memory\b|\b(scrivi|aggiorna|salva)\b.{0,32}\b(project[\s-]+memory|memoria)\b|\bcrea(?:ndo|re)?\b.{0,24}\b(un )?record\b|\b(create|save|write)\b.{0,24}\b(record|project[\s-]+memory)\b)'
+        $memorySupersedeRequested = $normalized -match '(\bsupersede(?:d)?\b|\bsostituisci\b.{0,24}\b(il )?record\b|\breplace\b.{0,24}\b(old )?record\b)'
+        $memoryMarkStaleRequested = $normalized -match '(\bmark[\s_-]+stale\b|\bmarca(?:re)?\b.{0,24}\b(stale|obsoleto)\b|\binvalida\b.{0,24}\b(il )?record\b|\binvalidate\b.{0,24}\brecord\b)'
+        $memoryWriteRequested = $memoryUpsertRequested -or $memorySupersedeRequested -or $memoryMarkStaleRequested
+        $projectMemory = $normalized -match '(\bproject[\s-]+memory\b|\bmemoria persistente\b|\bwarmup\b|\brecord_id\b|\bexact[\s-]key\b|\bmanifest\b)' -or
+            ($memoryWriteRequested -and $normalized -match '(\bproject[\s-]+memory\b|\bmemoria\b)')
         $strongSearch = $normalized -match '(\btrova\b|\bcerca\b|\bsearch\b|\bfind\b|\bsymbol\b|\bsimbolo\b|\bdefinition\b|\bdefinizione\b|\bcaller\b|\bcall site\b|\briferimento\b|\breference\b|\bpath\b|\brg\b|\bgrep\b|\bast\b|\bctags\b|\btree[\s-]sitter\b)'
         $fileSearch = $normalized -match '(\b(read|leggi|inspect|ispeziona)\b.{0,40}\bfile\b|\bfile\b.{0,40}\b(trova|cerca|search|find)\b)'
         $repositorySearch = $strongSearch -or $fileSearch -or ($readOnly -and $normalized -match '\bfile\b')
@@ -142,15 +147,14 @@ function Get-AICarmineMcpRoutingHint {
             Add-AICarmineTool -Name 'aicarmine_project_memory_search'
             Add-AICarmineTool -Name 'aicarmine_project_memory_get'
 
-            if (-not $readOnly) {
-                if ($normalized -match '\b(upsert_verified|upsert)\b' -or
-                    ($normalized -match '\b(salva|scrivi|write|persisti)\b' -and $normalized -match '\b(project[\s-]+memory|memoria persistente)\b')) {
+            if ($memoryWriteRequested -and -not $readOnly) {
+                if ($memoryUpsertRequested) {
                     Add-AICarmineTool -Name 'aicarmine_project_memory_upsert_verified'
                 }
-                if ($normalized -match '\b(supersede|superseded)\b') {
+                if ($memorySupersedeRequested) {
                     Add-AICarmineTool -Name 'aicarmine_project_memory_supersede'
                 }
-                if ($normalized -match '\b(mark[\s-]+stale|marca(?:re)? stale)\b') {
+                if ($memoryMarkStaleRequested) {
                     Add-AICarmineTool -Name 'aicarmine_project_memory_mark_stale'
                 }
             }
