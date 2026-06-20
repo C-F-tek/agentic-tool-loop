@@ -95,8 +95,10 @@ def evaluate_initial_orientation_shadow(
             result.append(id_str)
         return result
 
-    def valid_candidates(pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def valid_candidates(pool: object) -> list[dict[str, Any]]:
         """Build private valid candidate list from raw pool."""
+        if not isinstance(pool, list):
+            return []
         valid: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         for cand in pool:
@@ -346,7 +348,6 @@ def evaluate_initial_orientation_shadow(
     )
 
     # STAGE 5 — SELECTOR
-    result_dict: dict[str, Any] = {}
     try:
         goal_bounded = str(goal)[:4000] if isinstance(goal, str) else str(goal)[:4000]
         semantic_intent_copy = deepcopy(semantic_intent) if isinstance(semantic_intent, Mapping) else {}
@@ -355,7 +356,6 @@ def evaluate_initial_orientation_shadow(
             semantic_intent=semantic_intent_copy,
             candidates=deepcopy(valid_candidates_list),
         )
-        result_dict["selector_called"] = True
     except Exception as exc:
         error_type_name = type(exc).__name__
         error_text = str(exc)[:500]
@@ -435,74 +435,73 @@ def evaluate_initial_orientation_shadow(
             },
         }
 
-    model_summary_raw = selector_result
-    rationale = model_summary_raw.get("rationale", "")
-    rationale_bounded = str(rationale)[:1000] if isinstance(rationale, str) else ""
-    error_type = model_summary_raw.get("error_type", "")
+    selector_ok = selector_result.get("ok") is True
+    selector_status = bounded_text(selector_result.get("status"), 64).lower()
+    selector_ready = selector_ok and selector_status == "ready"
+    rationale_bounded = bounded_text(selector_result.get("rationale"), 1000)
+    error_type = selector_result.get("error_type", "")
     error_type_bounded = str(error_type)[:120] if isinstance(error_type, str) else ""
-    error = model_summary_raw.get("error", "")
+    error = selector_result.get("error", "")
     error_bounded = str(error)[:500] if isinstance(error, str) else ""
-    unknown_ids = model_summary_raw.get("unknown_candidate_ids", [])
-    duplicate_ids = model_summary_raw.get("duplicate_candidate_ids", [])
-    duplicate_input_ids = model_summary_raw.get("duplicate_input_candidate_ids", [])
-    ok_val = model_summary_raw.get("ok")
-    status_val = model_summary_raw.get("status", "")
-    normalized_status = "ready" if (isinstance(ok_val, bool) and ok_val is True and status_val == "ready") else status_val
-    confidence_raw = model_summary_raw.get("confidence")
+    unknown_ids = selector_result.get("unknown_candidate_ids", [])
+    duplicate_ids = selector_result.get("duplicate_candidate_ids", [])
+    duplicate_input_ids = selector_result.get("duplicate_input_candidate_ids", [])
+    ok_val = selector_result.get("ok")
+    status_val = selector_result.get("status", "")
+    confidence_raw = selector_result.get("confidence")
     if isinstance(confidence_raw, bool):
         confidence = None
     elif isinstance(confidence_raw, (int, float)) and 0 <= confidence_raw <= 1:
         confidence = confidence_raw
     else:
         confidence = None
-    selected_ids_raw = model_summary_raw.get("selected_candidate_ids", [])
+    selected_ids_raw = selector_result.get("selected_candidate_ids", [])
     model_selected_candidate_ids = bounded_ids(
         selected_ids_raw,
         allowed_ids=allowed_candidate_ids,
         limit=13,
     )
 
-    if normalized_status == "unavailable":
-        reason_selector = model_summary_raw.get("rationale", "backend_unavailable")[:160] or "backend_unavailable"
-        return {
-            "schema": "orientation_shadow_evaluation.v1",
-            "lane_id": "orientation.initial",
-            "requested_mode": requested_mode_bounded,
-            "effective_mode": "shadow",
-            "diagnostic_only": True,
-            "legacy_authoritative": True,
-            "status": "unavailable",
-            "reason": reason_selector,
-            "selector_called": True,
-            "fallback_used": True,
-            "candidate_count": candidate_count,
-            "candidate_ids": candidate_ids,
-            "legacy_selected_candidate_ids": legacy_selected_candidate_ids,
-            "model_selected_candidate_ids": [],
-            "selection_metrics": {
-                "legacy_count": len(legacy_selected_candidate_ids),
-                "model_count": 0,
-                "selection_overlap": [],
-                "selection_overlap_count": 0,
-                "top1_match": False,
-                "exact_match": True,
-                "would_change_selection": False,
-            },
-            "model_summary": {
-                "ok": False,
+    if not selector_ready:
+        if selector_status == "unavailable":
+            reason_selector = bounded_text(rationale_bounded or "selector_unavailable", 160)
+            return {
+                "schema": "orientation_shadow_evaluation.v1",
+                "lane_id": "orientation.initial",
+                "requested_mode": requested_mode_bounded,
+                "effective_mode": "shadow",
+                "diagnostic_only": True,
+                "legacy_authoritative": True,
                 "status": "unavailable",
-                "rationale": rationale_bounded,
-                "confidence": confidence,
-                "unknown_candidate_ids": bounded_ids(unknown_ids),
-                "duplicate_candidate_ids": bounded_ids(duplicate_ids),
-                "duplicate_input_candidate_ids": bounded_ids(duplicate_input_ids),
-                "error_type": error_type_bounded,
-                "error": error_bounded,
-            },
-        }
-
-    if normalized_status == "invalid":
-        reason_invalid = model_summary_raw.get("rationale", "selector_not_ready")[:160] or "selector_not_ready"
+                "reason": reason_selector,
+                "selector_called": True,
+                "fallback_used": True,
+                "candidate_count": candidate_count,
+                "candidate_ids": candidate_ids,
+                "legacy_selected_candidate_ids": legacy_selected_candidate_ids,
+                "model_selected_candidate_ids": [],
+                "selection_metrics": {
+                    "legacy_count": len(legacy_selected_candidate_ids),
+                    "model_count": 0,
+                    "selection_overlap": [],
+                    "selection_overlap_count": 0,
+                    "top1_match": False,
+                    "exact_match": True,
+                    "would_change_selection": False,
+                },
+                "model_summary": {
+                    "ok": False,
+                    "status": "unavailable",
+                    "rationale": rationale_bounded,
+                    "confidence": confidence,
+                    "unknown_candidate_ids": bounded_ids(unknown_ids),
+                    "duplicate_candidate_ids": bounded_ids(duplicate_ids),
+                    "duplicate_input_candidate_ids": bounded_ids(duplicate_input_ids),
+                    "error_type": error_type_bounded,
+                    "error": error_bounded,
+                },
+            }
+        reason_invalid = bounded_text(rationale_bounded or "selector_not_ready", 160)
         return {
             "schema": "orientation_shadow_evaluation.v1",
             "lane_id": "orientation.initial",
@@ -529,7 +528,7 @@ def evaluate_initial_orientation_shadow(
             },
             "model_summary": {
                 "ok": False,
-                "status": normalized_status,
+                "status": selector_status,
                 "rationale": rationale_bounded,
                 "confidence": confidence,
                 "unknown_candidate_ids": bounded_ids(unknown_ids),
@@ -586,14 +585,70 @@ def evaluate_initial_orientation_shadow(
             },
         }
 
+    if not isinstance(metrics_result, dict):
+        return {
+            "schema": "orientation_shadow_evaluation.v1",
+            "lane_id": "orientation.initial",
+            "requested_mode": requested_mode_bounded,
+            "effective_mode": "shadow",
+            "diagnostic_only": True,
+            "legacy_authoritative": True,
+            "status": "unavailable",
+            "reason": "selection_metrics_result_not_dict",
+            "selector_called": True,
+            "fallback_used": True,
+            "candidate_count": candidate_count,
+            "candidate_ids": candidate_ids,
+            "legacy_selected_candidate_ids": legacy_selected_candidate_ids,
+            "model_selected_candidate_ids": model_selected_candidate_ids,
+            "selection_metrics": {
+                "legacy_count": len(legacy_selected_candidate_ids),
+                "model_count": len(model_selected_candidate_ids),
+                "selection_overlap": [],
+                "selection_overlap_count": 0,
+                "top1_match": False,
+                "exact_match": True,
+                "would_change_selection": False,
+            },
+            "model_summary": {
+                "ok": True,
+                "status": "ready",
+                "rationale": rationale_bounded,
+                "confidence": confidence,
+                "unknown_candidate_ids": bounded_ids(unknown_ids),
+                "duplicate_candidate_ids": bounded_ids(duplicate_ids),
+                "duplicate_input_candidate_ids": bounded_ids(duplicate_input_ids),
+                "error_type": "TypeError",
+                "error": "selection metrics returned non-dict",
+            },
+        }
+
     overlap = metrics_result.get("selection_overlap", [])
-    overlap_bounded = bounded_ids(overlap)[:13]
+    overlap_bounded = bounded_ids(overlap, allowed_ids=allowed_candidate_ids, limit=13)
     overlap_count = len(overlap_bounded)
-    legacy_count = metrics_result.get("legacy_count", len(legacy_selected_candidate_ids))
-    model_count = metrics_result.get("model_count", len(model_selected_candidate_ids))
-    top1_match = metrics_result.get("top1_match", False)
-    exact_match = metrics_result.get("exact_match", True)
-    would_change = metrics_result.get("would_change_selection", False)
+    legacy_count = len(legacy_selected_candidate_ids)
+    model_count = len(model_selected_candidate_ids)
+    top1_match_raw = metrics_result.get("top1_match")
+    top1_match = (
+        top1_match_raw
+        if isinstance(top1_match_raw, bool)
+        else False
+    )
+    exact_match_raw = metrics_result.get("exact_match")
+    exact_match = (
+        exact_match_raw
+        if isinstance(exact_match_raw, bool)
+        else (
+            legacy_selected_candidate_ids
+            == model_selected_candidate_ids
+        )
+    )
+    would_change_raw = metrics_result.get("would_change_selection")
+    would_change = (
+        would_change_raw
+        if isinstance(would_change_raw, bool)
+        else not exact_match
+    )
 
     # SUCCESS RESULT
     return {
