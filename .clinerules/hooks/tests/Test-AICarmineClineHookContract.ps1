@@ -262,6 +262,7 @@ function Invoke-And-ValidateHook {
         [Parameter(Mandatory = $true)][string]$HookPath,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$FixtureJson,
         [Parameter(Mandatory = $true)][bool]$ExpectedParseOk,
+        [bool]$ExpectTaskBootstrap = $false,
         [string[]]$ForbiddenRawValues = @()
     )
 
@@ -288,7 +289,18 @@ function Invoke-And-ValidateHook {
             if ($contract.cancel -isnot [bool] -or $contract.cancel -ne $false) {
                 $errorTypes.Add('CancelContractMismatch')
             }
-            if ($contract.contextModification -ne '') {
+            if ($ExpectTaskBootstrap) {
+                if ($contract.contextModification -isnot [string] -or
+                    [string]::IsNullOrEmpty($contract.contextModification) -or
+                    -not $contract.contextModification.StartsWith(
+                        'AICARMINE TASK BOOTSTRAP',
+                        [System.StringComparison]::Ordinal
+                    ) -or
+                    $contract.contextModification.Length -gt 1800) {
+                    $errorTypes.Add('TaskBootstrapContractMismatch')
+                }
+            }
+            elseif ($contract.contextModification -ne '') {
                 $errorTypes.Add('ContextModificationContractMismatch')
             }
             if ($contract.errorMessage -ne '') {
@@ -297,6 +309,13 @@ function Invoke-And-ValidateHook {
         }
         catch {
             $errorTypes.Add('StdoutJsonInvalid')
+        }
+    }
+
+    foreach ($rawValue in $ForbiddenRawValues) {
+        if (-not [string]::IsNullOrEmpty($rawValue) -and $invocation.Stdout.Contains($rawValue)) {
+            $errorTypes.Add('RawFixtureValueInStdout')
+            break
         }
     }
 
@@ -369,7 +388,7 @@ foreach ($eventName in $events) {
     try {
         $validation = Invoke-And-ValidateHook -HookName $eventName -HookPath $hookPath `
             -FixtureJson $fixtureJson -ExpectedParseOk $true `
-            -ForbiddenRawValues $forbiddenValues[$eventName]
+            -ForbiddenRawValues $forbiddenValues[$eventName] -ExpectTaskBootstrap ($eventName -eq 'TaskStart')
         $result = [pscustomobject]@{
             HookName = $eventName
             HookPath = $hookPath
