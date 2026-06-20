@@ -71,8 +71,8 @@ def evaluate_initial_orientation_shadow(
                 pass
         return text
 
-    def bounded_ids(raw_ids: object, allowed_ids: set[str] | None = None) -> list[str]:
-        """Sanitize IDs: must be list of strings, strip, ignore empty/oversized, dedupe first occurrence."""
+    def bounded_ids(raw_ids: object, allowed_ids: set[str] | None = None, limit: int = 13) -> list[str]:
+        """Sanitize IDs: must be list of strings, strip, ignore empty/oversized, dedupe first occurrence, limit count."""
         if not isinstance(raw_ids, list):
             return []
         result: list[str] = []
@@ -89,6 +89,8 @@ def evaluate_initial_orientation_shadow(
                 continue
             if id_str in seen:
                 continue
+            if len(result) >= limit:
+                break
             seen.add(id_str)
             result.append(id_str)
         return result
