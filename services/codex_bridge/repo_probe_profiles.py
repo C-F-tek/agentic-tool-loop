@@ -129,6 +129,20 @@ _PROFILE_SPECS: tuple[dict[str, Any], ...] = (
                 "name": "selection_metrics_are_bounded_and_deterministic",
                 "description": "Selection metrics are bounded and deterministic",
             },
+            {
+                "name": "legacy_selection_handles_malformed_candidate_pool",
+                "description": (
+                    "Non-list and partially malformed candidate pools are ignored without "
+                    "exceptions while valid candidate entries remain usable."
+                ),
+            },
+            {
+                "name": "legacy_selection_distinguishes_candidate_class",
+                "description": (
+                    "Document and area selections preserve candidate_class even when the "
+                    "selected path string is identical."
+                ),
+            },
         ],
     },
 )
@@ -1495,6 +1509,103 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         return {}
     
     cases.append(_case("legacy_selection_handles_missing_or_malformed_plans", case_legacy_selection_handles_missing_or_malformed_plans))
+    
+    def case_legacy_selection_handles_malformed_candidate_pool() -> dict[str, Any]:
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
+        
+        # Caso A: Candidate pool None
+        try:
+            result = legacy_selected_ids(candidates=None, doc_plan=doc_plan_ok, area_plans=area_plans_ok)
+            assert result == [], f"expected [], got {result!r}"
+        except Exception as exc:
+            raise AssertionError(f"helper_raised:{type(exc).__name__}") from exc
+        
+        # Caso B: Altri candidate pool non-list
+        assert legacy_selected_ids(candidates=123, doc_plan=doc_plan_ok, area_plans=area_plans_ok) == []
+        assert legacy_selected_ids(candidates="bad", doc_plan=doc_plan_ok, area_plans=area_plans_ok) == []
+        assert legacy_selected_ids(candidates={"candidate_id": "not-a-list"}, doc_plan=doc_plan_ok, area_plans=area_plans_ok) == []
+        
+        # Caso C: Lista parzialmente malformata con un candidato valido
+        partial_pool = [
+            None,
+            123,
+            "bad",
+            {},
+            {
+                "candidate_id": "root_doc:README.md",
+                "path": "README.md",
+                "kind": "file",
+                "candidate_class": "root_doc",
+                "static_rank": 0,
+                "signals": [],
+            },
+        ]
+        result = legacy_selected_ids(
+            candidates=partial_pool,
+            doc_plan={"arguments": {"paths": ["README.md"]}},
+            area_plans=[],
+        )
+        assert result == ["root_doc:README.md"], \
+            f"should extract valid candidate from malformed pool, got {result!r}"
+        
+        return {}
+    
+    cases.append(_case("legacy_selection_handles_malformed_candidate_pool", case_legacy_selection_handles_malformed_candidate_pool))
+    
+    def case_legacy_selection_distinguishes_doc_and_area_same_path() -> dict[str, Any]:
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
+        
+        # Candidate pool con stesso path ma classi diverse
+        same_path_pool = [
+            {
+                "candidate_id": "root_area:shared",
+                "path": "shared",
+                "kind": "dir",
+                "candidate_class": "root_area",
+                "static_rank": 0,
+                "signals": [],
+            },
+            {
+                "candidate_id": "root_doc:shared",
+                "path": "shared",
+                "kind": "file",
+                "candidate_class": "root_doc",
+                "static_rank": 1,
+                "signals": [],
+            },
+        ]
+        
+        # Document plan prima
+        doc_plan_shared = {
+            "arguments": {
+                "paths": ["shared"],
+            },
+        }
+        
+        # Area plans dopo
+        area_plans_shared = [
+            {
+                "arguments": {
+                    "path": "shared",
+                },
+            },
+        ]
+        
+        result = legacy_selected_ids(
+            candidates=same_path_pool,
+            doc_plan=doc_plan_shared,
+            area_plans=area_plans_shared,
+        )
+        
+        # La classe deriva dalla sezione del plan
+        # Ordine: documenti prima delle aree
+        expected = ["root_doc:shared", "root_area:shared"]
+        assert result == expected, \
+            f"document then area order should prevail, got {result!r}"
+        
+        return {}
+    
+    cases.append(_case("legacy_selection_distinguishes_doc_and_area_same_path", case_legacy_selection_distinguishes_doc_and_area_same_path))
     
     def case_selection_metrics_exact_match() -> dict[str, Any]:
         selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
