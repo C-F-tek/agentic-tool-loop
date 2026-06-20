@@ -2126,10 +2126,6 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             stage_counts["legacy_selected_ids_fn"] += 1
             return deepcopy(legacy_selected_ids(**kwargs))
 
-        def counting_selector(**kwargs):
-            stage_counts["selector_fn"] += 1
-            return deepcopy(selector_ready_fixture)
-
         def counting_selection_metrics(**kwargs):
             stage_counts["selection_metrics_fn"] += 1
             return deepcopy(selection_metrics(**kwargs))
@@ -2486,25 +2482,67 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         assert len(result.get("model_selected_candidate_ids", [])) <= 13, \
             f"model IDs should be <= 13, got {len(result.get('model_selected_candidate_ids', []))}"
 
+        forbidden_top_level_keys = {
+            "state",
+            "history",
+            "evidence_contract",
+            "required_next_tool_call",
+            "tool",
+            "arguments",
+            "plan",
+            "area_read_plan",
+            "dispatch",
+            "lifecycle_status",
+            "raw_response",
+            "message",
+            "messages",
+            "response",
+            "request_body",
+            "tools",
+        }
+
+        forbidden_model_summary_keys = {
+            "raw_response",
+            "message",
+            "messages",
+            "response",
+            "request_body",
+            "tools",
+        }
+
         model_summary = result.get("model_summary", {})
         assert isinstance(model_summary, dict), "model_summary should be a dict"
-        assert len(model_summary.get("unknown_candidate_ids", [])) <= 13, \
-            f"unknown_candidate_ids should be <= 13, got {len(model_summary.get('unknown_candidate_ids', []))}"
-        assert len(model_summary.get("duplicate_candidate_ids", [])) <= 13, \
-            f"duplicate_candidate_ids should be <= 13, got {len(model_summary.get('duplicate_candidate_ids', []))}"
-        assert len(model_summary.get("duplicate_input_candidate_ids", [])) <= 13, \
-            f"duplicate_input_candidate_ids should be <= 13, got {len(model_summary.get('duplicate_input_candidate_ids', []))}"
+
+        for key in forbidden_top_level_keys:
+            assert key not in result, f"forbidden top-level key {key!r} found in result"
+
+        for key in forbidden_model_summary_keys:
+            assert key not in model_summary, f"forbidden model_summary key {key!r} found"
+
+        diagnostic_id_fields = [
+            "unknown_candidate_ids",
+            "duplicate_candidate_ids",
+            "duplicate_input_candidate_ids",
+        ]
+
+        for field_name in diagnostic_id_fields:
+            values = model_summary.get(field_name, [])
+            assert isinstance(values, list), f"{field_name} should be a list"
+            assert len(values) <= 13, f"{field_name} should have <= 13 elements"
+            assert len(values) == len(set(values)), f"{field_name} should be deduplicated"
+            assert all(
+                isinstance(value, str)
+                and bool(value.strip())
+                and len(value.strip()) <= 500
+                for value in values
+            ), f"{field_name} elements should be non-empty strings <= 500 chars"
+
         assert len(model_summary.get("rationale", "")) <= 1000, \
             f"rationale should be <= 1000, got {len(model_summary.get('rationale', ''))}"
         assert len(model_summary.get("error_type", "")) <= 120, \
             f"error_type should be <= 120, got {len(model_summary.get('error_type', ''))}"
         assert len(model_summary.get("error", "")) <= 500, \
             f"error should be <= 500, got {len(model_summary.get('error', ''))}"
-
-        raw_key_names = {"raw_response", "message", "messages", "response", "request_body", "tools"}
-        for key in raw_key_names:
-            assert key not in result, f"raw key {key!r} should not be in result"
-            assert key not in model_summary, f"raw key {key!r} should not be in model_summary"
 
         return {}
     cases.append(_case("evaluation_output_is_bounded", case_evaluation_output_is_bounded))
@@ -2658,17 +2696,19 @@ def repo_probe_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     runs: list[dict[str, Any]] = []
 
-    # Dispatch deterministic profile based on profile_id
-    if profile_id == PROFILE_ORIENTATION_SHADOW_HELPERS:
-        # Shadow helpers profile - only deterministic engine supported
+    # Dispatch exact routing
+    if profile_id == PROFILE_ORIENTATION_SELECTOR:
+        if engine in {"deterministic", "both"}:
+            runs.append(_deterministic_orientation_profile())
+    elif profile_id == PROFILE_ORIENTATION_SHADOW_HELPERS:
         runs.append(_deterministic_orientation_shadow_helpers_profile())
     elif profile_id == PROFILE_ORIENTATION_SHADOW_EVALUATOR:
-        # Evaluator profile - only deterministic engine supported
         runs.append(_deterministic_orientation_shadow_evaluator_profile())
-    elif engine in {"deterministic", "both"}:
-        runs.append(_deterministic_orientation_profile())
 
-    if engine in {"hypothesis", "both"}:
+    if (
+        profile_id == PROFILE_ORIENTATION_SELECTOR
+        and engine in {"hypothesis", "both"}
+    ):
         runs.append(
             _hypothesis_orientation_profile(
                 max_examples=max_examples,
