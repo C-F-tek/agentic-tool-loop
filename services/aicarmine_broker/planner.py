@@ -59,6 +59,7 @@ from .config import (
     internal_tool_prompt,
     internal_tools_list,
     ollama_options,
+    AICARMINE_ORIENTATION_LANE_MODE,
 )
 from .job_store import (
     agent_job_planner_stream_path,
@@ -182,6 +183,16 @@ from .application.controller.preseed import (
     root_surface_dir_paths as _root_surface_dir_paths_impl,
     root_surface_entries as _root_surface_entries_impl,
     root_surface_file_paths as _root_surface_file_paths_impl,
+)
+from .application.controller.orientation_lane import (
+    controller_orientation_model_select
+    as _controller_orientation_model_select_impl,
+    orientation_shadow_effective_mode
+    as _orientation_shadow_effective_mode_impl,
+    orientation_legacy_selected_candidate_ids
+    as _orientation_legacy_selected_candidate_ids_impl,
+    orientation_shadow_selection_metrics
+    as _orientation_shadow_selection_metrics_impl,
 )
 from .application.controller.rag_preseed import (
     controller_preplanner_rag_query_plan as _controller_preplanner_rag_query_plan_impl,
@@ -404,6 +415,43 @@ from .application.prompt.window_signatures import (
     repo_read_window_signature as _repo_read_window_signature,
 )
 from .infrastructure.json_files import same_tool_artifact_payload as _same_tool_artifact_payload_impl
+
+
+# ---------------------------------------------------------------------------
+# Orientation shadow composition (behavior-neutral wiring)
+# ---------------------------------------------------------------------------
+
+ORIENTATION_SHADOW_MAX_SELECTED = 13
+
+
+def _controller_initial_orientation_candidate_pool(
+    root_result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return _controller_initial_orientation_candidate_pool_impl(
+        root_result,
+        repo_root=LAB_REPO,
+        safe_rel_path=safe_rel_path,
+        named_read_priority=_NAMED_READ_PRIORITY,
+    )
+
+
+def _controller_orientation_model_select(
+    *,
+    goal: str,
+    semantic_intent: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return _controller_orientation_model_select_impl(
+        goal=goal,
+        semantic_intent=semantic_intent,
+        candidates=candidates,
+        post_json=post_json,
+        planner_url=PLANNER_URL,
+        planner_model=PLANNER_MODEL,
+        keep_alive=OLLAMA_KEEP_ALIVE,
+        timeout_seconds=AGENTIC_PLANNER_STEP_TIMEOUT,
+        max_selected=ORIENTATION_SHADOW_MAX_SELECTED,
+    )
 
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
