@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 import sys
 from typing import Any, Callable
-
+from hypothesis import HealthCheck, given, seed, settings
+from hypothesis import strategies as st
 PROFILE_ORIENTATION_SELECTOR = "orientation.selector.contract.v1"
 PROFILE_ORIENTATION_SHADOW_HELPERS = (
     "orientation.shadow_helpers.contract.v1"
@@ -1122,8 +1123,8 @@ def _hypothesis_orientation_profile(
             "properties": [],
         }
 
-    from hypothesis import HealthCheck, given, seed, settings
-    from hypothesis import strategies as st
+#    from hypothesis import HealthCheck, given, seed, settings
+#    from hypothesis import strategies as st
 
     module = importlib.import_module(
         "aicarmine_broker.application.controller.orientation_lane"
