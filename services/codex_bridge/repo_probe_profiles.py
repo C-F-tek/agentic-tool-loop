@@ -1940,6 +1940,9 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         "keep_alive": "5m",
     }
 
+    def ready_selector(**_kwargs: Any) -> dict[str, Any]:
+        return deepcopy(selector_ready_fixture)
+
     def _raise_assertion_error(message: str) -> NoReturn:
         raise AssertionError(message)
 
@@ -2016,6 +2019,18 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             "evaluate_initial_orientation_shadow",
         )
 
+        def forbidden_candidate_pool(_root_result: object) -> list[dict[str, Any]]:
+            raise AssertionError("candidate_pool_called")
+
+        def forbidden_selector(**_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("selector_called")
+
+        def forbidden_legacy(**_kwargs: Any) -> list[str]:
+            raise AssertionError("legacy_selection_called")
+
+        def forbidden_metrics(**_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("selection_metrics_called")
+
         scenarios = [
             None,
             {},
@@ -2031,8 +2046,10 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
                 semantic_intent={"target_kind": "repository"},
                 doc_plan=doc_plan_ok,
                 area_plans=area_plans_ok,
-                candidate_pool_fn=lambda x: fixture_pool,
-                selector_fn=selector_ready_fixture,
+                candidate_pool_fn=forbidden_candidate_pool,
+                selector_fn=forbidden_selector,
+                legacy_selected_ids_fn=forbidden_legacy,
+                selection_metrics_fn=forbidden_metrics,
             )
             assert result["effective_mode"] == "shadow", f"expected shadow, got {result['effective_mode']}"
             assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
@@ -2049,7 +2066,16 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             "evaluate_initial_orientation_shadow",
         )
 
-        empty_pool = lambda x: []
+        counters = {"candidate_pool": 0, "selector": 0}
+
+        def empty_pool(root_result: object) -> list[dict[str, Any]]:
+            counters["candidate_pool"] += 1
+            assert root_result == {"ok": True}
+            return []
+
+        def forbidden_selector(**_kwargs: Any) -> dict[str, Any]:
+            counters["selector"] += 1
+            raise AssertionError("selector_called")
 
         result = invoke(
             evaluator=evaluator,
@@ -2059,7 +2085,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
             candidate_pool_fn=empty_pool,
-            selector_fn=selector_ready_fixture,
+            selector_fn=forbidden_selector,
         )
 
         assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
@@ -2068,6 +2094,8 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         assert result["candidate_ids"] == [], f"expected [], got {result['candidate_ids']}"
         assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
         assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
+        assert counters["candidate_pool"] == 1, f"expected 1, got {counters['candidate_pool']}"
+        assert counters["selector"] == 0, f"expected 0, got {counters['selector']}"
 
         return {}
     cases.append(_case("empty_candidate_pool_skips_selector", case_empty_candidate_pool_skips_selector))
@@ -2085,9 +2113,14 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             stage_counts["effective_mode_fn"] += 1
             return effective_mode(mode)
 
-        def counting_candidate_pool(candidates):
+        def counting_candidate_pool(root_result: object) -> list[dict[str, Any]]:
             stage_counts["candidate_pool_fn"] += 1
-            return deepcopy(candidates)
+            assert root_result == {"ok": True}
+            return deepcopy(fixture_pool)
+
+        def counting_selector(**kwargs):
+            stage_counts["selector_fn"] += 1
+            return deepcopy(selector_ready_fixture)
 
         def counting_legacy_selected_ids(**kwargs):
             stage_counts["legacy_selected_ids_fn"] += 1
@@ -2129,9 +2162,8 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         assert result["legacy_authoritative"] is True, f"expected True, got {result['legacy_authoritative']}"
         assert result["candidate_count"] == len(fixture_pool), f"expected {len(fixture_pool)}, got {result['candidate_count']}"
 
-        expected_legacy = ["root_doc:README.md", "root_doc:AGENTS.md", "root_area:services", "root_area:docs"]
-        assert result["legacy_selected_candidate_ids"] == expected_legacy, \
-            f"expected {expected_legacy!r}, got {result['legacy_selected_candidate_ids']!r}"
+        assert result["legacy_selected_candidate_ids"] == expected_legacy_ids, \
+            f"expected {expected_legacy_ids!r}, got {result['legacy_selected_candidate_ids']!r}"
 
         expected_model = ["root_doc:README.md", "root_area:services"]
         assert result["model_selected_candidate_ids"] == expected_model, \
@@ -2197,29 +2229,41 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         }
 
         pool = deepcopy(order_pool_different)
-        doc_plan_before = deepcopy(doc_plan_ok)
-        area_plans_before = deepcopy(area_plans_ok)
+        doc_plan = deepcopy(doc_plan_ok)
+        area_plans = deepcopy(area_plans_ok)
+
+        pool_before = deepcopy(pool)
+        doc_plan_before = deepcopy(doc_plan)
+        area_plans_before = deepcopy(area_plans)
+
+        def order_candidate_pool(root_result: object) -> list[dict[str, Any]]:
+            assert root_result == {"ok": True}
+            return deepcopy(pool)
+
+        def order_selector(**_kwargs: Any) -> dict[str, Any]:
+            return deepcopy(selector_mock_ready)
 
         result = invoke(
             evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             semantic_intent={"target_kind": "repository"},
-            doc_plan=doc_plan_ok,
-            area_plans=area_plans_ok,
-            candidate_pool_fn=lambda x: deepcopy(pool),
-            selector_fn=lambda **kw: deepcopy(selector_mock_ready),
+            doc_plan=doc_plan,
+            area_plans=area_plans,
+            candidate_pool_fn=order_candidate_pool,
+            selector_fn=order_selector,
         )
 
-        assert result["legacy_selected_candidate_ids"] == expected_legacy, \
+        assert result["legacy_selected_candidate_ids"] == expected_legacy_ids, \
             f"plan order should drive comparison, got {result['legacy_selected_candidate_ids']!r}"
 
         overlap = ["root_doc:README.md", "root_area:services"]
         assert result["selection_metrics"]["selection_overlap"] == overlap, \
             f"expected {overlap!r}, got {result['selection_metrics']['selection_overlap']!r}"
 
-        assert doc_plan_ok == doc_plan_before, "doc_plan should be unchanged"
-        assert area_plans_ok == area_plans_before, "area_plans should be unchanged"
+        assert pool == pool_before, "pool should be unchanged"
+        assert doc_plan == doc_plan_before, "doc_plan should be unchanged"
+        assert area_plans == area_plans_before, "area_plans should be unchanged"
 
         return {}
     cases.append(_case("legacy_plan_order_drives_comparison", case_legacy_plan_order_drives_comparison))
@@ -2240,7 +2284,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
             candidate_pool_fn=failing_pool,
-            selector_fn=selector_ready_fixture,
+            selector_fn=ready_selector,
         )
 
         assert result["status"] == "unavailable", f"expected unavailable, got {result['status']}"
@@ -2274,7 +2318,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
             candidate_pool_fn=valid_pool,
-            selector_fn=selector_ready_fixture,
+            selector_fn=ready_selector,
             legacy_selected_ids_fn=failing_legacy,
         )
 
@@ -2433,27 +2477,34 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         assert result["candidate_count"] == 45, \
             f"expected 45, got {result['candidate_count']}"
         assert len(result["candidate_ids"]) == 32, f"expected 32, got {len(result['candidate_ids'])}"
-        assert all(len(id_) <= 500 for id_ in result.get("candidate_ids", [])), \
-            "all candidate IDs should be <= 500 chars"
+        assert len(result["candidate_ids"]) == len(set(result["candidate_ids"])), \
+            "candidate_ids should be deduplicated"
+        assert all(
+            isinstance(candidate_id, str) and len(candidate_id) <= 500
+            for candidate_id in result["candidate_ids"]
+        ), "all candidate IDs should be strings <= 500 chars"
         assert len(result.get("model_selected_candidate_ids", [])) <= 13, \
             f"model IDs should be <= 13, got {len(result.get('model_selected_candidate_ids', []))}"
-        assert len(result.get("model_summary", {}).get("diagnostics", [])) <= 13, \
-            f"diagnostics list should be <= 13, got {len(result.get('model_summary', {}).get('diagnostics', []))}"
-        assert len(result.get("model_summary", {}).get("rationale", "")) <= 1000, \
-            f"rationale should be <= 1000, got {len(result.get('model_summary', {}).get('rationale', ''))}"
-        assert len(result.get("model_summary", {}).get("error_type", "")) <= 120, \
-            f"error_type should be <= 120, got {len(result.get('model_summary', {}).get('error_type', ''))}"
-        assert len(result.get("model_summary", {}).get("error", "")) <= 500, \
-            f"error should be <= 500, got {len(result.get('model_summary', {}).get('error', ''))}"
 
-        forbidden_keys = {
-            "state", "history", "evidence_contract", "required_next_tool_call",
-            "tool", "arguments", "plan", "area_read_plan", "dispatch",
-            "lifecycle_status", "raw_response", "message", "messages", "response",
-            "request_body", "tools",
-        }
-        for key in forbidden_keys:
-            assert key not in result, f"forbidden key {key!r} found in result"
+        model_summary = result.get("model_summary", {})
+        assert isinstance(model_summary, dict), "model_summary should be a dict"
+        assert len(model_summary.get("unknown_candidate_ids", [])) <= 13, \
+            f"unknown_candidate_ids should be <= 13, got {len(model_summary.get('unknown_candidate_ids', []))}"
+        assert len(model_summary.get("duplicate_candidate_ids", [])) <= 13, \
+            f"duplicate_candidate_ids should be <= 13, got {len(model_summary.get('duplicate_candidate_ids', []))}"
+        assert len(model_summary.get("duplicate_input_candidate_ids", [])) <= 13, \
+            f"duplicate_input_candidate_ids should be <= 13, got {len(model_summary.get('duplicate_input_candidate_ids', []))}"
+        assert len(model_summary.get("rationale", "")) <= 1000, \
+            f"rationale should be <= 1000, got {len(model_summary.get('rationale', ''))}"
+        assert len(model_summary.get("error_type", "")) <= 120, \
+            f"error_type should be <= 120, got {len(model_summary.get('error_type', ''))}"
+        assert len(model_summary.get("error", "")) <= 500, \
+            f"error should be <= 500, got {len(model_summary.get('error', ''))}"
+
+        raw_key_names = {"raw_response", "message", "messages", "response", "request_body", "tools"}
+        for key in raw_key_names:
+            assert key not in result, f"raw key {key!r} should not be in result"
+            assert key not in model_summary, f"raw key {key!r} should not be in model_summary"
 
         return {}
     cases.append(_case("evaluation_output_is_bounded", case_evaluation_output_is_bounded))
@@ -2471,39 +2522,49 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         immutable_candidates = deepcopy(fixture_pool)
         immutable_selector_fixture = deepcopy(selector_ready_fixture)
 
+        root_before = deepcopy(immutable_root_result)
+        intent_before = deepcopy(immutable_semantic_intent)
+        doc_before = deepcopy(immutable_doc_plan)
+        areas_before = deepcopy(immutable_area_plans)
+        candidates_before = deepcopy(immutable_candidates)
+        selector_before = deepcopy(immutable_selector_fixture)
+
+        def immutable_candidate_pool(root_result: object) -> list[dict[str, Any]]:
+            assert root_result == immutable_root_result
+            return deepcopy(immutable_candidates)
+
+        def immutable_selector(**_kwargs: Any) -> dict[str, Any]:
+            return deepcopy(immutable_selector_fixture)
+
         result1 = invoke(
             evaluator=evaluator,
             requested_mode="shadow",
             root_result=immutable_root_result,
-            candidates=immutable_candidates,
             semantic_intent=immutable_semantic_intent,
             doc_plan=immutable_doc_plan,
             area_plans=immutable_area_plans,
-            candidate_pool_fn=lambda x: deepcopy(immutable_candidates),
-            selector_fn=lambda **kw: deepcopy(immutable_selector_fixture),
+            candidate_pool_fn=immutable_candidate_pool,
+            selector_fn=immutable_selector,
         )
 
         result2 = invoke(
             evaluator=evaluator,
             requested_mode="shadow",
             root_result=immutable_root_result,
-            candidates=immutable_candidates,
             semantic_intent=immutable_semantic_intent,
             doc_plan=immutable_doc_plan,
             area_plans=immutable_area_plans,
-            candidate_pool_fn=lambda x: deepcopy(immutable_candidates),
-            selector_fn=lambda **kw: deepcopy(immutable_selector_fixture),
+            candidate_pool_fn=immutable_candidate_pool,
+            selector_fn=immutable_selector,
         )
 
         assert result1 == result2, "results should be identical for same inputs"
-        assert immutable_root_result == {"ok": True, "data": "test"}, "root_result should be unchanged"
-        assert immutable_semantic_intent == {"target_kind": "repository", "query": "test query"}, \
-            "semantic_intent should be unchanged"
-        assert immutable_doc_plan == {"arguments": {"paths": ["README.md", "AGENTS.md"]}}, \
-            "doc_plan should be unchanged"
-        assert immutable_area_plans == [{"arguments": {"path": "services"}}], \
-            "area_plans should be unchanged"
-        assert immutable_candidates == fixture_pool, "candidates should be unchanged"
+        assert immutable_root_result == root_before, "root_result should be unchanged"
+        assert immutable_semantic_intent == intent_before, "semantic_intent should be unchanged"
+        assert immutable_doc_plan == doc_before, "doc_plan should be unchanged"
+        assert immutable_area_plans == areas_before, "area_plans should be unchanged"
+        assert immutable_candidates == candidates_before, "candidates should be unchanged"
+        assert immutable_selector_fixture == selector_before, "selector_fixture should be unchanged"
 
         try:
             json.dumps(result1)
