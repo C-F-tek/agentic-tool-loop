@@ -16,6 +16,7 @@ from repo_mcp_common import (
 )
 from repo_probe_profiles import (
     PROFILE_ORIENTATION_SELECTOR,
+    PROFILE_ORIENTATION_SHADOW_HELPERS,
     repo_probe_profiles,
     repo_probe_run,
 )
@@ -181,7 +182,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "profile_id": {
                     "type": "string",
                     "default": PROFILE_ORIENTATION_SELECTOR,
-                    "enum": [PROFILE_ORIENTATION_SELECTOR],
+                    "enum": [PROFILE_ORIENTATION_SELECTOR, PROFILE_ORIENTATION_SHADOW_HELPERS],
                 },
                 "engine": {
                     "type": "string",

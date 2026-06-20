@@ -1242,13 +1242,13 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         "aicarmine_broker.application.controller.orientation_lane"
     )
     
-    effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
-    legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
-    selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
+    # Fixture candidate pool con tutti gli ID attesi
+    fixture_pool = _fixture_candidate_pool()
     
     cases: list[dict[str, Any]] = []
     
     def case_active_mode_fails_closed_to_legacy() -> dict[str, Any]:
+        effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
         assert effective_mode("active") == "legacy", \
             f"expected 'legacy', got '{effective_mode('active')}'"
         assert effective_mode(" ACTIVE ") == "legacy", \
@@ -1258,6 +1258,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("active_mode_fails_closed_to_legacy", case_active_mode_fails_closed_to_legacy))
     
     def case_legacy_mode_never_requests_shadow() -> dict[str, Any]:
+        effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
         assert effective_mode("legacy") == "legacy"
         assert effective_mode(" LEGACY ") == "legacy"
         assert effective_mode("") == "legacy"
@@ -1269,7 +1270,8 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     
     cases.append(_case("legacy_mode_never_requests_shadow", case_legacy_mode_never_requests_shadow))
     
-    def case_shadow_mode_is_exact_match_only() -> dict[str, Any]:
+    def case_shadow_mode_is_exact_only() -> dict[str, Any]:
+        effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
         assert effective_mode("shadow") == "shadow"
         assert effective_mode(" SHADOW ") == "shadow"
         assert effective_mode("shadowing") == "legacy"
@@ -1277,7 +1279,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert effective_mode(True) == "legacy"
         return {}
     
-    cases.append(_case("shadow_mode_is_exact_match_only", case_shadow_mode_is_exact_match_only))
+    cases.append(_case("shadow_mode_is_exact_match_only", case_shadow_mode_is_exact_only))
     
     doc_plan_ok = {
         "arguments": {
@@ -1297,8 +1299,62 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         },
     ]
     
+    # Order preservation case - candidate pool contains ALL expected IDs but in different order
+    order_pool = [
+        {
+            "candidate_id": "root_area:docs",
+            "path": "docs",
+            "kind": "dir",
+            "candidate_class": "root_area",
+            "static_rank": 0,
+            "signals": [],
+        },
+        {
+            "candidate_id": "root_doc:AGENTS.md",
+            "path": "AGENTS.md",
+            "kind": "file",
+            "candidate_class": "root_doc",
+            "static_rank": 1,
+            "signals": ["doc_or_config"],
+        },
+        {
+            "candidate_id": "root_area:services",
+            "path": "services",
+            "kind": "dir",
+            "candidate_class": "root_area",
+            "static_rank": 2,
+            "signals": ["non_low_signal"],
+        },
+        {
+            "candidate_id": "root_doc:README.md",
+            "path": "README.md",
+            "kind": "file",
+            "candidate_class": "root_doc",
+            "static_rank": 3,
+            "signals": ["doc_or_config"],
+        },
+    ]
+    doc_plan_ordered = {
+        "arguments": {
+            "paths": ["README.md", "AGENTS.md"],
+        },
+    }
+    area_plans_ordered = [
+        {
+            "arguments": {
+                "path": "services",
+            },
+        },
+        {
+            "arguments": {
+                "path": "docs",
+            },
+        },
+    ]
+    
     def case_legacy_selection_uses_executed_plans() -> dict[str, Any]:
-        result = legacy_selected_ids(candidates=_fixture_candidate_pool(), doc_plan=doc_plan_ok, area_plans=area_plans_ok)
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
+        result = legacy_selected_ids(candidates=order_pool, doc_plan=doc_plan_ok, area_plans=area_plans_ok)
         expected = [
             "root_doc:README.md",
             "root_doc:AGENTS.md",
@@ -1311,12 +1367,13 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("legacy_selection_uses_executed_plans", case_legacy_selection_uses_executed_plans))
     
     def case_legacy_selection_ignores_unknown_paths() -> dict[str, Any]:
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         doc_plan_unknown = {
             "arguments": {
                 "paths": ["UNKNOWN.md", "README.md"],
             },
         }
-        result = legacy_selected_ids(candidates=_fixture_candidate_pool(), doc_plan=doc_plan_unknown, area_plans=[])
+        result = legacy_selected_ids(candidates=order_pool, doc_plan=doc_plan_unknown, area_plans=[])
         # UNKNOWN.md non è nel pool, quindi non deve comparire nel risultato
         assert "root_doc:UNKNOWN.md" not in result, \
             f"unknown path should be ignored, got {result!r}"
@@ -1326,25 +1383,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("legacy_selection_ignores_unknown_paths", case_legacy_selection_ignores_unknown_paths))
     
     def case_legacy_selection_preserves_doc_then_area_order() -> dict[str, Any]:
-        # Candidate pool in ordine diverso dai plan
-        candidates_different_order = [
-            {
-                "candidate_id": "root_area:docs",
-                "path": "docs",
-                "kind": "dir",
-                "candidate_class": "root_area",
-                "static_rank": 0,
-                "signals": [],
-            },
-            {
-                "candidate_id": "root_doc:README.md",
-                "path": "README.md",
-                "kind": "file",
-                "candidate_class": "root_doc",
-                "static_rank": 1,
-                "signals": [],
-            },
-        ]
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
+        # Candidate pool con tutti gli ID attesi ma in ordine diverso dai plan
+        candidates_different_order = order_pool
         doc_plan_ordered = {
             "arguments": {
                 "paths": ["README.md", "AGENTS.md"],
@@ -1359,13 +1400,14 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         ]
         result = legacy_selected_ids(candidates=candidates_different_order, doc_plan=doc_plan_ordered, area_plans=area_plans_ordered)
         # Ordine dei plan prevale su quello del pool
-        assert result == ["root_doc:README.md", "root_doc:AGENTS.md", "root_area:services"], \
+        assert result == ["root_doc:README.md", "root_doc:AGENTS.md", "root_area:services", "root_area:docs"], \
             f"plan order should prevail, got {result!r}"
         return {}
     
     cases.append(_case("legacy_selection_preserves_doc_then_area_order", case_legacy_selection_preserves_doc_then_area_order))
     
     def case_legacy_selection_deduplicates_candidate_ids() -> dict[str, Any]:
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         doc_plan_dup = {
             "arguments": {
                 "paths": ["README.md", "README.md", "AGENTS.md"],
@@ -1383,7 +1425,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
                 },
             },
         ]
-        result = legacy_selected_ids(candidates=_fixture_candidate_pool(), doc_plan=doc_plan_dup, area_plans=area_plans_dup)
+        result = legacy_selected_ids(candidates=order_pool, doc_plan=doc_plan_dup, area_plans=area_plans_dup)
         assert len(result) == 3, f"expected 3 unique IDs, got {len(result)}: {result}"
         assert result.count("root_doc:README.md") == 1
         assert result.count("root_area:services") == 1
@@ -1392,19 +1434,51 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("legacy_selection_deduplicates_candidate_ids", case_legacy_selection_deduplicates_candidate_ids))
     
     def case_legacy_selection_handles_missing_or_malformed_plans() -> dict[str, Any]:
-        # Test vari casi malformed
-        assert legacy_selected_ids(candidates=[], doc_plan=None, area_plans=[]) == []
-        assert legacy_selected_ids(candidates=[], doc_plan={}, area_plans=[]) == []
-        assert legacy_selected_ids(candidates=[], doc_plan={"arguments": "not-a-list"}, area_plans=[]) == []
-        assert legacy_selected_ids(candidates=[], doc_plan={"arguments": [{"path": "x"}]}, area_plans=[]) == []
-        assert legacy_selected_ids(candidates=[], doc_plan={"arguments": [{"path": "x"}, {"invalid": True}]}, area_plans=[]) == []
-        assert legacy_selected_ids(candidates=[], doc_plan={"arguments": [{"path": None}]}, area_plans=[]) == []
-        assert legacy_selected_ids(candidates=[], doc_plan={"arguments": [{"path": 123}]}, area_plans=[]) == []
+        legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
+        # Usa sempre un candidate pool non vuoto per discriminare i casi malformed
+        malformed_pool = order_pool
+        
+        # Caso 1: doc_plan=None
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans=[]) == []
+        
+        # Caso 2: doc_plan arguments non-dict
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={}, area_plans=[]) == []
+        
+        # Caso 3: paths non-list
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": "not-a-list"}, area_plans=[]) == []
+        
+        # Caso 4: elementi non-dict nei paths
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"path": "x"}]}, area_plans=[]) == []
+        
+        # Caso 5: elemento invalid nei paths
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"invalid": True}]}, area_plans=[]) == []
+        
+        # Caso 6: path non-stringa
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"path": None}]}, area_plans=[]) == []
+        
+        # Caso 7: path non-stringa (integer)
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"path": 123}]}, area_plans=[]) == []
+        
+        # Caso 8: combinazione valida + malformata - conserva solo validi
+        mixed_paths = [{"path": "INVALID"}, {"path": "README.md"}]
+        result = legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": mixed_paths}, area_plans=[])
+        assert result == ["root_doc:README.md"], f"should filter to only valid, got {result!r}"
+        
+        # Caso 9: area_plans non-list
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans="bad") == []
+        
+        # Caso 10: area plan arguments non-dict
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans=[{"arguments": "bad"}]) == []
+        
+        # Caso 11: area plan path non-stringa
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans=[{"arguments": {"path": None}}]) == []
+        
         return {}
     
     cases.append(_case("legacy_selection_handles_missing_or_malformed_plans", case_legacy_selection_handles_missing_or_malformed_plans))
     
     def case_selection_metrics_exact_match() -> dict[str, Any]:
+        selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         legacy = ["A", "B"]
         model = ["A", "B"]
         result = selection_metrics(legacy_selected_candidate_ids=legacy, model_selected_candidate_ids=model)
@@ -1420,6 +1494,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("selection_metrics_exact_match", case_selection_metrics_exact_match))
     
     def case_selection_metrics_partial_overlap() -> dict[str, Any]:
+        selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         legacy = ["A", "B", "C"]
         model = ["B", "D", "A"]
         result = selection_metrics(legacy_selected_candidate_ids=legacy, model_selected_candidate_ids=model)
@@ -1435,6 +1510,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("selection_metrics_partial_overlap", case_selection_metrics_partial_overlap))
     
     def case_selection_metrics_empty_model_selection() -> dict[str, Any]:
+        selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         legacy = ["A"]
         model = []
         result = selection_metrics(legacy_selected_candidate_ids=legacy, model_selected_candidate_ids=model)
@@ -1450,21 +1526,32 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     cases.append(_case("selection_metrics_empty_model_selection", case_selection_metrics_empty_model_selection))
     
     def case_selection_metrics_bounds_and_input_immutability() -> dict[str, Any]:
-        oversized = "x" * 501
-        legacy = ["A", "B", oversized, "", None]
-        model = ["A", "B", oversized, "C"]
+        selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
+        # Costruisci almeno 15 ID validi distinti per lato
+        legacy_valid = [f"id:{index}" for index in range(15)]
+        model_valid = [f"id:{index}" for index in range(5, 20)]
         
-        legacy_before = deepcopy(legacy)
-        model_before = deepcopy(model)
+        # Aggiungi duplicati, vuoti, whitespace, None, integer, oversized
+        legacy_with_invalid = legacy_valid + ["id:0", "", "   ", None, 123, "id:" * 501]
+        model_with_invalid = model_valid + ["id:5", "", "   ", None, {}, "id:" * 501]
         
-        result1 = selection_metrics(legacy_selected_candidate_ids=legacy, model_selected_candidate_ids=model)
-        result2 = selection_metrics(legacy_selected_candidate_ids=legacy, model_selected_candidate_ids=model)
+        legacy_before = deepcopy(legacy_with_invalid)
+        model_before = deepcopy(model_with_invalid)
+        
+        result1 = selection_metrics(legacy_selected_candidate_ids=legacy_with_invalid, model_selected_candidate_ids=model_with_invalid)
+        result2 = selection_metrics(legacy_selected_candidate_ids=legacy_with_invalid, model_selected_candidate_ids=model_with_invalid)
         
         assert result1 == result2, "results should be identical for same inputs"
-        assert legacy == legacy_before, "legacy input should be unchanged"
-        assert model == model_before, "model input should be unchanged"
-        assert result1["legacy_count"] <= 13
-        assert result1["model_count"] <= 13
+        assert legacy_with_invalid == legacy_before, "legacy input should be unchanged"
+        assert model_with_invalid == model_before, "model input should be unchanged"
+        assert result1["legacy_count"] == 13, f"expected 13, got {result1['legacy_count']}"
+        assert result1["model_count"] == 13, f"expected 13, got {result1['model_count']}"
+        expected_overlap = ["id:5", "id:6", "id:7", "id:8", "id:9", "id:10", "id:11", "id:12"]
+        assert result1["selection_overlap"] == expected_overlap, f"expected {expected_overlap!r}, got {result1['selection_overlap']!r}"
+        assert result1["selection_overlap_count"] == 8
+        assert result1["top1_match"] is False
+        assert result1["exact_match"] is False
+        assert result1["would_change_selection"] is True
         assert all(len(id_) <= 500 for id_ in result1.get("selection_overlap", []))
         return {}
     
