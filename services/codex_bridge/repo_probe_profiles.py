@@ -1817,6 +1817,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         "orientation_shadow_selection_metrics",
     )
 
+    cases: list[dict[str, Any]] = []
 
     def invoke(
         evaluator: Callable[..., dict[str, Any]],

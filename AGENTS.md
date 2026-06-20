@@ -178,6 +178,51 @@ Prefer:
 
 Do not emit Bash, WSL, macOS, or POSIX-only commands for a Windows task unless Carmine requests them.
 
+## User-level CLI surface
+
+The interactive PowerShell environment may expose additional Linux-like and structured-data CLI tools for agent use.
+
+Before relying on any command, verify it in the actual process with:
+
+`Get-Command <name> -ErrorAction Stop`
+
+Do not assume that a profile function or alias is available when PowerShell was started with `-NoProfile`, from another host, or before the profile or user `PATH` was updated.
+
+### PowerShell profile commands
+
+The normal PowerShell 7 profile currently exposes:
+
+* GNU-backed aliases: `grep`, `wc`.
+* PowerShell functions: `head`, `tail`, `touch`, `which`, `realpath`, `nl`, `sha256sum`, `md5sum`.
+* Standard PowerShell aliases: `ls`, `cat`, `cp`, `mv`, `rm`, `pwd`, `echo`, `sleep`, `ps`, `kill`, `tee`.
+
+These names do not make PowerShell a Bash-compatible shell. Continue to emit PowerShell syntax and do not use POSIX-only constructs unless the task explicitly targets Bash, WSL, or another POSIX shell.
+
+### User-installed structured-data CLI tools
+
+The user-level `pipx` command directory is:
+
+`C:\Users\carmi\.local\bin`
+
+The following applications may be available:
+
+* HTTP and API inspection: `http`, `https`, `httpie`.
+* CSV inspection and transformation: `csvclean`, `csvcut`, `csvformat`, `csvgrep`, `csvjoin`, `csvjson`, `csvlook`, `csvsort`, `csvsql`, `csvstack`, `csvstat`, `in2csv`, `sql2csv`.
+* Text or command-output conversion to JSON: `jc`.
+* Filesystem event observation: `watchmedo`.
+* YAML, XML, and TOML queries: `yq`, `xq`, `tomlq`.
+* System monitoring: `glances`.
+
+For `yq`, `xq`, or `tomlq`, verify the required `jq` executable before use:
+
+`Get-Command jq -ErrorAction Stop`
+
+Prefer structured output suitable for deterministic inspection, such as JSON from `csvjson`, `jc`, `yq`, `xq`, or `tomlq`, when it reduces fragile text parsing.
+
+These terminal tools are supporting utilities. They do not replace the specialized MCP owner for repository search, validation, Git inspection, patching, runtime control, project memory, or job artifacts.
+
+When a command is missing, preserve the failed command and error. Do not install, upgrade, or replace packages unless Carmine explicitly requests it.
+
 ## Completion format for technical tasks
 
 Use:
