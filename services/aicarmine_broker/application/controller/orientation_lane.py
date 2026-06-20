@@ -98,8 +98,9 @@ def orientation_legacy_selected_candidate_ids(
     Non sollevare per shape malformate.
     """
     # Costruisci mapping deterministico da candidates
+    candidate_items = candidates if isinstance(candidates, list) else []
     mapping: dict[tuple[str, str], str] = {}
-    for candidate in candidates:
+    for candidate in candidate_items:
         if not isinstance(candidate, dict):
             continue
         candidate_id = candidate.get("candidate_id", "")
@@ -153,19 +154,20 @@ def orientation_legacy_selected_candidate_ids(
                 if path_stripped:
                     area_paths.append(path_stripped)
     
-    # Build result with deduplication
+    # Build result with deduplication using two separate loops
+    # Ciclo documenti: usa root_doc come chiave
     seen: set[str] = set()
     result: list[str] = []
     
-    for path in doc_paths + area_paths:
-        key = ("root_doc", path) if any(p == path for p in doc_paths) else ("root_area", path)
-        # Determine class based on whether it's in doc_paths or area_paths
-        if path in doc_paths:
-            key = ("root_doc", path)
-        elif path in area_paths:
-            key = ("root_area", path)
-        
-        candidate_id = mapping.get(key)
+    for path in doc_paths:
+        candidate_id = mapping.get(("root_doc", path))
+        if candidate_id and candidate_id not in seen:
+            seen.add(candidate_id)
+            result.append(candidate_id)
+    
+    # Ciclo aree: usa root_area come chiave
+    for path in area_paths:
+        candidate_id = mapping.get(("root_area", path))
         if candidate_id and candidate_id not in seen:
             seen.add(candidate_id)
             result.append(candidate_id)
