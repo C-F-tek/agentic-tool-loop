@@ -245,7 +245,10 @@ def evaluate_initial_orientation_shadow(
 
     valid_candidates_list = valid_candidates(raw_pool)
     candidate_count = len(valid_candidates_list)
-    candidate_ids = bounded_ids([c["candidate_id"] for c in valid_candidates_list])[:32]
+    candidate_ids = bounded_ids(
+        [c["candidate_id"] for c in valid_candidates_list],
+        limit=32,
+    )
 
     if not valid_candidates_list:
         return {
