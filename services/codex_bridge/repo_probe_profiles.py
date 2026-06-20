@@ -1463,7 +1463,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
             f"should filter to only valid, got {result!r}"
         
         # Caso E: area_plans non-list
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans="bad") == []
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans="bad") == []
         
         # Caso F: area plans misti, con una parte valida
         mixed_area_plans = [
