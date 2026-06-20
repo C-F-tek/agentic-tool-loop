@@ -49,6 +49,49 @@ function Get-AICarmineSourceHashes {
     return $hashes
 }
 
+function Get-AICarmineHintClasses {
+    param([string]$Hint)
+
+    $classes = [System.Collections.Generic.List[string]]::new()
+    $inSection = $false
+    foreach ($line in @($Hint -split '\r?\n')) {
+        if ($line -eq 'Task classes:') {
+            $inSection = $true
+            continue
+        }
+        if ($line -eq 'Preferred sequence:') {
+            break
+        }
+        if ($inSection -and $line -match '^- (.+)$') {
+            [void]$classes.Add($Matches[1])
+        }
+    }
+    return @($classes)
+}
+
+function Get-AICarmineHintTools {
+    param([string]$Hint)
+
+    $tools = [System.Collections.Generic.List[string]]::new()
+    foreach ($match in [regex]::Matches($Hint, '(?m)^\d+\. (aicarmine_[^\r\n]+)\r?$')) {
+        [void]$tools.Add($match.Groups[1].Value)
+    }
+    return @($tools)
+}
+
+function Get-AICarmineTextSha256 {
+    param([string]$Text)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+        return (($sha256.ComputeHash($bytes) | ForEach-Object { '{0:x2}' -f $_ }) -join '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function Invoke-AICarmineWrapper {
     param([AllowEmptyString()][string]$RawInput)
 
@@ -278,6 +321,134 @@ try {
             $beforeHashes[$sourcePath] -eq $afterHashes[$sourcePath]
         ) ('Case 10 hook wrote source file: {0}' -f $sourcePath)
     }
+
+
+    $case11 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Non applicare patch e non modificare file. Esegui soltanto il reviewed probe orientation.selector.contract.v1.'
+    )
+    $case11Classes = @(Get-AICarmineHintClasses -Hint $case11)
+    Assert-AICarmine ($case11Classes[0] -eq 'repository_validation') 'Case 11 primary class is not repository_validation.'
+    Assert-AICarmine ($case11.Contains('aicarmine_repo_validate_probe_profiles')) 'Case 11 missing probe_profiles.'
+    Assert-AICarmine ($case11.Contains('aicarmine_repo_validate_probe_run')) 'Case 11 missing probe_run.'
+    Assert-AICarmine (-not ($case11Classes -contains 'repository_patch')) 'Case 11 classified the negated patch positively.'
+    Assert-AICarmine (-not $case11.Contains('aicarmine_repo_code_apply_patch')) 'Case 11 suggested apply_patch.'
+    Assert-AICarmine ($case11.Contains('Read-only:')) 'Case 11 missing read-only constraint.'
+
+    $case12 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Verifica il reviewed probe. Non scrivere nella project memory.'
+    )
+    $case12Classes = @(Get-AICarmineHintClasses -Hint $case12)
+    Assert-AICarmine ($case12Classes[0] -eq 'repository_validation') 'Case 12 primary class is not repository_validation.'
+    Assert-AICarmine (-not ($case12Classes -contains 'project_memory')) 'Case 12 classified incidental memory.'
+    Assert-AICarmine (-not ($case12 -match 'upsert_verified|supersede|mark_stale')) 'Case 12 suggested a memory write.'
+
+    $case13 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Audit read-only della project memory e verifica il manifest.'
+    )
+    $case13Classes = @(Get-AICarmineHintClasses -Hint $case13)
+    Assert-AICarmine ($case13Classes -contains 'project_memory') 'Case 13 missing project_memory.'
+    Assert-AICarmine ($case13.Contains('aicarmine_project_memory_health')) 'Case 13 missing memory health.'
+    Assert-AICarmine ($case13.Contains('aicarmine_project_memory_search')) 'Case 13 missing memory search.'
+    Assert-AICarmine ($case13.Contains('aicarmine_project_memory_get')) 'Case 13 missing memory get.'
+    Assert-AICarmine (-not ($case13 -match 'upsert_verified|supersede|mark_stale')) 'Case 13 suggested a memory write.'
+    Assert-AICarmine ($case13.Contains('Read-only:')) 'Case 13 missing read-only constraint.'
+
+    $case14 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Correggi il router con una structured_edit e applica la patch.'
+    )
+    $case14Classes = @(Get-AICarmineHintClasses -Hint $case14)
+    Assert-AICarmine ($case14Classes[0] -eq 'repository_patch') 'Case 14 primary class is not repository_patch.'
+    foreach ($tool in @(
+        'aicarmine_repo_code_propose_edit',
+        'aicarmine_repo_code_unidiff_validate',
+        'aicarmine_repo_code_git_apply_check',
+        'aicarmine_repo_code_apply_patch'
+    )) {
+        Assert-AICarmine ($case14.Contains($tool)) ('Case 14 missing {0}.' -f $tool)
+    }
+    Assert-AICarmine ($case14.Contains('Prefer structured_edit')) 'Case 14 missing structured_edit guidance.'
+
+    $case15 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Non applicare la patch; valida soltanto la unified diff esistente.'
+    )
+    $case15Classes = @(Get-AICarmineHintClasses -Hint $case15)
+    Assert-AICarmine ($case15Classes[0] -eq 'repository_validation') 'Case 15 primary class is not repository_validation.'
+    Assert-AICarmine (-not $case15.Contains('aicarmine_repo_code_apply_patch')) 'Case 15 suggested apply_patch.'
+    Assert-AICarmine ($case15.Contains('already-provided unified_diff')) 'Case 15 missing existing diff guidance.'
+    Assert-AICarmine ($case15.Contains('aicarmine_repo_code_unidiff_validate')) 'Case 15 missing unidiff_validate.'
+    Assert-AICarmine ($case15.Contains('aicarmine_repo_code_git_apply_check')) 'Case 15 missing git_apply_check.'
+
+    $case16 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Verifica repo root, branch, HEAD, working tree e staged state.'
+    )
+    $case16Classes = @(Get-AICarmineHintClasses -Hint $case16)
+    Assert-AICarmine ($case16Classes -contains 'repository_state') 'Case 16 missing repository_state.'
+    Assert-AICarmine ($case16.Contains('aicarmine_repo_state_health')) 'Case 16 missing repo_state health.'
+    Assert-AICarmine (-not ($case16 -match 'aicarmine_repo_code_|aicarmine_project_memory_')) 'Case 16 suggested patch or memory tools.'
+
+    $case17 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Confronta i commit e trova la regressione con git show e blame.'
+    )
+    $case17Classes = @(Get-AICarmineHintClasses -Hint $case17)
+    Assert-AICarmine ($case17Classes -contains 'git_readonly') 'Case 17 missing git_readonly.'
+    Assert-AICarmine ($case17.Contains('aicarmine_git_readonly_show')) 'Case 17 missing git show tool.'
+    Assert-AICarmine ($case17.Contains('aicarmine_git_readonly_blame')) 'Case 17 missing blame tool.'
+    Assert-AICarmine (-not ($case17Classes -contains 'repository_patch')) 'Case 17 classified repository_patch.'
+
+    $case18 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'La documentazione cita patch e project memory, ma spiegami soltanto il contratto del reviewed probe.'
+    )
+    $case18Classes = @(Get-AICarmineHintClasses -Hint $case18)
+    Assert-AICarmine ($case18Classes[0] -eq 'repository_validation') 'Case 18 primary class is not repository_validation.'
+    Assert-AICarmine (-not ($case18Classes -contains 'repository_patch')) 'Case 18 classified contextual patch.'
+    Assert-AICarmine (-not ($case18Classes -contains 'project_memory')) 'Case 18 classified contextual memory.'
+
+    $case19 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Audit read-only: aggiorna la project memory ma non effettuare alcuna scrittura.'
+    )
+    Assert-AICarmine (-not ($case19 -match 'upsert_verified|supersede|mark_stale')) 'Case 19 suggested a memory write.'
+    Assert-AICarmine ($case19.Contains('Read-only:')) 'Case 19 missing read-only constraint.'
+    Assert-AICarmine ($case19.Contains('no_memory_write:')) 'Case 19 missing no_memory_write constraint.'
+
+    $case20 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Usa aicarmine_repo_validate_probe_run con il profile_id già verificato.'
+    )
+    $case20Classes = @(Get-AICarmineHintClasses -Hint $case20)
+    $case20Tools = @(Get-AICarmineHintTools -Hint $case20)
+    Assert-AICarmine ($case20Classes[0] -eq 'repository_validation') 'Case 20 primary class is not repository_validation.'
+    Assert-AICarmine ($case20Tools[0] -eq 'aicarmine_repo_validate_probe_profiles') 'Case 20 did not start with probe_profiles.'
+    Assert-AICarmine ($case20Tools[1] -eq 'aicarmine_repo_validate_probe_run') 'Case 20 did not place probe_run second.'
+
+    $case21 = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Raccontami una barzelletta.'
+    )
+    Assert-AICarmine ($case21 -eq '') 'Case 21 should produce an empty hint.'
+
+    $case22Prompt = 'Esegui il reviewed probe orientation.selector.contract.v1'
+    $case22TaskId = 'aicarmine-router-state-' + [Guid]::NewGuid().ToString('N')
+    $case22Raw = [ordered]@{ taskId = $case22TaskId; prompt = $case22Prompt } | ConvertTo-Json -Compress
+    $case22SourceHashes = Get-AICarmineSourceHashes -Paths $sourcePaths
+    $case22Invocation = Invoke-AICarmineWrapper -RawInput $case22Raw
+    Assert-AICarmine ($case22Invocation.ExitCode -eq 0) 'Case 22 wrapper exit code was non-zero.'
+    Assert-AICarmine ([string]::IsNullOrEmpty($case22Invocation.Stderr)) 'Case 22 wrapper stderr was not empty.'
+    $case22Contract = ConvertFrom-AICarmineWrapperOutput -Stdout $case22Invocation.Stdout
+    $case22Classes = @(Get-AICarmineHintClasses -Hint $case22Contract.contextModification)
+    $case22TaskKey = Get-AICarmineTextSha256 -Text $case22TaskId
+    $case22StatePath = Join-Path ([IO.Path]::GetTempPath()) ('aicarmine-cline-hooks\pretool-observer\routing-{0}.json' -f $case22TaskKey)
+    Assert-AICarmine (Test-Path -LiteralPath $case22StatePath -PathType Leaf) 'Case 22 routing state was not written.'
+    $case22StateText = [IO.File]::ReadAllText($case22StatePath, [Text.Encoding]::UTF8)
+    $case22State = $case22StateText | ConvertFrom-Json -ErrorAction Stop
+    Assert-AICarmine ([bool]$case22State.classified) 'Case 22 state is not classified.'
+    Assert-AICarmine (@($case22State.classes).Count -gt 0) 'Case 22 state classes are empty.'
+    Assert-AICarmine ($case22State.classes[0] -eq $case22Classes[0]) 'Case 22 primary class is not preserved in state.'
+    Assert-AICarmine ($case22State.preferred_tools[0] -eq 'aicarmine_repo_validate_probe_profiles') 'Case 22 preferred tools are inconsistent.'
+    Assert-AICarmine (-not [bool]$case22State.read_only) 'Case 22 read_only is incorrect.'
+    Assert-AICarmine (-not $case22StateText.Contains($case22Prompt)) 'Case 22 persisted the raw prompt.'
+    $case22AfterHashes = Get-AICarmineSourceHashes -Paths $sourcePaths
+    foreach ($sourcePath in $sourcePaths) {
+        Assert-AICarmine ($case22SourceHashes[$sourcePath] -eq $case22AfterHashes[$sourcePath]) ('Case 22 hook wrote source file: {0}' -f $sourcePath)
+    }
+    Remove-Item -LiteralPath $case22StatePath -Force -ErrorAction SilentlyContinue
 
     Write-Host 'ALL AICARMINE CLINE MCP ROUTER TESTS PASSED'
     exit 0
