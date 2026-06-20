@@ -245,6 +245,10 @@ def evaluate_initial_orientation_shadow(
 
     valid_candidates_list = valid_candidates(raw_pool)
     candidate_count = len(valid_candidates_list)
+    allowed_candidate_ids = {
+        candidate["candidate_id"]
+        for candidate in valid_candidates_list
+    }
     candidate_ids = bounded_ids(
         [c["candidate_id"] for c in valid_candidates_list],
         limit=32,
@@ -335,7 +339,11 @@ def evaluate_initial_orientation_shadow(
             },
         }
 
-    legacy_selected_candidate_ids = bounded_ids(legacy_result)[:13]
+    legacy_selected_candidate_ids = bounded_ids(
+        legacy_result,
+        allowed_ids=allowed_candidate_ids,
+        limit=13,
+    )
 
     # STAGE 5 — SELECTOR
     result_dict: dict[str, Any] = {}
@@ -448,7 +456,11 @@ def evaluate_initial_orientation_shadow(
     else:
         confidence = None
     selected_ids_raw = model_summary_raw.get("selected_candidate_ids", [])
-    model_selected_candidate_ids = bounded_ids(selected_ids_raw)[:13]
+    model_selected_candidate_ids = bounded_ids(
+        selected_ids_raw,
+        allowed_ids=allowed_candidate_ids,
+        limit=13,
+    )
 
     if normalized_status == "unavailable":
         reason_selector = model_summary_raw.get("rationale", "backend_unavailable")[:160] or "backend_unavailable"
