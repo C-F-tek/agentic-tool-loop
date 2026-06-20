@@ -100,6 +100,15 @@ function Get-AICarmineMcpRoutingHint {
         if ([string]::IsNullOrWhiteSpace($promptText)) {
             return ''
         }
+        $readOnly = $false
+        foreach ($line in @($promptText -split '\r?\n')) {
+            $marker = $line.Trim()
+            if ([string]::Equals($marker, 'MODE: READ_ONLY', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($marker, 'STRICTLY READ-ONLY', [StringComparison]::OrdinalIgnoreCase)) {
+                $readOnly = $true
+                break
+            }
+        }
         $normalized = [regex]::Replace($promptText.ToLowerInvariant(), '\s+', ' ').Trim()
 
         function Test-AICarmineSignalAtIndexNegated {
@@ -123,17 +132,6 @@ function Get-AICarmineMcpRoutingHint {
             return $window -match '(?i)(?:^|\W)(?:non|no|senza|evitare|vietato|proibito|do not|don''t|dont|never|without|avoid|must not)(?:\W|$)'
         }
 
-        function Test-AICarmineNegatedSignal {
-            param([string]$Text, [string]$Pattern)
-
-            foreach ($match in [regex]::Matches($Text, $Pattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
-                if (Test-AICarmineSignalAtIndexNegated -Text $Text -Index $match.Index) {
-                    return $true
-                }
-            }
-            return $false
-        }
-
         function Test-AICarminePositiveSignal {
             param([string]$Text, [string]$Pattern)
 
@@ -149,14 +147,7 @@ function Get-AICarmineMcpRoutingHint {
         $memoryUpsertPattern = '(?:\bupsert(?:_verified)?\b|\bmemory write\b|\bupdate project[\s-]+memory\b|\b(?:scrivi|aggiorna|salva)\b.{0,32}\b(?:project[\s-]+memory|memoria)\b|\bcrea(?:ndo|re)?\b.{0,24}\b(?:un )?record\b|\b(?:create|save|write|update)\b.{0,24}\b(?:record|project[\s-]+memory)\b)'
         $memorySupersedePattern = '(?:\bsupersede(?:d)?\b|\bsostituisci\b.{0,24}\b(?:il )?record\b|\breplace\b.{0,24}\b(?:old )?record\b)'
         $memoryMarkStalePattern = '(?:\bmark[\s_-]+stale\b|\bmarca(?:re)?\b.{0,24}\b(?:stale|obsoleto)\b|\binvalida\b.{0,24}\b(?:il )?record\b|\binvalidate\b.{0,24}\brecord\b)'
-        $serviceMutationPattern = '(?:\b(?:avvia|riavvia|start|restart)\b.{0,24}\b(?:servizi?|services?)\b)'
-        $commitPattern = '(?:\b(?:esegui|crea|create|make)\b.{0,20}\bcommit\b|\bgit commit\b)'
-        $pushPattern = '(?:\b(?:esegui|fai|run)\b.{0,20}\bpush\b|\bgit push\b|\bpush\b)'
 
-        $negatedSourceWrite = Test-AICarmineNegatedSignal -Text $normalized -Pattern $sourceWritePattern
-        $negatedMemoryWrite = (Test-AICarmineNegatedSignal -Text $normalized -Pattern $memoryUpsertPattern) -or
-            (Test-AICarmineNegatedSignal -Text $normalized -Pattern $memorySupersedePattern) -or
-            (Test-AICarmineNegatedSignal -Text $normalized -Pattern $memoryMarkStalePattern)
         $positiveSourceWrite = Test-AICarminePositiveSignal -Text $normalized -Pattern $sourceWritePattern
         $memoryUpsertRequested = Test-AICarminePositiveSignal -Text $normalized -Pattern $memoryUpsertPattern
         $memorySupersedeRequested = Test-AICarminePositiveSignal -Text $normalized -Pattern $memorySupersedePattern
@@ -165,19 +156,6 @@ function Get-AICarmineMcpRoutingHint {
 
         $explicitExistingDiff = $normalized -match '(\bdiff gi[àa] esistente\b|\bunified diff fornita\b|\bvalida questa diff\b|\bapply-check della diff\b|\busa questa unified diff\b|\bapplica la diff seguente\b|\bthe following unified diff\b|\bexisting diff\b|\bdiff gi[àa] pronta\b|\bunified diff gi[àa] pronta\b|\bpatch gi[àa] fornita\b|\bunified diff esistente\b)'
         $dryRunRequested = $explicitExistingDiff -or $normalized -match '(\bdry[\s-]?run\b|\bsmoke\b|\bapply[\s-]?check\b|\bvalida soltanto\b|\bverifica soltanto\b)'
-        $noSourceWrite = $negatedSourceWrite -or $normalized -match '(\bnon modificare\b|\bsenza modificare\b|\bno patch\b|\bno source write\b|\bnon effettuare\b.{0,24}\bscrittur[ae]\b)'
-        $noMemoryWrite = $negatedMemoryWrite -or
-            (($normalized -match '(\bproject[\s-]+memory\b|\bmemoria\b)') -and
-             ($normalized -match '(\bnon effettuare\b.{0,24}\bscrittur[ae]\b|\bno memory write\b|\bno write\b)'))
-        $noServiceMutation = (Test-AICarmineNegatedSignal -Text $normalized -Pattern $serviceMutationPattern) -or
-            $normalized -match '(\bno service mutation\b|\bnon avviare servizi\b)'
-        $noCommit = (Test-AICarmineNegatedSignal -Text $normalized -Pattern $commitPattern) -or
-            $normalized -match '(\bno commit\b|\bnon fare commit\b)'
-        $noPush = (Test-AICarmineNegatedSignal -Text $normalized -Pattern $pushPattern) -or
-            $normalized -match '(\bno push\b|\bnon fare push\b)'
-        $readOnly = $normalized -match '(\bread[\s-]?only\b|\breadonly\b|\bsola lettura\b|\banalysis only\b|\bsolo analisi\b|\baudit\b)' -or $noSourceWrite
-        $explicitMemoryWrite = $memoryWriteRequested -and -not $readOnly -and -not $noMemoryWrite
-        $explicitSourceWrite = $positiveSourceWrite -and -not $readOnly -and -not $noSourceWrite
 
         $reviewedProbe = $normalized -match '(\breviewed probe\b|\bprobe profile\b|\bprofilo probe\b|\bprofile_id\b|\baicarmine_repo_validate_probe_run\b|\borientation\.selector\.contract\.v1\b)'
         $probeRequested = $reviewedProbe -or
@@ -204,16 +182,13 @@ function Get-AICarmineMcpRoutingHint {
         if ($normalized -match '\b(?:audit contract|controlla invarianti)\b') {
             $scores.repository_validation += 60
         }
-        if ($readOnly -and $normalized -match '\baudit\b') {
-            $scores.repository_validation += 40
-        }
         if ($dryRunRequested) { $scores.repository_validation += 60 }
         if ($scores.repository_validation -eq 0 -and
             $normalized -match '\b(?:verifica|validate|validation|test)\b') {
             $scores.repository_validation += 10
         }
 
-        if ($normalized -match '\bstructured_edit\b') { $scores.repository_patch += 100 }
+        if (Test-AICarminePositiveSignal -Text $normalized -Pattern '\bstructured_edit\b') { $scores.repository_patch += 100 }
         if ($positiveSourceWrite) { $scores.repository_patch += 60 }
         if ($normalized -match '\b(?:patch|diff|change_set|change-set)\b') {
             $scores.repository_patch += 10
@@ -247,9 +222,6 @@ function Get-AICarmineMcpRoutingHint {
         }
         if ($scores.project_memory -eq 0 -and $memoryObject) {
             $scores.project_memory += 5
-        }
-        if ($negatedMemoryWrite -and $scores.project_memory -le 5) {
-            $scores.project_memory = 0
         }
 
         if ($normalized -match '\b(?:git status|working tree|staged state|repo root|repository root|cwd)\b' -or
@@ -327,7 +299,7 @@ function Get-AICarmineMcpRoutingHint {
                         Add-AICarmineTool -Name 'aicarmine_repo_code_propose_edit'
                         Add-AICarmineTool -Name 'aicarmine_repo_code_unidiff_validate'
                         Add-AICarmineTool -Name 'aicarmine_repo_code_git_apply_check'
-                        if (-not $readOnly -and -not $noSourceWrite) {
+                        if (-not $readOnly) {
                             Add-AICarmineTool -Name 'aicarmine_repo_code_apply_patch'
                         }
                     }
@@ -348,7 +320,7 @@ function Get-AICarmineMcpRoutingHint {
                     Add-AICarmineTool -Name 'aicarmine_project_memory_health'
                     Add-AICarmineTool -Name 'aicarmine_project_memory_search'
                     Add-AICarmineTool -Name 'aicarmine_project_memory_get'
-                    if ($explicitMemoryWrite) {
+                    if ($memoryWriteRequested -and -not $readOnly) {
                         if ($memoryUpsertRequested) { Add-AICarmineTool -Name 'aicarmine_project_memory_upsert_verified' }
                         if ($memorySupersedeRequested) { Add-AICarmineTool -Name 'aicarmine_project_memory_supersede' }
                         if ($memoryMarkStaleRequested) { Add-AICarmineTool -Name 'aicarmine_project_memory_mark_stale' }
@@ -399,7 +371,7 @@ function Get-AICarmineMcpRoutingHint {
         [void]$lines.Add('- Emit MCP arguments as structured data, not shell-built JSON.')
 
         if ($explicitExistingDiff) {
-            [void]$lines.Add('- existing_diff_only: use the already-provided unified_diff; do not regenerate it.')
+            [void]$lines.Add('- Use the already-provided unified_diff; do not regenerate it.')
         }
         elseif ($classes.Contains('repository_patch')) {
             [void]$lines.Add('- Prefer structured_edit for changes authored by the model.')
@@ -412,13 +384,6 @@ function Get-AICarmineMcpRoutingHint {
         if ($readOnly) {
             [void]$lines.Add('- Read-only: validate and apply-check are allowed; do not call apply_patch or state-write tools.')
         }
-        if ($noSourceWrite) { [void]$lines.Add('- no_source_write: do not call source write tools.') }
-        if ($noMemoryWrite) { [void]$lines.Add('- no_memory_write: do not call project-memory write tools.') }
-        if ($noServiceMutation) { [void]$lines.Add('- no_service_mutation: do not mutate services.') }
-        if ($noCommit) { [void]$lines.Add('- no_commit: do not create commits.') }
-        if ($noPush) { [void]$lines.Add('- no_push: do not push.') }
-        if ($explicitMemoryWrite) { [void]$lines.Add('- explicit_memory_write: only the requested memory write is in scope.') }
-        if ($explicitSourceWrite) { [void]$lines.Add('- explicit_source_write: source apply still requires authorization.') }
         if ($reviewedProbe) {
             [void]$lines.Add('- Use the exact profile_id returned by probe_profiles before probe_run.')
         }

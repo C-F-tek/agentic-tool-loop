@@ -292,19 +292,30 @@ try {
     Assert-AICarmine (@($secondaryLine3.Substring(12).Split(',') | Where-Object { $_.Trim() -ne 'none' }).Count -le 3) 'Case 3 exceeded secondary bound.'
 
     $task4 = 'precompact-constraints'
-    [void](Invoke-AICarmineUserPrompt $task4 'Audit read-only. Non applicare patch, non scrivere nella project memory, non fare commit e non fare push.')
+    $prompt4 = 'Esegui il reviewed probe orientation.selector.contract.v1.' +
+        [Environment]::NewLine + 'MODE: READ_ONLY'
+    [void](Invoke-AICarmineUserPrompt $task4 $prompt4)
+    $state4 = Get-AICarmineState $task4
     $packet4 = [string](Invoke-AICarminePreCompact $task4).Contract.contextModification
-    foreach ($constraint in @('read_only', 'no_source_write', 'no_memory_write', 'no_commit', 'no_push')) {
-        Assert-AICarmine ($packet4.Contains(('- {0}' -f $constraint))) ('Case 4 missing constraint {0}.' -f $constraint)
-    }
-    Assert-AICarmine (-not ($packet4 -match 'aicarmine_(repo_code_apply_patch|project_memory_(upsert_verified|supersede|mark_stale))')) 'Case 4 included a write tool.'
+    Assert-AICarmine ([bool]$state4.read_only) 'Case 4 state did not preserve structured read_only.'
+    Assert-AICarmine (@($state4.constraints).Count -eq 1 -and $state4.constraints[0] -eq 'read_only') 'Case 4 state constraints were not structured-only.'
+    Assert-AICarmine ($packet4.Contains('- read_only')) 'Case 4 packet missing structured read_only.'
+    Assert-AICarmine (-not ($packet4 -match 'no_source_write|no_memory_write|no_commit|no_push|explicit_source_write|explicit_memory_write')) 'Case 4 propagated linguistic policy.'
+
+    $task4b = 'precompact-natural-readonly'
+    [void](Invoke-AICarmineUserPrompt $task4b 'Esegui il reviewed probe. Audit read-only, non modificare file.')
+    $state4b = Get-AICarmineState $task4b
+    $packet4b = [string](Invoke-AICarminePreCompact $task4b).Contract.contextModification
+    Assert-AICarmine (-not [bool]$state4b.read_only) 'Case 4b inferred state read_only from natural language.'
+    Assert-AICarmine (@($state4b.constraints).Count -eq 0) 'Case 4b persisted linguistic constraints.'
+    Assert-AICarmine (-not $packet4b.Contains('- read_only')) 'Case 4b propagated natural-language read_only.'
 
     $task5 = 'precompact-existing-diff'
     [void](Invoke-AICarmineUserPrompt $task5 'Non applicare la patch; valida soltanto la unified diff esistente.')
     $packet5 = [string](Invoke-AICarminePreCompact $task5).Contract.contextModification
-    Assert-AICarmine ($packet5.Contains('- existing_diff_only')) 'Case 5 missing existing_diff_only.'
     Assert-AICarmine ($packet5.Contains('aicarmine_repo_code_unidiff_validate')) 'Case 5 missing validation tool.'
     Assert-AICarmine (-not $packet5.Contains('aicarmine_repo_code_apply_patch')) 'Case 5 included apply_patch.'
+    Assert-AICarmine (-not $packet5.Contains('existing_diff_only')) 'Case 5 propagated existing diff as a policy constraint.'
 
     $task6 = 'precompact-failure'
     [void](Invoke-AICarmineUserPrompt $task6 'Cerca la definizione del simbolo failure.')
@@ -359,7 +370,7 @@ try {
         'aicarmine_repo_code_unidiff_validate',
         'aicarmine_repo_code_git_apply_check'
     )
-    $state11.constraints = @(Get-AICarmineRoutingConstraintOrder)
+    $state11.constraints = @('read_only', 'no_source_write', 'no_memory_write', 'no_service_mutation', 'no_commit', 'no_push', 'existing_diff_only', 'explicit_memory_write', 'explicit_source_write')
     $pending11 = @()
     for ($index = 0; $index -lt 32; $index++) { $pending11 += New-AICarminePending $index }
     $state11.pending_tool_calls = @($pending11)
@@ -372,7 +383,9 @@ try {
     $case11 = Invoke-AICarminePreCompact $task11
     $packet11 = [string]$case11.Contract.contextModification
     Assert-AICarmine ($packet11.Length -le 1800) 'Case 11 packet exceeded 1800 characters.'
-    Assert-AICarmine ($packet11.EndsWith('- Preserve read-only and no-write constraints after compaction.')) 'Case 11 packet ended on a partial line.'
+    Assert-AICarmine ($packet11.Contains('- read_only')) 'Case 11 lost structured read_only.'
+    Assert-AICarmine (-not ($packet11 -match 'no_source_write|no_memory_write|no_service_mutation|no_commit|no_push|existing_diff_only|explicit_memory_write|explicit_source_write')) 'Case 11 propagated legacy policy constraints.'
+    Assert-AICarmine ($packet11.EndsWith('- Preserve only explicitly structured task constraints after compaction.')) 'Case 11 packet ended on a partial line.'
     [void](ConvertFrom-AICarmineHookOutput $case11.Stdout)
 
     $case12Result = Invoke-AICarmineHook -ScriptPath $preCompactPath -RawInput '{invalid'
@@ -442,18 +455,16 @@ try {
     $state17.PSObject.Properties.Remove('constraints')
     Write-AICarmineState $task17 $state17
     $packet17 = [string](Invoke-AICarminePreCompact $task17).Contract.contextModification
-    Assert-AICarmine ($packet17.Contains('- read_only')) 'Case 17 did not derive read_only.'
-    Assert-AICarmine ($packet17.Contains('- existing_diff_only')) 'Case 17 did not derive existing_diff_only.'
-    foreach ($undemonstrated in @('no_memory_write', 'no_service_mutation', 'no_commit', 'no_push', 'explicit_memory_write', 'explicit_source_write')) {
-        Assert-AICarmine (-not $packet17.Contains(('- {0}' -f $undemonstrated))) ('Case 17 invented {0}.' -f $undemonstrated)
-    }
+    Assert-AICarmine (-not $packet17.Contains('- read_only')) 'Case 17 trusted legacy read_only without a structured constraint.'
+    Assert-AICarmine (-not $packet17.Contains('existing_diff_only')) 'Case 17 propagated legacy existing_diff_only as policy.'
 
-    $task18 = 'precompact-invalid-constraints'
-    [void](Invoke-AICarmineUserPrompt $task18 'Cerca la definizione del simbolo invalid.')
+    $task18 = 'precompact-legacy-constraints'
+    [void](Invoke-AICarmineUserPrompt $task18 'Cerca la definizione del simbolo legacy constraints.')
     $state18 = Get-AICarmineState $task18
-    $state18.constraints = @('read_only', 'unknown_constraint')
+    $state18.constraints = @('no_source_write', 'no_memory_write', 'no_commit', 'no_push')
     Write-AICarmineState $task18 $state18
-    Assert-AICarmine ((Invoke-AICarminePreCompact $task18).Contract.contextModification -eq '') 'Case 18 accepted an unknown constraint.'
+    $packet18 = [string](Invoke-AICarminePreCompact $task18).Contract.contextModification
+    Assert-AICarmine (-not ($packet18 -match 'no_source_write|no_memory_write|no_commit|no_push')) 'Case 18 propagated legacy linguistic constraints.'
     $state18.constraints = @('read_only', 'no_source_write', 'no_memory_write', 'no_service_mutation', 'no_commit', 'no_push', 'existing_diff_only', 'explicit_memory_write', 'explicit_source_write', 'read_only')
     Write-AICarmineState $task18 $state18
     Assert-AICarmine ((Invoke-AICarminePreCompact $task18).Contract.contextModification -eq '') 'Case 18 accepted an over-bound constraint array.'

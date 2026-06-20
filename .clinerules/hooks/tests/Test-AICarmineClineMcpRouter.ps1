@@ -169,22 +169,16 @@ try {
     $case3 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Audit read-only del selector, non modificare file'
     )
-    Assert-AICarmine (-not $case3.Contains('aicarmine_repo_code_apply_patch')) 'Case 3 suggested apply_patch.'
-    Assert-AICarmine (
-        $case3.Contains('aicarmine_repo_search_') -or $case3.Contains('aicarmine_repo_validate_')
-    ) 'Case 3 missing search or validation.'
-    Assert-AICarmine (
-    $case3.Contains('Read-only: validate and apply-check are allowed') -and
-    $case3.Contains('do not call apply_patch or state-write tools')
-    ) 'Case 3 missing read-only constraint.'
+    Assert-AICarmine ($case3 -eq '') 'Case 3 inferred routing or policy from natural-language prohibitions.'
+
     $case3b = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Prepara una modifica structured_edit in smoke read-only, valida e fai apply-check, ma non applicare'
     )
     Assert-AICarmine ($case3b.Contains('Prefer structured_edit')) 'Case 3b missing structured_edit guidance.'
     Assert-AICarmine ($case3b.Contains('aicarmine_repo_code_unidiff_validate')) 'Case 3b missing validation tool.'
     Assert-AICarmine ($case3b.Contains('aicarmine_repo_code_git_apply_check')) 'Case 3b missing apply-check tool.'
-    Assert-AICarmine (-not $case3b.Contains('aicarmine_repo_code_apply_patch')) 'Case 3b suggested apply_patch.'
-    Assert-AICarmine ($case3b.Contains('validate and apply-check are allowed')) 'Case 3b incorrectly treats apply-check as a write.'
+    Assert-AICarmine ($case3b.Contains('aicarmine_repo_code_apply_patch')) 'Case 3b suppressed a routing tool from natural-language policy.'
+    Assert-AICarmine (-not $case3b.Contains('Read-only:')) 'Case 3b inferred read_only from natural language.'
     $case4 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Esegui il reviewed probe orientation.selector.contract.v1'
     )
@@ -233,8 +227,8 @@ try {
     $memoryCaseF = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Audit read-only: aggiorna la project memory ma non effettuare scritture'
     )
-    Assert-AICarmine (-not ($memoryCaseF -match 'upsert_verified|supersede|mark_stale')) 'Memory case F suggested a write.'
-    Assert-AICarmine ($memoryCaseF.Contains('Read-only:')) 'Memory case F missing read-only constraint.'
+    Assert-AICarmine ($memoryCaseF.Contains('aicarmine_project_memory_upsert_verified')) 'Memory case F lost positive memory routing.'
+    Assert-AICarmine (-not ($memoryCaseF -match 'Read-only:|no_memory_write:|explicit_memory_write:')) 'Memory case F inferred linguistic policy.'
 
     $memoryCaseG = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Update del file README'
@@ -332,7 +326,7 @@ try {
     Assert-AICarmine ($case11.Contains('aicarmine_repo_validate_probe_run')) 'Case 11 missing probe_run.'
     Assert-AICarmine (-not ($case11Classes -contains 'repository_patch')) 'Case 11 classified the negated patch positively.'
     Assert-AICarmine (-not $case11.Contains('aicarmine_repo_code_apply_patch')) 'Case 11 suggested apply_patch.'
-    Assert-AICarmine ($case11.Contains('Read-only:')) 'Case 11 missing read-only constraint.'
+    Assert-AICarmine (-not $case11.Contains('Read-only:')) 'Case 11 inferred read_only from natural language.'
 
     $case12 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Verifica il reviewed probe. Non scrivere nella project memory.'
@@ -341,6 +335,7 @@ try {
     Assert-AICarmine ($case12Classes[0] -eq 'repository_validation') 'Case 12 primary class is not repository_validation.'
     Assert-AICarmine (-not ($case12Classes -contains 'project_memory')) 'Case 12 classified incidental memory.'
     Assert-AICarmine (-not ($case12 -match 'upsert_verified|supersede|mark_stale')) 'Case 12 suggested a memory write.'
+    Assert-AICarmine (-not $case12.Contains('no_memory_write')) 'Case 12 invented no_memory_write.'
 
     $case13 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Audit read-only della project memory e verifica il manifest.'
@@ -351,7 +346,7 @@ try {
     Assert-AICarmine ($case13.Contains('aicarmine_project_memory_search')) 'Case 13 missing memory search.'
     Assert-AICarmine ($case13.Contains('aicarmine_project_memory_get')) 'Case 13 missing memory get.'
     Assert-AICarmine (-not ($case13 -match 'upsert_verified|supersede|mark_stale')) 'Case 13 suggested a memory write.'
-    Assert-AICarmine ($case13.Contains('Read-only:')) 'Case 13 missing read-only constraint.'
+    Assert-AICarmine (-not $case13.Contains('Read-only:')) 'Case 13 inferred read_only from natural language.'
 
     $case14 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Correggi il router con una structured_edit e applica la patch.'
@@ -406,9 +401,8 @@ try {
     $case19 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Audit read-only: aggiorna la project memory ma non effettuare alcuna scrittura.'
     )
-    Assert-AICarmine (-not ($case19 -match 'upsert_verified|supersede|mark_stale')) 'Case 19 suggested a memory write.'
-    Assert-AICarmine ($case19.Contains('Read-only:')) 'Case 19 missing read-only constraint.'
-    Assert-AICarmine ($case19.Contains('no_memory_write:')) 'Case 19 missing no_memory_write constraint.'
+    Assert-AICarmine ($case19.Contains('aicarmine_project_memory_upsert_verified')) 'Case 19 lost positive memory routing.'
+    Assert-AICarmine (-not ($case19 -match 'Read-only:|no_memory_write:|explicit_memory_write:')) 'Case 19 inferred linguistic policy.'
 
     $case20 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Usa aicarmine_repo_validate_probe_run con il profile_id già verificato.'
@@ -449,6 +443,68 @@ try {
         Assert-AICarmine ($case22SourceHashes[$sourcePath] -eq $case22AfterHashes[$sourcePath]) ('Case 22 hook wrote source file: {0}' -f $sourcePath)
     }
     Remove-Item -LiteralPath $case22StatePath -Force -ErrorAction SilentlyContinue
+
+
+    $negativeOnly = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Non scrivere nella project memory.'
+    )
+    Assert-AICarmine ($negativeOnly -eq '') 'Policy case 1 produced a constraint-only hint.'
+
+    $negativeMemoryProbe = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Esegui il reviewed probe. Non scrivere nella project memory.'
+    )
+    $negativeMemoryClasses = @(Get-AICarmineHintClasses -Hint $negativeMemoryProbe)
+    Assert-AICarmine ($negativeMemoryClasses[0] -eq 'repository_validation') 'Policy case 2 primary class was not validation.'
+    Assert-AICarmine ($negativeMemoryProbe.Contains('aicarmine_repo_validate_probe_profiles')) 'Policy case 2 missing probe_profiles.'
+    Assert-AICarmine ($negativeMemoryProbe.Contains('aicarmine_repo_validate_probe_run')) 'Policy case 2 missing probe_run.'
+    Assert-AICarmine (-not ($negativeMemoryClasses -contains 'project_memory')) 'Policy case 2 activated project_memory.'
+    Assert-AICarmine (-not $negativeMemoryProbe.Contains('no_memory_write')) 'Policy case 2 invented no_memory_write.'
+
+    $negativeSourceProbe = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Esegui il reviewed probe. Non modificare README.'
+    )
+    $negativeSourceClasses = @(Get-AICarmineHintClasses -Hint $negativeSourceProbe)
+    Assert-AICarmine ($negativeSourceClasses[0] -eq 'repository_validation') 'Policy case 3 primary class was not validation.'
+    Assert-AICarmine (-not $negativeSourceProbe.Contains('no_source_write')) 'Policy case 3 invented no_source_write.'
+    Assert-AICarmine (-not ($negativeSourceProbe -match 'aicarmine_repo_code_(health|propose_edit|apply_patch)')) 'Policy case 3 added source tools.'
+
+    $structuredReadOnlyPrompt = 'Esegui il reviewed probe orientation.selector.contract.v1.' +
+        [Environment]::NewLine + 'MODE: READ_ONLY'
+    $structuredReadOnly = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt $structuredReadOnlyPrompt
+    )
+    Assert-AICarmine ($structuredReadOnly.Contains('Read-only:')) 'Policy case 4 did not preserve structured read_only.'
+    Assert-AICarmine (-not ($structuredReadOnly -match 'no_source_write|no_memory_write|no_commit|no_push')) 'Policy case 4 emitted linguistic constraints.'
+
+    $strictReadOnlyPrompt = 'Esegui il reviewed probe orientation.selector.contract.v1.' +
+        [Environment]::NewLine + 'strictly read-only'
+    $strictReadOnly = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt $strictReadOnlyPrompt
+    )
+    Assert-AICarmine ($strictReadOnly.Contains('Read-only:')) 'Policy case 4b did not recognize STRICTLY READ-ONLY.'
+
+    $naturalReadOnly = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Esegui il reviewed probe. Audit read-only, non modificare file.'
+    )
+    Assert-AICarmine (-not $naturalReadOnly.Contains('Read-only:')) 'Policy case 5 inferred read_only from natural language.'
+    Assert-AICarmine (-not ($naturalReadOnly -match 'no_source_write|no_memory_write|no_commit|no_push')) 'Policy case 5 persisted linguistic policy.'
+
+    $positivePatch = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Correggi il router e applica la patch.'
+    )
+    $positivePatchClasses = @(Get-AICarmineHintClasses -Hint $positivePatch)
+    Assert-AICarmine ($positivePatchClasses[0] -eq 'repository_patch') 'Policy case 6 lost repository_patch.'
+    foreach ($tool in @('aicarmine_repo_code_propose_edit', 'aicarmine_repo_code_unidiff_validate', 'aicarmine_repo_code_git_apply_check', 'aicarmine_repo_code_apply_patch')) {
+        Assert-AICarmine ($positivePatch.Contains($tool)) ('Policy case 6 missing {0}.' -f $tool)
+    }
+
+    $positiveMemory = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Aggiorna la project memory creando un record verificato.'
+    )
+    $positiveMemoryClasses = @(Get-AICarmineHintClasses -Hint $positiveMemory)
+    Assert-AICarmine ($positiveMemoryClasses -contains 'project_memory') 'Policy case 7 lost project_memory.'
+    Assert-AICarmine ($positiveMemory.Contains('aicarmine_project_memory_upsert_verified')) 'Policy case 7 missing upsert routing.'
+    Assert-AICarmine (-not $positiveMemory.Contains('explicit_memory_write')) 'Policy case 7 emitted explicit_memory_write policy.'
 
     Write-Host 'ALL AICARMINE CLINE MCP ROUTER TESTS PASSED'
     exit 0

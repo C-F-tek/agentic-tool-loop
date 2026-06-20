@@ -383,17 +383,7 @@ function Get-AICarmineBoundedRecentOutcomes {
 }
 
 function Get-AICarmineRoutingConstraintOrder {
-    return @(
-        'read_only',
-        'no_source_write',
-        'no_memory_write',
-        'no_service_mutation',
-        'no_commit',
-        'no_push',
-        'existing_diff_only',
-        'explicit_memory_write',
-        'explicit_source_write'
-    )
+    return @('read_only')
 }
 
 function Get-AICarmineValidatedRoutingState {
@@ -420,13 +410,21 @@ function Get-AICarmineValidatedRoutingState {
             if ($null -eq $property -or @($property.Value).Count -gt 32) { return $missing }
         }
 
-        $constraintOrder = @(Get-AICarmineRoutingConstraintOrder)
+        $legacyConstraintNames = @(
+            'read_only',
+            'no_source_write',
+            'no_memory_write',
+            'no_service_mutation',
+            'no_commit',
+            'no_push',
+            'existing_diff_only',
+            'explicit_memory_write',
+            'explicit_source_write'
+        )
         $constraints = [Collections.Generic.List[string]]::new()
         $constraintProperty = $state.PSObject.Properties['constraints']
         if ($null -eq $constraintProperty) {
-            if ([bool]$state.read_only) { [void]$constraints.Add('read_only') }
-            if ([bool]$state.explicit_existing_diff) { [void]$constraints.Add('existing_diff_only') }
-            Add-Member -InputObject $state -NotePropertyName constraints -NotePropertyValue @($constraints)
+            Add-Member -InputObject $state -NotePropertyName constraints -NotePropertyValue @()
         }
         else {
             if ($constraintProperty.Value -isnot [Array]) { return $missing }
@@ -434,19 +432,14 @@ function Get-AICarmineValidatedRoutingState {
             if ($rawConstraints.Count -gt 9) { return $missing }
             $seen = @{}
             foreach ($constraint in $rawConstraints) {
-                if ($constraint -isnot [string] -or $constraintOrder -notcontains [string]$constraint -or
+                if ($constraint -isnot [string] -or $legacyConstraintNames -notcontains [string]$constraint -or
                     $seen.ContainsKey([string]$constraint)) { return $missing }
                 $seen[[string]$constraint] = $true
             }
-            foreach ($constraint in $constraintOrder) {
-                if ($seen.ContainsKey($constraint)) { [void]$constraints.Add($constraint) }
-            }
-            if ($constraints.Count -ne $rawConstraints.Count) { return $missing }
-            for ($index = 0; $index -lt $constraints.Count; $index++) {
-                if ($constraints[$index] -ne [string]$rawConstraints[$index]) { return $missing }
-            }
+            if ($seen.ContainsKey('read_only')) { [void]$constraints.Add('read_only') }
             $state.constraints = @($constraints)
         }
+        $state.read_only = $constraints.Contains('read_only')
         return [pscustomobject]@{ Found = $true; State = $state; Path = $resolvedPath; AgeSeconds = $age }
     }
     catch { return $missing }
@@ -457,19 +450,7 @@ function Get-AICarmineRoutingMetadata {
 
     $classes = [Collections.Generic.List[string]]::new()
     $tools = [Collections.Generic.List[string]]::new()
-    $constraintOrder = @(Get-AICarmineRoutingConstraintOrder)
-    $constraintPrefixes = [ordered]@{
-        read_only = '- Read-only:'
-        no_source_write = '- no_source_write:'
-        no_memory_write = '- no_memory_write:'
-        no_service_mutation = '- no_service_mutation:'
-        no_commit = '- no_commit:'
-        no_push = '- no_push:'
-        existing_diff_only = '- existing_diff_only:'
-        explicit_memory_write = '- explicit_memory_write:'
-        explicit_source_write = '- explicit_source_write:'
-    }
-    $constraintMatches = @{}
+    $readOnly = $false
     $section = ''
     foreach ($line in @($RoutingHint -split '\r?\n')) {
         if ($line -eq 'Task classes:') {
@@ -490,29 +471,20 @@ function Get-AICarmineRoutingMetadata {
         elseif ($section -eq 'tools' -and $line -match '^\d+\. (.{1,120})$' -and $tools.Count -lt 8) {
             [void]$tools.Add([string]$Matches[1])
         }
-        elseif ($section -eq 'constraints') {
-            foreach ($constraint in $constraintOrder) {
-                if ($line.StartsWith([string]$constraintPrefixes[$constraint], [StringComparison]::OrdinalIgnoreCase)) {
-                    $constraintMatches[$constraint] = $true
-                    break
-                }
-            }
+        elseif ($section -eq 'constraints' -and
+            $line.StartsWith('- Read-only:', [StringComparison]::OrdinalIgnoreCase)) {
+            $readOnly = $true
         }
     }
-    $constraints = [Collections.Generic.List[string]]::new()
-    foreach ($constraint in $constraintOrder) {
-        if ($constraintMatches.ContainsKey($constraint) -and $constraints.Count -lt 9) {
-            [void]$constraints.Add($constraint)
-        }
-    }
+    $constraints = @()
+    if ($readOnly) { $constraints = @('read_only') }
     return [pscustomobject]@{
         Classes = @($classes)
         PreferredTools = @($tools)
         Constraints = @($constraints)
-        ReadOnly = $constraints.Contains('read_only')
+        ReadOnly = $readOnly
         ConstraintsPresent = $RoutingHint -match '(?m)^Constraints:$'
-        ExplicitExistingDiff = $constraints.Contains('existing_diff_only') -or
-            $RoutingHint -match '(?i)already-provided unified_diff'
+        ExplicitExistingDiff = $RoutingHint -match '(?i)already-provided unified_diff'
     }
 }
 

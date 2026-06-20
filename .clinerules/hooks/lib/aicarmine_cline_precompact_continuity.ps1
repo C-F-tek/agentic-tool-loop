@@ -58,7 +58,7 @@ function New-AICarminePreCompactPacket {
         [void]$lines.Add('- Revalidate live repository/runtime state before any write.')
         [void]$lines.Add('- Do not repeat an unchanged call that has an observed failure.')
         [void]$lines.Add('- Native fallback requires a concrete observed MCP failure.')
-        [void]$lines.Add('- Preserve read-only and no-write constraints after compaction.')
+        [void]$lines.Add('- Preserve only explicitly structured task constraints after compaction.')
 
         $packet = [string]::Join([Environment]::NewLine, $lines.ToArray())
         if ($packet.Length -le 1800) { return $packet }

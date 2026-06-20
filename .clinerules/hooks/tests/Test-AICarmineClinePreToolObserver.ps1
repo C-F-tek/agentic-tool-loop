@@ -178,7 +178,7 @@ try {
     Assert-AICarmine ([bool]$observation.preferred_tool_match) 'Case 3 preferred_tool_match was false.'
 
     $readOnlyPatchTask = 'readonly-patch-task'
-    Invoke-AICarmineUserPrompt $readOnlyPatchTask 'Audit read-only della patch; non modificare file'
+    Invoke-AICarmineUserPrompt $readOnlyPatchTask ('Verifica la patch.' + [Environment]::NewLine + 'MODE: READ_ONLY')
     $applyInput = [ordered]@{
         server_name = 'aicarmine_repo_code'
         tool_name = 'aicarmine_repo_code_apply_patch'
@@ -191,7 +191,7 @@ try {
     Assert-AICarmineCode $observation 'read_only_write_tool_candidate' $true
 
     $readOnlyMemoryTask = 'readonly-memory-task'
-    Invoke-AICarmineUserPrompt $readOnlyMemoryTask 'Audit read-only della project memory; non effettuare scritture'
+    Invoke-AICarmineUserPrompt $readOnlyMemoryTask ('Verifica il manifest della project memory.' + [Environment]::NewLine + 'STRICTLY READ-ONLY')
     $memoryInput = [ordered]@{
         server_name = 'aicarmine_project_memory'
         tool_name = 'aicarmine_project_memory_upsert_verified'
