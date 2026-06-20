@@ -58,6 +58,40 @@ function Invoke-AICarmineProcess {
     }
 }
 
+function Start-AICarminePreToolProcess {
+    param([string]$RawInput)
+
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $powerShellPath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    $startInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $preToolPath
+    $startInfo.EnvironmentVariables['TEMP'] = $testRoot
+    $startInfo.EnvironmentVariables['TMP'] = $testRoot
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $startInfo
+    Assert-AICarmine $process.Start() 'Concurrent PreToolUse process did not start.'
+    $process.StandardInput.Write($RawInput)
+    $process.StandardInput.Close()
+    return $process
+}
+
+function Get-AICarmineTestSha256 {
+    param([string]$Text)
+
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($Text)
+        return (($sha256.ComputeHash($bytes) | ForEach-Object { '{0:x2}' -f $_ }) -join '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function ConvertFrom-AICarmineHookOutput {
     param([string]$Stdout)
 
@@ -230,6 +264,84 @@ try {
     Assert-AICarmine ($contract.Stdout.Contains('Passed: 5')) 'Case 11 pass count mismatch.'
     Assert-AICarmine ($contract.Stdout.Contains('Failed: 0')) 'Case 11 failure count mismatch.'
     Assert-AICarmine ($contract.Stdout.Contains('ALL AICARMINE CLINE HOOK CONTRACT TESTS PASSED')) 'Case 11 success marker missing.'
+
+    $sameEpochTask = 'same-routing-epoch-task'
+    $sameEpochPrompt = 'Cerca la definizione del simbolo epoch'
+    $sameEpochPayload = New-AICarminePayload -TaskId $sameEpochTask -ToolName 'execute_command' -ToolInput ([ordered]@{ command = 'same-epoch-call' })
+    Invoke-AICarmineUserPrompt $sameEpochTask $sameEpochPrompt
+    [void](Invoke-AICarminePreTool -RawInput $sameEpochPayload)
+    Invoke-AICarmineUserPrompt $sameEpochTask $sameEpochPrompt
+    $case12 = Invoke-AICarminePreTool -RawInput $sameEpochPayload
+    Assert-AICarmine ($case12.contextModification.Contains('identical tool call')) 'Case 12 did not preserve the digest.'
+
+    $changedEpochTask = 'changed-routing-epoch-task'
+    $changedEpochPayload = New-AICarminePayload -TaskId $changedEpochTask -ToolName 'execute_command' -ToolInput ([ordered]@{ command = 'changed-epoch-call' })
+    Invoke-AICarmineUserPrompt $changedEpochTask 'Cerca la definizione del simbolo changed'
+    [void](Invoke-AICarminePreTool -RawInput $changedEpochPayload)
+    $changedTaskKey = Get-AICarmineTestSha256 $changedEpochTask
+    $changedStatePath = Join-Path $testRoot ('aicarmine-cline-hooks\pretool-observer\routing-{0}.json' -f $changedTaskKey)
+    $firstEpoch = (Get-Content -LiteralPath $changedStatePath -Encoding UTF8 -Raw | ConvertFrom-Json).routing_epoch_sha256
+    Invoke-AICarmineUserPrompt $changedEpochTask 'Verifica diffcheck del repository'
+    $secondEpoch = (Get-Content -LiteralPath $changedStatePath -Encoding UTF8 -Raw | ConvertFrom-Json).routing_epoch_sha256
+    $case13 = Invoke-AICarminePreTool -RawInput $changedEpochPayload
+    Assert-AICarmine (-not $case13.contextModification.Contains('identical tool call')) 'Case 13 retained a digest across routing epochs.'
+    Assert-AICarmine ($firstEpoch -ne $secondEpoch) 'Case 13 routing epoch did not change.'
+
+    $longTask = 'long-string-task'
+    Invoke-AICarmineUserPrompt $longTask 'Cerca la definizione del simbolo long'
+    $longPrefix = 'x' * 2048
+    [void](Invoke-AICarminePreTool -RawInput (New-AICarminePayload -TaskId $longTask -ToolName 'execute_command' -ToolInput ([ordered]@{ command = $longPrefix + '-A' })))
+    $firstLong = Get-AICarmineLatestObservation
+    $case14 = Invoke-AICarminePreTool -RawInput (New-AICarminePayload -TaskId $longTask -ToolName 'execute_command' -ToolInput ([ordered]@{ command = $longPrefix + '-B' }))
+    $secondLong = Get-AICarmineLatestObservation
+    Assert-AICarmine ($firstLong.tool_call_sha256 -ne $secondLong.tool_call_sha256) 'Case 14 digests were equal.'
+    Assert-AICarmine (-not $case14.contextModification.Contains('identical tool call')) 'Case 14 produced a false repeat.'
+
+    $nativeNameTask = 'native-name-task'
+    Invoke-AICarmineUserPrompt $nativeNameTask 'Cerca la definizione del simbolo native'
+    [void](Invoke-AICarminePreTool -RawInput (New-AICarminePayload -TaskId $nativeNameTask -ToolName 'native_fixture_tool' -ToolInput ([ordered]@{ name = 'not-an-mcp-tool' })))
+    $case15 = Get-AICarmineLatestObservation
+    Assert-AICarmine ($case15.selected_tool_kind -eq 'native') 'Case 15 was not classified native.'
+    Assert-AICarmine ($case15.selected_mcp_tool_name -eq '') 'Case 15 populated selected_mcp_tool_name.'
+
+    $ragTask = 'rag-family-task'
+    Invoke-AICarmineUserPrompt $ragTask 'Cerca la definizione del simbolo rag'
+    $ragInput = [ordered]@{ server_name = 'aicarmine_rag'; tool_name = 'aicarmine_rag_context'; arguments = [ordered]@{ query = 'fixture' } }
+    $case16 = Invoke-AICarminePreTool -RawInput (New-AICarminePayload -TaskId $ragTask -ToolName 'use_mcp_tool' -ToolInput $ragInput)
+    $ragObservation = Get-AICarmineLatestObservation
+    Assert-AICarmineCode $ragObservation 'nonpreferred_mcp_selected' $true
+    Assert-AICarmine (-not $case16.contextModification.Contains('unrelated')) 'Case 16 emitted unrelated-family advisory.'
+
+    $concurrentTask = 'concurrent-update-task'
+    Invoke-AICarmineUserPrompt $concurrentTask 'Cerca la definizione del simbolo concurrent'
+    $concurrentTaskKey = Get-AICarmineTestSha256 $concurrentTask
+    $concurrentStatePath = Join-Path $testRoot ('aicarmine-cline-hooks\pretool-observer\routing-{0}.json' -f $concurrentTaskKey)
+    $epochBefore = (Get-Content -LiteralPath $concurrentStatePath -Encoding UTF8 -Raw | ConvertFrom-Json).routing_epoch_sha256
+    $processes = @()
+    for ($index = 0; $index -lt 8; $index++) {
+        $payload = New-AICarminePayload -TaskId $concurrentTask -ToolName 'execute_command' -ToolInput ([ordered]@{ command = 'concurrent-call-{0}' -f $index })
+        $processes += Start-AICarminePreToolProcess -RawInput $payload
+    }
+    foreach ($process in $processes) {
+        try {
+            $stdout = $process.StandardOutput.ReadToEnd()
+            $stderr = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+            Assert-AICarmine ($process.ExitCode -eq 0) 'Case 17 process exit code was non-zero.'
+            Assert-AICarmine ([string]::IsNullOrEmpty($stderr)) 'Case 17 process stderr was not empty.'
+            $contractResult = ConvertFrom-AICarmineHookOutput -Stdout $stdout
+            Assert-AICarmine (-not $contractResult.cancel) 'Case 17 process returned cancel=true.'
+        }
+        finally {
+            $process.Dispose()
+        }
+    }
+    $concurrentState = Get-Content -LiteralPath $concurrentStatePath -Encoding UTF8 -Raw | ConvertFrom-Json
+    Assert-AICarmine ($concurrentState.schema -eq 'aicarmine.cline.task-routing-state.v1') 'Case 17 state schema invalid.'
+    Assert-AICarmine ($concurrentState.routing_epoch_sha256 -eq $epochBefore) 'Case 17 routing epoch changed.'
+    $concurrentDigests = @($concurrentState.recent_tool_call_sha256)
+    Assert-AICarmine ($concurrentDigests.Count -le 32) 'Case 17 exceeded digest limit.'
+    Assert-AICarmine (($concurrentDigests | Sort-Object -Unique).Count -eq 8) 'Case 17 lost or duplicated digests.'
 
     Write-Host 'ALL AICARMINE CLINE PRETOOL OBSERVER TESTS PASSED'
     exit 0

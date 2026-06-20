@@ -31,6 +31,46 @@ function Get-AICarmineObserverSha256 {
     }
 }
 
+function Enter-AICarmineTaskStateMutex {
+    param([string]$TaskKeySha256)
+
+    $mutex = $null
+    try {
+        $mutex = New-Object Threading.Mutex($false, ('Local\AICarmineClinePreTool-{0}' -f $TaskKeySha256))
+        $acquired = $false
+        try {
+            $acquired = $mutex.WaitOne(750)
+        }
+        catch [Threading.AbandonedMutexException] {
+            $acquired = $true
+        }
+        if (-not $acquired) {
+            $mutex.Dispose()
+            return $null
+        }
+        return $mutex
+    }
+    catch {
+        if ($null -ne $mutex) {
+            $mutex.Dispose()
+        }
+        return $null
+    }
+}
+
+function Exit-AICarmineTaskStateMutex {
+    param($Mutex)
+
+    if ($null -ne $Mutex) {
+        try {
+            $Mutex.ReleaseMutex()
+        }
+        finally {
+            $Mutex.Dispose()
+        }
+    }
+}
+
 function Get-AICarmineObserverBoundedName {
     param($Value)
 
@@ -167,6 +207,7 @@ function Write-AICarmineClineTaskRoutingState {
         [string]$RoutingHint
     )
 
+    $stateMutex = $null
     try {
         $payload = ConvertFrom-Json -InputObject $RawInput -ErrorAction Stop
         $identity = Get-AICarmineTaskIdentity -Payload $payload
@@ -177,25 +218,61 @@ function Write-AICarmineClineTaskRoutingState {
         if ([string]::IsNullOrEmpty($root)) {
             return
         }
+
+        $stateMutex = Enter-AICarmineTaskStateMutex -TaskKeySha256 $identity.TaskKeySha256
+        if ($null -eq $stateMutex) {
+            return
+        }
+
         $metadata = Get-AICarmineRoutingMetadata -RoutingHint $RoutingHint
+        $routingHintSha256 = Get-AICarmineObserverSha256 -Text $RoutingHint
+        $routingEpochSha256 = Get-AICarmineObserverSha256 -Text ($identity.TaskKeySha256 + $routingHintSha256)
+        $statePath = Join-Path $root ('routing-{0}.json' -f $identity.TaskKeySha256)
+        $recent = @()
+
+        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+            try {
+                $item = Get-Item -LiteralPath $statePath -Force -ErrorAction Stop
+                if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    $previous = Get-Content -LiteralPath $statePath -Encoding UTF8 -Raw | ConvertFrom-Json -ErrorAction Stop
+                    $timestamp = [DateTime]::Parse([string]$previous.timestamp_utc).ToUniversalTime()
+                    $age = [Math]::Max(0, [int]([DateTime]::UtcNow - $timestamp).TotalSeconds)
+                    if ($previous.schema -eq 'aicarmine.cline.task-routing-state.v1' -and
+                        $previous.task_key_sha256 -eq $identity.TaskKeySha256 -and
+                        $previous.routing_hint_sha256 -eq $routingHintSha256 -and
+                        $previous.routing_epoch_sha256 -eq $routingEpochSha256 -and $age -le 86400) {
+                        $recent = @($previous.recent_tool_call_sha256 |
+                            Where-Object { $_ -is [string] -and $_ -match '^[0-9a-f]{64}$' } |
+                            Select-Object -Last 32)
+                    }
+                }
+            }
+            catch {
+                $recent = @()
+            }
+        }
+
         $state = [ordered]@{
             schema = 'aicarmine.cline.task-routing-state.v1'
             timestamp_utc = [DateTime]::UtcNow.ToString('o')
             task_key_sha256 = $identity.TaskKeySha256
-            routing_hint_sha256 = Get-AICarmineObserverSha256 -Text $RoutingHint
+            routing_hint_sha256 = $routingHintSha256
+            routing_epoch_sha256 = $routingEpochSha256
             classified = $metadata.Classes.Count -gt 0
             read_only = [bool]$metadata.ReadOnly
             classes = @($metadata.Classes)
             preferred_tools = @($metadata.PreferredTools)
             constraints_present = [bool]$metadata.ConstraintsPresent
             explicit_existing_diff = [bool]$metadata.ExplicitExistingDiff
-            recent_tool_call_sha256 = @()
+            recent_tool_call_sha256 = @($recent)
         }
-        $statePath = Join-Path $root ('routing-{0}.json' -f $identity.TaskKeySha256)
         Write-AICarmineObserverJson -Path $statePath -Value $state
     }
     catch {
         return
+    }
+    finally {
+        Exit-AICarmineTaskStateMutex -Mutex $stateMutex
     }
 }
 
@@ -203,21 +280,27 @@ function ConvertTo-AICarmineCanonicalValue {
     param($Value, [int]$Depth)
 
     if ($null -eq $Value) {
-        return $null
+        return [ordered]@{ type = 'null' }
     }
     if ($Value -is [string]) {
-        if ($Value.Length -gt 2048) {
-            return $Value.Substring(0, 2048)
+        $utf8Bytes = (New-Object Text.UTF8Encoding($false)).GetByteCount($Value)
+        return [ordered]@{
+            type = 'string'
+            utf8_bytes = $utf8Bytes
+            sha256 = Get-AICarmineObserverSha256 -Text $Value
         }
-        return $Value
     }
-    if ($Value -is [bool] -or $Value -is [byte] -or $Value -is [int16] -or
-        $Value -is [int32] -or $Value -is [int64] -or $Value -is [decimal] -or
-        $Value -is [double] -or $Value -is [single]) {
-        return $Value
+    if ($Value -is [bool]) {
+        return [ordered]@{ type = 'boolean'; value = [bool]$Value }
+    }
+    if ($Value -is [byte] -or $Value -is [int16] -or $Value -is [int32] -or $Value -is [int64]) {
+        return [ordered]@{ type = 'integer'; value = $Value }
+    }
+    if ($Value -is [decimal] -or $Value -is [double] -or $Value -is [single]) {
+        return [ordered]@{ type = 'number'; value = $Value }
     }
     if ($Depth -ge 3) {
-        return '[bounded]'
+        return [ordered]@{ type = 'bounded'; depth = $Depth }
     }
     if ($Value -is [Array]) {
         $items = [Collections.Generic.List[object]]::new()
@@ -225,7 +308,7 @@ function ConvertTo-AICarmineCanonicalValue {
         for ($index = 0; $index -lt $limit; $index++) {
             [void]$items.Add((ConvertTo-AICarmineCanonicalValue -Value $Value[$index] -Depth ($Depth + 1)))
         }
-        return @($items)
+        return [ordered]@{ type = 'array'; items = @($items) }
     }
 
     $properties = @($Value.PSObject.Properties | Sort-Object Name)
@@ -235,7 +318,7 @@ function ConvertTo-AICarmineCanonicalValue {
         $name = Get-AICarmineObserverBoundedName -Value $properties[$index].Name
         $bounded[$name] = ConvertTo-AICarmineCanonicalValue -Value $properties[$index].Value -Depth ($Depth + 1)
     }
-    return $bounded
+    return [ordered]@{ type = 'object'; properties = $bounded }
 }
 
 function Get-AICarmineToolInputKeyNames {
@@ -263,7 +346,7 @@ function Get-AICarmineToolInputKeyNames {
 function Test-AICarminePlausibleRepositoryMcp {
     param([string]$ToolName)
 
-    return $ToolName -match '^aicarmine_(repo_|git_readonly_|project_memory_|job_|sqlite_readonly_|codex_ops_|mcp_|service_state_)'
+    return $ToolName -match '^aicarmine_(repo_|git_readonly_|project_memory_|job_|sqlite_readonly_|codex_ops_|mcp_|service_state_|rag_)'
 }
 
 function Write-AICarmineObservationLog {
@@ -305,10 +388,22 @@ function Get-AICarmineClinePreToolObservation {
         $wrapperTool = Get-AICarmineObserverBoundedName -Value (Get-AICarmineObserverProperty -Value $payload -Names @('toolName', 'tool_name', 'tool'))
         $toolInput = Get-AICarmineObserverProperty -Value $payload -Names @('toolInput', 'tool_input', 'input')
         $serverName = Get-AICarmineObserverBoundedName -Value (Get-AICarmineObserverProperty -Value $toolInput -Names @('server_name', 'serverName', 'server'))
-        $mcpToolName = Get-AICarmineObserverBoundedName -Value (Get-AICarmineObserverProperty -Value $toolInput -Names @('tool_name', 'toolName', 'name'))
+        $nestedToolName = Get-AICarmineObserverBoundedName -Value (Get-AICarmineObserverProperty -Value $toolInput -Names @('tool_name', 'toolName', 'name'))
+        $mcpToolName = ''
         $selectedKind = 'unknown'
-        if (-not [string]::IsNullOrEmpty($mcpToolName)) {
+        if ([string]::Equals($wrapperTool, 'use_mcp_tool', [StringComparison]::OrdinalIgnoreCase) -and
+            -not [string]::IsNullOrEmpty($nestedToolName)) {
             $selectedKind = 'mcp'
+            $mcpToolName = $nestedToolName
+        }
+        elseif ($wrapperTool.StartsWith('aicarmine_', [StringComparison]::OrdinalIgnoreCase)) {
+            $selectedKind = 'mcp'
+            $mcpToolName = $wrapperTool
+        }
+        elseif ($serverName.StartsWith('aicarmine_', [StringComparison]::OrdinalIgnoreCase) -and
+            -not [string]::IsNullOrEmpty($nestedToolName)) {
+            $selectedKind = 'mcp'
+            $mcpToolName = $nestedToolName
         }
         elseif (-not [string]::IsNullOrEmpty($wrapperTool)) {
             $selectedKind = 'native'
@@ -333,77 +428,90 @@ function Get-AICarmineClinePreToolObservation {
         $stateAge = $null
         $preferredMatch = $false
         $statePath = $null
-        if (-not [string]::IsNullOrEmpty($taskKey)) {
-            $statePath = Join-Path $root ('routing-{0}.json' -f $taskKey)
-            if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-                $stateItem = Get-Item -LiteralPath $statePath -Force -ErrorAction Stop
-                if (-not ($stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-                    $state = Get-Content -LiteralPath $statePath -Encoding UTF8 -Raw | ConvertFrom-Json -ErrorAction Stop
-                    $timestamp = [DateTime]::Parse([string]$state.timestamp_utc).ToUniversalTime()
-                    $stateAge = [Math]::Max(0, [int]([DateTime]::UtcNow - $timestamp).TotalSeconds)
-                    if ($state.schema -eq 'aicarmine.cline.task-routing-state.v1' -and
-                        $state.task_key_sha256 -eq $taskKey -and $stateAge -le 86400) {
-                        $stateFound = $true
-                    }
-                }
-            }
-        }
-
+        $stateMutex = $null
         $codes = [Collections.Generic.List[string]]::new()
         $messages = [Collections.Generic.List[string]]::new()
         $repeated = $false
-        if (-not $stateFound) {
-            [void]$codes.Add('routing_state_missing')
+        try {
+            if (-not [string]::IsNullOrEmpty($taskKey)) {
+                $stateMutex = Enter-AICarmineTaskStateMutex -TaskKeySha256 $taskKey
+                if ($null -eq $stateMutex) {
+                    throw 'task_state_lock_timeout'
+                }
+                $statePath = Join-Path $root ('routing-{0}.json' -f $taskKey)
+                if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+                    $stateItem = Get-Item -LiteralPath $statePath -Force -ErrorAction Stop
+                    if (-not ($stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                        $state = Get-Content -LiteralPath $statePath -Encoding UTF8 -Raw | ConvertFrom-Json -ErrorAction Stop
+                        $timestamp = [DateTime]::Parse([string]$state.timestamp_utc).ToUniversalTime()
+                        $stateAge = [Math]::Max(0, [int]([DateTime]::UtcNow - $timestamp).TotalSeconds)
+                        $expectedEpoch = Get-AICarmineObserverSha256 -Text ($taskKey + [string]$state.routing_hint_sha256)
+                        if ($state.schema -eq 'aicarmine.cline.task-routing-state.v1' -and
+                            [bool]$state.classified -and
+                            $state.task_key_sha256 -eq $taskKey -and
+                            $state.routing_epoch_sha256 -eq $expectedEpoch -and $stateAge -le 86400) {
+                            $stateFound = $true
+                        }
+                    }
+                }
+            }
+
+            if (-not $stateFound) {
+                [void]$codes.Add('routing_state_missing')
+            }
+            else {
+                $preferredTools = @($state.preferred_tools | Select-Object -First 8)
+                $preferredMatch = $mcpToolName -ne '' -and ($preferredTools -contains $mcpToolName)
+                if ($preferredMatch) {
+                    [void]$codes.Add('recommended_mcp_selected')
+                }
+                elseif ($selectedKind -eq 'native' -and $preferredTools.Count -gt 0) {
+                    [void]$codes.Add('native_used_while_mcp_recommended')
+                }
+                elseif ($selectedKind -eq 'mcp') {
+                    [void]$codes.Add('nonpreferred_mcp_selected')
+                }
+
+                $mcpWriteTools = @(
+                    'aicarmine_repo_code_apply_patch',
+                    'aicarmine_project_memory_upsert_verified',
+                    'aicarmine_project_memory_supersede',
+                    'aicarmine_project_memory_mark_stale'
+                )
+                $nativeWriteTools = @('write_to_file', 'replace_in_file', 'apply_patch')
+                $writeCandidate = ($selectedKind -eq 'mcp' -and $mcpWriteTools -contains $mcpToolName) -or
+                    ($selectedKind -eq 'native' -and $nativeWriteTools -contains $wrapperTool)
+                if ([bool]$state.read_only -and $writeCandidate) {
+                    [void]$codes.Add('read_only_write_tool_candidate')
+                }
+
+                $recent = @($state.recent_tool_call_sha256 | Select-Object -Last 32)
+                $repeated = $recent -contains $toolCallSha256
+                if ($repeated) {
+                    [void]$codes.Add('identical_tool_call_repeated')
+                }
+                $recent = @($recent | Where-Object { $_ -ne $toolCallSha256 })
+                $recent += $toolCallSha256
+                $state.recent_tool_call_sha256 = @($recent | Select-Object -Last 32)
+                Write-AICarmineObserverJson -Path $statePath -Value $state
+
+                if ($codes.Contains('read_only_write_tool_candidate')) {
+                    [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: a write-capable tool was selected for a read-only task. The call is not blocked by this observe-only hook. Recheck the task boundary before proceeding.')
+                }
+                if ($repeated) {
+                    [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: an identical tool call was already observed for this task. The call is not blocked. Do not repeat it unchanged unless new evidence justifies the retry.')
+                }
+                if ($codes.Contains('native_used_while_mcp_recommended')) {
+                    [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: this task has repository MCP recommendations, but a native tool was selected. The call is not blocked. Use native fallback only after a concrete MCP failure and report that failure.')
+                }
+                if ($selectedKind -eq 'mcp' -and -not $preferredMatch -and
+                    -not (Test-AICarminePlausibleRepositoryMcp -ToolName $mcpToolName)) {
+                    [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: the selected MCP tool belongs to a family unrelated to the repository routing state. The call is not blocked. Recheck tool relevance before proceeding.')
+                }
+            }
         }
-        else {
-            $preferredTools = @($state.preferred_tools | Select-Object -First 8)
-            $preferredMatch = $mcpToolName -ne '' -and ($preferredTools -contains $mcpToolName)
-            if ($preferredMatch) {
-                [void]$codes.Add('recommended_mcp_selected')
-            }
-            elseif ($selectedKind -eq 'native' -and $preferredTools.Count -gt 0) {
-                [void]$codes.Add('native_used_while_mcp_recommended')
-            }
-            elseif ($selectedKind -eq 'mcp') {
-                [void]$codes.Add('nonpreferred_mcp_selected')
-            }
-
-            $mcpWriteTools = @(
-                'aicarmine_repo_code_apply_patch',
-                'aicarmine_project_memory_upsert_verified',
-                'aicarmine_project_memory_supersede',
-                'aicarmine_project_memory_mark_stale'
-            )
-            $nativeWriteTools = @('write_to_file', 'replace_in_file', 'apply_patch')
-            $writeCandidate = ($selectedKind -eq 'mcp' -and $mcpWriteTools -contains $mcpToolName) -or
-                ($selectedKind -eq 'native' -and $nativeWriteTools -contains $wrapperTool)
-            if ([bool]$state.read_only -and $writeCandidate) {
-                [void]$codes.Add('read_only_write_tool_candidate')
-            }
-
-            $recent = @($state.recent_tool_call_sha256 | Select-Object -Last 32)
-            $repeated = $recent -contains $toolCallSha256
-            if ($repeated) {
-                [void]$codes.Add('identical_tool_call_repeated')
-            }
-            $recent = @($recent | Where-Object { $_ -ne $toolCallSha256 })
-            $recent += $toolCallSha256
-            $state.recent_tool_call_sha256 = @($recent | Select-Object -Last 32)
-            Write-AICarmineObserverJson -Path $statePath -Value $state
-
-            if ($codes.Contains('read_only_write_tool_candidate')) {
-                [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: a write-capable tool was selected for a read-only task. The call is not blocked by this observe-only hook. Recheck the task boundary before proceeding.')
-            }
-            if ($repeated) {
-                [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: an identical tool call was already observed for this task. The call is not blocked. Do not repeat it unchanged unless new evidence justifies the retry.')
-            }
-            if ($codes.Contains('native_used_while_mcp_recommended')) {
-                [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: this task has repository MCP recommendations, but a native tool was selected. The call is not blocked. Use native fallback only after a concrete MCP failure and report that failure.')
-            }
-            if ($selectedKind -eq 'mcp' -and -not $preferredMatch -and
-                -not (Test-AICarminePlausibleRepositoryMcp -ToolName $mcpToolName)) {
-                [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: the selected MCP tool belongs to a family unrelated to the repository routing state. The call is not blocked. Recheck tool relevance before proceeding.')
-            }
+        finally {
+            Exit-AICarmineTaskStateMutex -Mutex $stateMutex
         }
 
         $contextModification = [string]::Join([Environment]::NewLine, @($messages | Select-Object -First 2))
