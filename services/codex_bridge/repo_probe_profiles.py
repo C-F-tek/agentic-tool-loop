@@ -71,6 +71,63 @@ _PROFILE_SPECS: tuple[dict[str, Any], ...] = (
             },
         ],
     },
+    {
+        "profile_id": "orientation.shadow_helpers.contract.v1",
+        "description": (
+            "Validate shadow helper contracts with deterministic cases. "
+            "Helper functions are intentionally absent from runtime; "
+            "profile will fail until helpers are implemented."
+        ),
+        "target_module": (
+            "aicarmine_broker.application.controller.orientation_lane"
+        ),
+        "engines": ["deterministic"],
+        "network_calls": False,
+        "source_writes": False,
+        "arbitrary_python": False,
+        "properties": [
+            {
+                "name": "active_mode_fails_closed_to_legacy",
+                "description": "Active mode fails closed to legacy behavior",
+            },
+            {
+                "name": "legacy_mode_never_requests_shadow",
+                "description": "Legacy mode never requests shadow selection",
+            },
+            {
+                "name": "shadow_mode_is_exact_match_only",
+                "description": "Shadow mode performs exact match only",
+            },
+            {
+                "name": "legacy_selection_uses_executed_plans",
+                "description": "Legacy selection uses already executed plans",
+            },
+            {
+                "name": "legacy_selection_ignores_unknown_paths",
+                "description": "Legacy selection ignores unknown paths",
+            },
+            {
+                "name": "legacy_selection_preserves_doc_then_area_order",
+                "description": "Legacy selection preserves doc then area order",
+            },
+            {
+                "name": "legacy_selection_deduplicates_candidate_ids",
+                "description": "Legacy selection deduplicates candidate IDs",
+            },
+            {
+                "name": "selection_metrics_report_exact_match",
+                "description": "Selection metrics report exact match",
+            },
+            {
+                "name": "selection_metrics_report_partial_overlap",
+                "description": "Selection metrics report partial overlap",
+            },
+            {
+                "name": "selection_metrics_are_bounded_and_deterministic",
+                "description": "Selection metrics are bounded and deterministic",
+            },
+        ],
+    },
 )
 
 
@@ -1142,6 +1199,23 @@ def repo_probe_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "source_writes_performed": False,
             "network_calls_performed": False,
         }
+
+    # Check for shadow helper profile - helpers intentionally absent until implementation
+    if profile_id == "orientation.shadow_helpers.contract.v1":
+        return {
+            "ok": False,
+            "tool": "repo_probe_run",
+            "error": "shadow_helper_not_implemented",
+            "profile_id": profile_id,
+            "missing_callables": [
+                "orientation_shadow_effective_mode",
+                "orientation_legacy_selected_candidate_ids",
+                "orientation_shadow_selection_metrics",
+            ],
+            "source_writes_performed": False,
+            "network_calls_performed": False,
+        }
+
     if engine not in {"deterministic", "hypothesis", "both"}:
         return {
             "ok": False,
