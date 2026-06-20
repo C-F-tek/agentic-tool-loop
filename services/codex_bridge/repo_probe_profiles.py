@@ -12,6 +12,9 @@ PROFILE_ORIENTATION_SELECTOR = "orientation.selector.contract.v1"
 PROFILE_ORIENTATION_SHADOW_HELPERS = (
     "orientation.shadow_helpers.contract.v1"
 )
+PROFILE_ORIENTATION_SHADOW_EVALUATOR = (
+    "orientation.shadow_evaluator.contract.v1"
+)
 
 _PROFILE_SPECS: tuple[dict[str, Any], ...] = (
     {
@@ -141,6 +144,86 @@ _PROFILE_SPECS: tuple[dict[str, Any], ...] = (
                 "description": (
                     "Document and area selections preserve candidate_class even when the "
                     "selected path string is identical."
+                ),
+            },
+        ],
+    },
+    {
+        "profile_id": "orientation.shadow_evaluator.contract.v1",
+        "description": (
+            "Validate the bounded initial-orientation shadow evaluator "
+            "before runtime wiring and persistence."
+        ),
+        "target_module": (
+            "aicarmine_broker.application.planner.loop"
+        ),
+        "engines": ["deterministic"],
+        "network_calls": False,
+        "source_writes": False,
+        "arbitrary_python": False,
+        "properties": [
+            {
+                "name": "legacy_mode_skips_shadow_callbacks",
+                "description": (
+                    "Legacy mode never builds candidates or calls the selector."
+                ),
+            },
+            {
+                "name": "active_mode_fails_closed_to_legacy",
+                "description": "Active mode is temporarily treated as legacy.",
+            },
+            {
+                "name": "root_result_must_be_ok",
+                "description": "A missing or unsuccessful root result skips shadow evaluation.",
+            },
+            {
+                "name": "empty_candidate_pool_skips_selector",
+                "description": "An empty authorized pool never calls the selector.",
+            },
+            {
+                "name": "successful_evaluation_calls_each_stage_once",
+                "description": (
+                    "A successful shadow evaluation calls each bounded stage once."
+                ),
+            },
+            {
+                "name": "legacy_plan_order_drives_comparison",
+                "description": (
+                    "Legacy selected IDs derive from executed plans, not pool order."
+                ),
+            },
+            {
+                "name": "candidate_pool_failure_fails_open",
+                "description": (
+                    "Candidate-pool failure leaves legacy authoritative."
+                ),
+            },
+            {
+                "name": "legacy_selection_failure_fails_open",
+                "description": (
+                    "Legacy-comparison failure leaves legacy authoritative."
+                ),
+            },
+            {
+                "name": "selector_failure_fails_open",
+                "description": "Selector exceptions never block legacy execution.",
+            },
+            {
+                "name": "selector_not_ready_fails_open",
+                "description": (
+                    "Unavailable or invalid selector results remain diagnostic."
+                ),
+            },
+            {
+                "name": "evaluation_output_is_bounded",
+                "description": (
+                    "The diagnostic result has bounded identifiers and messages."
+                ),
+            },
+            {
+                "name": "evaluation_is_deterministic_and_input_immutable",
+                "description": (
+                    "Repeated evaluation is deterministic and does not mutate input."
                 ),
             },
         ],
