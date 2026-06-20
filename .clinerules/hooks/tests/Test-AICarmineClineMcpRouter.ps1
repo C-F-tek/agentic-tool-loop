@@ -106,16 +106,23 @@ try {
     Assert-AICarmine (-not $case1.Contains('aicarmine_repo_code_apply_patch')) 'Case 1 suggested apply_patch.'
 
     $case2 = Get-AICarmineMcpRoutingHint -RawInput (
-        ConvertTo-AICarmineRawInput -Prompt 'Correggi il file con una unified diff e verifica diffcheck'
+        ConvertTo-AICarmineRawInput -Prompt 'Correggi il file e verifica diffcheck'
     )
     Assert-AICarmine ($case2.Contains('aicarmine_repo_code_health')) 'Case 2 missing repo_code health.'
     Assert-AICarmine ($case2.Contains('aicarmine_repo_code_propose_edit')) 'Case 2 missing propose_edit.'
     Assert-AICarmine ($case2.Contains('aicarmine_repo_code_unidiff_validate')) 'Case 2 missing unidiff_validate.'
     Assert-AICarmine ($case2.Contains('aicarmine_repo_code_git_apply_check')) 'Case 2 missing git_apply_check.'
-    Assert-AICarmine ($case2.Contains('aicarmine_repo_validate_diffcheck')) 'Case 2 missing diffcheck.'
+    Assert-AICarmine ($case2.Contains('Prefer structured_edit')) 'Case 2 does not prefer structured_edit.'
+    Assert-AICarmine (-not $case2.Contains('Send the unified diff once')) 'Case 2 contains stale unified_diff guidance.'
     $case2ToolCount = [regex]::Matches($case2, '(?m)^\d+\. aicarmine_').Count
     Assert-AICarmine ($case2ToolCount -le 6) 'Case 2 suggested more than six exact tools.'
 
+    $case2ExistingDiff = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Usa questa unified diff già pronta e validala'
+    )
+    Assert-AICarmine ($case2ExistingDiff.Contains('already-provided unified_diff')) 'Existing diff case missing unified_diff guidance.'
+    Assert-AICarmine ($case2ExistingDiff.Contains('Do not manually calculate unified-diff hunk headers')) 'Existing diff case permits manual hunk generation.'
+    Assert-AICarmine ($case2ExistingDiff.Contains('Propagate change_set_id')) 'Existing diff case missing change_set propagation.'
     $case3 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Audit read-only del selector, non modificare file'
     )
@@ -123,8 +130,18 @@ try {
     Assert-AICarmine (
         $case3.Contains('aicarmine_repo_search_') -or $case3.Contains('aicarmine_repo_validate_')
     ) 'Case 3 missing search or validation.'
-    Assert-AICarmine ($case3.Contains('Read-only task')) 'Case 3 missing read-only constraint.'
-
+    Assert-AICarmine (
+    $case3.Contains('Read-only: validate and apply-check are allowed') -and
+    $case3.Contains('do not call apply_patch or state-write tools')
+    ) 'Case 3 missing read-only constraint.'
+    $case3b = Get-AICarmineMcpRoutingHint -RawInput (
+        ConvertTo-AICarmineRawInput -Prompt 'Prepara una modifica structured_edit in smoke read-only, valida e fai apply-check, ma non applicare'
+    )
+    Assert-AICarmine ($case3b.Contains('Prefer structured_edit')) 'Case 3b missing structured_edit guidance.'
+    Assert-AICarmine ($case3b.Contains('aicarmine_repo_code_unidiff_validate')) 'Case 3b missing validation tool.'
+    Assert-AICarmine ($case3b.Contains('aicarmine_repo_code_git_apply_check')) 'Case 3b missing apply-check tool.'
+    Assert-AICarmine (-not $case3b.Contains('aicarmine_repo_code_apply_patch')) 'Case 3b suggested apply_patch.'
+    Assert-AICarmine ($case3b.Contains('validate and apply-check are allowed')) 'Case 3b incorrectly treats apply-check as a write.'
     $case4 = Get-AICarmineMcpRoutingHint -RawInput (
         ConvertTo-AICarmineRawInput -Prompt 'Esegui il reviewed probe orientation.selector.contract.v1'
     )

@@ -110,7 +110,7 @@ function Get-AICarmineMcpRoutingHint {
         $fileSearch = $normalized -match '(\b(read|leggi|inspect|ispeziona)\b.{0,40}\bfile\b|\bfile\b.{0,40}\b(trova|cerca|search|find)\b)'
         $repositorySearch = $strongSearch -or $fileSearch -or ($readOnly -and $normalized -match '\bfile\b')
         $repositoryPatch = $positiveText -match '(\bpatch\b|\bmodifica\b|\bmodificare\b|\bmodify\b|\bedit\b|\bcorreggi\b|\bfix\b|\breplace\b|\bdiff\b|\bunified diff\b|\bchange_set\b|\bchange-set\b|\bapply\b)'
-
+        $explicitExistingDiff = $normalized -match '(\busa questa unified diff\b|\bapplica la diff seguente\b|\bthe following unified diff\b|\bexisting diff\b|\bdiff gi[àa] pronta\b|\bunified diff gi[àa] pronta\b|\bpatch gi[àa] fornita\b)'
         $reviewedProbe = $normalized -match '(\breviewed probe\b|\bprobe profile\b|\bprofilo probe\b|\borientation\.selector\.contract\.v1\b)'
         $probeRequested = $reviewedProbe -or
             $normalized -match '(\b(esegui|execute|run|avvia)\b.{0,40}\bprobe\b|\bprobe\b.{0,40}\b(profile|profilo)\b)'
@@ -269,12 +269,18 @@ function Get-AICarmineMcpRoutingHint {
         [void]$lines.Add('- Emit MCP arguments as structured data, not shell-built JSON.')
 
         if ($repositoryPatch) {
-            [void]$lines.Add('- Send the unified diff once to propose_edit.')
-            [void]$lines.Add('- Propagate change_set_id through validate, apply-check and apply.')
-            [void]$lines.Add('- Do not reconstruct whole files or manual .diff transport files.')
+            if ($explicitExistingDiff) {
+                [void]$lines.Add('- Use the already-provided unified_diff; do not regenerate it.')
+            }
+            else {
+                [void]$lines.Add('- Prefer structured_edit for changes authored by the model.')
+            }
+            [void]$lines.Add('- Do not manually calculate unified-diff hunk headers.')
+            [void]$lines.Add('- Propagate change_set_id through validate and apply-check; apply only when explicitly authorized.')
+            [void]$lines.Add('- Do not reconstruct whole files or create manual .diff transport files.')
         }
         if ($readOnly) {
-            [void]$lines.Add('- Read-only task: do not call source/state write tools.')
+            [void]$lines.Add('- Read-only: validate and apply-check are allowed; do not call apply_patch or state-write tools.')
         }
         if ($reviewedProbe) {
             [void]$lines.Add('- Use the exact profile_id returned by probe_profiles before probe_run.')
