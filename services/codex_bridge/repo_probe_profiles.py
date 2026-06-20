@@ -1397,6 +1397,11 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
                     "path": "services",
                 },
             },
+            {
+                "arguments": {
+                    "path": "docs",
+                },
+            },
         ]
         result = legacy_selected_ids(candidates=candidates_different_order, doc_plan=doc_plan_ordered, area_plans=area_plans_ordered)
         # Ordine dei plan prevale su quello del pool
@@ -1438,40 +1443,54 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         # Usa sempre un candidate pool non vuoto per discriminare i casi malformed
         malformed_pool = order_pool
         
-        # Caso 1: doc_plan=None
+        # Caso A: Nessun plan
         assert legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans=[]) == []
         
-        # Caso 2: doc_plan arguments non-dict
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={}, area_plans=[]) == []
+        # Caso B: arguments document non-dict
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": "bad"}, area_plans=[]) == []
         
-        # Caso 3: paths non-list
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": "not-a-list"}, area_plans=[]) == []
+        # Caso C: paths non-list
+        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": {"paths": "README.md"}}, area_plans=[]) == []
         
-        # Caso 4: elementi non-dict nei paths
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"path": "x"}]}, area_plans=[]) == []
+        # Caso D: paths misti, con una parte valida
+        mixed_document_paths = [None, 123, {}, "UNKNOWN.md", "README.md"]
+        result = legacy_selected_ids(
+            candidates=malformed_pool,
+            doc_plan={"arguments": {"paths": mixed_document_paths}},
+            area_plans=[],
+        )
+        assert result == ["root_doc:README.md"], \
+            f"should filter to only valid, got {result!r}"
         
-        # Caso 5: elemento invalid nei paths
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"invalid": True}]}, area_plans=[]) == []
-        
-        # Caso 6: path non-stringa
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"path": None}]}, area_plans=[]) == []
-        
-        # Caso 7: path non-stringa (integer)
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": [{"path": 123}]}, area_plans=[]) == []
-        
-        # Caso 8: combinazione valida + malformata - conserva solo validi
-        mixed_paths = [{"path": "INVALID"}, {"path": "README.md"}]
-        result = legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": mixed_paths}, area_plans=[])
-        assert result == ["root_doc:README.md"], f"should filter to only valid, got {result!r}"
-        
-        # Caso 9: area_plans non-list
+        # Caso E: area_plans non-list
         assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans="bad") == []
         
-        # Caso 10: area plan arguments non-dict
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans=[{"arguments": "bad"}]) == []
+        # Caso F: area plans misti, con una parte valida
+        mixed_area_plans = [
+            "bad",
+            {"arguments": "bad"},
+            {"arguments": {"path": None}},
+            {"arguments": {"path": 123}},
+            {"arguments": {"path": "missing-area"}},
+            {"arguments": {"path": "services"}},
+        ]
+        result = legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans=mixed_area_plans)
+        assert result == ["root_area:services"], \
+            f"should filter to only valid, got {result!r}"
         
-        # Caso 11: area plan path non-stringa
-        assert legacy_selected_ids(candidates=malformed_pool, doc_plan=doc_plan_ok, area_plans=[{"arguments": {"path": None}}]) == []
+        # Caso G: Documenti validi più aree parzialmente malformate
+        doc_plan_valid = {"arguments": {"paths": ["README.md"]}}
+        mixed_area_plans_partial = [
+            {"arguments": "bad"},
+            {"arguments": {"path": "services"}},
+        ]
+        result = legacy_selected_ids(
+            candidates=malformed_pool,
+            doc_plan=doc_plan_valid,
+            area_plans=mixed_area_plans_partial,
+        )
+        assert result == ["root_doc:README.md", "root_area:services"], \
+            f"valid sections should produce results despite malformed sections, got {result!r}"
         
         return {}
     
