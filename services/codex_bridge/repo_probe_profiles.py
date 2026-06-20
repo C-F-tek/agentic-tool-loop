@@ -301,7 +301,7 @@ def _hypothesis_info() -> dict[str, Any]:
     try:
         module = importlib.import_module("hypothesis")
         from hypothesis import HealthCheck, given, seed, settings
-        from hypothesis import strategies as st 
+        from hypothesis import strategies as st
     except Exception as exc:
         return {
             "available": False,
@@ -1268,7 +1268,7 @@ def _hypothesis_orientation_profile(
 
 def _required_callable(module: Any, name: str) -> Callable[..., Any]:
     """Helper per ottenere un callable da un modulo.
-    
+
     Restituisce il callable se presente, altrimenti solleva AssertionError.
     """
     value = getattr(module, name, None)
@@ -1332,19 +1332,19 @@ def _fixture_candidate_pool() -> list[dict[str, Any]]:
 
 def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
     """Deterministic profile per shadow helpers.
-    
+
     Produce RED quando i tre helper sono assenti dal runtime.
     Produce GREEN quando gli helper sono implementati correttamente.
     """
     module = importlib.import_module(
         "aicarmine_broker.application.controller.orientation_lane"
     )
-    
+
     # Fixture candidate pool con tutti gli ID attesi
     fixture_pool = _fixture_candidate_pool()
-    
+
     cases: list[dict[str, Any]] = []
-    
+
     def case_active_mode_fails_closed_to_legacy() -> dict[str, Any]:
         effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
         assert effective_mode("active") == "legacy", \
@@ -1352,9 +1352,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert effective_mode(" ACTIVE ") == "legacy", \
             f"expected 'legacy' after normalization, got '{effective_mode(' ACTIVE ')}'"
         return {}
-    
+
     cases.append(_case("active_mode_fails_closed_to_legacy", case_active_mode_fails_closed_to_legacy))
-    
+
     def case_legacy_mode_never_requests_shadow() -> dict[str, Any]:
         effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
         assert effective_mode("legacy") == "legacy"
@@ -1365,9 +1365,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert effective_mode(123) == "legacy"
         assert effective_mode({}) == "legacy"
         return {}
-    
+
     cases.append(_case("legacy_mode_never_requests_shadow", case_legacy_mode_never_requests_shadow))
-    
+
     def case_shadow_mode_is_exact_only() -> dict[str, Any]:
         effective_mode = _required_callable(module, "orientation_shadow_effective_mode")
         assert effective_mode("shadow") == "shadow"
@@ -1376,9 +1376,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert effective_mode("active-shadow") == "legacy"
         assert effective_mode(True) == "legacy"
         return {}
-    
+
     cases.append(_case("shadow_mode_is_exact_match_only", case_shadow_mode_is_exact_only))
-    
+
     doc_plan_ok = {
         "arguments": {
             "paths": ["README.md", "AGENTS.md"],
@@ -1396,7 +1396,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
             },
         },
     ]
-    
+
     # Order preservation case - candidate pool contains ALL expected IDs but in different order
     order_pool = [
         {
@@ -1449,7 +1449,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
             },
         },
     ]
-    
+
     def case_legacy_selection_uses_executed_plans() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         result = legacy_selected_ids(candidates=order_pool, doc_plan=doc_plan_ok, area_plans=area_plans_ok)
@@ -1461,9 +1461,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         ]
         assert result == expected, f"expected {expected!r}, got {result!r}"
         return {}
-    
+
     cases.append(_case("legacy_selection_uses_executed_plans", case_legacy_selection_uses_executed_plans))
-    
+
     def case_legacy_selection_ignores_unknown_paths() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         doc_plan_unknown = {
@@ -1477,9 +1477,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
             f"unknown path should be ignored, got {result!r}"
         assert "root_doc:README.md" in result
         return {}
-    
+
     cases.append(_case("legacy_selection_ignores_unknown_paths", case_legacy_selection_ignores_unknown_paths))
-    
+
     def case_legacy_selection_preserves_doc_then_area_order() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         # Candidate pool con tutti gli ID attesi ma in ordine diverso dai plan
@@ -1506,9 +1506,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert result == ["root_doc:README.md", "root_doc:AGENTS.md", "root_area:services", "root_area:docs"], \
             f"plan order should prevail, got {result!r}"
         return {}
-    
+
     cases.append(_case("legacy_selection_preserves_doc_then_area_order", case_legacy_selection_preserves_doc_then_area_order))
-    
+
     def case_legacy_selection_deduplicates_candidate_ids() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         doc_plan_dup = {
@@ -1533,23 +1533,23 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert result.count("root_doc:README.md") == 1
         assert result.count("root_area:services") == 1
         return {}
-    
+
     cases.append(_case("legacy_selection_deduplicates_candidate_ids", case_legacy_selection_deduplicates_candidate_ids))
-    
+
     def case_legacy_selection_handles_missing_or_malformed_plans() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
         # Usa sempre un candidate pool non vuoto per discriminare i casi malformed
         malformed_pool = order_pool
-        
+
         # Caso A: Nessun plan
         assert legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans=[]) == []
-        
+
         # Caso B: arguments document non-dict
         assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": "bad"}, area_plans=[]) == []
-        
+
         # Caso C: paths non-list
         assert legacy_selected_ids(candidates=malformed_pool, doc_plan={"arguments": {"paths": "README.md"}}, area_plans=[]) == []
-        
+
         # Caso D: paths misti, con una parte valida
         mixed_document_paths = [None, 123, {}, "UNKNOWN.md", "README.md"]
         result = legacy_selected_ids(
@@ -1559,10 +1559,10 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         )
         assert result == ["root_doc:README.md"], \
             f"should filter to only valid, got {result!r}"
-        
+
         # Caso E: area_plans non-list
         assert legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans="bad") == []
-        
+
         # Caso F: area plans misti, con una parte valida
         mixed_area_plans = [
             "bad",
@@ -1575,7 +1575,7 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         result = legacy_selected_ids(candidates=malformed_pool, doc_plan=None, area_plans=mixed_area_plans)
         assert result == ["root_area:services"], \
             f"should filter to only valid, got {result!r}"
-        
+
         # Caso G: Documenti validi più aree parzialmente malformate
         doc_plan_valid = {"arguments": {"paths": ["README.md"]}}
         mixed_area_plans_partial = [
@@ -1589,26 +1589,26 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         )
         assert result == ["root_doc:README.md", "root_area:services"], \
             f"valid sections should produce results despite malformed sections, got {result!r}"
-        
+
         return {}
-    
+
     cases.append(_case("legacy_selection_handles_missing_or_malformed_plans", case_legacy_selection_handles_missing_or_malformed_plans))
-    
+
     def case_legacy_selection_handles_malformed_candidate_pool() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
-        
+
         # Caso A: Candidate pool None
         try:
             result = legacy_selected_ids(candidates=None, doc_plan=doc_plan_ok, area_plans=area_plans_ok)
             assert result == [], f"expected [], got {result!r}"
         except Exception as exc:
             raise AssertionError(f"helper_raised:{type(exc).__name__}") from exc
-        
+
         # Caso B: Altri candidate pool non-list
         assert legacy_selected_ids(candidates=123, doc_plan=doc_plan_ok, area_plans=area_plans_ok) == []
         assert legacy_selected_ids(candidates="bad", doc_plan=doc_plan_ok, area_plans=area_plans_ok) == []
         assert legacy_selected_ids(candidates={"candidate_id": "not-a-list"}, doc_plan=doc_plan_ok, area_plans=area_plans_ok) == []
-        
+
         # Caso C: Lista parzialmente malformata con un candidato valido
         partial_pool = [
             None,
@@ -1631,14 +1631,14 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         )
         assert result == ["root_doc:README.md"], \
             f"should extract valid candidate from malformed pool, got {result!r}"
-        
+
         return {}
-    
+
     cases.append(_case("legacy_selection_handles_malformed_candidate_pool", case_legacy_selection_handles_malformed_candidate_pool))
-    
+
     def case_legacy_selection_distinguishes_doc_and_area_same_path() -> dict[str, Any]:
         legacy_selected_ids = _required_callable(module, "orientation_legacy_selected_candidate_ids")
-        
+
         # Candidate pool con stesso path ma classi diverse
         same_path_pool = [
             {
@@ -1658,14 +1658,14 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
                 "signals": [],
             },
         ]
-        
+
         # Document plan prima
         doc_plan_shared = {
             "arguments": {
                 "paths": ["shared"],
             },
         }
-        
+
         # Area plans dopo
         area_plans_shared = [
             {
@@ -1674,23 +1674,23 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
                 },
             },
         ]
-        
+
         result = legacy_selected_ids(
             candidates=same_path_pool,
             doc_plan=doc_plan_shared,
             area_plans=area_plans_shared,
         )
-        
+
         # La classe deriva dalla sezione del plan
         # Ordine: documenti prima delle aree
         expected = ["root_doc:shared", "root_area:shared"]
         assert result == expected, \
             f"document then area order should prevail, got {result!r}"
-        
+
         return {}
-    
+
     cases.append(_case("legacy_selection_distinguishes_doc_and_area_same_path", case_legacy_selection_distinguishes_doc_and_area_same_path))
-    
+
     def case_selection_metrics_exact_match() -> dict[str, Any]:
         selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         legacy = ["A", "B"]
@@ -1704,9 +1704,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert result["exact_match"] is True
         assert result["would_change_selection"] is False
         return {}
-    
+
     cases.append(_case("selection_metrics_exact_match", case_selection_metrics_exact_match))
-    
+
     def case_selection_metrics_partial_overlap() -> dict[str, Any]:
         selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         legacy = ["A", "B", "C"]
@@ -1720,9 +1720,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert result["exact_match"] is False
         assert result["would_change_selection"] is True
         return {}
-    
+
     cases.append(_case("selection_metrics_partial_overlap", case_selection_metrics_partial_overlap))
-    
+
     def case_selection_metrics_empty_model_selection() -> dict[str, Any]:
         selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         legacy = ["A"]
@@ -1736,25 +1736,25 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert result["exact_match"] is False
         assert result["would_change_selection"] is True
         return {}
-    
+
     cases.append(_case("selection_metrics_empty_model_selection", case_selection_metrics_empty_model_selection))
-    
+
     def case_selection_metrics_bounds_and_input_immutability() -> dict[str, Any]:
         selection_metrics = _required_callable(module, "orientation_shadow_selection_metrics")
         # Costruisci almeno 15 ID validi distinti per lato
         legacy_valid = [f"id:{index}" for index in range(15)]
         model_valid = [f"id:{index}" for index in range(5, 20)]
-        
+
         # Aggiungi duplicati, vuoti, whitespace, None, integer, oversized
         legacy_with_invalid = legacy_valid + ["id:0", "", "   ", None, 123, "id:" * 501]
         model_with_invalid = model_valid + ["id:5", "", "   ", None, {}, "id:" * 501]
-        
+
         legacy_before = deepcopy(legacy_with_invalid)
         model_before = deepcopy(model_with_invalid)
-        
+
         result1 = selection_metrics(legacy_selected_candidate_ids=legacy_with_invalid, model_selected_candidate_ids=model_with_invalid)
         result2 = selection_metrics(legacy_selected_candidate_ids=legacy_with_invalid, model_selected_candidate_ids=model_with_invalid)
-        
+
         assert result1 == result2, "results should be identical for same inputs"
         assert legacy_with_invalid == legacy_before, "legacy input should be unchanged"
         assert model_with_invalid == model_before, "model input should be unchanged"
@@ -1768,9 +1768,9 @@ def _deterministic_orientation_shadow_helpers_profile() -> dict[str, Any]:
         assert result1["would_change_selection"] is True
         assert all(len(id_) <= 500 for id_ in result1.get("selection_overlap", []))
         return {}
-    
+
     cases.append(_case("selection_metrics_bounds_and_input_immutability", case_selection_metrics_bounds_and_input_immutability))
-    
+
     passed = sum(1 for item in cases if item.get("ok") is True)
     failed = len(cases) - passed
     return {
@@ -1803,7 +1803,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
     orientation_module = importlib.import_module(
         "aicarmine_broker.application.controller.orientation_lane"
     )
-    
+
     effective_mode = _required_callable(
         orientation_module,
         "orientation_shadow_effective_mode",
@@ -1816,19 +1816,20 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         orientation_module,
         "orientation_shadow_selection_metrics",
     )
-    
+
     evaluator = _required_callable(
         module,
         "evaluate_initial_orientation_shadow",
     )
-    
+
     def invoke(
+        evaluator: Callable[..., dict[str, Any]],
         *,
-        requested_mode: object = "shadow",
-        root_result: object = None,
-        semantic_intent: object = None,
-        doc_plan: object = None,
-        area_plans: object = None,
+        requested_mode: object,
+        root_result: object,
+        semantic_intent: object,
+        doc_plan: object,
+        area_plans: object,
         candidate_pool_fn: Callable[..., Any],
         selector_fn: Callable[..., Any],
         effective_mode_fn: Callable[[object], str] = effective_mode,
@@ -1848,7 +1849,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             legacy_selected_ids_fn=legacy_selected_ids_fn,
             selection_metrics_fn=selection_metrics_fn,
         )
-    
+
     fixture_pool = [
         {
             "candidate_id": "root_doc:AGENTS.md",
@@ -1899,7 +1900,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             "signals": [],
         },
     ]
-    
+
     doc_plan_ok = {
         "arguments": {
             "paths": ["README.md", "AGENTS.md"],
@@ -1917,7 +1918,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             },
         },
     ]
-    
+
     selector_ready_fixture = {
         "ok": True,
         "status": "ready",
@@ -1948,34 +1949,17 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
     def _raise_connection_error(message: str) -> NoReturn:
         raise ConnectionError(message)
 
-    def _case(name: str) -> dict[str, Any]:
-        def make_case(callback: Callable[[], dict[str, Any]]) -> dict[str, Any]:
-            try:
-                details = callback() or {}
-            except AssertionError as exc:
-                return {
-                    "name": name,
-                    "ok": False,
-                    "error": "assertion_failed",
-                    "message": str(exc)[:1000],
-                }
-            except Exception as exc:
-                return {
-                    "name": name,
-                    "ok": False,
-                    "error": "unexpected_exception",
-                    "error_type": type(exc).__name__,
-                    "message": str(exc)[:1000],
-                }
-            return {"name": name, "ok": True, "details": details}
-        return make_case
-    
-    # Case 1: legacy_mode_skips_shadow_callbacks
     def case_legacy_mode_skips_shadow_callbacks() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
         mock_candidates = lambda x: (_raise_assertion_error("candidate_pool_called"))
         mock_selector = lambda **kw: (_raise_assertion_error("selector_called"))
-        
+
         result = invoke(
+            evaluator=evaluator,
             requested_mode="legacy",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -1985,24 +1969,28 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             candidate_pool_fn=mock_candidates,
             selector_fn=mock_selector,
         )
-        
+
         assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
         assert result["reason"] == "mode_not_shadow", f"expected mode_not_shadow, got {result['reason']}"
         assert result["effective_mode"] == "legacy", f"expected legacy, got {result['effective_mode']}"
         assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
         assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
         assert result["candidate_count"] == 0, f"expected 0, got {result['candidate_count']}"
-        
+
         return {}
-    
-    cases.append(_case("legacy_mode_skips_shadow_callbacks")(case_legacy_mode_skips_shadow_callbacks))
-    
-    # Case 2: active_mode_fails_closed_to_legacy
+    cases.append(_case("legacy_mode_skips_shadow_callbacks", case_legacy_mode_skips_shadow_callbacks))
+
     def case_active_mode_fails_closed_to_legacy() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
         mock_candidates = lambda x: (_raise_assertion_error("candidate_pool_called"))
         mock_selector = lambda **kw: (_raise_assertion_error("selector_called"))
-        
+
         result = invoke(
+            evaluator=evaluator,
             requested_mode=" ACTIVE ",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2012,102 +2000,59 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             candidate_pool_fn=mock_candidates,
             selector_fn=mock_selector,
         )
-        
+
         assert result["effective_mode"] == "legacy", f"expected legacy, got {result['effective_mode']}"
         assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
         assert result["reason"] == "mode_not_shadow", f"expected mode_not_shadow, got {result['reason']}"
         assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
-        
+
         return {}
-    
-    cases.append(_case("active_mode_fails_closed_to_legacy")(case_active_mode_fails_closed_to_legacy))
-    
-    # Case 3: root_result_must_be_ok (multiple scenarios)
-    def case_root_result_none() -> dict[str, Any]:
-        result = invoke(
-            requested_mode="shadow",
-            root_result=None,
-            candidates=fixture_pool,
-            semantic_intent={"target_kind": "repository"},
-            doc_plan=doc_plan_ok,
-            area_plans=area_plans_ok,
-            candidate_pool_fn=lambda x: fixture_pool,
-            selector_fn=selector_ready_fixture,
+    cases.append(_case("active_mode_fails_closed_to_legacy", case_active_mode_fails_closed_to_legacy))
+
+    def case_root_result_must_be_ok() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
         )
-        assert result["effective_mode"] == "shadow", f"expected shadow, got {result['effective_mode']}"
-        assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
-        assert result["reason"] == "root_result_not_ok", f"expected root_result_not_ok, got {result['reason']}"
-        assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
-        assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
+
+        scenarios = [
+            None,
+            {},
+            {"ok": False},
+            "bad",
+        ]
+
+        for scenario in scenarios:
+            result = invoke(
+                evaluator=evaluator,
+                requested_mode="shadow",
+                root_result=scenario,
+                candidates=fixture_pool,
+                semantic_intent={"target_kind": "repository"},
+                doc_plan=doc_plan_ok,
+                area_plans=area_plans_ok,
+                candidate_pool_fn=lambda x: fixture_pool,
+                selector_fn=selector_ready_fixture,
+            )
+            assert result["effective_mode"] == "shadow", f"expected shadow, got {result['effective_mode']}"
+            assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
+            assert result["reason"] == "root_result_not_ok", f"expected root_result_not_ok, got {result['reason']}"
+            assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
+            assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
+
         return {}
-    
-    cases.append(_case("root_result_none")(case_root_result_none))
-    
-    def case_root_result_empty_dict() -> dict[str, Any]:
-        result = invoke(
-            requested_mode="shadow",
-            root_result={},
-            candidates=fixture_pool,
-            semantic_intent={"target_kind": "repository"},
-            doc_plan=doc_plan_ok,
-            area_plans=area_plans_ok,
-            candidate_pool_fn=lambda x: fixture_pool,
-            selector_fn=selector_ready_fixture,
+    cases.append(_case("root_result_must_be_ok", case_root_result_must_be_ok))
+
+    def case_empty_candidate_pool_skips_selector() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
         )
-        assert result["effective_mode"] == "shadow", f"expected shadow, got {result['effective_mode']}"
-        assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
-        assert result["reason"] == "root_result_not_ok", f"expected root_result_not_ok, got {result['reason']}"
-        assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
-        assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
-        return {}
-    
-    cases.append(_case("root_result_empty_dict")(case_root_result_empty_dict))
-    
-    def case_root_result_false() -> dict[str, Any]:
-        result = invoke(
-            requested_mode="shadow",
-            root_result={"ok": False},
-            candidates=fixture_pool,
-            semantic_intent={"target_kind": "repository"},
-            doc_plan=doc_plan_ok,
-            area_plans=area_plans_ok,
-            candidate_pool_fn=lambda x: fixture_pool,
-            selector_fn=selector_ready_fixture,
-        )
-        assert result["effective_mode"] == "shadow", f"expected shadow, got {result['effective_mode']}"
-        assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
-        assert result["reason"] == "root_result_not_ok", f"expected root_result_not_ok, got {result['reason']}"
-        assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
-        assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
-        return {}
-    
-    cases.append(_case("root_result_false")(case_root_result_false))
-    
-    def case_root_result_bad_string() -> dict[str, Any]:
-        result = invoke(
-            requested_mode="shadow",
-            root_result="bad",
-            candidates=fixture_pool,
-            semantic_intent={"target_kind": "repository"},
-            doc_plan=doc_plan_ok,
-            area_plans=area_plans_ok,
-            candidate_pool_fn=lambda x: fixture_pool,
-            selector_fn=selector_ready_fixture,
-        )
-        assert result["effective_mode"] == "shadow", f"expected shadow, got {result['effective_mode']}"
-        assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
-        assert result["reason"] == "root_result_not_ok", f"expected root_result_not_ok, got {result['reason']}"
-        assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
-        assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
-        return {}
-    
-    cases.append(_case("root_result_bad_string")(case_root_result_bad_string))
-    
-    # Case 4: empty_candidate_pool_skips_selector
-    def case_empty_candidate_pool() -> dict[str, Any]:
+
         empty_pool = lambda x: []
-        
+
         result = invoke(
+            evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2117,163 +2062,181 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             candidate_pool_fn=empty_pool,
             selector_fn=selector_ready_fixture,
         )
-        
+
         assert result["status"] == "skipped", f"expected skipped, got {result['status']}"
         assert result["reason"] == "no_candidates", f"expected no_candidates, got {result['reason']}"
         assert result["candidate_count"] == 0, f"expected 0, got {result['candidate_count']}"
         assert result["candidate_ids"] == [], f"expected [], got {result['candidate_ids']}"
         assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
         assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
-        
+
         return {}
-    
-    cases.append(_case("empty_candidate_pool_skips_selector")(case_empty_candidate_pool))
-    
-    # Case 5: successful_evaluation_calls_each_stage_once
-    stage_counts = {"effective_mode_fn": 0, "candidate_pool_fn": 0, "legacy_selected_ids_fn": 0, 
-                    "selector_fn": 0, "selection_metrics_fn": 0}
-    
-    def counting_effective_mode(mode):
-        stage_counts["effective_mode_fn"] += 1
-        return effective_mode(mode)
-    
-    def counting_candidate_pool(candidates):
-        stage_counts["candidate_pool_fn"] += 1
-        return deepcopy(candidates)
-    
-    def counting_legacy_selected_ids(**kwargs):
-        stage_counts["legacy_selected_ids_fn"] += 1
-        return deepcopy(legacy_selected_ids(**kwargs))
-    
-    def counting_selector(**kwargs):
-        stage_counts["selector_fn"] += 1
-        return deepcopy(selector_ready_fixture)
-    
-    def counting_selection_metrics(**kwargs):
-        stage_counts["selection_metrics_fn"] += 1
-        return deepcopy(selection_metrics(**kwargs))
-    
-    result = invoke(
-        requested_mode="shadow",
-        root_result={"ok": True},
-        candidates=fixture_pool,
-        semantic_intent={"target_kind": "repository"},
-        doc_plan=doc_plan_ok,
-        area_plans=area_plans_ok,
-        candidate_pool_fn=counting_candidate_pool,
-        selector_fn=counting_selector,
-        effective_mode_fn=counting_effective_mode,
-        legacy_selected_ids_fn=counting_legacy_selected_ids,
-        selection_metrics_fn=counting_selection_metrics,
-    )
-    
-    assert stage_counts["effective_mode_fn"] == 1, f"expected 1 call, got {stage_counts['effective_mode_fn']}"
-    assert stage_counts["candidate_pool_fn"] == 1, f"expected 1 call, got {stage_counts['candidate_pool_fn']}"
-    assert stage_counts["legacy_selected_ids_fn"] == 1, f"expected 1 call, got {stage_counts['legacy_selected_ids_fn']}"
-    assert stage_counts["selector_fn"] == 1, f"expected 1 call, got {stage_counts['selector_fn']}"
-    assert stage_counts["selection_metrics_fn"] == 1, f"expected 1 call, got {stage_counts['selection_metrics_fn']}"
-    
-    assert result["status"] == "ready", f"expected ready, got {result['status']}"
-    assert result["reason"] == "selector_ready", f"expected selector_ready, got {result['reason']}"
-    assert result["selector_called"] is True, f"expected True, got {result['selector_called']}"
-    assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
-    assert result["diagnostic_only"] is True, f"expected True, got {result['diagnostic_only']}"
-    assert result["legacy_authoritative"] is True, f"expected True, got {result['legacy_authoritative']}"
-    assert result["candidate_count"] == len(fixture_pool), f"expected {len(fixture_pool)}, got {result['candidate_count']}"
-    
-    expected_legacy = ["root_doc:README.md", "root_doc:AGENTS.md", "root_area:services", "root_area:docs"]
-    assert result["legacy_selected_candidate_ids"] == expected_legacy, \
-        f"expected {expected_legacy!r}, got {result['legacy_selected_candidate_ids']!r}"
-    
-    expected_model = ["root_doc:README.md", "root_area:services"]
-    assert result["model_selected_candidate_ids"] == expected_model, \
-        f"expected {expected_model!r}, got {result['model_selected_candidate_ids']!r}"
-    
-    return {}
-    
-    cases.append(_case("successful_evaluation_calls_each_stage_once")(case_successful_evaluation_calls_each_stage_once))
-    
-    # Case 6: legacy_plan_order_drives_comparison
-    order_pool_different = [
-        {
-            "candidate_id": "root_area:docs",
-            "path": "docs",
-            "kind": "dir",
-            "candidate_class": "root_area",
-            "static_rank": 0,
-            "signals": [],
-        },
-        {
-            "candidate_id": "root_doc:AGENTS.md",
-            "path": "AGENTS.md",
-            "kind": "file",
-            "candidate_class": "root_doc",
-            "static_rank": 1,
-            "signals": ["doc_or_config"],
-        },
-        {
-            "candidate_id": "root_area:services",
-            "path": "services",
-            "kind": "dir",
-            "candidate_class": "root_area",
-            "static_rank": 2,
-            "signals": ["non_low_signal"],
-        },
-        {
-            "candidate_id": "root_doc:README.md",
-            "path": "README.md",
-            "kind": "file",
-            "candidate_class": "root_doc",
-            "static_rank": 3,
-            "signals": ["doc_or_config"],
-        },
-    ]
-    
-    selector_mock_ready = {
-        "ok": True,
-        "status": "ready",
-        "selected_candidate_ids": ["root_area:services", "root_doc:README.md"],
-        "unknown_candidate_ids": [],
-        "duplicate_candidate_ids": [],
-        "duplicate_input_candidate_ids": [],
-        "rationale": "bounded test rationale",
-        "confidence": 0.75,
-        "planner_model": "test-model",
-        "planner_url": "http://127.0.0.1:11434/api/chat",
-        "timeout_seconds": 30,
-        "keep_alive": "5m",
-    }
-    
-    result = invoke(
-        requested_mode="shadow",
-        root_result={"ok": True},
-        candidates=order_pool_different,
-        semantic_intent={"target_kind": "repository"},
-        doc_plan=doc_plan_ok,
-        area_plans=area_plans_ok,
-        candidate_pool_fn=lambda x: deepcopy(order_pool_different),
-        selector_fn=lambda **kw: deepcopy(selector_mock_ready),
-    )
-    
-    assert result["legacy_selected_candidate_ids"] == expected_legacy, \
-        f"plan order should drive comparison, got {result['legacy_selected_candidate_ids']!r}"
-    
-    overlap = ["root_doc:README.md", "root_area:services"]
-    assert result["selection_metrics"]["selection_overlap"] == overlap, \
-        f"expected {overlap!r}, got {result['selection_metrics']['selection_overlap']!r}"
-    
-    assert doc_plan_ok == doc_plan_ok, "doc_plan should be unchanged"
-    assert area_plans_ok == area_plans_ok, "area_plans should be unchanged"
-    
-    return {}
-    
-    cases.append(_case("legacy_plan_order_drives_comparison")(case_legacy_plan_order_drives_comparison))
-    
-    # Case 7: candidate_pool_failure_fails_open
-    def case_candidate_pool_failure() -> dict[str, Any]:
-        failing_pool = lambda x: (_raise_runtime_error("candidate boom"))
-        
+    cases.append(_case("empty_candidate_pool_skips_selector", case_empty_candidate_pool_skips_selector))
+
+    def case_successful_evaluation_calls_each_stage_once() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
+        stage_counts = {"effective_mode_fn": 0, "candidate_pool_fn": 0, "legacy_selected_ids_fn": 0,
+                        "selector_fn": 0, "selection_metrics_fn": 0}
+
+        def counting_effective_mode(mode):
+            stage_counts["effective_mode_fn"] += 1
+            return effective_mode(mode)
+
+        def counting_candidate_pool(candidates):
+            stage_counts["candidate_pool_fn"] += 1
+            return deepcopy(candidates)
+
+        def counting_legacy_selected_ids(**kwargs):
+            stage_counts["legacy_selected_ids_fn"] += 1
+            return deepcopy(legacy_selected_ids(**kwargs))
+
+        def counting_selector(**kwargs):
+            stage_counts["selector_fn"] += 1
+            return deepcopy(selector_ready_fixture)
+
+        def counting_selection_metrics(**kwargs):
+            stage_counts["selection_metrics_fn"] += 1
+            return deepcopy(selection_metrics(**kwargs))
+
         result = invoke(
+            evaluator=evaluator,
+            requested_mode="shadow",
+            root_result={"ok": True},
+            candidates=fixture_pool,
+            semantic_intent={"target_kind": "repository"},
+            doc_plan=doc_plan_ok,
+            area_plans=area_plans_ok,
+            candidate_pool_fn=counting_candidate_pool,
+            selector_fn=counting_selector,
+            effective_mode_fn=counting_effective_mode,
+            legacy_selected_ids_fn=counting_legacy_selected_ids,
+            selection_metrics_fn=counting_selection_metrics,
+        )
+
+        assert stage_counts["effective_mode_fn"] == 1, f"expected 1 call, got {stage_counts['effective_mode_fn']}"
+        assert stage_counts["candidate_pool_fn"] == 1, f"expected 1 call, got {stage_counts['candidate_pool_fn']}"
+        assert stage_counts["legacy_selected_ids_fn"] == 1, f"expected 1 call, got {stage_counts['legacy_selected_ids_fn']}"
+        assert stage_counts["selector_fn"] == 1, f"expected 1 call, got {stage_counts['selector_fn']}"
+        assert stage_counts["selection_metrics_fn"] == 1, f"expected 1 call, got {stage_counts['selection_metrics_fn']}"
+
+        assert result["status"] == "ready", f"expected ready, got {result['status']}"
+        assert result["reason"] == "selector_ready", f"expected selector_ready, got {result['reason']}"
+        assert result["selector_called"] is True, f"expected True, got {result['selector_called']}"
+        assert result["fallback_used"] is False, f"expected False, got {result['fallback_used']}"
+        assert result["diagnostic_only"] is True, f"expected True, got {result['diagnostic_only']}"
+        assert result["legacy_authoritative"] is True, f"expected True, got {result['legacy_authoritative']}"
+        assert result["candidate_count"] == len(fixture_pool), f"expected {len(fixture_pool)}, got {result['candidate_count']}"
+
+        expected_legacy = ["root_doc:README.md", "root_doc:AGENTS.md", "root_area:services", "root_area:docs"]
+        assert result["legacy_selected_candidate_ids"] == expected_legacy, \
+            f"expected {expected_legacy!r}, got {result['legacy_selected_candidate_ids']!r}"
+
+        expected_model = ["root_doc:README.md", "root_area:services"]
+        assert result["model_selected_candidate_ids"] == expected_model, \
+            f"expected {expected_model!r}, got {result['model_selected_candidate_ids']!r}"
+
+        return {}
+    cases.append(_case("successful_evaluation_calls_each_stage_once", case_successful_evaluation_calls_each_stage_once))
+
+    def case_legacy_plan_order_drives_comparison() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
+        order_pool_different = [
+            {
+                "candidate_id": "root_area:docs",
+                "path": "docs",
+                "kind": "dir",
+                "candidate_class": "root_area",
+                "static_rank": 0,
+                "signals": [],
+            },
+            {
+                "candidate_id": "root_doc:AGENTS.md",
+                "path": "AGENTS.md",
+                "kind": "file",
+                "candidate_class": "root_doc",
+                "static_rank": 1,
+                "signals": ["doc_or_config"],
+            },
+            {
+                "candidate_id": "root_area:services",
+                "path": "services",
+                "kind": "dir",
+                "candidate_class": "root_area",
+                "static_rank": 2,
+                "signals": ["non_low_signal"],
+            },
+            {
+                "candidate_id": "root_doc:README.md",
+                "path": "README.md",
+                "kind": "file",
+                "candidate_class": "root_doc",
+                "static_rank": 3,
+                "signals": ["doc_or_config"],
+            },
+        ]
+
+        selector_mock_ready = {
+            "ok": True,
+            "status": "ready",
+            "selected_candidate_ids": ["root_area:services", "root_doc:README.md"],
+            "unknown_candidate_ids": [],
+            "duplicate_candidate_ids": [],
+            "duplicate_input_candidate_ids": [],
+            "rationale": "bounded test rationale",
+            "confidence": 0.75,
+            "planner_model": "test-model",
+            "planner_url": "http://127.0.0.1:11434/api/chat",
+            "timeout_seconds": 30,
+            "keep_alive": "5m",
+        }
+
+        pool = deepcopy(order_pool_different)
+        doc_plan_before = deepcopy(doc_plan_ok)
+        area_plans_before = deepcopy(area_plans_ok)
+
+        result = invoke(
+            evaluator=evaluator,
+            requested_mode="shadow",
+            root_result={"ok": True},
+            candidates=order_pool_different,
+            semantic_intent={"target_kind": "repository"},
+            doc_plan=doc_plan_ok,
+            area_plans=area_plans_ok,
+            candidate_pool_fn=lambda x: deepcopy(pool),
+            selector_fn=lambda **kw: deepcopy(selector_mock_ready),
+        )
+
+        assert result["legacy_selected_candidate_ids"] == expected_legacy, \
+            f"plan order should drive comparison, got {result['legacy_selected_candidate_ids']!r}"
+
+        overlap = ["root_doc:README.md", "root_area:services"]
+        assert result["selection_metrics"]["selection_overlap"] == overlap, \
+            f"expected {overlap!r}, got {result['selection_metrics']['selection_overlap']!r}"
+
+        assert doc_plan_ok == doc_plan_before, "doc_plan should be unchanged"
+        assert area_plans_ok == area_plans_before, "area_plans should be unchanged"
+
+        return {}
+    cases.append(_case("legacy_plan_order_drives_comparison", case_legacy_plan_order_drives_comparison))
+
+    def case_candidate_pool_failure_fails_open() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
+        failing_pool = lambda x: (_raise_runtime_error("candidate boom"))
+
+        result = invoke(
+            evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2283,7 +2246,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             candidate_pool_fn=failing_pool,
             selector_fn=selector_ready_fixture,
         )
-        
+
         assert result["status"] == "unavailable", f"expected unavailable, got {result['status']}"
         assert result["reason"] == "candidate_pool_exception", f"expected candidate_pool_exception, got {result['reason']}"
         assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
@@ -2292,19 +2255,23 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         assert result["model_selected_candidate_ids"] == [], f"expected [], got {result['model_selected_candidate_ids']}"
         assert result["model_summary"]["error_type"] == "RuntimeError", \
             f"expected RuntimeError, got {result['model_summary']['error_type']}"
-        
+
         return {}
-    
-    cases.append(_case("candidate_pool_failure_fails_open")(case_candidate_pool_failure))
-    
-    # Case 8: legacy_selection_failure_fails_open
-    def case_legacy_selection_failure() -> dict[str, Any]:
+    cases.append(_case("candidate_pool_failure_fails_open", case_candidate_pool_failure_fails_open))
+
+    def case_legacy_selection_failure_fails_open() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
         valid_pool = lambda x: fixture_pool
-        
+
         def failing_legacy(**kwargs):
             _raise_value_error("legacy boom")
-        
+
         result = invoke(
+            evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2315,27 +2282,31 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             selector_fn=selector_ready_fixture,
             legacy_selected_ids_fn=failing_legacy,
         )
-        
+
         assert result["status"] == "unavailable", f"expected unavailable, got {result['status']}"
         assert result["reason"] == "legacy_selection_exception", f"expected legacy_selection_exception, got {result['reason']}"
         assert result["selector_called"] is False, f"expected False, got {result['selector_called']}"
         assert result["fallback_used"] is True, f"expected True, got {result['fallback_used']}"
         assert result["model_summary"]["error_type"] == "ValueError", \
             f"expected ValueError, got {result['model_summary']['error_type']}"
-        
+
         return {}
-    
-    cases.append(_case("legacy_selection_failure_fails_open")(case_legacy_selection_failure))
-    
-    # Case 9: selector_failure_fails_open
-    def case_selector_failure() -> dict[str, Any]:
+    cases.append(_case("legacy_selection_failure_fails_open", case_legacy_selection_failure_fails_open))
+
+    def case_selector_failure_fails_open() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
         valid_pool = lambda x: fixture_pool
         valid_legacy = legacy_selected_ids
-        
+
         def failing_selector(**kwargs):
             _raise_connection_error("selector boom")
-        
+
         result = invoke(
+            evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2345,7 +2316,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             candidate_pool_fn=valid_pool,
             selector_fn=failing_selector,
         )
-        
+
         assert result["status"] == "unavailable", f"expected unavailable, got {result['status']}"
         assert result["reason"] == "selector_exception", f"expected selector_exception, got {result['reason']}"
         assert result["selector_called"] is True, f"expected True, got {result['selector_called']}"
@@ -2353,20 +2324,25 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
         assert result["model_selected_candidate_ids"] == [], f"expected [], got {result['model_selected_candidate_ids']}"
         assert result["model_summary"]["error_type"] == "ConnectionError", \
             f"expected ConnectionError, got {result['model_summary']['error_type']}"
-        
+
         return {}
-    
-    cases.append(_case("selector_failure_fails_open")(case_selector_failure))
-    
-    # Case 10: selector_not_ready_fails_open (two sub-scenarios)
-    def case_selector_not_ready_non_dict() -> dict[str, Any]:
+    cases.append(_case("selector_failure_fails_open", case_selector_failure_fails_open))
+
+    def case_selector_not_ready_fails_open() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
         valid_pool = lambda x: fixture_pool
         valid_legacy = legacy_selected_ids
-        
-        def bad_selector(**kwargs):
+
+        # Scenario A: selector returns "not-a-dict"
+        def bad_selector_a(**kwargs):
             return "not-a-dict"
-        
-        result = invoke(
+
+        result_a = invoke(
+            evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2374,31 +2350,25 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
             candidate_pool_fn=valid_pool,
-            selector_fn=bad_selector,
+            selector_fn=bad_selector_a,
         )
-        
-        assert result["status"] == "invalid", f"expected invalid, got {result['status']}"
-        assert result["reason"] == "selector_result_not_dict", f"expected selector_result_not_dict, got {result['reason']}"
-        assert result["selector_called"] is True, f"expected True, got {result['selector_called']}"
-        assert result["fallback_used"] is True, f"expected True, got {result['fallback_used']}"
-        
-        return {}
-    
-    cases.append(_case("selector_not_ready_non_dict")(case_selector_not_ready_non_dict))
-    
-    def case_selector_not_ready_unavailable() -> dict[str, Any]:
-        valid_pool = lambda x: fixture_pool
-        valid_legacy = legacy_selected_ids
-        
-        def unavailable_selector(**kwargs):
+
+        assert result_a["status"] == "invalid", f"expected invalid, got {result_a['status']}"
+        assert result_a["reason"] == "selector_result_not_dict", f"expected selector_result_not_dict, got {result_a['reason']}"
+        assert result_a["selector_called"] is True, f"expected True, got {result_a['selector_called']}"
+        assert result_a["fallback_used"] is True, f"expected True, got {result_a['fallback_used']}"
+
+        # Scenario B: selector returns unavailable dict
+        def bad_selector_b(**kwargs):
             return {
                 "ok": False,
                 "status": "unavailable",
                 "selected_candidate_ids": [],
                 "rationale": "backend_unavailable",
             }
-        
-        result = invoke(
+
+        result_b = invoke(
+            evaluator=evaluator,
             requested_mode="shadow",
             root_result={"ok": True},
             candidates=fixture_pool,
@@ -2406,142 +2376,152 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
             doc_plan=doc_plan_ok,
             area_plans=area_plans_ok,
             candidate_pool_fn=valid_pool,
-            selector_fn=unavailable_selector,
+            selector_fn=bad_selector_b,
         )
-        
-        assert result["status"] == "unavailable", f"expected unavailable, got {result['status']}"
-        assert result["reason"] == "backend_unavailable", f"expected backend_unavailable, got {result['reason']}"
-        assert result["selector_called"] is True, f"expected True, got {result['selector_called']}"
-        assert result["fallback_used"] is True, f"expected True, got {result['fallback_used']}"
-        
+
+        assert result_b["status"] == "unavailable", f"expected unavailable, got {result_b['status']}"
+        assert result_b["reason"] == "backend_unavailable", f"expected backend_unavailable, got {result_b['reason']}"
+        assert result_b["selector_called"] is True, f"expected True, got {result_b['selector_called']}"
+        assert result_b["fallback_used"] is True, f"expected True, got {result_b['fallback_used']}"
+
         return {}
-    
-    cases.append(_case("selector_not_ready_unavailable")(case_selector_not_ready_unavailable))
-    
-    # Case 11: evaluation_output_is_bounded
-    bounded_pool = [
-        {"candidate_id": f"id:{i}", "path": f"path{i}.md", "kind": "file", 
-         "candidate_class": "root_doc", "static_rank": i % 2, "signals": []}
-        for i in range(45)
-    ] + [{"candidate_id": "", "path": "", "kind": "", "candidate_class": None, 
-          "static_rank": -1, "signals": []}] * 3
-    
-    bounded_pool_with_oversized = bounded_pool + [
-        {"candidate_id": "x" * 501, "path": "oversized", "kind": "file", 
-         "candidate_class": "root_doc", "static_rank": 0, "signals": []},
-    ]
-    
-    oversized_selector_result = {
-        "selected_candidate_ids": ["id:" + str(i) for i in range(20)] + 
-                                   ["unknown:" + str(i) for i in range(20)] +
-                                   ["duplicate:" + str(i) for i in range(20)] +
-                                   ["duplicate_input:" + str(i) for i in range(20)],
-        "unknown_candidate_ids": ["unknown:" + str(i) for i in range(20)],
-        "duplicate_candidate_ids": ["duplicate:" + str(i) for i in range(20)],
-        "duplicate_input_candidate_ids": ["duplicate_input:" + str(i) for i in range(20)],
-        "rationale": "x" * 1001,
-        "error_type": "y" * 121,
-        "error": "z" * 501,
-        "diagnostics": [f"diag:{i}" for i in range(20)],
-        "errors": [f"err:{i}" for i in range(20)],
-        "warnings": [f"warn:{i}" for i in range(20)],
-        "raw_response": "ignored",
-        "message": "ignored",
-        "messages": "ignored",
-        "response": "ignored",
-        "request_body": "ignored",
-        "tools": "ignored",
-    }
-    
-    result = invoke(
-        requested_mode="shadow",
-        root_result={"ok": True},
-        candidates=bounded_pool_with_oversized,
-        semantic_intent={"target_kind": "repository"},
-        doc_plan=doc_plan_ok,
-        area_plans=area_plans_ok,
-        candidate_pool_fn=lambda x: deepcopy(bounded_pool_with_oversized),
-        selector_fn=lambda **kw: deepcopy(oversized_selector_result),
-    )
-    
-    assert result["candidate_count"] == len(bounded_pool), \
-        f"expected {len(bounded_pool)}, got {result['candidate_count']}"
-    assert len(result["candidate_ids"]) == 32, f"expected 32, got {len(result['candidate_ids'])}"
-    assert all(len(id_) <= 500 for id_ in result.get("candidate_ids", [])), \
-        "all candidate IDs should be <= 500 chars"
-    assert len(result.get("model_selected_candidate_ids", [])) <= 13, \
-        f"model IDs should be <= 13, got {len(result.get('model_selected_candidate_ids', []))}"
-    assert len(result.get("model_summary", {}).get("diagnostics", [])) <= 13, \
-        f"diagnostics list should be <= 13, got {len(result.get('model_summary', {}).get('diagnostics', []))}"
-    assert len(result.get("model_summary", {}).get("rationale", "")) <= 1000, \
-        f"rationale should be <= 1000, got {len(result.get('model_summary', {}).get('rationale', ''))}"
-    assert len(result.get("model_summary", {}).get("error_type", "")) <= 120, \
-        f"error_type should be <= 120, got {len(result.get('model_summary', {}).get('error_type', ''))}"
-    assert len(result.get("model_summary", {}).get("error", "")) <= 500, \
-        f"error should be <= 500, got {len(result.get('model_summary', {}).get('error', ''))}"
-    
-    forbidden_keys = {
-        "state", "history", "evidence_contract", "required_next_tool_call",
-        "tool", "arguments", "plan", "area_read_plan", "dispatch",
-        "lifecycle_status", "raw_response", "message", "messages", "response",
-        "request_body", "tools",
-    }
-    for key in forbidden_keys:
-        assert key not in result, f"forbidden key {key!r} found in result"
-    
-    return {}
-    
-    cases.append(_case("evaluation_output_is_bounded")(case_evaluation_output_is_bounded))
-    
-    # Case 12: evaluation_is_deterministic_and_input_immutable
-    immutable_root_result = {"ok": True, "data": "test"}
-    immutable_semantic_intent = {"target_kind": "repository", "query": "test query"}
-    immutable_doc_plan = {"arguments": {"paths": ["README.md", "AGENTS.md"]}}
-    immutable_area_plans = [{"arguments": {"path": "services"}}]
-    immutable_candidates = deepcopy(fixture_pool)
-    immutable_selector_fixture = deepcopy(selector_ready_fixture)
-    
-    result1 = invoke(
-        requested_mode="shadow",
-        root_result=immutable_root_result,
-        candidates=immutable_candidates,
-        semantic_intent=immutable_semantic_intent,
-        doc_plan=immutable_doc_plan,
-        area_plans=immutable_area_plans,
-        candidate_pool_fn=lambda x: deepcopy(immutable_candidates),
-        selector_fn=lambda **kw: deepcopy(immutable_selector_fixture),
-    )
-    
-    result2 = invoke(
-        requested_mode="shadow",
-        root_result=immutable_root_result,
-        candidates=immutable_candidates,
-        semantic_intent=immutable_semantic_intent,
-        doc_plan=immutable_doc_plan,
-        area_plans=immutable_area_plans,
-        candidate_pool_fn=lambda x: deepcopy(immutable_candidates),
-        selector_fn=lambda **kw: deepcopy(immutable_selector_fixture),
-    )
-    
-    assert result1 == result2, "results should be identical for same inputs"
-    assert immutable_root_result == {"ok": True, "data": "test"}, "root_result should be unchanged"
-    assert immutable_semantic_intent == {"target_kind": "repository", "query": "test query"}, \
-        "semantic_intent should be unchanged"
-    assert immutable_doc_plan == {"arguments": {"paths": ["README.md", "AGENTS.md"]}}, \
-        "doc_plan should be unchanged"
-    assert immutable_area_plans == [{"arguments": {"path": "services"}}], \
-        "area_plans should be unchanged"
-    assert immutable_candidates == fixture_pool, "candidates should be unchanged"
-    
-    try:
-        json.dumps(result1)
-    except Exception as exc:
-        raise AssertionError(f"result1 should be JSON-serializable") from exc
-    
-    return {}
-    
-    cases.append(_case("evaluation_is_deterministic_and_input_immutable")(case_evaluation_is_deterministic_and_input_immutable))
-    
+    cases.append(_case("selector_not_ready_fails_open", case_selector_not_ready_fails_open))
+
+    def case_evaluation_output_is_bounded() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
+        bounded_pool = [
+            {"candidate_id": f"id:{i}", "path": f"path{i}.md", "kind": "file",
+             "candidate_class": "root_doc", "static_rank": i % 2, "signals": []}
+            for i in range(45)
+        ] + [{"candidate_id": "", "path": "", "kind": "", "candidate_class": None,
+              "static_rank": -1, "signals": []}] * 3
+
+        bounded_pool_with_oversized = bounded_pool + [
+            {"candidate_id": "x" * 501, "path": "oversized", "kind": "file",
+             "candidate_class": "root_doc", "static_rank": 0, "signals": []},
+        ]
+
+        oversized_selector_result = {
+            "selected_candidate_ids": ["id:" + str(i) for i in range(20)] +
+                                       ["unknown:" + str(i) for i in range(20)] +
+                                       ["duplicate:" + str(i) for i in range(20)] +
+                                       ["duplicate_input:" + str(i) for i in range(20)],
+            "unknown_candidate_ids": ["unknown:" + str(i) for i in range(20)],
+            "duplicate_candidate_ids": ["duplicate:" + str(i) for i in range(20)],
+            "duplicate_input_candidate_ids": ["duplicate_input:" + str(i) for i in range(20)],
+            "rationale": "x" * 1001,
+            "error_type": "y" * 121,
+            "error": "z" * 501,
+            "diagnostics": [f"diag:{i}" for i in range(20)],
+            "errors": [f"err:{i}" for i in range(20)],
+            "warnings": [f"warn:{i}" for i in range(20)],
+            "raw_response": "ignored",
+            "message": "ignored",
+            "messages": "ignored",
+            "response": "ignored",
+            "request_body": "ignored",
+            "tools": "ignored",
+        }
+
+        result = invoke(
+            evaluator=evaluator,
+            requested_mode="shadow",
+            root_result={"ok": True},
+            candidates=bounded_pool_with_oversized,
+            semantic_intent={"target_kind": "repository"},
+            doc_plan=doc_plan_ok,
+            area_plans=area_plans_ok,
+            candidate_pool_fn=lambda x: deepcopy(bounded_pool_with_oversized),
+            selector_fn=lambda **kw: deepcopy(oversized_selector_result),
+        )
+
+        assert result["candidate_count"] == len(bounded_pool), \
+            f"expected {len(bounded_pool)}, got {result['candidate_count']}"
+        assert len(result["candidate_ids"]) == 32, f"expected 32, got {len(result['candidate_ids'])}"
+        assert all(len(id_) <= 500 for id_ in result.get("candidate_ids", [])), \
+            "all candidate IDs should be <= 500 chars"
+        assert len(result.get("model_selected_candidate_ids", [])) <= 13, \
+            f"model IDs should be <= 13, got {len(result.get('model_selected_candidate_ids', []))}"
+        assert len(result.get("model_summary", {}).get("diagnostics", [])) <= 13, \
+            f"diagnostics list should be <= 13, got {len(result.get('model_summary', {}).get('diagnostics', []))}"
+        assert len(result.get("model_summary", {}).get("rationale", "")) <= 1000, \
+            f"rationale should be <= 1000, got {len(result.get('model_summary', {}).get('rationale', ''))}"
+        assert len(result.get("model_summary", {}).get("error_type", "")) <= 120, \
+            f"error_type should be <= 120, got {len(result.get('model_summary', {}).get('error_type', ''))}"
+        assert len(result.get("model_summary", {}).get("error", "")) <= 500, \
+            f"error should be <= 500, got {len(result.get('model_summary', {}).get('error', ''))}"
+
+        forbidden_keys = {
+            "state", "history", "evidence_contract", "required_next_tool_call",
+            "tool", "arguments", "plan", "area_read_plan", "dispatch",
+            "lifecycle_status", "raw_response", "message", "messages", "response",
+            "request_body", "tools",
+        }
+        for key in forbidden_keys:
+            assert key not in result, f"forbidden key {key!r} found in result"
+
+        return {}
+    cases.append(_case("evaluation_output_is_bounded", case_evaluation_output_is_bounded))
+
+    def case_evaluation_is_deterministic_and_input_immutable() -> dict[str, Any]:
+        evaluator = _required_callable(
+            module,
+            "evaluate_initial_orientation_shadow",
+        )
+
+        immutable_root_result = {"ok": True, "data": "test"}
+        immutable_semantic_intent = {"target_kind": "repository", "query": "test query"}
+        immutable_doc_plan = {"arguments": {"paths": ["README.md", "AGENTS.md"]}}
+        immutable_area_plans = [{"arguments": {"path": "services"}}]
+        immutable_candidates = deepcopy(fixture_pool)
+        immutable_selector_fixture = deepcopy(selector_ready_fixture)
+
+        result1 = invoke(
+            evaluator=evaluator,
+            requested_mode="shadow",
+            root_result=immutable_root_result,
+            candidates=immutable_candidates,
+            semantic_intent=immutable_semantic_intent,
+            doc_plan=immutable_doc_plan,
+            area_plans=immutable_area_plans,
+            candidate_pool_fn=lambda x: deepcopy(immutable_candidates),
+            selector_fn=lambda **kw: deepcopy(immutable_selector_fixture),
+        )
+
+        result2 = invoke(
+            evaluator=evaluator,
+            requested_mode="shadow",
+            root_result=immutable_root_result,
+            candidates=immutable_candidates,
+            semantic_intent=immutable_semantic_intent,
+            doc_plan=immutable_doc_plan,
+            area_plans=immutable_area_plans,
+            candidate_pool_fn=lambda x: deepcopy(immutable_candidates),
+            selector_fn=lambda **kw: deepcopy(immutable_selector_fixture),
+        )
+
+        assert result1 == result2, "results should be identical for same inputs"
+        assert immutable_root_result == {"ok": True, "data": "test"}, "root_result should be unchanged"
+        assert immutable_semantic_intent == {"target_kind": "repository", "query": "test query"}, \
+            "semantic_intent should be unchanged"
+        assert immutable_doc_plan == {"arguments": {"paths": ["README.md", "AGENTS.md"]}}, \
+            "doc_plan should be unchanged"
+        assert immutable_area_plans == [{"arguments": {"path": "services"}}], \
+            "area_plans should be unchanged"
+        assert immutable_candidates == fixture_pool, "candidates should be unchanged"
+
+        try:
+            json.dumps(result1)
+        except Exception as exc:
+            raise AssertionError(f"result1 should be JSON-serializable") from exc
+
+        return {}
+    cases.append(_case("evaluation_is_deterministic_and_input_immutable", case_evaluation_is_deterministic_and_input_immutable))
+
     passed = sum(1 for item in cases if item.get("ok") is True)
     failed = len(cases) - passed
     return {
@@ -2594,7 +2574,7 @@ def repo_probe_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         item for item in _PROFILE_SPECS
         if item["profile_id"] == profile_id
     )
-    
+
     # Validate engine against profile spec
     allowed_engines = profile_spec.get("engines", ["deterministic"])
     if engine not in allowed_engines:
@@ -2608,7 +2588,7 @@ def repo_probe_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "source_writes_performed": False,
             "network_calls_performed": False,
         }
-    
+
     # Get target module from selected spec
     target_module = profile_spec["target_module"]
 
@@ -2625,7 +2605,7 @@ def repo_probe_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         }
 
     runs: list[dict[str, Any]] = []
-    
+
     # Dispatch deterministic profile based on profile_id
     if profile_id == PROFILE_ORIENTATION_SHADOW_HELPERS:
         # Shadow helpers profile - only deterministic engine supported
@@ -2635,7 +2615,7 @@ def repo_probe_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         runs.append(_deterministic_orientation_shadow_evaluator_profile())
     elif engine in {"deterministic", "both"}:
         runs.append(_deterministic_orientation_profile())
-    
+
     if engine in {"hypothesis", "both"}:
         runs.append(
             _hypothesis_orientation_profile(
