@@ -2396,48 +2396,26 @@ def run_agentic_planner_job(
                 write_agent_job_state(state)
                 continue
 
-            if _is_unrecoverable_plain_text_planner_output(decision, history, retry_limit):
-                final_answer = str(decision.get("final_answer") or decision.get("reason") or "")
-                raw_text = str(decision.get("raw_planner_text") or "")
-                output_classification = _raw_planner_text_classification(raw_text)
-                repair_reason = f"{output_classification}_not_gpu0_repairable"
-                if raw_text:
-                    final_answer += (
-                        "\n\nRaw planner output surfaced, first 4000 chars:\n"
-                        + raw_text[:4000]
-                    )
-                append_agent_event(
-                    job_id,
-                    "planner_decision_rejected",
-                    "planner_output_gpu1_retry_unrecoverable_no_gpu0_repair",
-                    {
-                        "classification": output_classification,
-                        "retry_count": _planner_incomprehensible_retry_count(history),
-                        "retry_limit": int(AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES or 0),
-                        "raw_planner_text_preview": raw_text[:4000],
-                        "vulkan_repair": {
-                            "attempted": False,
-                            "reason": repair_reason,
-                        },
-                    },
-                    step=step,
-                )
+            # Phase 2: Replace inline unrecoverable_output guard with GuardEvaluator
+            unrecoverable_guard = guard_evaluator.evaluate_unrecoverable_output_guard(
+                decision=decision,
+                history=history,
+                retry_limit=retry_limit,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+            )
+            if unrecoverable_guard:
                 return finalize_agentic_job(
                     job_id,
                     state,
-                    "blocked_needs_attention",
-                    final_answer,
-                    {
+                    unrecoverable_guard["final_status"],
+                    unrecoverable_guard["final_reason"],
+                    unrecoverable_guard.get("final_extra", {
                         "history": history,
                         "planner_decision": decision,
                         "blocked_by": decision.get("reason"),
-                        "classification": f"planner_output_{output_classification}_unrecoverable",
-                        "raw_planner_text": decision.get("raw_planner_text"),
-                        "vulkan_repair": {
-                            "attempted": False,
-                            "reason": repair_reason,
-                        },
-                    },
+                    }),
                 )
 
             repair_result: dict[str, Any] = {
