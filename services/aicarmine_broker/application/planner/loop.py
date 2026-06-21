@@ -799,6 +799,22 @@ def run_agentic_planner_job(
         _evidence_builder=lambda rows: planner_evidence_contract(str(state.get("goal") or ""), rows),
     )
 
+    # ======================================================================
+    # Instantiate extracted classes (Phase 1-3 refactoring)
+    # ======================================================================
+    guard_evaluator = GuardEvaluator(deps, config)
+    evidence_contract_manager = EvidenceContractManager()
+    loop_controller = PlannerLoopController(
+        job_id=job_id,
+        deps=deps,
+        config=config,
+        state=state,
+        history=history,
+        loop_state=loop_state,
+        root=root,
+        max_steps=max_steps,
+    )
+
     def support_subturn_tool(tool: str) -> bool:
         return normalize_tool_name(tool) in support_subturn_tools
 
