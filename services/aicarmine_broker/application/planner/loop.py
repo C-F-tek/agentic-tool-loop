@@ -1755,7 +1755,10 @@ def run_agentic_planner_job(
             str(state.get("goal") or ""), decision, history
         )
         if not validation.get("ok"):
+
             if loop_controller.force_terminal_decision_active(semantic_step, max_steps):
+
+
                 planner_memory_snapshot = (
                     state.get("planner_memory_surface")
                     if isinstance(state.get("planner_memory_surface"), dict)
