@@ -12,6 +12,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from ...config.compatibility import GLOBAL_TEMPERATURE
+
 
 PostJson = Callable[
     [str, dict[str, Any], int],
@@ -676,7 +678,7 @@ def controller_orientation_model_select(
         "stream": False,
         "think": False,
         "options": {
-            "temperature": 0,
+            "temperature": GLOBAL_TEMPERATURE,
         },
         "keep_alive": keep_alive,
     }

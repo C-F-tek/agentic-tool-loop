@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import threading
 
-from .env_loader import env_bool, env_float, env_int, env_int_any, parse_bool  # noqa: F401
-from .models import BrokerConfig, load_broker_config_from_env
+from .env_loader import env_bool, env_float, env_int, env_int_any, env_str, parse_bool  # noqa: F401
+from .models import BrokerConfig, load_broker_config_from_env, DEFAULT_GLOBAL_MODEL, DEFAULT_GLOBAL_TEMPERATURE
 from ..tool_registry import (
     COMMAND_EXEC_TOOLS,  # noqa: F401
     HELPER_PUBLIC_ALIASES,  # noqa: F401
@@ -38,6 +38,8 @@ OLLAMA_TASK_MODEL: str = BROKER_CONFIG.ollama_task_model
 OLLAMA_KEEP_ALIVE: str = BROKER_CONFIG.ollama_keep_alive
 PLANNER_URL: str = BROKER_CONFIG.planner_url
 PLANNER_MODEL: str = BROKER_CONFIG.planner_model
+GLOBAL_MODEL: str = DEFAULT_GLOBAL_MODEL
+GLOBAL_TEMPERATURE: float = DEFAULT_GLOBAL_TEMPERATURE
 
 AGENTIC_PLANNER_ENABLED: bool = BROKER_CONFIG.agentic_planner_enabled
 AGENTIC_FALLBACK_ONESHOT: bool = BROKER_CONFIG.agentic_fallback_oneshot
@@ -52,6 +54,8 @@ AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS: int = BROKER_CONFIG.prompt_preview_chars
 AGENTIC_PLANNER_NUM_PREDICT: int = BROKER_CONFIG.num_predict
 AGENTIC_PLANNER_STEP_TIMEOUT: int = BROKER_CONFIG.planner_step_timeout
 AGENTIC_PLANNER_FORCED_DECISION_TIMEOUT: int = BROKER_CONFIG.planner_forced_decision_timeout
+VULKAN_TEMPERATURE: str = env_str("AICARMINE_VULKAN_TEMPERATURE", "0.1")
+
 AGENTIC_PLANNER_TEMPERATURE: float = BROKER_CONFIG.planner_temperature
 AGENTIC_PLANNER_TOP_K: int = BROKER_CONFIG.planner_top_k
 AGENTIC_PLANNER_TOP_P: float = BROKER_CONFIG.planner_top_p
@@ -137,7 +141,7 @@ def internal_tool_prompt(exclude_vulkan: bool = False) -> str:
 
 def ollama_options(num_predict: int | None = None) -> dict:
     options: dict = {
-        "temperature": env_float("AICARMINE_VULKAN_TEMPERATURE", 0.1),
+        "temperature": float(VULKAN_TEMPERATURE),
         "num_ctx": env_int("AICARMINE_VULKAN_NUM_CTX", 2048),
     }
     if num_predict is not None:

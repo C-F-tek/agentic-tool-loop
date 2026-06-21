@@ -111,7 +111,8 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "qwen3.6-35b-coding-v5:latest"
+DEFAULT_GLOBAL_MODEL = "Qwen3.6-35B-coding-v6:latest"
+DEFAULT_GLOBAL_TEMPERATURE = 0.1
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -198,7 +199,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
                 "AICARMINE_PLANNER_MODEL",
                 "AICARMINE_OLLAMA_PLANNER_MODEL",
             ),
-            DEFAULT_PLANNER_MODEL,
+            DEFAULT_GLOBAL_MODEL,
             env,
         ),
         agentic_planner_enabled=env_bool("AICARMINE_AGENTIC_PLANNER_ENABLED", True, env),

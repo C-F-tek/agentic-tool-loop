@@ -38,6 +38,7 @@ from .config import (
     AGENTIC_PLANNER_TEMPERATURE,
     AGENTIC_PLANNER_TOP_K,
     AGENTIC_PLANNER_TOP_P,
+    GLOBAL_TEMPERATURE,
     AGENT_DEFAULT_MAX_STEPS,
     AGENT_MAX_STEPS,
     LAB_REPO,
@@ -3178,7 +3179,7 @@ def _repo_analysis_final_answer_model_quality(
     )
     user_payload = _dict_or_empty(request.get("user_payload"))
     options = {
-        "temperature": 0,
+        "temperature": GLOBAL_TEMPERATURE,
         "num_predict": 1000,
         "num_ctx": max(
             4096,
@@ -4529,9 +4530,9 @@ def planner_replan_specialist_for_validation(
             },
             {"role": "user", "content": json.dumps(request_payload, ensure_ascii=False, default=str)},
         ],
-        "options": {
-            "temperature": 0,
-            "num_predict": 700,
+            "options": {
+                "temperature": GLOBAL_TEMPERATURE,
+                "num_predict": 700,
             "num_ctx": max(
                 4096,
                 min(int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192), int(AGENTIC_PLANNER_NUM_CTX or 8192)),
@@ -4596,7 +4597,7 @@ def planner_replan_specialist_for_validation(
                 },
             ],
             "options": {
-                "temperature": 0,
+                "temperature": GLOBAL_TEMPERATURE,
                 "num_predict": 700,
                 "num_ctx": max(
                     4096,
@@ -5727,7 +5728,7 @@ def judge_blocked_job(
             },
         ],
         "options": {
-            "temperature": 0,
+            "temperature": GLOBAL_TEMPERATURE,
             "num_predict": 2200,
             "num_ctx": max(
                 4096,

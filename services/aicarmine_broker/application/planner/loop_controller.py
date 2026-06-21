@@ -19,6 +19,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
+from aicarmine_broker.tool_contract import normalize_tool_name
+
 logger = logging.getLogger(__name__)
 
 

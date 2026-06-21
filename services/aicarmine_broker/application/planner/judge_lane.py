@@ -201,4 +201,3 @@ def _check_coverage_satisfied(contract: dict[str, Any]) -> bool:
             if final_coverage.get("coverage_satisfied") is True:
                 return True
 
-    return False
