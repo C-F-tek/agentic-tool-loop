@@ -2539,24 +2539,20 @@ def run_agentic_planner_job(
                     validation = repaired_validation
                 else:
                     continue
-            else:
-                guard_result = controller_guard_result_for_validation(
-                    validation,
-                    decision,
-                    job_id=job_id,
-                    step=step,
-                    goal=str(state.get("goal") or ""),
-                )
-                if should_attempt_vulkan:
-                    guard_result["vulkan_repair"] = {
-                        k: repair_result.get(k)
-                        for k in (
-                            "ok", "error", "raw_text_preview", "raw_planner_text_preview",
-                            "repair_cache_key", "repair_cache_hit", "cached_from_step",
-                        )
-                        if repair_result.get(k) not in (None, "", [], {})
-                    }
-                enrich_repeated_tool_guard_feedback(guard_result, decision, validation)
+            # Phase 2: Replace inline final guard (default case) with GuardEvaluator
+            final_guard = guard_evaluator.evaluate_final_guard(
+                decision=decision,
+                validation=validation,
+                history=history,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+                planner_memory_snapshot=planner_memory_snapshot,
+                should_attempt_vulkan=should_attempt_vulkan,
+                repair_result=repair_result,
+            )
+            if final_guard:
+                guard_result = final_guard["guard_result"]
                 append_agent_event(
                     job_id, "planner_decision_rejected",
                     guard_result.get("summary") or "Planner decision rejected by evidence validator.",
