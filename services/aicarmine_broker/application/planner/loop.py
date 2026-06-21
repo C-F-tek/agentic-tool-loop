@@ -2107,37 +2107,18 @@ def run_agentic_planner_job(
                     }),
                 )
 
-            # FASE 4: Controller Guard Monitoring - Alert quando reject_count alto
-            rejection_signature = _controller_guard_rejection_signature(validation, decision)
-            repeated_rejection_count = _controller_guard_rejection_signature_count(
-                history,
-                rejection_signature,
+            # Phase 2: Replace inline repeated_rejection guard with GuardEvaluator
+            repeated_rejection_guard = guard_evaluator.evaluate_repeated_rejection_guard(
+                validation=validation,
+                decision=decision,
+                history=history,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+                planner_memory_snapshot=planner_memory_snapshot,
             )
-            
-            # EARLY WARNING: Monitor controller guard count
-            high_guard_count_threshold = 2
-            if repeated_rejection_count >= high_guard_count_threshold:
-                import logging
-                logging.warning(
-                    f"High controller guard count detected: {repeated_rejection_count}. "
-                    f"This may indicate repeated rejections that could lead to terminal block."
-                )
-            
-            repeated_rejection_limit = max(1, int(retry_limit or 0))
-            if repeated_rejection_count >= repeated_rejection_limit:
-                guard_result = controller_guard_result_for_validation(
-                    validation,
-                    decision,
-                    job_id=job_id,
-                    step=step,
-                    goal=str(state.get("goal") or ""),
-                )
-                guard_result["guard_type"] = "repeated_identical_planner_rejection"
-                guard_result["summary"] = "repeated_identical_planner_rejection"
-                guard_result["invalid_decision_signature"] = rejection_signature
-                guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
-                guard_result["retry_limit"] = repeated_rejection_limit
-                enrich_repeated_tool_guard_feedback(guard_result, decision, validation)
+            if repeated_rejection_guard:
+                guard_result = repeated_rejection_guard["guard_result"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
@@ -2160,26 +2141,14 @@ def run_agentic_planner_job(
                 return finalize_agentic_job(
                     job_id,
                     state,
-                    "blocked_needs_attention",
-                    (
-                        "repeated_identical_planner_rejection: planner repeated the same "
-                        "validator-rejected decision after controller feedback. Controller "
-                        "stopped the loop and preserved available payloads instead of "
-                        "consuming max_steps."
-                    ),
-                    {
+                    repeated_rejection_guard["final_status"],
+                    repeated_rejection_guard["final_reason"],
+                    repeated_rejection_guard.get("final_extra", {
                         "history": history,
                         "blocked_by": "repeated_identical_planner_rejection",
                         "planner_decision": decision,
                         "validation": validation,
-                        "invalid_decision_signature": rejection_signature,
-                        "invalid_decision_repeat_count": repeated_rejection_count + 1,
-                        "agent_flow_diagnostics": _agent_flow_diagnostics(
-                            str(state.get("goal") or ""),
-                            history,
-                            planner_memory_snapshot,
-                        ),
-                    },
+                    }),
                 )
 
             # Judge lane evaluation: replace cuda_rewrite guard with judge authority pattern
