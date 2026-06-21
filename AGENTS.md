@@ -13,7 +13,7 @@ Keep this file general and compact. Project architecture, MCP inventories, servi
 ## Instruction precedence
 
 For every task, apply instructions in this order:
-
+0. Carmine's new rule say max 1200 line for script, if more need refactoring.
 1. Carmine's explicit current request.
 2. The most specific applicable repository `AGENTS.md`.
 3. Contract documents required by that repository.

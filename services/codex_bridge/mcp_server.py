@@ -427,7 +427,7 @@ def _write_message(stdout: BinaryIO, payload: dict[str, Any]) -> None:
 def _load_broker_registry_capability_map() -> Any | None:
     _ensure_import_paths()
     try:
-        from aicarmine_broker.tool_registry import capability_map  # noqa: PLC0415
+        from aicarmine_broker.tool_registry import capability_map  
     except Exception:
         return None
     return capability_map
@@ -493,7 +493,7 @@ def _load_dispatcher() -> Any:
         return _DIRECT_DISPATCHER
 
     _ensure_import_paths()
-    from aicarmine_broker.application.tool_surface.dispatcher import (  # noqa: PLC0415
+    from aicarmine_broker.application.tool_surface.dispatcher import (  
         DispatchRequest,
         build_default_dispatcher,
     )
@@ -699,8 +699,8 @@ def _memory_state_packet(args: dict[str, Any]) -> dict[str, Any]:
     # Prefer the project helper if present, but keep fallback independent.
     try:
         _ensure_import_paths()
-        from memory.agent_memory.models import MemoryRecord  # type: ignore  # noqa: PLC0415
-        from memory.agent_memory.state_packet import build_agent_state_packet  # type: ignore  # noqa: PLC0415
+        from memory.agent_memory.models import MemoryRecord  # type: ignore  
+        from memory.agent_memory.state_packet import build_agent_state_packet  # type: ignore  
 
         records = []
         for item in records_payload:
@@ -1419,3 +1419,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

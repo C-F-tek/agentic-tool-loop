@@ -1,127 +1,136 @@
-# Implementation Plan: Judge-RewriteConvergence Architecture
+# Implementation Plan - Python Code Refactoring: PEP 8 Compliance, Technical Debt Reduction, Import Optimization
 
 ## Overview
 
-This implementation plan addresses the infinite loop problem in the agentic planner loop by converging the `planner.cuda_rewrite` lane with the `judge.final_quality` lane into a unified judge authority pattern. The current system has `planner.cuda_rewrite` acting as an infinite retry mechanism that sends rejected decisions back to the same GPU1 planner model without true judgment authority. The goal is to create a single AI model that takes different roles (preplanner, planner, judge, repair) based on the current figure/context, with the judge having authority to accept final proposals or request continued discovery.
+This plan addresses three interconnected objectives across the `services/` directory: improve code readability by enforcing PEP 8 style guidelines, reduce technical debt caused by scattered `# noqa` comment abuse, and maintain fast resource loading through strategic lazy loading. The refactoring targets approximately 28 `# noqa` annotations distributed across 12 source files, with the dominant issue being PLC0415 (local imports used to avoid circular dependencies).
 
-The existing lane catalog already defines 28 control lanes including `judge.final_quality`, `planner.cuda_rewrite`, `preplanner.semantic_query`, and `repair.vulkan_gpu0`. The implementation merges the rewritecuda retry logic into the judge authority pattern, so that when evidence is sufficient the judge approves final, and when evidence is insufficient the judge requests continued discovery with concrete suggestions.
+The root cause analysis reveals two distinct patterns: (1) ~18 instances of lazy imports guarded by `# noqa: PLC0415` to silence "module import not at top-level" warnings, and (2) ~8 instances of `# noqa: F401` suppressing "imported but unused" warnings in a config compatibility module that intentionally re-exports symbols. Additionally, no Ruff lint configuration currently exists in `pyproject.toml`, meaning lint rules are applied inconsistently.
+
+The approach combines architectural fixes (dependency injection for bidirectional import pairs), configuration improvements (global Ruff settings in `pyproject.toml`), and code organization (optional import blocks at top level). This hybrid strategy minimizes runtime impact while eliminating scattered inline comments.
 
 ## Types
 
 ```python
-# Lane authority types that determine decision behavior
-class LaneAuthority(str, Enum):
-    PROPOSAL_ONLY = "proposal_only"      # planner.primary - proposes actions
-    JUDGE_ONLY = "judge_only"            # judge.final_quality - accepts/rejects final
-    ADVISORY_ONLY = "advisory_only"      # preplanner, replan - advisory only
-    REPAIR_ONLY = "repair_only"          # repair.vulkan_gpu0 - fixes invalid states
-    BOUNDED_SELECTION = "bounded_selection"  # orientation lanes - bounded selection
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable
 
-# Judge decision outcomes that control flow
-class JudgeDecision(str, Enum):
-    FINAL_ALLOWED = "final_allowed"           # Evidence sufficient → proceed to final
-    CONTINUE_DISCOVERY = "continue_discovery" # Evidence insufficient → continue with suggestions
-    TERMINAL_BLOCK = "terminal_block"         # Blocked state → terminate
-    REWRITE_REQUIRED = "rewrite_required"     # Needs rewrite → cuda_rewrite lane
+class ImportPattern(Enum):
+    """Classify import anti-patterns for targeted remediation."""
+    LAZY_IMPORT_CIRCULAR = "lazy_import_circular"      # Local import to break circular dep
+    OPTIONAL_DEPENDENCY = "optional_dependency"         # try/except ImportError block
+    WILDCARD_REEXPORT = "wildcard_reexport"             # from X import * with noqa F401,F403
+    UNUSED_SYMBOL = "unused_symbol"                     # Imported but never referenced
 
-# Lane figure/role that the AI model takes
-class AIFigure(str, Enum):
-    PREPLANNER = "preplanner"      # Semantic query and RAG preseed
-    PLANNER = "planner"            # Primary action proposal
-    JUDGE = "judge"                # Quality gate and final decision
-    REPAIR = "repair"              # Vulkan JSON/state repair
+
+@dataclass
+class ImportRefactorRecord:
+    """Track remediation progress for individual import issues."""
+    file_path: str
+    line_number: int
+    pattern: ImportPattern
+    original_code: str
+    resolution: str  # "injected", "suppressed_global", "top_level_block", "removed"
+    old_noqa: str
+    new_approach: str
+
+
+@dataclass
+class RuffConfigProfile:
+    """Ruff lint configuration profile for project-wide application."""
+    ignore_codes: list[str] = field(default_factory=lambda: ["PLC0415"])
+    per_file_ignores: dict[str, list[str]] = field(default_factory=dict)
+    extend_per_file_ignores: dict[str, list[str]] = field(default_factory=dict)
+    min_ruff_version: str = "0.4.0"
+
+
+@dataclass
+class DependencyInjectionPoint:
+    """Identifies locations requiring dependency injection to resolve circular imports."""
+    caller_file: str
+    caller_function: str
+    callee_module: str
+    callee_symbol: str
+    injection_method: str  # "parameter", "property", "setter", "factory"
 ```
 
 ## Files
 
-### New Files to Create
-
-1. **`services/aicarmine_broker/application/planner/lane_authority.py`**
-   - Defines `LaneAuthority` enum and judge decision logic
-   - Provides `evaluate_judge_decision()` function that returns JudgeDecision based on evidence_contract
-
-2. **`services/aicarmine_broker/application/planner/ai_figure.py`**
-   - Defines `AIFigure` enum and figure-to-system prompt mapping
-   - Provides `get_figure_instruction(figure, context)` that returns the appropriate system instruction
-
-3. **`services/aicarmine_broker/application/planner/judge_lane.py`**
-   - Implements `execute_judge_lane()` function that:
-     - Takes evidence_contract and current history
-     - Calls GPU1 planner with judge figure/system prompt
-     - Returns JudgeDecision (FINAL_ALLOWED, CONTINUE_DISCOVERY, TERMINAL_BLOCK)
-     - If CONTINUE_DISCOVERY, includes concrete suggestions for next actions
-
-### Existing Files to Modify
-
-4. **`services/aicarmine_broker/application/planner/loop.py`**
-   - Replace `planner_cuda_rewrite_guard_for_validation` call with `execute_judge_lane()`
-   - When judge returns FINAL_ALLOWED → allow planner to choose final
-   - When judge returns CONTINUE_DISCOVERY → inject suggestions into planner prompt
-   - When judge returns TERMINAL_BLOCK → block job
-   - Remove `MAX_CUDA_REWRITE_ATTEMPTS` counter (replaced by judge authority)
-
-5. **`services/aicarmine_broker/application/planner/validator.py`**
-   - Update `_escalate_final_rewrite_retry_count()` to use judge decision instead of rewrite latch
-   - Add `evaluate_for_judge()` function that prepares evidence_contract for judge evaluation
-
-6. **`services/aicarmine_broker/application/planner/turn.py`**
-   - Update `planner_role_override` to support figure-based system prompts
-   - Add `get_figure_system_prompt(figure)` that returns appropriate instruction
-
-7. **`services/aicarmine_broker/application/planner/lane_catalog.py`**
-   - Update `planner.cuda_rewrite` description to reflect convergence with judge
-   - Add `judge.final_quality` as the authoritative convergence point
+| Action | Path | Description |
+|--------|------|-------------|
+| **Modify** | `services/pyproject.toml` | Add `[tool.ruff]` and `[tool.ruff.lint]` sections with global ignore for PLC0415, per-file ignores for wildcard re-exports, and minimum version bump to `ruff>=0.4.0`. |
+| **Create** | `services/aicarmine_broker/import_refs.py` | Centralized import registry providing lazy-loaded access to cross-module symbols. Replaces scattered local imports with a single controlled indirection layer. |
+| **Modify** | `services/aicarmine_broker/application/planner/loop.py` | Replace 2 local imports (lines 763-764) with DI via `deps` dictionary or import from `import_refs`. Remove `# noqa: PLC0415` comments. |
+| **Modify** | `services/aicarmine_broker/application/planner/loop_controller.py` | Replace 4 local imports (lines 14, 20, 30, 36) with DI or `import_refs`. Remove bare `noqa` and `# noqa: PLC0415` comments. |
+| **Modify** | `services/aicarmine_broker/planner.py` | Replace 3 local imports (lines 10, 14, 18) with DI or `import_refs`. Remove `# noqa: PLC0415` comments. |
+| **Modify** | `services/aicarmine_broker/helper.py` | Replace 2 local imports (lines 103, 399) with top-level conditional import or DI. Remove `# noqa: PLC0415` comments. |
+| **Modify** | `services/aicarmine_broker/planner_core/cache.py` | Replace 1 local import (line 10) with DI or `import_refs`. Remove `# noqa: PLC0415` comment. |
+| **Modify** | `services/aicarmine_broker/job_store.py` | Replace 1 local import with DI or `import_refs`. Remove `# noqa: PLC0415` comment. |
+| **Modify** | `services/codex_bridge/mcp_server.py` | Replace 2 local imports (lines 10, 14) with DI or `import_refs`. Remove `# noqa: PLC0415` comments. |
+| **Modify** | `services/codex_bridge/job_view_mcp_server.py` | Replace 1 local import with DI or `import_refs`. Remove `# noqa: PLC0415` comment. |
+| **Modify** | `services/vulkan_bridge/app.py` | Replace 1 local import with DI or `import_refs`. Remove `# noqa: PLC0415` comment. |
+| **Modify** | `services/vulkan_bridge/app_refactored.py` | Replace 1 local import with DI or `import_refs`. Remove `# noqa: PLC0415` comment. |
+| **Modify** | `services/aicarmine_broker/config/compatibility.py` | Remove all `# noqa: F401` comments (6 instances). Symbols are intentionally re-exported; add `__all__` declaration instead. |
+| **Modify** | `services/aicarmine_broker/config/__init__.py` | Remove `# noqa: F401,F403` from wildcard import. Add explicit `__all__` list to satisfy both rules. |
 
 ## Functions
 
-### New Functions
+| Change Type | Name | File | Signature / Details |
+|-------------|------|------|---------------------|
+| **New** | `_build_import_registry()` | `services/aicarmine_broker/import_refs.py` | Returns `dict[str, Any]` mapping symbol names to lazy-loaders. Provides centralized indirection replacing scattered local imports. |
+| **New** | `_resolve_lazy(module_path: str, symbol_names: list[str])` | `services/aicarmine_broker/import_refs.py` | Cached loader using `importlib.import_module`. Memoizes results to preserve startup performance. |
+| **Modified** | `vulkan_helper(args, root)` | `services/aicarmine_broker/helper.py` | Lines 399-400: Replace `from .repo_tools import LAB_REPO` and `from .job_store import write_json, now` with calls to `_build_import_registry()`. |
+| **Modified** | `review_docs(task, root)` | `services/aicarmine_broker/helper.py` | Line 103: Replace local `LAB_REPO` import with registry lookup. |
+| **Modified** | `run_agentic_planner_job(...)` | `services/aicarmine_broker/application/planner/loop.py` | Lines 763-764: Replace `dispatch_tool`, `normalize_tool_name`, `sanitize_tool_args` local imports with DI via `deps` or registry. |
+| **Modified** | Various loop methods | `services/aicarmine_broker/application/planner/loop_controller.py` | Lines 14, 20, 30, 36: Replace 4 local imports with DI or registry lookups. Methods affected: `execute_step()`, `handle_decision()`, `continue_loop()`, `finalize_turn()`. |
+| **Modified** | `_normalize_tool_name(value)` | `services/aicarmine_broker/planner.py` | Line 10: Replace local `normalize_tool_name` import with registry. |
+| **Modified** | `guard_readonly_modes(tool, mode, ...)` | `services/aicarmine_broker/planner.py` | Lines 14, 18: Replace `TOOL_ALIASES` and `dangerous_command` local imports with registry/DI. |
+| **Modified** | Cache methods | `services/aicarmine_broker/planner_core/cache.py` | Line 10: Replace `normalize_tool_name`, `sanitize_tool_args` local imports with registry. |
+| **Modified** | `compatibility.py exports` | `services/aicarmine_broker/config/compatibility.py` | Remove all `# noqa: F401` comments. Add `__all__ = [...]` listing exported symbols explicitly. |
 
-1. **`evaluate_judge_decision(evidence_contract, history) -> JudgeDecision`**
-   - File: `lane_authority.py`
-   - Purpose: Determine if evidence is sufficient for final or if discovery should continue
-   - Logic: Check coverage_satisfied, missing_owner_paths, validation_rejections
+## Classes
 
-2. **`execute_judge_lane(goal, history, evidence_contract) -> dict`**
-   - File: `judge_lane.py`
-   - Purpose: Call GPU1 planner with judge figure/system prompt
-   - Returns: {decision, rationale, suggestions_if_continue}
-
-3. **`get_figure_instruction(figure, context) -> str`**
-   - File: `ai_figure.py`
-   - Purpose: Return appropriate system instruction for the current figure
-   - Maps: preplanner → semantic query instruction, judge → quality gate instruction
-
-### Modified Functions
-
-4. **`run_agentic_planner_job()` in loop.py**
-   - Replace cuda_rewrite guard with judge_lane evaluation
-   - When judge returns CONTINUE_DISCOVERY, inject suggestions into planner prompt
-
-5. **`_escalate_final_rewrite_retry_count()` in validator.py**
-   - Replace rewrite latch logic with judge decision logic
-   - Use JudgeDecision instead of final_rewrite_latch
+| Change Type | Name | File | Modifications |
+|-------------|------|------|---------------|
+| **New** | `ImportRegistry` | `services/aicarmine_broker/import_refs.py` | Singleton-like cached registry. Thread-safe via `threading.Lock`. Provides `_resolve_lazy()` method. Zero overhead when not accessed. |
+| **Modified** | `BrokerConfig` | `services/aicarmine_broker/config/models.py` | Add `IMPORT_REGISTRY_ENABLED: bool = True` field to control lazy-loading behavior globally. |
 
 ## Dependencies
 
-No new external packages required. The implementation leverages:
-- Existing GPU1 planner model (Qwen3.6-35B-coding-v5:latest)
-- Existing evidence_contract schema
-- Existing lane_catalog.py infrastructure
+| Change | Detail |
+|--------|--------|
+| **Bump** | `ruff>=0.4.0` in `pyproject.toml` dependencies (currently `ruff>=0.1.0`). Ensures support for `[tool.ruff.lint.per-file-ignores]` syntax. |
+| **None** | No new external packages required. All changes use stdlib (`importlib`, `threading`, `typing`) and existing project structure. |
+| **Internal** | New module `services/aicarmine_broker/import_refs.py` (~80 lines) provides centralized lazy import indirection. |
 
 ## Testing
 
-1. Unit tests for `evaluate_judge_decision()` with various evidence_contract states
-2. Integration test: judge_lane returns FINAL_ALLOWED when coverage_satisfied=True
-3. Integration test: judge_lane returns CONTINUE_DISCOVERY with suggestions when missing_owner_paths
-4. Regression test: existing loop behavior preserved when judge is not active
+Validation strategy relies on existing test infrastructure and deterministic verification:
+
+1. **Run existing pytest suite**: Execute `pytest services/ -v --tb=short` to verify no regression in functional behavior after import restructuring.
+2. **Verify Ruff compliance**: Run `ruff check services/ --output-format=json` and confirm zero violations related to PLC0415 and F401.
+3. **Verify import correctness**: Confirm all modified files can be imported successfully: `python -c "from services.aicarmine_broker import helper, planner, job_store"` etc.
+4. **Performance smoke test**: Verify lazy-loading overhead is negligible by timing first-call vs subsequent-calls in `import_refs.py` registry. Expect <5ms difference due to caching.
+5. **Wildcard export validation**: Confirm `from services.aicarmine_broker.config.compatibility import *` still exports all expected symbols by checking `__all__` contents.
 
 ## Implementation Order
 
-1. Create `lane_authority.py` with enums and evaluate_judge_decision()
-2. Create `ai_figure.py` with figure-to-instruction mapping
-3. Create `judge_lane.py` with execute_judge_lane()
-4. Update `loop.py` to use judge_lane instead of cuda_rewrite guard
-5. Update `validator.py` to use judge decision instead of rewrite latch
-6. Update `turn.py` to support figure-based system prompts
-7. Update `lane_catalog.py` descriptions
-8. Run existing test suite to verify no regressions
+1. **Step 1**: Add `[tool.ruff]` configuration to `pyproject.toml` — bump ruff version, set global `ignore = ["PLC0415"]`, add per-file ignores for `config/__init__.py` and `config/compatibility.py`. This is non-destructive and establishes the baseline lint policy.
+
+2. **Step 2**: Create `services/aicarmine_broker/import_refs.py` — implement `ImportRegistry` class with cached lazy loading via `importlib.import_module`. Provide `_resolve_lazy(module_path, symbol_names)` method. (~80 lines, new file)
+
+3. **Step 3**: Update `services/aicarmine_broker/config/compatibility.py` — remove all `# noqa: F401` comments (6 instances), add `__all__` declaration listing exported symbols explicitly.
+
+4. **Step 4**: Update `services/aicarmine_broker/config/__init__.py` — remove `# noqa: F401,F403` from wildcard import, replace with explicit `__all__` list.
+
+5. **Step 5**: Update `services/aicarmine_broker/application/planner/loop.py` — replace 2 local imports with registry/DI, remove `# noqa: PLC0415` comments.
+
+6. **Step 6**: Update `services/aicarmine_broker/application/planner/loop_controller.py` — replace 4 local imports with registry/DI, remove bare `noqa` and `# noqa: PLC0415` comments.
+
+7. **Step 7**: Update `services/aicarmine_broker/planner.py` — replace 3 local imports with registry/DI, remove `# noqa: PLC0415` comments.
+
+8. **Step 8**: Update `services/aicarmine_broker/helper.py` — replace 2 local imports with registry/DI, remove `# noqa: PLC0415` comments.
+
+9. **Step 9**: Update remaining files (`cache.py`, `job_store.py`, `mcp_server.py`, `job_view_mcp_server.py`, `app.py`, `app_refactored.py`) — replace local imports with registry/DI, remove `# noqa: PLC0415` comments.
+
+10. **Step 10**: Run full verification — `ruff check services/`, `pytest services/ -v --tb=short`, manual import smoke tests. Report diff stats and line counts.

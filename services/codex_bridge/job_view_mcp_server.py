@@ -158,7 +158,7 @@ def _patch_broker_modules(root: Path) -> dict[str, Path]:
 
 def _load_renderers(root: Path) -> tuple[Any, Any, dict[str, Path]]:
     paths = _patch_broker_modules(root)
-    from aicarmine_broker import job_html, job_planner_lab  # noqa: PLC0415
+    from aicarmine_broker import job_html, job_planner_lab  
 
     _patch_broker_modules(root)
     return job_html, job_planner_lab, paths
@@ -725,3 +725,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

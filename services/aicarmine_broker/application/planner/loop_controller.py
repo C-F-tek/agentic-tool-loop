@@ -295,8 +295,8 @@ class PlannerLoopController:
         semantic_step: int,
     ) -> dict[str, Any] | None:
         """Handle tool execution decision."""
-        from ...tool_dispatch import dispatch_tool  # noqa
-        from ...tool_contract import normalize_tool_name, sanitize_tool_args  # noqa
+        from ...tool_dispatch import dispatch_tool
+        from ...tool_contract import normalize_tool_name, sanitize_tool_args
 
         VALID_INTERNAL_TOOLS = self.config["VALID_INTERNAL_TOOLS"]
         original_args = dict(self.state.get("original_args") or {})
@@ -447,8 +447,8 @@ class PlannerLoopController:
         cached_info: dict[str, Any],
     ) -> None:
         """Append cached tool result event and continue loop."""
-        from ...tool_dispatch import dispatch_tool  # noqa
-        from ...tool_contract import normalize_tool_name, sanitize_tool_args  # noqa
+        from ...tool_dispatch import dispatch_tool
+        from ...tool_contract import normalize_tool_name, sanitize_tool_args
 
         self._append_agent_event(
             self.job_id,

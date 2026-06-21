@@ -546,7 +546,7 @@ def _ia_debug_lanes(
         "diagnostic_only": True,
         "what_planner_saw": {
             "available": bool(prompt_available),
-            "source": "planner-prompts/step-XXX-planner-payload.json",
+            "source": "planner-prompts/{step}-planner-payload.json",
             "heavy_payload_lazy": True,
         },
         "what_validator_rejected": {
@@ -576,7 +576,7 @@ def _ia_debug_lanes(
         },
         "planner_stream": {
             "available": bool(stream_available),
-            "source": "planner-stream/step-XXX.*",
+            "source": "planner-stream/step-{step}.*",
         },
     }
 
@@ -2241,8 +2241,8 @@ def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dic
             "sources": {
                 "state": {"source": "job.json", "available": bool(state)},
                 "events": {"source": "events.ndjson", "available": True, "count": len(events)},
-                "prompt": {"source": "planner-prompts/step-XXX-planner-payload.json", "available": prompt_available},
-                "planner_stream": {"source": "planner-stream/step-XXX.*", "available": stream_available},
+                "prompt": {"source": "planner-prompts/step-NNN-planner-payload.json", "available": prompt_available},
+                "planner_stream": {"source": "planner-stream/step-NNN.*", "available": stream_available},
                 "tool_feedback": {"source": "events.ndjson tool_result payload", "available": tool_feedback_available},
                 "raw_tool_result": {"source": "same-job tool-results artifact", "available": tool_feedback_available},
                 "diagnostics": {"source": "validator guard / payload audit", "available": diagnostics_available},

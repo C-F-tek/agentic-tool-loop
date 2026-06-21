@@ -99,40 +99,40 @@ from .application.planner.decision_normalizer import (
     normalize_planner_decision,
 )
 from .application.prompt.available_tools import (
-    available_tools_window_pack as _available_tools_window_pack_impl,
+    available_tools_window_pack,
 )
-from .application.controller.diagnostics import agent_flow_diagnostics as _agent_flow_diagnostics_impl
+from .application.controller.diagnostics import agent_flow_diagnostics
 from .application.prompt.context_windows import (
-    evidence_contract_continuation_action as _evidence_contract_continuation_action_impl,
-    forbidden_repeated_prompt_window_calls as _forbidden_repeated_prompt_window_calls_impl,
-    planner_scratchpad_next_window_action_from_history as _planner_scratchpad_next_window_action_from_history_impl,
-    prompt_context_continuation_from_payload as _prompt_context_continuation_from_payload_impl,
-    prompt_context_continue_action as _prompt_context_continue_action_impl,
-    prompt_window_consumed_offsets as _prompt_window_consumed_offsets_impl,
-    prompt_window_tracking_metadata_errors as _prompt_window_tracking_metadata_errors_impl,
-    required_working_set_continuation_action as _required_working_set_continuation_action_impl,
+    evidence_contract_continuation_action,
+    forbidden_repeated_prompt_window_calls,
+    planner_scratchpad_next_window_action_from_history,
+    prompt_context_continuation_from_payload,
+    prompt_context_continue_action,
+    prompt_window_consumed_offsets,
+    prompt_window_tracking_metadata_errors,
+    required_working_set_continuation_action,
 )
 from .application.evidence.required_working_set import (
-    repo_read_items_for_prompt as _repo_read_items_for_prompt_impl,
-    required_working_set_for_prompt as _required_working_set_for_prompt_impl,
+    repo_read_items_for_prompt,
+    required_working_set_for_prompt,
 )
 from .application.code_product.required_working_set import (
-    latest_code_product_for_prompt as _latest_code_product_for_prompt_impl,
+    latest_code_product_for_prompt,
 )
-from .application.prompt.pack_builder import build_planner_user_payload as _build_planner_user_payload_impl
+from .application.prompt.pack_builder import build_planner_user_payload
 from .application.prompt.evidence_contract import (
-    compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
+    compact_evidence_contract_for_prompt,
     hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
 )
-from .application.evidence.builder import planner_evidence_contract as _planner_evidence_contract_impl
-from .application.planner.loop import run_agentic_planner_job as _run_agentic_planner_job_impl
-from .application.planner.system_prompt import planner_system_for_current_mode as _planner_system_for_current_mode_impl
-from .application.planner.turn import planner_decision as _planner_decision_impl
-from .application.planner.validator import validate_planner_decision_against_evidence as _validate_planner_decision_against_evidence_impl
-from .application.public_payload.final_state_result import compact_final_state_result as _compact_final_state_result_impl
+from .application.evidence.builder import planner_evidence_contract
+from .application.planner.loop import run_agentic_planner_job
+from .application.planner.system_prompt import planner_system_for_current_mode
+from .application.planner.turn import planner_decision
+from .application.planner.validator import validate_planner_decision_against_evidence
+from .application.public_payload.final_state_result import compact_final_state_result
 from .application.evidence.execution_digest import (
-    execution_evidence_digest_text as _execution_evidence_digest_text_impl,
-    repo_read_content_views as _repo_read_content_views_impl,
+    execution_evidence_digest_text,
+    repo_read_content_views,
 )
 from .application.evidence.final_quality import (
     repo_analysis_final_answer_model_quality_request as _repo_analysis_final_answer_model_quality_request,
@@ -141,70 +141,65 @@ from .application.evidence.final_quality import (
 )
 from .application.evidence.audit_guidance import role_guidance_for_goal
 from .application.evidence.initial_orientation import (
-    initial_orientation_surface_from_history as _initial_orientation_surface_from_history_impl,
+    initial_orientation_surface_from_history,
 )
 from .application.public_payload.openwebui_terminal_answer import (
-    answer_for_openwebui as _answer_for_openwebui_impl,
-    next_action_for_openwebui as _next_action_for_openwebui_impl,
+    answer_for_openwebui,
+    next_action_for_openwebui,
 )
 from .application.public_payload.evidence_materializer import (
-    materialize_public_evidence as _materialize_public_evidence_impl,
+    materialize_public_evidence,
 )
 from .application.public_payload.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
 from .application.tool_surface.candidate_actions import (
-    candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
-    decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
-    enforce_required_scratchpad_read_continuation_contract as _enforce_scratchpad_read_continuation_contract_impl,
+    candidate_actions_from_evidence,
+    decision_matches_prompt_context_continuation,
+    enforce_required_scratchpad_read_continuation_contract,
     final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
-    preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
-    required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
+    preserve_required_next_tool_call_for_prompt,
+    required_next_tool_call_from_action,
 )
 from .application.controller.guards import (
-    controller_guard_count as _controller_guard_count_impl,
-    controller_guard_rejection_signature as _controller_guard_rejection_signature_impl,
-    controller_guard_rejection_signature_count as _controller_guard_rejection_signature_count_impl,
-    recoverable_planner_block as _recoverable_planner_block_impl,
+    controller_guard_count,
+    controller_guard_rejection_signature,
+    controller_guard_rejection_signature_count,
+    recoverable_planner_block,
 )
 from .application.runtime_debug import build_runtime_debug_packet as _build_runtime_debug_packet
 from .application.npu_phi import maybe_enqueue_npu_phi_diagnostic as _maybe_enqueue_npu_phi_diagnostic
 from .application.controller.memory import (
-    controller_memory_lesson_text as _controller_memory_lesson_text_impl,
-    loop_turn_memory_text as _loop_turn_memory_text_impl,
-    write_controller_memory_lesson as _write_controller_memory_lesson_impl,
-    write_loop_turn_memory as _write_loop_turn_memory_impl,
+    controller_memory_lesson_text,
+    loop_turn_memory_text,
+    write_controller_memory_lesson,
+    write_loop_turn_memory,
 )
 from .application.controller.preseed import (
-    controller_initial_area_list_plans as _controller_initial_area_list_plans_impl,
-    controller_initial_area_read_plan as _controller_initial_area_read_plan_impl,
-    controller_initial_doc_preseed_plan as _controller_initial_doc_preseed_plan_impl,
-    controller_initial_orientation_candidate_pool
-    as _controller_initial_orientation_candidate_pool_impl,
-    initial_area_file_sort_key as _initial_area_file_sort_key_impl,
-    initial_area_sort_key as _initial_area_sort_key_impl,
-    initial_doc_sort_key as _initial_doc_sort_key_impl,
-    list_result_file_paths as _list_result_file_paths_impl,
-    root_surface_dir_paths as _root_surface_dir_paths_impl,
-    root_surface_entries as _root_surface_entries_impl,
-    root_surface_file_paths as _root_surface_file_paths_impl,
+    controller_initial_area_list_plans,
+    controller_initial_area_read_plan,
+    controller_initial_doc_preseed_plan,
+    controller_initial_orientation_candidate_pool,
+    initial_area_file_sort_key,
+    initial_area_sort_key,
+    initial_doc_sort_key,
+    list_result_file_paths,
+    root_surface_dir_paths,
+    root_surface_entries,
+    root_surface_file_paths,
 )
 from .application.controller.orientation_lane import (
-    controller_orientation_model_select
-    as _controller_orientation_model_select_impl,
-    orientation_shadow_effective_mode
-    as _orientation_shadow_effective_mode_impl,
-    orientation_legacy_selected_candidate_ids
-    as _orientation_legacy_selected_candidate_ids_impl,
-    orientation_shadow_selection_metrics
-    as _orientation_shadow_selection_metrics_impl,
+    controller_orientation_model_select,
+    orientation_shadow_effective_mode,
+    orientation_legacy_selected_candidate_ids,
+    orientation_shadow_selection_metrics,
 )
 from .application.controller.rag_preseed import (
-    controller_preplanner_rag_query_plan as _controller_preplanner_rag_query_plan_impl,
-    controller_preplanner_rag_preseed_plan as _controller_preplanner_rag_preseed_plan_impl,
+    controller_preplanner_rag_query_plan,
+    controller_preplanner_rag_preseed_plan,
 )
 from .application.evidence.core_discovery import (
-    add_core_discovery_candidate as _add_core_discovery_candidate_impl,
-    core_discovery_candidates_from_intrinsic as _core_discovery_candidates_from_intrinsic_impl,
-    core_discovery_read_paths as _core_discovery_read_paths_impl,
+    add_core_discovery_candidate,
+    core_discovery_candidates_from_intrinsic,
+    core_discovery_read_paths,
 )
 from .application.code_product.state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
@@ -218,31 +213,31 @@ from .application.code_product.state import (
 )
 from .application.code_product.public_outputs import (
     best_partial_product_for_30b as _best_partial_product_for_30b_impl,
-    code_product_answer_text as _code_product_answer_text_impl,
-    latest_code_product_payload as _latest_code_product_payload_impl,
-    partial_product_answer_text as _partial_product_answer_text_impl,
-    partial_product_clean_text as _partial_product_clean_text_impl,
+    code_product_answer_text,
+    latest_code_product_payload,
+    partial_product_answer_text,
+    partial_product_clean_text,
     partial_products_for_30b as _partial_products_for_30b_impl,
 )
 from .application.code_product.history import (
     CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS as _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL,
-    apply_duplicate_window_replan_contract as _apply_duplicate_window_replan_contract_impl,
-    code_product_build_state_duplicate_write as _code_product_build_state_duplicate_write_impl,
-    code_product_build_state_from_result as _code_product_build_state_from_result_impl,
-    code_product_build_state_propose_action as _code_product_build_state_propose_action_impl,
-    code_product_build_state_read_action as _code_product_build_state_read_action_impl,
-    code_product_build_state_write_action as _code_product_build_state_write_action_impl,
-    code_product_candidate_action as _code_product_candidate_action_impl,
-    code_product_low_signal_target as _code_product_low_signal_target_impl,
-    code_product_payload_rejection_count as _code_product_payload_rejection_count_impl,
-    code_product_source_window_candidate as _code_product_source_window_candidate_impl,
-    code_product_source_windows_from_reads as _code_product_source_windows_from_reads_impl,
+    apply_duplicate_window_replan_contract,
+    code_product_build_state_duplicate_write,
+    code_product_build_state_from_result,
+    code_product_build_state_propose_action,
+    code_product_build_state_read_action,
+    code_product_build_state_write_action,
+    code_product_candidate_action,
+    code_product_low_signal_target,
+    code_product_payload_rejection_count,
+    code_product_source_window_candidate,
+    code_product_source_windows_from_reads,
     failed_code_edit_proposal_validation_row as _failed_code_edit_proposal_validation_row,
-    latest_code_product_build_state as _latest_code_product_build_state_impl,
-    strip_duplicate_window_candidate as _strip_duplicate_window_candidate_impl,
+    latest_code_product_build_state,
+    strip_duplicate_window_candidate,
     successful_code_edit_proposals,
-    successful_repo_read_window_ranges as _successful_repo_read_window_ranges_impl,
-    successful_window_signatures as _successful_window_signatures_impl,
+    successful_repo_read_window_ranges,
+    successful_window_signatures,
 )
 from .application.evidence.goal_classifier import (
     final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
@@ -256,82 +251,82 @@ from .application.evidence.goal_classifier import (
     semantic_goal_low as _semantic_goal_low,
 )
 from .application.evidence.goal_scope import (
-    extract_existing_goal_paths as _extract_existing_goal_paths_impl,
-    extract_existing_goal_path as _extract_existing_goal_path_impl,
-    goal_requested_repo_scope as _goal_requested_repo_scope_impl,
-    requested_file_limit_from_goal as _requested_file_limit_from_goal_impl,
+    extract_existing_goal_paths,
+    extract_existing_goal_path,
+    goal_requested_repo_scope,
+    requested_file_limit_from_goal,
 )
 from .application.shared.history_queries import (
-    history_tool_result as _history_tool_result_impl,
+    history_tool_result,
     history_has_tool,
 )
-from .application.shared.clean_values import drop_empty_dict_values as _drop_empty_dict_values_impl
+from .application.shared.clean_values import drop_empty_dict_values
 from .application.shared.evidence_contract_summary import (
-    evidence_contract_summary_triplet as _evidence_contract_summary_triplet_impl,
+    evidence_contract_summary_triplet,
 )
 from .application.shared.history_ledger import (
-    history_item_ollama_turn as _history_item_ollama_turn_impl,
-    planner_history_ledger as _planner_history_ledger_impl,
-    planner_ollama_turn_from_decision as _planner_ollama_turn_from_decision_impl,
+    history_item_ollama_turn,
+    planner_history_ledger,
+    planner_ollama_turn_from_decision,
 )
 from .application.prompt.history_messages import (
     LOCAL_ARTIFACT_KEYS as _LOCAL_ARTIFACT_KEYS_IMPL,
     OLLAMA_STREAM_META_KEYS as _OLLAMA_STREAM_META_KEYS_IMPL,
     PLANNER_HISTORY_NOISE_KEYS as _PLANNER_HISTORY_NOISE_KEYS_IMPL,
-    clean_planner_history_value as _clean_planner_history_value_impl,
-    planner_controller_guard_history_payload as _planner_controller_guard_history_payload_impl,
-    planner_history_arguments as _planner_history_arguments_impl,
-    planner_history_evidence_payload as _planner_history_evidence_payload_impl,
-    planner_history_item_messages as _planner_history_item_messages_impl,
-    planner_history_messages_for_ollama as _planner_history_messages_for_ollama_impl,
-    planner_history_reason as _planner_history_reason_impl,
-    planner_history_summary as _planner_history_summary_impl,
-    planner_tool_result_message_payload as _planner_tool_result_message_payload_impl,
+    clean_planner_history_value,
+    planner_controller_guard_history_payload,
+    planner_history_arguments,
+    planner_history_evidence_payload,
+    planner_history_item_messages,
+    planner_history_messages_for_ollama,
+    planner_history_reason,
+    planner_history_summary,
+    planner_tool_result_message_payload,
 )
 from .application.public_payload.tool_context import (
     PUBLIC_LOCAL_REFERENCE_KEYS as _PUBLIC_LOCAL_REFERENCE_KEYS_IMPL,
-    decision_for_turn_memory as _decision_for_turn_memory_impl,
-    final_summary_with_ollama_done_reasons as _final_summary_with_ollama_done_reasons_impl,
-    ollama_turn_rows as _ollama_turn_rows_impl,
-    ollama_turn_summary_text as _ollama_turn_summary_text_impl,
-    planner_turn_memory as _planner_turn_memory_impl,
-    public_tool_artifact_rows as _public_tool_artifact_rows_impl,
-    public_tool_context_limits as _public_tool_context_limits_impl,
-    public_tool_response as _public_tool_response_impl,
-    strip_public_artifact_paths as _strip_public_artifact_paths_impl,
-    strip_public_local_references as _strip_public_local_references_impl,
-    successful_tool_turns as _successful_tool_turns_impl,
+    decision_for_turn_memory,
+    final_summary_with_ollama_done_reasons,
+    ollama_turn_rows,
+    ollama_turn_summary_text,
+    planner_turn_memory,
+    public_tool_artifact_rows,
+    public_tool_context_limits,
+    public_tool_response,
+    strip_public_artifact_paths,
+    strip_public_local_references,
+    successful_tool_turns,
 )
 from .application.public_payload.terminal_sanitizer import (
     PUBLIC_TERMINAL_POINTER_KEYS as _PUBLIC_TERMINAL_POINTER_KEYS_IMPL,
-    public_terminal_content_key as _public_terminal_content_key_impl,
-    public_terminal_sanitize_text as _public_terminal_sanitize_text_impl,
-    public_terminal_sanitize_value as _public_terminal_sanitize_value_impl,
+    public_terminal_content_key,
+    public_terminal_sanitize_text,
+    public_terminal_sanitize_value,
 )
 from .application.public_payload.terminal_result import (
-    public_terminal_history_ledger as _public_terminal_history_ledger_impl,
+    public_terminal_history_ledger,
     public_terminal_result_for_30b as _public_terminal_result_for_30b_impl,
 )
 from .application.public_payload.terminal_context_rows import (
-    executed_tool_rows as _executed_tool_rows_impl,
-    planner_decision_rows as _planner_decision_rows_impl,
-    terminal_context_alias as _terminal_context_alias_impl,
-    validation_rejection_rows as _validation_rejection_rows_impl,
+    executed_tool_rows,
+    planner_decision_rows,
+    terminal_context_alias,
+    validation_rejection_rows,
 )
 from .application.prompt.history_contract import (
-    compact_history_for_prompt as _compact_history_for_prompt_impl,
+    compact_history_for_prompt,
 )
 from .application.prompt.intrinsic_context import (
-    compact_intrinsic_context_for_prompt as _compact_intrinsic_context_for_prompt_impl,
+    compact_intrinsic_context_for_prompt,
 )
 from .application.shared.path_tokens import repo_rel_token as _repo_rel_token
 from .application.planner.status import (
-    planner_done_token as _planner_done_token_impl,
-    summarize_history_artifacts as _summarize_history_artifacts_impl,
+    planner_done_token,
+    summarize_history_artifacts,
 )
 from .application.prompt.budget import (
     PROMPT_CHARS_PER_TOKEN as _PROMPT_CHARS_PER_TOKEN,
-    report_exceeds_generation_headroom as _report_exceeds_generation_headroom_impl,
+    report_exceeds_generation_headroom,
 )
 from .application.prompt.values import (
     prompt_clip_text as _prompt_clip_text,
@@ -339,42 +334,42 @@ from .application.prompt.values import (
     text_hash as _text_hash,
 )
 from .application.evidence.repo_path_policy import (
-    dynamic_read_candidate_paths as _dynamic_read_candidate_paths_impl,
-    low_signal_top_dir as _low_signal_top_dir_impl,
-    meaningful_read_candidates_from_evidence as _meaningful_read_candidates_from_evidence_impl,
-    path_under_scope as _path_under_scope_impl,
-    read_candidate_sort_key as _read_candidate_sort_key_impl,
-    repo_code_file as _repo_code_file_impl,
-    repo_doc_or_config as _repo_doc_or_config_impl,
-    repo_existing_dir as _repo_existing_dir_impl,
-    repo_existing_file as _repo_existing_file_impl,
-    repo_path_kind as _repo_path_kind_impl,
-    repo_readable_evidence_file as _repo_readable_evidence_file_impl,
-    scope_candidate_source_paths as _scope_candidate_source_paths_impl,
-    scope_read_candidates_from_evidence as _scope_read_candidates_from_evidence_impl,
-    top_dir as _top_dir_impl,
+    dynamic_read_candidate_paths,
+    low_signal_top_dir,
+    meaningful_read_candidates_from_evidence,
+    path_under_scope,
+    read_candidate_sort_key,
+    repo_code_file,
+    repo_doc_or_config,
+    repo_existing_dir,
+    repo_existing_file,
+    repo_path_kind,
+    repo_readable_evidence_file,
+    scope_candidate_source_paths,
+    scope_read_candidates_from_evidence,
+    top_dir,
 )
 from .application.evidence.repo_history import (
-    append_unique as _append_unique_impl,
-    extract_headings as _extract_headings_impl,
-    extract_key_lines as _extract_key_lines_impl,
-    extract_mentioned_paths as _extract_mentioned_paths_impl,
-    failed_repo_read_paths as _failed_repo_read_paths_impl,
-    failed_repo_list_files_paths as _failed_repo_list_files_paths_impl,
-    file_memory_from_history as _file_memory_from_history_impl,
-    rank_core_candidates as _rank_core_candidates_impl,
-    read_items_from_history as _read_items_from_history_impl,
-    repo_list_evidence as _repo_list_evidence_impl,
-    successful_repo_read_paths as _successful_repo_read_paths_impl,
+    append_unique,
+    extract_headings,
+    extract_key_lines,
+    extract_mentioned_paths,
+    failed_repo_read_paths,
+    failed_repo_list_files_paths,
+    file_memory_from_history,
+    rank_core_candidates,
+    read_items_from_history,
+    repo_list_evidence,
+    successful_repo_read_paths,
 )
 from .application.evidence.scope_conflict_resolution import (
     SCOPE_CONFLICT_RATIONALE_TERMS as _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL,
-    target_scope_conflict_resolved as _target_scope_conflict_resolved_impl,
+    target_scope_conflict_resolved,
 )
 from .application.prompt.context_windows import (
     PROMPT_CONTEXT_WINDOW_COMPACT_KEYS as _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL,
     PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS as _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL,
-    compact_prompt_context_window_item as _compact_prompt_context_window_item_impl,
+    compact_prompt_context_window_item,
 )
 from .application.prompt.text_windows import window_text as _window_text
 from .application.tool_surface.manifest_builder import (
@@ -384,40 +379,40 @@ from .application.tool_surface.manifest_builder import (
     native_tools_schema_for_planner as _native_tools_schema_for_planner,
 )
 from .application.prompt.tool_contract import (
-    available_tools_for_user_payload as _available_tools_for_user_payload_impl,
-    hard_budget_tool_shape_examples_for_prompt as _hard_budget_tool_shape_examples_for_prompt_impl,
-    tool_shape_examples_for_prompt as _tool_shape_examples_for_prompt_impl,
+    available_tools_for_user_payload,
+    hard_budget_tool_shape_examples_for_prompt,
+    tool_shape_examples_for_prompt,
 )
-from .application.tool_surface.result_digest import planner_last_result_digest as _planner_last_result_digest_impl
-from .application.tool_surface.result_compaction import compact_tool_result_for_planner as _compact_tool_result_for_planner_impl
+from .application.tool_surface.result_digest import planner_last_result_digest
+from .application.tool_surface.result_compaction import compact_tool_result_for_planner
 from .application.tool_surface.turn_surface_policy import (
-    apply_turn_surface_policy as _apply_turn_surface_policy_impl,
+    apply_turn_surface_policy,
     contract_final_required_now as _contract_final_required_now,
-    tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
+    tool_surface_names_for_turn,
 )
 from .application.tool_surface.required_tool_call import (
     required_next_tool_call_satisfaction as _required_next_tool_call_satisfaction,
 )
 from .application.evidence.user_scope_claims import (
-    claim_area_from_user_token as _claim_area_from_user_token_impl,
-    normalize_scope_claim_text as _normalize_scope_claim_text_impl,
-    scope_claim_conflict_for_path as _scope_claim_conflict_for_path_impl,
-    user_scope_claims as _user_scope_claims_impl,
+    claim_area_from_user_token,
+    normalize_scope_claim_text,
+    scope_claim_conflict_for_path,
+    user_scope_claims,
 )
 from .application.planner.validation_rejections import (
-    canonical_invalid_code_product_decision_signature as _canonical_invalid_code_product_decision_signature_impl,
-    compact_validation_rejections_tail as _compact_validation_rejections_tail_impl,
-    disallowed_invalid_code_product_signatures as _disallowed_invalid_code_product_signatures_impl,
-    invalid_code_product_decision_signature_count as _invalid_code_product_decision_signature_count_impl,
-    invalid_code_product_decision_signature_from_history_item as _invalid_code_product_decision_signature_from_history_item_impl,
-    invalid_decision_signature_key as _invalid_decision_signature_key_impl,
+    canonical_invalid_code_product_decision_signature,
+    compact_validation_rejections_tail,
+    disallowed_invalid_code_product_signatures,
+    invalid_code_product_decision_signature_count,
+    invalid_code_product_decision_signature_from_history_item,
+    invalid_decision_signature_key,
 )
 from .application.prompt.window_signatures import (
     decision_paths as _decision_paths,
     planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
     repo_read_window_signature as _repo_read_window_signature,
 )
-from .infrastructure.json_files import same_tool_artifact_payload as _same_tool_artifact_payload_impl
+from .infrastructure.json_files import same_tool_artifact_payload
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +425,7 @@ ORIENTATION_SHADOW_MAX_SELECTED = 13
 def _controller_initial_orientation_candidate_pool(
     root_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    return _controller_initial_orientation_candidate_pool_impl(
+    return controller_initial_orientation_candidate_pool(
         root_result,
         repo_root=LAB_REPO,
         safe_rel_path=safe_rel_path,
@@ -444,7 +439,7 @@ def _controller_orientation_model_select(
     semantic_intent: dict[str, Any],
     candidates: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return _controller_orientation_model_select_impl(
+    return controller_orientation_model_select(
         goal=goal,
         semantic_intent=semantic_intent,
         candidates=candidates,
@@ -475,11 +470,11 @@ _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS = _PROMPT_CONTEXT_WINDOW_TRACKING_
 
 
 def _compact_prompt_context_window_item(item: dict[str, Any]) -> dict[str, Any]:
-    return _compact_prompt_context_window_item_impl(item)
+    return compact_prompt_context_window_item(item)
 
 
 def compact_tool_result_for_planner(tool: str, result: dict[str, Any]) -> dict[str, Any]:
-    return _compact_tool_result_for_planner_impl(
+    return compact_tool_result_for_planner(
         tool,
         result,
         result_compact_chars=AGENTIC_RESULT_COMPACT_CHARS,
@@ -487,11 +482,11 @@ def compact_tool_result_for_planner(tool: str, result: dict[str, Any]) -> dict[s
 
 
 def planner_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _planner_history_ledger_impl(history)
+    return planner_history_ledger(history)
 
 
 def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
-    return _planner_last_result_digest_impl(result)
+    return planner_last_result_digest(result)
 
 
 def _ordered_tool_names(names: set[str]) -> list[str]:
@@ -501,7 +496,7 @@ def _ordered_tool_names(names: set[str]) -> list[str]:
 
 
 def _apply_turn_surface_policy(contract: dict[str, Any]) -> dict[str, Any]:
-    return _apply_turn_surface_policy_impl(contract, order_tool_names=_ordered_tool_names)
+    return apply_turn_surface_policy(contract, order_tool_names=_ordered_tool_names)
 
 
 def _tool_surface_names_for_turn(
@@ -511,7 +506,7 @@ def _tool_surface_names_for_turn(
     intrinsic_context: dict[str, Any],
     prompt_context_continuation_required: dict[str, Any] | None = None,
 ) -> list[str]:
-    return _tool_surface_names_for_turn_impl(
+    return tool_surface_names_for_turn(
         goal=goal,
         evidence_contract=evidence_contract,
         intrinsic_context=intrinsic_context,
@@ -521,7 +516,7 @@ def _tool_surface_names_for_turn(
 
 
 def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> Any:
-    return _available_tools_for_user_payload_impl(
+    return available_tools_for_user_payload(
         compact_tools,
         native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
     )
@@ -535,7 +530,7 @@ def _available_tools_window_pack(
     window_chars: int,
     reason: str,
 ) -> dict[str, Any]:
-    return _available_tools_window_pack_impl(
+    return available_tools_window_pack(
         root,
         goal=goal,
         available_tools=available_tools,
@@ -546,20 +541,20 @@ def _available_tools_window_pack(
 
 
 def _tool_shape_examples_for_prompt() -> dict[str, Any]:
-    return _tool_shape_examples_for_prompt_impl(
+    return tool_shape_examples_for_prompt(
         native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
 
 
 def _hard_budget_tool_shape_examples_for_prompt() -> dict[str, Any]:
-    return _hard_budget_tool_shape_examples_for_prompt_impl(
+    return hard_budget_tool_shape_examples_for_prompt(
         native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
     )
 
 
 def _compact_history_for_prompt(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _compact_history_for_prompt_impl(
+    return compact_history_for_prompt(
         history,
         history_tail=AGENTIC_PLANNER_HISTORY_PROMPT_TAIL,
         prompt_preview_chars=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
@@ -567,7 +562,7 @@ def _compact_history_for_prompt(history: list[dict[str, Any]]) -> list[dict[str,
     )
 
 def _compact_evidence_contract_for_prompt(contract: dict[str, Any]) -> dict[str, Any]:
-    return _compact_evidence_contract_for_prompt_impl(
+    return compact_evidence_contract_for_prompt(
         contract,
         prompt_preview_chars=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
     )
@@ -776,14 +771,14 @@ def _hard_budget_evidence_contract_for_prompt(
 
 
 def _report_exceeds_generation_headroom(report: dict[str, Any], headroom_char_budget: int) -> bool:
-    return _report_exceeds_generation_headroom_impl(report, headroom_char_budget)
+    return report_exceeds_generation_headroom(report, headroom_char_budget)
 
 
 def _preserve_required_next_tool_call_for_prompt(
     payload: dict[str, Any],
     previous_evidence_contract: dict[str, Any],
 ) -> None:
-    _preserve_required_next_tool_call_for_prompt_impl(payload, previous_evidence_contract)
+    preserve_required_next_tool_call_for_prompt(payload, previous_evidence_contract)
 
 
 def _enforce_required_scratchpad_read_continuation_contract(
@@ -797,7 +792,7 @@ def _enforce_required_scratchpad_read_continuation_contract(
 
 
 def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, Any]:
-    return _compact_intrinsic_context_for_prompt_impl(
+    return compact_intrinsic_context_for_prompt(
         context,
         prompt_preview_chars=AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
     )
@@ -1227,7 +1222,7 @@ def _store_prompt_value_window(
     )
 
 def _prompt_window_consumed_offsets(history: list[dict[str, Any]]) -> dict[str, int]:
-    return _prompt_window_consumed_offsets_impl(
+    return prompt_window_consumed_offsets(
         history,
         history_tool_result=_history_tool_result,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
@@ -1235,7 +1230,7 @@ def _prompt_window_consumed_offsets(history: list[dict[str, Any]]) -> dict[str, 
 
 
 def _prompt_window_tracking_metadata_errors(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _prompt_window_tracking_metadata_errors_impl(
+    return prompt_window_tracking_metadata_errors(
         history,
         history_tool_result=_history_tool_result,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
@@ -1243,7 +1238,7 @@ def _prompt_window_tracking_metadata_errors(history: list[dict[str, Any]]) -> li
 
 
 def _prompt_context_continue_action(window: dict[str, Any], *, max_chars: int, reason: str) -> dict[str, Any] | None:
-    return _prompt_context_continue_action_impl(
+    return prompt_context_continue_action(
         window,
         max_chars=max_chars,
         reason=reason,
@@ -1255,7 +1250,7 @@ def _planner_scratchpad_next_window_action_from_history(
     args: dict[str, Any],
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return _planner_scratchpad_next_window_action_from_history_impl(
+    return planner_scratchpad_next_window_action_from_history(
         args,
         history,
         history_tool_result=_history_tool_result,
@@ -1272,7 +1267,7 @@ def _repo_read_items_for_prompt(
     window_chars: int,
     compact_mode: bool,
 ) -> list[dict[str, Any]]:
-    return _repo_read_items_for_prompt_impl(
+    return repo_read_items_for_prompt(
         history,
         paths,
         job_root=job_root,
@@ -1295,7 +1290,7 @@ def _latest_code_product_for_prompt(
     window_chars: int,
     compact_mode: bool,
 ) -> dict[str, Any]:
-    return _latest_code_product_for_prompt_impl(
+    return latest_code_product_for_prompt(
         history,
         job_root=job_root,
         goal=goal,
@@ -1317,7 +1312,7 @@ def _required_working_set_for_prompt(
     max_repo_read_items: int | None = None,
     max_total_repo_read_window_chars: int | None = None,
 ) -> dict[str, Any]:
-    return _required_working_set_for_prompt_impl(
+    return required_working_set_for_prompt(
         goal,
         history,
         contract,
@@ -1343,7 +1338,7 @@ def _required_working_set_continuation_action(
     history: list[dict[str, Any]],
     window_chars: int,
 ) -> dict[str, Any] | None:
-    return _required_working_set_continuation_action_impl(
+    return required_working_set_continuation_action(
         required_working_set,
         history=history,
         window_chars=window_chars,
@@ -1358,7 +1353,7 @@ def _evidence_contract_continuation_action(
     history: list[dict[str, Any]],
     window_chars: int,
 ) -> dict[str, Any] | None:
-    return _evidence_contract_continuation_action_impl(
+    return evidence_contract_continuation_action(
         evidence_contract,
         history=history,
         window_chars=window_chars,
@@ -1368,7 +1363,7 @@ def _evidence_contract_continuation_action(
 
 
 def _prompt_context_continuation_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return _prompt_context_continuation_from_payload_impl(
+    return prompt_context_continuation_from_payload(
         payload,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
@@ -1378,18 +1373,18 @@ def _decision_matches_prompt_context_continuation(
     decision: dict[str, Any],
     continuation: dict[str, Any],
 ) -> bool:
-    return _decision_matches_prompt_context_continuation_impl(decision, continuation)
+    return decision_matches_prompt_context_continuation(decision, continuation)
 
 
 def _required_next_tool_call_from_action(action: dict[str, Any]) -> dict[str, Any]:
-    return _required_next_tool_call_from_action_impl(action)
+    return required_next_tool_call_from_action(action)
 
 
 def _forbidden_repeated_prompt_window_calls(
     history: list[dict[str, Any]],
     continuation_action: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    return _forbidden_repeated_prompt_window_calls_impl(
+    return forbidden_repeated_prompt_window_calls(
         history,
         continuation_action,
         history_tool_result=_history_tool_result,
@@ -1420,7 +1415,7 @@ def _build_planner_user_payload(
     last_tool_result: dict[str, Any],
     native_tools_schema: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    return _build_planner_user_payload_impl(
+    return build_planner_user_payload(
         job_id=job_id,
         state=state,
         step=step,
@@ -1480,7 +1475,7 @@ _PUBLIC_LOCAL_REFERENCE_KEYS = _PUBLIC_LOCAL_REFERENCE_KEYS_IMPL
 
 
 def _drop_empty_dict_values(value: dict[str, Any]) -> dict[str, Any]:
-    return _drop_empty_dict_values_impl(value)
+    return drop_empty_dict_values(value)
 
 
 def _planner_ollama_turn_from_decision(
@@ -1488,42 +1483,42 @@ def _planner_ollama_turn_from_decision(
     *,
     step: Any = None,
 ) -> dict[str, Any]:
-    return _planner_ollama_turn_from_decision_impl(decision, step=step)
+    return planner_ollama_turn_from_decision(decision, step=step)
 
 
 def _history_item_ollama_turn(item: dict[str, Any]) -> dict[str, Any]:
-    return _history_item_ollama_turn_impl(item)
+    return history_item_ollama_turn(item)
 
 
 def _history_tool_result(item: dict[str, Any]) -> dict[str, Any]:
-    return _history_tool_result_impl(item)
+    return history_tool_result(item)
 
 
 _PLANNER_HISTORY_NOISE_KEYS = _PLANNER_HISTORY_NOISE_KEYS_IMPL
 
 
 def _planner_history_summary(value: Any) -> str:
-    return _planner_history_summary_impl(value)
+    return planner_history_summary(value)
 
 
 def _clean_planner_history_value(value: Any) -> Any:
-    return _clean_planner_history_value_impl(value)
+    return clean_planner_history_value(value)
 
 
 def _planner_history_arguments(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
-    return _planner_history_arguments_impl(item, result)
+    return planner_history_arguments(item, result)
 
 
 def _planner_history_reason(item: dict[str, Any], result: dict[str, Any]) -> str:
-    return _planner_history_reason_impl(item, result)
+    return planner_history_reason(item, result)
 
 
 def _planner_controller_guard_history_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
-    return _planner_controller_guard_history_payload_impl(item, result)
+    return planner_controller_guard_history_payload(item, result)
 
 
 def _planner_history_evidence_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
-    return _planner_history_evidence_payload_impl(item, result)
+    return planner_history_evidence_payload(item, result)
 
 
 def _planner_tool_result_message_payload(
@@ -1534,7 +1529,7 @@ def _planner_tool_result_message_payload(
     goal: str,
     window_chars: int,
 ) -> dict[str, Any]:
-    return _planner_tool_result_message_payload_impl(
+    return planner_tool_result_message_payload(
         item,
         result,
         root=root,
@@ -1552,7 +1547,7 @@ def _planner_history_item_messages(
     goal: str,
     window_chars: int,
 ) -> list[dict[str, Any]]:
-    return _planner_history_item_messages_impl(
+    return planner_history_item_messages(
         item,
         root=root,
         goal=goal,
@@ -1570,7 +1565,7 @@ def _planner_history_messages_for_ollama(
     window_chars: int,
     max_chars: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    return _planner_history_messages_for_ollama_impl(
+    return planner_history_messages_for_ollama(
         history,
         root=root,
         goal=goal,
@@ -1583,23 +1578,23 @@ def _planner_history_messages_for_ollama(
 
 
 def _decision_for_turn_memory(decision: dict[str, Any] | None) -> dict[str, Any]:
-    return _decision_for_turn_memory_impl(decision)
+    return decision_for_turn_memory(decision)
 
 
 def _strip_public_artifact_paths(value: Any) -> Any:
-    return _strip_public_artifact_paths_impl(value)
+    return strip_public_artifact_paths(value)
 
 
 def _strip_public_local_references(value: Any) -> Any:
-    return _strip_public_local_references_impl(value)
+    return strip_public_local_references(value)
 
 
 def _same_tool_artifact_payload(result: dict[str, Any]) -> dict[str, Any]:
-    return _same_tool_artifact_payload_impl(result)
+    return same_tool_artifact_payload(result)
 
 
 def _public_tool_response(tool_result: dict[str, Any]) -> dict[str, Any]:
-    return _public_tool_response_impl(
+    return public_tool_response(
         tool_result,
         same_tool_artifact_payload=_same_tool_artifact_payload,
         repo_read_item_full_content=_repo_read_item_full_content,
@@ -1608,7 +1603,7 @@ def _public_tool_response(tool_result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _successful_tool_turns(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _successful_tool_turns_impl(
+    return successful_tool_turns(
         history,
         same_tool_artifact_payload=_same_tool_artifact_payload,
         repo_read_item_full_content=_repo_read_item_full_content,
@@ -1617,7 +1612,7 @@ def _successful_tool_turns(history: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def _public_tool_artifact_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _public_tool_artifact_rows_impl(
+    return public_tool_artifact_rows(
         history,
         same_tool_artifact_payload=_same_tool_artifact_payload,
         repo_read_item_full_content=_repo_read_item_full_content,
@@ -1626,21 +1621,21 @@ def _public_tool_artifact_rows(history: list[dict[str, Any]]) -> list[dict[str, 
 
 
 def _public_tool_context_limits(artifact_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _public_tool_context_limits_impl(artifact_rows)
+    return public_tool_context_limits(artifact_rows)
 
 
 def _ollama_turn_rows(
     history: list[dict[str, Any]],
     terminal_decision: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    return _ollama_turn_rows_impl(history, terminal_decision)
+    return ollama_turn_rows(history, terminal_decision)
 
 
 def _planner_turn_memory(
     history: list[dict[str, Any]],
     terminal_decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return _planner_turn_memory_impl(
+    return planner_turn_memory(
         history,
         terminal_decision,
         same_tool_artifact_payload=_same_tool_artifact_payload,
@@ -1653,7 +1648,7 @@ def _ollama_turn_summary_text(
     history: list[dict[str, Any]],
     terminal_decision: dict[str, Any] | None = None,
 ) -> str:
-    return _ollama_turn_summary_text_impl(history, terminal_decision)
+    return ollama_turn_summary_text(history, terminal_decision)
 
 
 def _final_summary_with_ollama_done_reasons(
@@ -1661,7 +1656,7 @@ def _final_summary_with_ollama_done_reasons(
     final_summary: str,
     result: dict[str, Any],
 ) -> str:
-    return _final_summary_with_ollama_done_reasons_impl(status, final_summary, result)
+    return final_summary_with_ollama_done_reasons(status, final_summary, result)
 
 
 # ---------------------------------------------------------------------------
@@ -1675,18 +1670,18 @@ def _normalize_tool_name(value: str) -> str:
 
 
 def controller_guard_count(history: list[dict[str, Any]], kind: str) -> int:
-    return _controller_guard_count_impl(history, kind)
+    return controller_guard_count(history, kind)
 
 
 def _controller_guard_rejection_signature(validation: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
-    return _controller_guard_rejection_signature_impl(validation, decision)
+    return controller_guard_rejection_signature(validation, decision)
 
 
 def _controller_guard_rejection_signature_count(
     history: list[dict[str, Any]],
     signature: dict[str, Any],
 ) -> int:
-    return _controller_guard_rejection_signature_count_impl(
+    return controller_guard_rejection_signature_count(
         history,
         signature,
         invalid_decision_signature_key=_invalid_decision_signature_key,
@@ -1694,7 +1689,7 @@ def _controller_guard_rejection_signature_count(
 
 
 def recoverable_planner_block(decision: dict[str, Any]) -> bool:
-    return _recoverable_planner_block_impl(decision)
+    return recoverable_planner_block(decision)
 
 
 def semantic_goal_classification(goal: str) -> dict[str, Any]:
@@ -1716,7 +1711,7 @@ def _code_product_build_state_duplicate_write(
     target_file: str,
     text: str,
 ) -> bool:
-    return _code_product_build_state_duplicate_write_impl(
+    return code_product_build_state_duplicate_write(
         history,
         target_file=target_file,
         text=text,
@@ -1724,11 +1719,11 @@ def _code_product_build_state_duplicate_write(
 
 
 def _code_product_build_state_from_result(result: dict[str, Any]) -> dict[str, Any]:
-    return _code_product_build_state_from_result_impl(result)
+    return code_product_build_state_from_result(result)
 
 
 def _code_product_build_state_read_action(state: dict[str, Any], target_file: str) -> dict[str, Any]:
-    return _code_product_build_state_read_action_impl(state, target_file)
+    return code_product_build_state_read_action(state, target_file)
 
 
 def _code_product_source_windows_from_reads(
@@ -1737,7 +1732,7 @@ def _code_product_source_windows_from_reads(
     *,
     limit: int = 3,
 ) -> list[dict[str, Any]]:
-    return _code_product_source_windows_from_reads_impl(
+    return code_product_source_windows_from_reads(
         history,
         target_file,
         same_tool_artifact_payload=_same_tool_artifact_payload,
@@ -1750,7 +1745,7 @@ def _code_product_build_state_write_action(
     target_file: str,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return _code_product_build_state_write_action_impl(
+    return code_product_build_state_write_action(
         target_file,
         history,
         same_tool_artifact_payload=_same_tool_artifact_payload,
@@ -1762,7 +1757,7 @@ def _code_product_build_state_propose_action(
     state: dict[str, Any],
     latest_violations: list[str],
 ) -> dict[str, Any]:
-    return _code_product_build_state_propose_action_impl(state, latest_violations)
+    return code_product_build_state_propose_action(state, latest_violations)
 
 
 def _code_product_candidate_action(
@@ -1771,7 +1766,7 @@ def _code_product_candidate_action(
     latest_violations: list[str],
     goal: str = "",
 ) -> dict[str, Any]:
-    return _code_product_candidate_action_impl(
+    return code_product_candidate_action(
         target_file=target_file,
         latest_violations=latest_violations,
         goal=goal,
@@ -1781,18 +1776,18 @@ def _code_product_candidate_action(
 _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL
 
 def _successful_window_signatures(history: list[dict[str, Any]], tool: str) -> set[str]:
-    return _successful_window_signatures_impl(history, tool)
+    return successful_window_signatures(history, tool)
 
 
 def _successful_repo_read_window_ranges(history: list[dict[str, Any]], target_file: str) -> list[tuple[int, int]]:
-    return _successful_repo_read_window_ranges_impl(history, target_file)
+    return successful_repo_read_window_ranges(history, target_file)
 
 
 def _code_product_payload_rejection_count(
     validation_rejections: list[dict[str, Any]],
     target_file: str = "",
 ) -> int:
-    return _code_product_payload_rejection_count_impl(validation_rejections, target_file)
+    return code_product_payload_rejection_count(validation_rejections, target_file)
 
 
 def _code_product_source_window_candidate(
@@ -1801,7 +1796,7 @@ def _code_product_source_window_candidate(
     line_count: int = 0,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return _code_product_source_window_candidate_impl(
+    return code_product_source_window_candidate(
         target_file,
         line_count=line_count,
         history=history,
@@ -1815,7 +1810,7 @@ def _strip_duplicate_window_candidate(
     tool: str,
     signature: str,
 ) -> list[dict[str, Any]]:
-    return _strip_duplicate_window_candidate_impl(actions, tool=tool, signature=signature)
+    return strip_duplicate_window_candidate(actions, tool=tool, signature=signature)
 
 
 def _apply_duplicate_window_replan_contract(
@@ -1826,7 +1821,7 @@ def _apply_duplicate_window_replan_contract(
     args: dict[str, Any],
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return _apply_duplicate_window_replan_contract_impl(
+    return apply_duplicate_window_replan_contract(
         contract,
         violation=violation,
         tool=tool,
@@ -1840,35 +1835,35 @@ def _apply_duplicate_window_replan_contract(
 
 
 def _code_product_low_signal_target(path: str, contract: dict[str, Any]) -> bool:
-    return _code_product_low_signal_target_impl(path, contract)
+    return code_product_low_signal_target(path, contract)
 
 
 def _canonical_invalid_code_product_decision_signature(
     decision: dict[str, Any],
     violations: list[Any] | tuple[Any, ...] | None = None,
 ) -> dict[str, Any]:
-    return _canonical_invalid_code_product_decision_signature_impl(decision, violations)
+    return canonical_invalid_code_product_decision_signature(decision, violations)
 
 
 def _invalid_decision_signature_key(signature: dict[str, Any]) -> str:
-    return _invalid_decision_signature_key_impl(signature)
+    return invalid_decision_signature_key(signature)
 
 
 def _invalid_code_product_decision_signature_from_history_item(item: dict[str, Any]) -> dict[str, Any]:
-    return _invalid_code_product_decision_signature_from_history_item_impl(item)
+    return invalid_code_product_decision_signature_from_history_item(item)
 
 
 def _invalid_code_product_decision_signature_count(
     history: list[dict[str, Any]],
     signature: dict[str, Any],
 ) -> int:
-    return _invalid_code_product_decision_signature_count_impl(history, signature)
+    return invalid_code_product_decision_signature_count(history, signature)
 
 
 def _disallowed_invalid_code_product_signatures(
     validation_rejections: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    return _disallowed_invalid_code_product_signatures_impl(validation_rejections)
+    return disallowed_invalid_code_product_signatures(validation_rejections)
 
 
 def _compact_validation_rejections_tail(
@@ -1876,19 +1871,19 @@ def _compact_validation_rejections_tail(
     *,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    return _compact_validation_rejections_tail_impl(validation_rejections, limit=limit)
+    return compact_validation_rejections_tail(validation_rejections, limit=limit)
 
 
 def summarize_history_artifacts(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _summarize_history_artifacts_impl(history)
+    return summarize_history_artifacts(history)
 
 
 def planner_done_token(raw_text: str) -> bool:
-    return _planner_done_token_impl(raw_text)
+    return planner_done_token(raw_text)
 
 
 def extract_existing_goal_path(goal: str) -> str:
-    return _extract_existing_goal_path_impl(goal, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return extract_existing_goal_path(goal, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 
@@ -1898,11 +1893,11 @@ def extract_existing_goal_path(goal: str) -> str:
 
 
 def requested_file_limit_from_goal(goal: str, default: int = 0) -> int:
-    return _requested_file_limit_from_goal_impl(goal, default)
+    return requested_file_limit_from_goal(goal, default)
 
 
 def goal_requested_repo_scope(goal: str) -> str:
-    return _goal_requested_repo_scope_impl(goal, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return goal_requested_repo_scope(goal, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def goal_requests_python_file_review(goal: str) -> bool:
@@ -1963,7 +1958,7 @@ def latest_file_list_result(history: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def successful_repo_read_paths(history: list[dict[str, Any]]) -> list[str]:
-    return _successful_repo_read_paths_impl(
+    return successful_repo_read_paths(
         history,
         same_tool_artifact_payload=_same_tool_artifact_payload,
     )
@@ -2013,7 +2008,7 @@ def _verified_repo_read_content_rows(history: list[dict[str, Any]]) -> list[dict
 
 
 def failed_repo_read_paths(history: list[dict[str, Any]]) -> list[str]:
-    return _failed_repo_read_paths_impl(history)
+    return failed_repo_read_paths(history)
 
 
 def _repo_reference_mentioned(low: str) -> bool:
@@ -2097,7 +2092,7 @@ def _should_preseed_root_surface(goal: str, original_args: dict[str, Any]) -> bo
 
 
 def _goal_existing_file_candidates(goal: str) -> list[str]:
-    return _extract_existing_goal_paths_impl(
+    return extract_existing_goal_paths(
         goal,
         repo_root=LAB_REPO,
         safe_rel_path=safe_rel_path,
@@ -2192,7 +2187,7 @@ def _controller_preseed_plan(goal: str, original_args: dict[str, Any]) -> dict[s
 
 
 def _controller_preplanner_rag_query_plan(goal: str) -> dict[str, Any]:
-    return _controller_preplanner_rag_query_plan_impl(
+    return controller_preplanner_rag_query_plan(
         goal,
         post_json=post_json,
         planner_url=PLANNER_URL,
@@ -2207,7 +2202,7 @@ def _controller_preplanner_rag_preseed_plan(
     goal: str,
     original_args: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, dict[str, Any], list[dict[str, Any]]]:
-    return _controller_preplanner_rag_preseed_plan_impl(
+    return controller_preplanner_rag_preseed_plan(
         goal,
         original_args,
         repo_root=LAB_REPO,
@@ -2253,31 +2248,31 @@ _GENERIC_READABLE_SUFFIXES = (
 
 
 def _repo_existing_file(path: str) -> bool:
-    return _repo_existing_file_impl(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return repo_existing_file(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _repo_existing_dir(path: str) -> bool:
-    return _repo_existing_dir_impl(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return repo_existing_dir(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _root_surface_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return _root_surface_entries_impl(result, repo_root=LAB_REPO)
+    return root_surface_entries(result, repo_root=LAB_REPO)
 
 
 def _root_surface_file_paths(result: dict[str, Any]) -> list[str]:
-    return _root_surface_file_paths_impl(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return root_surface_file_paths(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _root_surface_dir_paths(result: dict[str, Any]) -> list[str]:
-    return _root_surface_dir_paths_impl(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return root_surface_dir_paths(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _initial_doc_sort_key(path: str) -> tuple[int, int, str]:
-    return _initial_doc_sort_key_impl(path, named_read_priority=_NAMED_READ_PRIORITY)
+    return initial_doc_sort_key(path, named_read_priority=_NAMED_READ_PRIORITY)
 
 
 def _controller_initial_doc_preseed_plan(root_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-    return _controller_initial_doc_preseed_plan_impl(
+    return controller_initial_doc_preseed_plan(
         root_result,
         repo_root=LAB_REPO,
         safe_rel_path=safe_rel_path,
@@ -2289,11 +2284,11 @@ def _controller_initial_doc_preseed_plan(root_result: dict[str, Any]) -> tuple[d
 
 
 def _initial_area_sort_key(path: str) -> tuple[int, str]:
-    return _initial_area_sort_key_impl(path)
+    return initial_area_sort_key(path)
 
 
 def _controller_initial_area_list_plans(root_result: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    return _controller_initial_area_list_plans_impl(
+    return controller_initial_area_list_plans(
         root_result,
         repo_root=LAB_REPO,
         safe_rel_path=safe_rel_path,
@@ -2301,11 +2296,11 @@ def _controller_initial_area_list_plans(root_result: dict[str, Any]) -> tuple[li
 
 
 def _list_result_file_paths(result: dict[str, Any]) -> list[str]:
-    return _list_result_file_paths_impl(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
+    return list_result_file_paths(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
 def _initial_area_file_sort_key(path: str) -> tuple[int, int, str]:
-    return _initial_area_file_sort_key_impl(
+    return initial_area_file_sort_key(
         path,
         repo_root=LAB_REPO,
         named_read_priority=_NAMED_READ_PRIORITY,
@@ -2313,7 +2308,7 @@ def _initial_area_file_sort_key(path: str) -> tuple[int, int, str]:
 
 
 def _controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
-    return _controller_initial_area_read_plan_impl(
+    return controller_initial_area_read_plan(
         list_result,
         repo_root=LAB_REPO,
         safe_rel_path=safe_rel_path,
@@ -2323,19 +2318,19 @@ def _controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dic
 
 
 def _repo_path_kind(path: str) -> str:
-    return _repo_path_kind_impl(path, repo_root=LAB_REPO)
+    return repo_path_kind(path, repo_root=LAB_REPO)
 
 
 def _repo_doc_or_config(path: str) -> bool:
-    return _repo_doc_or_config_impl(path, repo_root=LAB_REPO)
+    return repo_doc_or_config(path, repo_root=LAB_REPO)
 
 
 def _repo_code_file(path: str) -> bool:
-    return _repo_code_file_impl(path)
+    return repo_code_file(path)
 
 
 def _repo_readable_evidence_file(path: str) -> bool:
-    return _repo_readable_evidence_file_impl(
+    return repo_readable_evidence_file(
         path,
         repo_root=LAB_REPO,
         generic_readable_suffixes=_GENERIC_READABLE_SUFFIXES,
@@ -2343,7 +2338,7 @@ def _repo_readable_evidence_file(path: str) -> bool:
 
 
 def _read_candidate_sort_key(path: str) -> tuple[int, int, int, int, str]:
-    return _read_candidate_sort_key_impl(
+    return read_candidate_sort_key(
         path,
         repo_root=LAB_REPO,
         named_read_priority=_NAMED_READ_PRIORITY,
@@ -2356,7 +2351,7 @@ def _dynamic_read_candidate_paths(
     read_ok: set[str] | None = None,
     target_scope: str = "",
 ) -> list[str]:
-    return _dynamic_read_candidate_paths_impl(
+    return dynamic_read_candidate_paths(
         paths,
         read_ok=read_ok,
         target_scope=target_scope,
@@ -2367,7 +2362,7 @@ def _dynamic_read_candidate_paths(
 
 
 def _scope_candidate_source_paths(list_rows: list[dict[str, Any]], target_scope: str) -> list[str]:
-    return _scope_candidate_source_paths_impl(list_rows, target_scope)
+    return scope_candidate_source_paths(list_rows, target_scope)
 
 
 def _scope_read_candidates_from_evidence(
@@ -2376,7 +2371,7 @@ def _scope_read_candidates_from_evidence(
     *,
     read_ok: list[str] | set[str] | None = None,
 ) -> list[str]:
-    return _scope_read_candidates_from_evidence_impl(
+    return scope_read_candidates_from_evidence(
         list_rows,
         target_scope,
         read_ok=read_ok,
@@ -2391,7 +2386,7 @@ def _meaningful_read_candidates_from_evidence(
     *,
     read_ok: list[str] | set[str] | None = None,
 ) -> list[str]:
-    return _meaningful_read_candidates_from_evidence_impl(
+    return meaningful_read_candidates_from_evidence(
         list_rows,
         read_ok=read_ok,
         repo_root=LAB_REPO,
@@ -2413,47 +2408,47 @@ def _repo_required_read_count(available_candidates: list[str]) -> int:
 
 
 def _top_dir(path: str) -> str:
-    return _top_dir_impl(path)
+    return top_dir(path)
 
 
 def _low_signal_top_dir(path: str) -> bool:
-    return _low_signal_top_dir_impl(path)
+    return low_signal_top_dir(path)
 
 
 def _append_unique(seq: list[Any], value: Any) -> None:
-    _append_unique_impl(seq, value)
+    append_unique(seq, value)
 
 
 def _read_items_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _read_items_from_history_impl(history, same_tool_artifact_payload=_same_tool_artifact_payload)
+    return read_items_from_history(history, same_tool_artifact_payload=_same_tool_artifact_payload)
 
 
 def _extract_headings(content: str) -> list[str]:
-    return _extract_headings_impl(content)
+    return extract_headings(content)
 
 
 def _extract_key_lines(content: str) -> list[str]:
-    return _extract_key_lines_impl(content)
+    return extract_key_lines(content)
 
 
 def _extract_mentioned_paths(content: str) -> list[str]:
-    return _extract_mentioned_paths_impl(content)
+    return extract_mentioned_paths(content)
 
 
 def _file_memory_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _file_memory_from_history_impl(history, same_tool_artifact_payload=_same_tool_artifact_payload)
+    return file_memory_from_history(history, same_tool_artifact_payload=_same_tool_artifact_payload)
 
 
 def _repo_list_evidence(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _repo_list_evidence_impl(history, same_tool_artifact_payload=_same_tool_artifact_payload)
+    return repo_list_evidence(history, same_tool_artifact_payload=_same_tool_artifact_payload)
 
 
 def failed_repo_list_files_paths(history: list[dict[str, Any]]) -> list[str]:
-    return _failed_repo_list_files_paths_impl(history)
+    return failed_repo_list_files_paths(history)
 
 
 def _rank_core_candidates(file_memory: list[dict[str, Any]], list_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _rank_core_candidates_impl(
+    return rank_core_candidates(
         file_memory,
         list_rows,
         repo_root=LAB_REPO,
@@ -2462,11 +2457,11 @@ def _rank_core_candidates(file_memory: list[dict[str, Any]], list_rows: list[dic
 
 
 def _normalize_scope_claim_text(text: str) -> str:
-    return _normalize_scope_claim_text_impl(text)
+    return normalize_scope_claim_text(text)
 
 
 def _claim_area_from_user_token(raw_area: str, target_scope: str = "") -> str:
-    return _claim_area_from_user_token_impl(
+    return claim_area_from_user_token(
         raw_area,
         target_scope,
         path_exists_repo_relative=_path_exists_repo_relative,
@@ -2474,7 +2469,7 @@ def _claim_area_from_user_token(raw_area: str, target_scope: str = "") -> str:
 
 
 def _user_scope_claims(goal: str, target_scope: str = "") -> list[dict[str, Any]]:
-    return _user_scope_claims_impl(
+    return user_scope_claims(
         goal,
         target_scope,
         path_exists_repo_relative=_path_exists_repo_relative,
@@ -2482,7 +2477,7 @@ def _user_scope_claims(goal: str, target_scope: str = "") -> list[dict[str, Any]
 
 
 def _scope_claim_conflict_for_path(path: str, claims: list[dict[str, Any]]) -> dict[str, Any]:
-    return _scope_claim_conflict_for_path_impl(path, claims)
+    return scope_claim_conflict_for_path(path, claims)
 
 
 def _add_core_discovery_candidate(
@@ -2499,7 +2494,7 @@ def _add_core_discovery_candidate(
     score: Any = None,
     ranking_source: str = "",
 ) -> bool:
-    return _add_core_discovery_candidate_impl(
+    return add_core_discovery_candidate(
         out,
         seen,
         path=path,
@@ -2526,7 +2521,7 @@ def _core_discovery_candidates_from_intrinsic(
     target_scope: str,
     user_scope_claims: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    return _core_discovery_candidates_from_intrinsic_impl(
+    return core_discovery_candidates_from_intrinsic(
         intrinsic_context=intrinsic_context,
         list_rows=list_rows,
         read_ok=read_ok,
@@ -2555,7 +2550,7 @@ def _core_discovery_read_paths(
     target_scope: str,
     limit: int,
 ) -> list[str]:
-    return _core_discovery_read_paths_impl(
+    return core_discovery_read_paths(
         candidates,
         read_ok=read_ok,
         target_scope=target_scope,
@@ -2570,7 +2565,7 @@ _SCOPE_CONFLICT_RATIONALE_TERMS = _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL
 
 
 def _target_scope_conflict_resolved(path: str, args: dict[str, Any], contract: dict[str, Any]) -> bool:
-    return _target_scope_conflict_resolved_impl(path, args, contract)
+    return target_scope_conflict_resolved(path, args, contract)
 
 
 def _candidate_actions_from_evidence(
@@ -2582,7 +2577,7 @@ def _candidate_actions_from_evidence(
     failed_list_paths: list[str] | None = None,
     core_discovery_candidates: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    return _candidate_actions_from_evidence_impl(
+    return candidate_actions_from_evidence(
         goal,
         file_memory,
         list_rows,
@@ -2656,7 +2651,7 @@ def _initial_orientation_surface_from_history(
     history: list[dict[str, Any]],
     skipped: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return _initial_orientation_surface_from_history_impl(
+    return initial_orientation_surface_from_history(
         history,
         skipped,
         repo_rel_token=_repo_rel_token,
@@ -2671,7 +2666,7 @@ def planner_evidence_contract(
     history: list[dict[str, Any]],
     intrinsic_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return _planner_evidence_contract_impl(
+    return planner_evidence_contract(
         goal,
         history,
         intrinsic_context,
@@ -2756,7 +2751,7 @@ def _path_exists_repo_relative(path: str) -> bool:
 
 
 def _path_under_scope(path: str, scope: str) -> bool:
-    return _path_under_scope_impl(path, scope)
+    return path_under_scope(path, scope)
 
 # --- agentic-loop-v2 progress/scope helpers ---
 def _agentic_v2_alias_repo_path(path: Any) -> str:
@@ -3430,7 +3425,7 @@ def validate_planner_decision_against_evidence(
     history: list[dict[str, Any]],
     require_native_tool_call: bool = False,
 ) -> dict[str, Any]:
-    return _validate_planner_decision_against_evidence_impl(
+    return validate_planner_decision_against_evidence(
         goal,
         decision,
         history,
@@ -3882,7 +3877,7 @@ def _compact_vulkan_repair_evidence_contract(contract: dict[str, Any]) -> dict[s
 
 
 def _evidence_contract_storage_summary(contract: dict[str, Any]) -> tuple[dict[str, Any], int, str]:
-    return _evidence_contract_summary_triplet_impl(
+    return evidence_contract_summary_triplet(
         contract,
         schema="planner_evidence_contract_storage_summary.v1",
     )
@@ -5134,7 +5129,7 @@ def controller_guard_result_for_validation(
 # ---------------------------------------------------------------------------
 
 def _planner_system_for_current_mode() -> str:
-    return _planner_system_for_current_mode_impl(
+    return planner_system_for_current_mode(
         native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
     )
 
@@ -5145,7 +5140,7 @@ def planner_decision(
     step: int,
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return _planner_decision_impl(
+    return planner_decision(
         job_id,
         state,
         step,
@@ -5218,7 +5213,7 @@ def planner_decision(
 
 
 def _compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]:
-    return _compact_final_state_result_impl(
+    return compact_final_state_result(
         result,
         history_ledger_builder=planner_history_ledger,
     )
@@ -5228,19 +5223,19 @@ _PUBLIC_TERMINAL_POINTER_KEYS = _PUBLIC_TERMINAL_POINTER_KEYS_IMPL
 
 
 def _public_terminal_content_key(key: Any) -> bool:
-    return _public_terminal_content_key_impl(key)
+    return public_terminal_content_key(key)
 
 
 def _public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
-    return _public_terminal_sanitize_text_impl(value, content=content)
+    return public_terminal_sanitize_text(value, content=content)
 
 
 def _public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
-    return _public_terminal_sanitize_value_impl(value, key=key, depth=depth)
+    return public_terminal_sanitize_value(value, key=key, depth=depth)
 
 
 def _public_terminal_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _public_terminal_history_ledger_impl(
+    return public_terminal_history_ledger(
         history,
         repo_read_item_full_content=_repo_read_item_full_content,
     )
@@ -5254,20 +5249,20 @@ def _public_terminal_result_for_30b(result: dict[str, Any] | None) -> dict[str, 
 
 
 def _terminal_context_alias() -> dict[str, Any]:
-    return _terminal_context_alias_impl()
+    return terminal_context_alias()
 
 
 
 def _planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _planner_decision_rows_impl(history)
+    return planner_decision_rows(history)
 
 
 def _validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _validation_rejection_rows_impl(history)
+    return validation_rejection_rows(history)
 
 
 def _executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _executed_tool_rows_impl(history)
+    return executed_tool_rows(history)
 
 
 def _repo_read_content_views(
@@ -5276,7 +5271,7 @@ def _repo_read_content_views(
     per_item_limit: int = 60000,
     total_limit: int = 180000,
 ) -> list[dict[str, Any]]:
-    return _repo_read_content_views_impl(
+    return repo_read_content_views(
         history,
         repo_read_item_full_content=_repo_read_item_full_content,
         per_item_limit=per_item_limit,
@@ -5285,7 +5280,7 @@ def _repo_read_content_views(
 
 
 def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 12000) -> str:
-    return _execution_evidence_digest_text_impl(
+    return execution_evidence_digest_text(
         result,
         repo_read_item_full_content=_repo_read_item_full_content,
         extract_key_lines=_extract_key_lines,
@@ -5344,15 +5339,15 @@ def _compact_evidence_guide_for_30b(
 
 
 def _latest_code_product_payload(history: list[dict[str, Any]]) -> dict[str, Any]:
-    return _latest_code_product_payload_impl(history)
+    return latest_code_product_payload(history)
 
 
 def _code_product_answer_text(result: dict[str, Any] | None, limit: int = 180000) -> str:
-    return _code_product_answer_text_impl(result, limit=limit)
+    return code_product_answer_text(result, limit=limit)
 
 
 def _partial_product_clean_text(value: Any, limit: int = 40000) -> str:
-    return _partial_product_clean_text_impl(value, limit)
+    return partial_product_clean_text(value, limit)
 
 
 def _partial_products_for_30b(history: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
@@ -5371,7 +5366,7 @@ def _best_partial_product_for_30b(history: list[dict[str, Any]]) -> dict[str, An
 
 
 def _partial_product_answer_text(result: dict[str, Any] | None, limit: int = 60000) -> str:
-    return _partial_product_answer_text_impl(
+    return partial_product_answer_text(
         result,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
         limit=limit,
@@ -5383,7 +5378,7 @@ def _agent_flow_diagnostics(
     history: list[dict[str, Any]],
     planner_memory: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return _agent_flow_diagnostics_impl(
+    return agent_flow_diagnostics(
         goal,
         history,
         planner_memory,
@@ -5395,7 +5390,7 @@ def _agent_flow_diagnostics(
 
 
 def answer_for_openwebui(status: str, final_summary: str, result: dict[str, Any] | None) -> str:
-    return _answer_for_openwebui_impl(
+    return answer_for_openwebui(
         status,
         final_summary,
         result,
@@ -5406,7 +5401,7 @@ def answer_for_openwebui(status: str, final_summary: str, result: dict[str, Any]
 
 
 def next_action_for_openwebui(status: str, result: dict[str, Any] | None) -> dict[str, Any]:
-    return _next_action_for_openwebui_impl(status, result)
+    return next_action_for_openwebui(status, result)
 
 
 def build_tool_context_for_30b(
@@ -5456,7 +5451,7 @@ def _controller_memory_lesson_text(
     contract: dict[str, Any],
     target_key: str,
 ) -> str:
-    return _controller_memory_lesson_text_impl(
+    return controller_memory_lesson_text(
         job_id,
         state,
         status,
@@ -5475,7 +5470,7 @@ def _write_controller_memory_lesson(
     result: dict[str, Any],
     root: Path,
 ) -> dict[str, Any]:
-    return _write_controller_memory_lesson_impl(
+    return write_controller_memory_lesson(
         job_id,
         state,
         status,
@@ -5495,7 +5490,7 @@ def _loop_turn_memory_text(
     contract: dict[str, Any],
     target_key: str,
 ) -> str:
-    return _loop_turn_memory_text_impl(
+    return loop_turn_memory_text(
         job_id,
         state,
         row,
@@ -5512,7 +5507,7 @@ def _write_loop_turn_memory(
     root: Path,
     history: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return _write_loop_turn_memory_impl(
+    return write_loop_turn_memory(
         job_id,
         state,
         row,
@@ -5914,7 +5909,7 @@ def finalize_agentic_job(
         else final_summary_with_turns
     )
     next_action = tool_context.get("next_action_for_30b") or {}
-    materialized = _materialize_public_evidence_impl(
+    materialized = materialize_public_evidence(
         tool_context=tool_context,
         evidence_guide=evidence_guide,
         completed=status == "completed",
@@ -5976,7 +5971,7 @@ def finalize_agentic_job(
 
 
 def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
-    return _run_agentic_planner_job_impl(
+    return run_agentic_planner_job(
         job_id,
         deps={
             "agent_flow_diagnostics": _agent_flow_diagnostics,

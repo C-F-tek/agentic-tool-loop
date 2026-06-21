@@ -36,7 +36,7 @@ dependencies = [
     "pytest>=7.0.0",
     "hypothesis>=6.0.0",
     "black>=23.0.0",
-    "ruff>=0.1.0",
+    "ruff>=0.4.0",
     
     # Tree-sitter for code analysis
     "tree-sitter>=0.20.0",
@@ -64,3 +64,23 @@ include = ["services*"]
 
 [tool.setuptools]
 py-modules = ["services"]
+
+# ---------------------------------------------------------------------------
+# Ruff Lint Configuration
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+# Global ignores – established policies documented in AGENTS.md
+ignore = [
+    "PLC0415",   # local-import – lazy imports for circular deps / optional modules
+    "F401",      # imported-but-unused – intentional re-exports handled via __all__
+    "F403",      # star-import-unlikely-to-be-used – replaced by explicit __all__
+]
+
+[tool.ruff.lint.per-file-ignores]
+"services/aicarmine_broker/config/__init__.py"       = []
+"services/aicarmine_broker/config/compatibility.py"  = []

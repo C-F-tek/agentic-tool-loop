@@ -155,7 +155,7 @@ def _log_sqlite_warning(job_id: str, operation: str, warning: dict[str, Any], ex
 
 def session_root(session_id: str) -> Path:
     # Late import to avoid circular; workspace injected via _resolve_workspace()
-    from .config import WORKSPACE  # noqa: PLC0415
+    from .config import WORKSPACE  
 
     root = WORKSPACE / "sessions" / make_session_id(session_id)
     for name in ("commands", "reads", "tool-results", "artifacts"):
@@ -546,3 +546,4 @@ def wait_for_agent_terminal(
         timeout_seconds=timeout_seconds,
         events_tail=read_agent_events(job_id, 5),
     )
+

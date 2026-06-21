@@ -72,7 +72,7 @@ PLANNER_INTERNAL_TOOLS = (
 
 def _broker_capability_map() -> dict[str, Any]:
     try:
-        from aicarmine_broker.tool_registry import capability_map  # noqa: PLC0415
+        from aicarmine_broker.tool_registry import capability_map  
     except BaseException:  # pragma: no cover - keeps 3571 importable during partial deploys
         return {}
     return capability_map()
@@ -4236,3 +4236,4 @@ def _agentic_v2_compact_context_for_openwebui(ctx):
     return _agentic_v9_build_openwebui_response(fake, previous=context)
 
 _AGENTIC_V9_OPENWEBUI_PROTOCOL_OBSERVATION_ACTIVE = True
+

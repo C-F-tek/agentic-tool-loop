@@ -760,8 +760,8 @@ def run_agentic_planner_job(
     write_agent_job_state = deps["write_agent_job_state"]
     write_json = deps["write_json"]
 
-    from ...tool_dispatch import dispatch_tool  # noqa
-    from ...tool_contract import normalize_tool_name, sanitize_tool_args  # noqa
+    from ...tool_dispatch import dispatch_tool
+    from ...tool_contract import normalize_tool_name, sanitize_tool_args
 
     state = load_agent_job_state(job_id)
     if not state:

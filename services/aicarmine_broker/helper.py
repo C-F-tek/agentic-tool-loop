@@ -100,7 +100,7 @@ def review_docs(task: str, root: Path) -> list[dict[str, Any]]:
         return []
     docs = []
     for rel in ("problems.md", "AGENTS.md", "README.md", "CONTEXT_INDEX.md"):
-        from .repo_tools import LAB_REPO  # noqa: PLC0415
+        from .repo_tools import LAB_REPO  
         if (LAB_REPO / rel).exists():
             docs.append(repo_read({"path": rel, "max_chars": 12000}, root))
     return docs
@@ -396,7 +396,7 @@ def helper_summary(
 
 
 def vulkan_helper(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    from .job_store import write_json, now  # noqa: PLC0415
+    from .job_store import write_json, now  
 
     args = dict(args or {})
     public_tool = str(
@@ -487,3 +487,4 @@ def vulkan_helper(args: dict[str, Any], root: Path) -> dict[str, Any]:
     write_json(artifact, artifact_payload)
     result["artifact"] = str(artifact)
     return result
+
