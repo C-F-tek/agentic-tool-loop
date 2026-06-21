@@ -122,7 +122,7 @@ from .application.code_product.required_working_set import (
 from .application.prompt.pack_builder import build_planner_user_payload
 from .application.prompt.evidence_contract import (
     compact_evidence_contract_for_prompt,
-    hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
+    hard_budget_evidence_contract_summary,
 )
 from .application.evidence.builder import planner_evidence_contract
 from .application.planner.loop import run_agentic_planner_job
@@ -135,9 +135,9 @@ from .application.evidence.execution_digest import (
     repo_read_content_views,
 )
 from .application.evidence.final_quality import (
-    repo_analysis_final_answer_model_quality_request as _repo_analysis_final_answer_model_quality_request,
-    repo_analysis_final_answer_quality as _repo_analysis_final_answer_quality,
-    sanitize_repo_analysis_final_model_quality as _sanitize_repo_analysis_final_model_quality,
+    repo_analysis_final_answer_model_quality_request ,
+    repo_analysis_final_answer_quality,
+    sanitize_repo_analysis_final_model_quality,
 )
 from .application.evidence.audit_guidance import role_guidance_for_goal
 from .application.evidence.initial_orientation import (
@@ -150,12 +150,12 @@ from .application.public_payload.openwebui_terminal_answer import (
 from .application.public_payload.evidence_materializer import (
     materialize_public_evidence,
 )
-from .application.public_payload.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
+from .application.public_payload.openwebui_tool_context import build_tool_context_for_30b
 from .application.tool_surface.candidate_actions import (
     candidate_actions_from_evidence,
     decision_matches_prompt_context_continuation,
     enforce_required_scratchpad_read_continuation_contract,
-    final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
+    final_composition_tool_names_from_candidates as final_composition_tool_names_from_candidates,
     preserve_required_next_tool_call_for_prompt,
     required_next_tool_call_from_action,
 )
@@ -165,8 +165,8 @@ from .application.controller.guards import (
     controller_guard_rejection_signature_count,
     recoverable_planner_block,
 )
-from .application.runtime_debug import build_runtime_debug_packet as _build_runtime_debug_packet
-from .application.npu_phi import maybe_enqueue_npu_phi_diagnostic as _maybe_enqueue_npu_phi_diagnostic
+from .application.runtime_debug import build_runtime_debug_packet 
+from .application.npu_phi import maybe_enqueue_npu_phi_diagnostic
 from .application.controller.memory import (
     controller_memory_lesson_text,
     loop_turn_memory_text,
@@ -203,24 +203,24 @@ from .application.evidence.core_discovery import (
 )
 from .application.code_product.state import (
     CODE_PRODUCT_BUILD_STATE_KIND,
-    code_product_action_has_complete_payload as _code_product_action_has_complete_payload,
-    code_product_build_state_has_collecting_progress as _code_product_build_state_has_collecting_progress,
-    code_product_build_state_parse as _code_product_build_state_parse,
-    code_product_build_state_ready_payload as _code_product_build_state_ready_payload,
-    code_product_payload_violations as _code_product_payload_violations,
-    copyable_example_text as _copyable_example_text,
-    goal_exact_text_block as _goal_exact_text_block,
+    code_product_action_has_complete_payload,
+    code_product_build_state_has_collecting_progress,
+    code_product_build_state_parse,
+    code_product_build_state_ready_payload,
+    code_product_payload_violations,
+    copyable_example_text,
+    goal_exact_text_block,
 )
 from .application.code_product.public_outputs import (
-    best_partial_product_for_30b as _best_partial_product_for_30b_impl,
+    best_partial_product_for_30b as hard_budget_evidence_contract_summary,
     code_product_answer_text,
     latest_code_product_payload,
     partial_product_answer_text,
     partial_product_clean_text,
-    partial_products_for_30b as _partial_products_for_30b_impl,
+    partial_products_for_30b,
 )
 from .application.code_product.history import (
-    CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS as _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL,
+    CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS,
     apply_duplicate_window_replan_contract,
     code_product_build_state_duplicate_write,
     code_product_build_state_from_result,
@@ -232,7 +232,7 @@ from .application.code_product.history import (
     code_product_payload_rejection_count,
     code_product_source_window_candidate,
     code_product_source_windows_from_reads,
-    failed_code_edit_proposal_validation_row as _failed_code_edit_proposal_validation_row,
+    failed_code_edit_proposal_validation_row,
     latest_code_product_build_state,
     strip_duplicate_window_candidate,
     successful_code_edit_proposals,
@@ -240,7 +240,7 @@ from .application.code_product.history import (
     successful_window_signatures,
 )
 from .application.evidence.goal_classifier import (
-    final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
+    final_answer_is_action_plan_without_code_product,
     goal_requires_code_security_coverage,
     goal_operational_intent_text as _goal_operational_intent_text,
     goal_requests_apply,
@@ -305,7 +305,7 @@ from .application.public_payload.terminal_sanitizer import (
 )
 from .application.public_payload.terminal_result import (
     public_terminal_history_ledger,
-    public_terminal_result_for_30b as _public_terminal_result_for_30b_impl,
+    public_terminal_result_for_30b as public_terminal_result_for_30b_impl,
 )
 from .application.public_payload.terminal_context_rows import (
     executed_tool_rows,
@@ -371,12 +371,12 @@ from .application.prompt.context_windows import (
     PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS as _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL,
     compact_prompt_context_window_item,
 )
-from .application.prompt.text_windows import window_text as _window_text
+from .application.prompt.text_windows import window_text
 from .application.tool_surface.manifest_builder import (
-    compact_tool_manifest_for_prompt as _compact_tool_manifest_for_prompt,
-    filter_tool_manifest_for_names as _filter_tool_manifest_for_names,
-    json_char_len as _json_char_len,
-    native_tools_schema_for_planner as _native_tools_schema_for_planner,
+    compact_tool_manifest_for_prompt,
+    filter_tool_manifest_for_names,
+    json_char_len,
+    native_tools_schema_for_planner,
 )
 from .application.prompt.tool_contract import (
     available_tools_for_user_payload,
@@ -391,7 +391,7 @@ from .application.tool_surface.turn_surface_policy import (
     tool_surface_names_for_turn,
 )
 from .application.tool_surface.required_tool_call import (
-    required_next_tool_call_satisfaction as _required_next_tool_call_satisfaction,
+    required_next_tool_call_satisfaction,
 )
 from .application.evidence.user_scope_claims import (
     claim_area_from_user_token,
@@ -409,8 +409,8 @@ from .application.planner.validation_rejections import (
 )
 from .application.prompt.window_signatures import (
     decision_paths as _decision_paths,
-    planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
-    repo_read_window_signature as _repo_read_window_signature,
+    planner_scratchpad_window_signature,
+    repo_read_window_signature as repo_read_window_signature,
 )
 from .infrastructure.json_files import same_tool_artifact_payload
 
@@ -465,11 +465,11 @@ def _list_or_empty(value: Any) -> list[Any]:
 # ---------------------------------------------------------------------------
 
 
-_PROMPT_CONTEXT_WINDOW_COMPACT_KEYS = _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL
-_PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS = _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL
+PROMPT_CONTEXT_WINDOW_COMPACT_KEYS = _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL
+PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS = _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL
 
 
-def _compact_prompt_context_window_item(item: dict[str, Any]) -> dict[str, Any]:
+def compact_prompt_context_window_item(item: dict[str, Any]) -> dict[str, Any]:
     return compact_prompt_context_window_item(item)
 
 
@@ -588,7 +588,7 @@ def _windowed_evidence_contract_for_prompt(
         metadata={"kind": "evidence_contract", "format": "json"},
     )
     summary_limit = max(3500, min(7000, int(window_chars or 2500) * 2))
-    if _json_char_len(compact_full) > summary_limit:
+    if json_char_len(compact_full) > summary_limit:
         compact: dict[str, Any] = {}
         for key in (
             "semantic_goal_classification",
@@ -687,7 +687,7 @@ def _windowed_evidence_contract_for_prompt(
     return compact
 
 
-def _prompt_section_window_pack(
+def prompt_section_window_pack(
     root: Path,
     *,
     goal: str,
@@ -748,7 +748,7 @@ def _hard_budget_evidence_contract_for_prompt(
         max_chars=max(500, int(window_chars or 1000)),
         metadata={"kind": "evidence_contract", "format": "json", "reason": reason},
     )
-    compact = _hard_budget_evidence_contract_summary(contract, reason=reason)
+    compact = hard_budget_evidence_contract_summary(contract, reason=reason)
     compact["full_evidence_contract_window"] = window
     if window.get("document_id") and window.get("has_more_after") is True:
         compact["planner_can_request_more_evidence_contract"] = {
@@ -785,7 +785,7 @@ def _enforce_required_scratchpad_read_continuation_contract(
     contract: dict[str, Any],
     continuation: dict[str, Any],
 ) -> dict[str, Any]:
-    return _enforce_scratchpad_read_continuation_contract_impl(
+    return enforce_required_scratchpad_read_continuation_contract(
         contract,
         continuation,
     )
@@ -808,7 +808,7 @@ def _windowed_optional_context_value(
 ) -> Any:
     if value in (None, "", [], {}):
         return value
-    if _json_char_len(value) <= max(800, int(window_chars or 1000)):
+    if json_char_len(value) <= max(800, int(window_chars or 1000)):
         return value
     window = _store_prompt_value_window(
         root,
@@ -1047,18 +1047,18 @@ def _prompt_budget_report(
     extra_prompt_sections: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     sections = {
-        key: _json_char_len(value)
+        key: json_char_len(value)
         for key, value in user_payload.items()
         if key not in {"available_tools"}
     }
-    sections["available_tools"] = _json_char_len(user_payload.get("available_tools"))
+    sections["available_tools"] = json_char_len(user_payload.get("available_tools"))
     extra_sections = {
         str(key): int(value)
         for key, value in (extra_prompt_sections or {}).items()
         if int(value or 0) > 0
     }
     sections.update(extra_sections)
-    total_user = _json_char_len(user_payload)
+    total_user = json_char_len(user_payload)
     system_chars = len(str(system_prompt or ""))
     extra_chars = sum(extra_sections.values())
     total = total_user + system_chars + extra_chars
@@ -1237,7 +1237,7 @@ def _prompt_window_tracking_metadata_errors(history: list[dict[str, Any]]) -> li
     )
 
 
-def _prompt_context_continue_action(window: dict[str, Any], *, max_chars: int, reason: str) -> dict[str, Any] | None:
+def prompt_context_continue_action(window: dict[str, Any], *, max_chars: int, reason: str) -> dict[str, Any] | None:
     return prompt_context_continue_action(
         window,
         max_chars=max_chars,
@@ -1258,7 +1258,7 @@ def _planner_scratchpad_next_window_action_from_history(
     )
 
 
-def _repo_read_items_for_prompt(
+def repo_read_items_for_prompt(
     history: list[dict[str, Any]],
     paths: set[str],
     *,
@@ -1278,11 +1278,11 @@ def _repo_read_items_for_prompt(
         repo_rel_token=_repo_rel_token,
         repo_read_item_full_content=_repo_read_item_full_content,
         store_prompt_text_window=_store_prompt_text_window,
-        window_text=_window_text,
+        window_text=window_text,
     )
 
 
-def _latest_code_product_for_prompt(
+def latest_code_product_for_prompt(
     history: list[dict[str, Any]],
     *,
     job_root: Path,
@@ -1321,11 +1321,11 @@ def _required_working_set_for_prompt(
         compact_mode=compact_mode,
         repo_rel_token=_repo_rel_token,
         goal_target_file=_goal_target_file,
-        latest_code_product_build_state=_latest_code_product_build_state_impl,
+        latest_code_product_build_state=latest_code_product_build_state,
         history_tool_result=_history_tool_result,
         repo_read_item_full_content=_repo_read_item_full_content,
         store_prompt_text_window=_store_prompt_text_window,
-        window_text=_window_text,
+        window_text=window_text,
         text_hash=_text_hash,
         max_repo_read_items=max_repo_read_items,
         max_total_repo_read_window_chars=max_total_repo_read_window_chars,
@@ -1430,14 +1430,14 @@ def _build_planner_user_payload(
             "available_tools_for_user_payload": _available_tools_for_user_payload,
             "available_tools_window_pack": _available_tools_window_pack,
             "compact_evidence_contract_for_prompt": _compact_evidence_contract_for_prompt,
-            "compact_tool_manifest_for_prompt": _compact_tool_manifest_for_prompt,
+            "compact_tool_manifest_for_prompt": compact_tool_manifest_for_prompt,
             "enforce_required_scratchpad_read_continuation_contract": (
                 _enforce_required_scratchpad_read_continuation_contract
             ),
             "forbidden_repeated_prompt_window_calls": _forbidden_repeated_prompt_window_calls,
             "hard_budget_evidence_contract_for_prompt": _hard_budget_evidence_contract_for_prompt,
             "hard_budget_tool_shape_examples_for_prompt": _hard_budget_tool_shape_examples_for_prompt,
-            "json_char_len": _json_char_len,
+            "json_char_len": json_char_len,
             "native_history_message_reserve_chars": _native_history_message_reserve_chars,
             "optional_context_for_prompt": _optional_context_for_prompt,
             "optional_context_window_pack": _optional_context_window_pack,
@@ -1468,10 +1468,8 @@ def _build_planner_user_payload(
     )
 
 
-_OLLAMA_STREAM_META_KEYS = _OLLAMA_STREAM_META_KEYS_IMPL
-_LOCAL_ARTIFACT_KEYS = _LOCAL_ARTIFACT_KEYS_IMPL
 
-_PUBLIC_LOCAL_REFERENCE_KEYS = _PUBLIC_LOCAL_REFERENCE_KEYS_IMPL
+
 
 
 def _drop_empty_dict_values(value: dict[str, Any]) -> dict[str, Any]:
@@ -1718,7 +1716,7 @@ def _code_product_build_state_duplicate_write(
     )
 
 
-def _code_product_build_state_from_result(result: dict[str, Any]) -> dict[str, Any]:
+def code_product_build_state_from_result(result: dict[str, Any]) -> dict[str, Any]:
     return code_product_build_state_from_result(result)
 
 
@@ -1726,7 +1724,7 @@ def _code_product_build_state_read_action(state: dict[str, Any], target_file: st
     return code_product_build_state_read_action(state, target_file)
 
 
-def _code_product_source_windows_from_reads(
+def code_product_source_windows_from_reads(
     history: list[dict[str, Any]],
     target_file: str,
     *,
@@ -1773,7 +1771,7 @@ def _code_product_candidate_action(
     )
 
 
-_CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL
+
 
 def _successful_window_signatures(history: list[dict[str, Any]], tool: str) -> set[str]:
     return successful_window_signatures(history, tool)
@@ -1804,7 +1802,7 @@ def _code_product_source_window_candidate(
     )
 
 
-def _strip_duplicate_window_candidate(
+def strip_duplicate_window_candidate(
     actions: list[dict[str, Any]],
     *,
     tool: str,
@@ -1849,7 +1847,7 @@ def _invalid_decision_signature_key(signature: dict[str, Any]) -> str:
     return invalid_decision_signature_key(signature)
 
 
-def _invalid_code_product_decision_signature_from_history_item(item: dict[str, Any]) -> dict[str, Any]:
+def invalid_code_product_decision_signature_from_history_item(item: dict[str, Any]) -> dict[str, Any]:
     return invalid_code_product_decision_signature_from_history_item(item)
 
 
@@ -2247,31 +2245,31 @@ _GENERIC_READABLE_SUFFIXES = (
 )
 
 
-def _repo_existing_file(path: str) -> bool:
+def repo_existing_file(path: str) -> bool:
     return repo_existing_file(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
-def _repo_existing_dir(path: str) -> bool:
+def repo_existing_dir(path: str) -> bool:
     return repo_existing_dir(path, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
-def _root_surface_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
+def root_surface_entries(result: dict[str, Any]) -> list[dict[str, Any]]:
     return root_surface_entries(result, repo_root=LAB_REPO)
 
 
-def _root_surface_file_paths(result: dict[str, Any]) -> list[str]:
+def root_surface_file_paths(result: dict[str, Any]) -> list[str]:
     return root_surface_file_paths(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
-def _root_surface_dir_paths(result: dict[str, Any]) -> list[str]:
+def root_surface_dir_paths(result: dict[str, Any]) -> list[str]:
     return root_surface_dir_paths(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
-def _initial_doc_sort_key(path: str) -> tuple[int, int, str]:
+def initial_doc_sort_key(path: str) -> tuple[int, int, str]:
     return initial_doc_sort_key(path, named_read_priority=_NAMED_READ_PRIORITY)
 
 
-def _controller_initial_doc_preseed_plan(root_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def controller_initial_doc_preseed_plan(root_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     return controller_initial_doc_preseed_plan(
         root_result,
         repo_root=LAB_REPO,
@@ -2283,11 +2281,11 @@ def _controller_initial_doc_preseed_plan(root_result: dict[str, Any]) -> tuple[d
     )
 
 
-def _initial_area_sort_key(path: str) -> tuple[int, str]:
+def initial_area_sort_key(path: str) -> tuple[int, str]:
     return initial_area_sort_key(path)
 
 
-def _controller_initial_area_list_plans(root_result: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def controller_initial_area_list_plans(root_result: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return controller_initial_area_list_plans(
         root_result,
         repo_root=LAB_REPO,
@@ -2295,11 +2293,11 @@ def _controller_initial_area_list_plans(root_result: dict[str, Any]) -> tuple[li
     )
 
 
-def _list_result_file_paths(result: dict[str, Any]) -> list[str]:
+def list_result_file_paths(result: dict[str, Any]) -> list[str]:
     return list_result_file_paths(result, repo_root=LAB_REPO, safe_rel_path=safe_rel_path)
 
 
-def _initial_area_file_sort_key(path: str) -> tuple[int, int, str]:
+def initial_area_file_sort_key(path: str) -> tuple[int, int, str]:
     return initial_area_file_sort_key(
         path,
         repo_root=LAB_REPO,
@@ -2307,7 +2305,7 @@ def _initial_area_file_sort_key(path: str) -> tuple[int, int, str]:
     )
 
 
-def _controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     return controller_initial_area_read_plan(
         list_result,
         repo_root=LAB_REPO,
@@ -2317,19 +2315,19 @@ def _controller_initial_area_read_plan(list_result: dict[str, Any]) -> tuple[dic
     )
 
 
-def _repo_path_kind(path: str) -> str:
+def repo_path_kind(path: str) -> str:
     return repo_path_kind(path, repo_root=LAB_REPO)
 
 
-def _repo_doc_or_config(path: str) -> bool:
+def repo_doc_or_config(path: str) -> bool:
     return repo_doc_or_config(path, repo_root=LAB_REPO)
 
 
-def _repo_code_file(path: str) -> bool:
+def repo_code_file(path: str) -> bool:
     return repo_code_file(path)
 
 
-def _repo_readable_evidence_file(path: str) -> bool:
+def repo_readable_evidence_file(path: str) -> bool:
     return repo_readable_evidence_file(
         path,
         repo_root=LAB_REPO,
@@ -2337,7 +2335,7 @@ def _repo_readable_evidence_file(path: str) -> bool:
     )
 
 
-def _read_candidate_sort_key(path: str) -> tuple[int, int, int, int, str]:
+def read_candidate_sort_key(path: str) -> tuple[int, int, int, int, str]:
     return read_candidate_sort_key(
         path,
         repo_root=LAB_REPO,
@@ -2361,11 +2359,11 @@ def _dynamic_read_candidate_paths(
     )
 
 
-def _scope_candidate_source_paths(list_rows: list[dict[str, Any]], target_scope: str) -> list[str]:
+def scope_candidate_source_paths(list_rows: list[dict[str, Any]], target_scope: str) -> list[str]:
     return scope_candidate_source_paths(list_rows, target_scope)
 
 
-def _scope_read_candidates_from_evidence(
+def scope_read_candidates_from_evidence(
     list_rows: list[dict[str, Any]],
     target_scope: str,
     *,
@@ -2381,7 +2379,7 @@ def _scope_read_candidates_from_evidence(
     )
 
 
-def _meaningful_read_candidates_from_evidence(
+def meaningful_read_candidates_from_evidence(
     list_rows: list[dict[str, Any]],
     *,
     read_ok: list[str] | set[str] | None = None,
@@ -2395,7 +2393,7 @@ def _meaningful_read_candidates_from_evidence(
     )
 
 
-def _scoped_required_read_count(available_candidates: list[str]) -> int:
+def scoped_required_read_count(available_candidates: list[str]) -> int:
     if not available_candidates:
         return 1
     return min(SCOPED_CONCRETE_READ_TARGET, len(available_candidates))
@@ -2407,23 +2405,23 @@ def _repo_required_read_count(available_candidates: list[str]) -> int:
     return min(REPO_CONCRETE_READ_TARGET, len(available_candidates))
 
 
-def _top_dir(path: str) -> str:
+def top_dir(path: str) -> str:
     return top_dir(path)
 
 
-def _low_signal_top_dir(path: str) -> bool:
+def low_signal_top_dir(path: str) -> bool:
     return low_signal_top_dir(path)
 
 
-def _append_unique(seq: list[Any], value: Any) -> None:
+def append_unique(seq: list[Any], value: Any) -> None:
     append_unique(seq, value)
 
 
-def _read_items_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def read_items_from_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return read_items_from_history(history, same_tool_artifact_payload=_same_tool_artifact_payload)
 
 
-def _extract_headings(content: str) -> list[str]:
+def extract_headings(content: str) -> list[str]:
     return extract_headings(content)
 
 
@@ -2431,7 +2429,7 @@ def _extract_key_lines(content: str) -> list[str]:
     return extract_key_lines(content)
 
 
-def _extract_mentioned_paths(content: str) -> list[str]:
+def extract_mentioned_paths(content: str) -> list[str]:
     return extract_mentioned_paths(content)
 
 
@@ -2456,11 +2454,11 @@ def _rank_core_candidates(file_memory: list[dict[str, Any]], list_rows: list[dic
     )
 
 
-def _normalize_scope_claim_text(text: str) -> str:
+def normalize_scope_claim_text(text: str) -> str:
     return normalize_scope_claim_text(text)
 
 
-def _claim_area_from_user_token(raw_area: str, target_scope: str = "") -> str:
+def claim_area_from_user_token(raw_area: str, target_scope: str = "") -> str:
     return claim_area_from_user_token(
         raw_area,
         target_scope,
@@ -2480,7 +2478,7 @@ def _scope_claim_conflict_for_path(path: str, claims: list[dict[str, Any]]) -> d
     return scope_claim_conflict_for_path(path, claims)
 
 
-def _add_core_discovery_candidate(
+def add_core_discovery_candidate(
     out: list[dict[str, Any]],
     seen: set[str],
     *,
@@ -2507,7 +2505,7 @@ def _add_core_discovery_candidate(
         lab_repo_label=str(LAB_REPO),
         path_under_scope=_path_under_scope,
         path_exists_repo_relative=_path_exists_repo_relative,
-        repo_readable_evidence_file=_repo_readable_evidence_file,
+        repo_readable_evidence_file=repo_readable_evidence_file,
         score=score,
         ranking_source=ranking_source,
     )
@@ -2530,13 +2528,13 @@ def _core_discovery_candidates_from_intrinsic(
         lab_repo_label=str(LAB_REPO),
         path_under_scope=_path_under_scope,
         path_exists_repo_relative=_path_exists_repo_relative,
-        repo_readable_evidence_file=_repo_readable_evidence_file,
-        scope_read_candidates_from_evidence=lambda rows, scope, read_ok_set: _scope_read_candidates_from_evidence(
+        repo_readable_evidence_file=repo_readable_evidence_file,
+        scope_read_candidates_from_evidence=lambda rows, scope, read_ok_set: scope_read_candidates_from_evidence(
             rows,
             scope,
             read_ok=read_ok_set,
         ),
-        meaningful_read_candidates_from_evidence=lambda rows, read_ok_set: _meaningful_read_candidates_from_evidence(
+        meaningful_read_candidates_from_evidence=lambda rows, read_ok_set: meaningful_read_candidates_from_evidence(
             rows,
             read_ok=read_ok_set,
         ),
@@ -2557,11 +2555,11 @@ def _core_discovery_read_paths(
         limit=limit,
         path_under_scope=_path_under_scope,
         path_exists_repo_relative=_path_exists_repo_relative,
-        repo_readable_evidence_file=_repo_readable_evidence_file,
+        repo_readable_evidence_file=repo_readable_evidence_file,
     )
 
 
-_SCOPE_CONFLICT_RATIONALE_TERMS = _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL
+SCOPE_CONFLICT_RATIONALE_TERMS = _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL
 
 
 def _target_scope_conflict_resolved(path: str, args: dict[str, Any], contract: dict[str, Any]) -> bool:
@@ -2587,8 +2585,8 @@ def _candidate_actions_from_evidence(
         core_discovery_candidates=core_discovery_candidates,
         repo_rel_token=_repo_rel_token,
         repo_analysis_goal=_repo_analysis_goal,
-        repo_doc_or_config=_repo_doc_or_config,
-        low_signal_top_dir=_low_signal_top_dir,
+        repo_doc_or_config=repo_doc_or_config,
+        low_signal_top_dir=low_signal_top_dir,
         rank_core_candidates=_rank_core_candidates,
         path_exists_repo_relative=_path_exists_repo_relative,
         goal_target_scope=_goal_target_scope,
@@ -2597,12 +2595,12 @@ def _candidate_actions_from_evidence(
         core_discovery_read_paths=_core_discovery_read_paths,
         scoped_concrete_read_target=SCOPED_CONCRETE_READ_TARGET,
         repo_concrete_read_target=REPO_CONCRETE_READ_TARGET,
-        scope_read_candidates_from_evidence=_scope_read_candidates_from_evidence,
+        scope_read_candidates_from_evidence=scope_read_candidates_from_evidence,
         multi_file_prompt_read_chars=_multi_file_prompt_read_chars,
-        meaningful_read_candidates_from_evidence=_meaningful_read_candidates_from_evidence,
+        meaningful_read_candidates_from_evidence=meaningful_read_candidates_from_evidence,
         single_file_prompt_read_chars=_single_file_prompt_read_chars,
-        repo_code_file=_repo_code_file,
-        repo_readable_evidence_file=_repo_readable_evidence_file,
+        repo_code_file=repo_code_file,
+        repo_readable_evidence_file=repo_readable_evidence_file,
     )
 
 
@@ -2655,8 +2653,8 @@ def _initial_orientation_surface_from_history(
         history,
         skipped,
         repo_rel_token=_repo_rel_token,
-        repo_doc_or_config=_repo_doc_or_config,
-        low_signal_top_dir=_low_signal_top_dir,
+        repo_doc_or_config=repo_doc_or_config,
+        low_signal_top_dir=low_signal_top_dir,
         path_under_scope=_path_under_scope,
     )
 
@@ -2678,43 +2676,43 @@ def planner_evidence_contract(
             "build_operational_notebook": _build_operational_notebook,
             "candidate_actions_from_evidence": _candidate_actions_from_evidence,
             "canonical_invalid_code_product_decision_signature": _canonical_invalid_code_product_decision_signature,
-            "code_product_action_has_complete_payload": _code_product_action_has_complete_payload,
+            "code_product_action_has_complete_payload": code_product_action_has_complete_payload,
             "code_product_build_state_propose_action": _code_product_build_state_propose_action,
             "code_product_build_state_read_action": _code_product_build_state_read_action,
             "code_product_build_state_write_action": _code_product_build_state_write_action,
             "code_product_candidate_action": _code_product_candidate_action,
             "code_product_payload_rejection_count": _code_product_payload_rejection_count,
-            "code_product_payload_violations": _code_product_payload_violations,
+            "code_product_payload_violations": code_product_payload_violations,
             "code_product_source_window_candidate": _code_product_source_window_candidate,
             "compact_validation_rejections_tail": _compact_validation_rejections_tail,
             "core_discovery_candidates_from_intrinsic": _core_discovery_candidates_from_intrinsic,
             "disallowed_invalid_code_product_signatures": _disallowed_invalid_code_product_signatures,
-            "failed_code_edit_proposal_validation_row": _failed_code_edit_proposal_validation_row,
+            "failed_code_edit_proposal_validation_row": failed_code_edit_proposal_validation_row,
             "file_memory_from_history": _file_memory_from_history,
-            "goal_exact_text_block": _goal_exact_text_block,
+            "goal_exact_text_block": goal_exact_text_block,
             "goal_target_file": _goal_target_file,
             "goal_target_kind": _goal_target_kind,
             "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
             "input_error_goal": _input_error_goal,
-            "latest_code_product_build_state": _latest_code_product_build_state_impl,
-            "low_signal_top_dir": _low_signal_top_dir,
-            "meaningful_read_candidates_from_evidence": _meaningful_read_candidates_from_evidence,
+            "latest_code_product_build_state": latest_code_product_build_state,
+            "low_signal_top_dir": low_signal_top_dir,
+            "meaningful_read_candidates_from_evidence": meaningful_read_candidates_from_evidence,
             "path_exists_repo_relative": _path_exists_repo_relative,
             "path_under_scope": _path_under_scope,
             "paths_from_list_rows": _paths_from_list_rows,
             "paths_from_result": _paths_from_result,
-            "planner_scratchpad_window_signature": _planner_scratchpad_window_signature,
+            "planner_scratchpad_window_signature": planner_scratchpad_window_signature,
             "rank_core_candidates": _rank_core_candidates,
             "repo_analysis_goal": _repo_analysis_goal,
-            "repo_code_file": _repo_code_file,
-            "repo_doc_or_config": _repo_doc_or_config,
-            "repo_list_evidence": _repo_list_evidence,
-            "repo_read_window_signature": _repo_read_window_signature,
-            "repo_readable_evidence_file": _repo_readable_evidence_file,
+            "repo_code_file": repo_code_file,
+            "repo_doc_or_config": repo_doc_or_config,
+            "repo_list_evidence": repo_list_evidence,
+            "repo_read_window_signature": repo_read_window_signature,
+            "repo_readable_evidence_file": repo_readable_evidence_file,
             "repo_rel_token": _repo_rel_token,
             "repo_required_read_count": _repo_required_read_count,
-            "scope_read_candidates_from_evidence": _scope_read_candidates_from_evidence,
-            "scoped_required_read_count": _scoped_required_read_count,
+            "scope_read_candidates_from_evidence": scope_read_candidates_from_evidence,
+            "scoped_required_read_count": scoped_required_read_count,
             "user_scope_claims": _user_scope_claims,
             "verified_repo_read_content_rows": _verified_repo_read_content_rows,
             "goal_requested_repo_scope": goal_requested_repo_scope,
@@ -3096,12 +3094,12 @@ def _apply_unverified_old_text_replan_contract(
             }
         if tool_name == "planner_scratchpad_write" and arguments.get("kind") == CODE_PRODUCT_BUILD_STATE_KIND:
             text = str(arguments.get("text") or arguments.get("content") or "")
-            state = _code_product_build_state_parse(text)
+            state = code_product_build_state_parse(text)
             return bool(
                 state
                 and (
-                    _code_product_build_state_has_collecting_progress(state)
-                    or _code_product_build_state_ready_payload(state)
+                    code_product_build_state_has_collecting_progress(state)
+                    or code_product_build_state_ready_payload(state)
                     or (
                         str(state.get("status") or "") == "blocked_incomplete"
                         and str(state.get("blocker") or "").strip()
@@ -3160,14 +3158,14 @@ def _apply_unverified_old_text_replan_contract(
     return contract
 
 
-def _repo_analysis_final_answer_model_quality(
+def repo_analysis_final_answer_model_quality(
     final_answer: str,
     contract: dict[str, Any],
     *,
     goal: str,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    request = _repo_analysis_final_answer_model_quality_request(
+    request = repo_analysis_final_answer_model_quality_request(
         final_answer,
         contract,
         goal=goal,
@@ -3196,7 +3194,7 @@ def _repo_analysis_final_answer_model_quality(
     timeout_seconds = min(90, max(20, int(AGENTIC_PLANNER_STEP_TIMEOUT or 30)))
     response = post_json(PLANNER_URL, payload, timeout_seconds)
     if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
-        quality = _sanitize_repo_analysis_final_model_quality(None, contract)
+        quality = sanitize_repo_analysis_final_model_quality(None, contract)
         quality.update({
             "violations": ["repo_analysis_final_model_quality_unavailable"],
             "required_next_progress": (
@@ -3292,7 +3290,7 @@ def _repo_analysis_final_answer_model_quality(
                     "json_parse_error": repair_parse.get("error"),
                     "raw_response_preview": repaired_raw_text[:2000],
                 })
-    quality = _sanitize_repo_analysis_final_model_quality(decoded, contract)
+    quality = sanitize_repo_analysis_final_model_quality(decoded, contract)
     quality.update({
         "planner_model": PLANNER_MODEL,
         "planner_url": PLANNER_URL,
@@ -3362,7 +3360,7 @@ def _repo_analysis_final_answer_model_quality(
                 or retry_response.get("backend_timeout")
                 or retry_response.get("error")
             ):
-                retry_quality = _sanitize_repo_analysis_final_model_quality(None, contract)
+                retry_quality = sanitize_repo_analysis_final_model_quality(None, contract)
                 retry_quality["backend_error"] = (
                     retry_response.get("error")
                     or retry_response.get("error_type")
@@ -3378,7 +3376,7 @@ def _repo_analysis_final_answer_model_quality(
                 )
                 retry_parse = parse_strict_json_object_diagnostics(retry_raw_text)
                 retry_decoded = retry_parse.get("decoded") if retry_parse.get("ok") is True else {}
-                retry_quality = _sanitize_repo_analysis_final_model_quality(retry_decoded, contract)
+                retry_quality = sanitize_repo_analysis_final_model_quality(retry_decoded, contract)
                 retry_quality["raw_response_preview"] = retry_raw_text[:1200]
                 retry_quality["raw_response_chars"] = len(retry_raw_text)
                 if retry_parse.get("ok") is not True:
@@ -3441,22 +3439,22 @@ def validate_planner_decision_against_evidence(
             "argument_value_present": _argument_value_present,
             "canonical_invalid_code_product_decision_signature": _canonical_invalid_code_product_decision_signature,
             "code_product_build_state_duplicate_write": _code_product_build_state_duplicate_write,
-            "code_product_build_state_has_collecting_progress": _code_product_build_state_has_collecting_progress,
-            "code_product_build_state_parse": _code_product_build_state_parse,
-            "code_product_build_state_ready_payload": _code_product_build_state_ready_payload,
+            "code_product_build_state_has_collecting_progress": code_product_build_state_has_collecting_progress,
+            "code_product_build_state_parse": code_product_build_state_parse,
+            "code_product_build_state_ready_payload": code_product_build_state_ready_payload,
             "code_product_low_signal_target": _code_product_low_signal_target,
-            "code_product_payload_violations": _code_product_payload_violations,
+            "code_product_payload_violations": code_product_payload_violations,
             "contract_final_required_now": _contract_final_required_now,
-            "copyable_example_text": _copyable_example_text,
+            "copyable_example_text": copyable_example_text,
             "decision_matches_prompt_context_continuation": _decision_matches_prompt_context_continuation,
             "decision_paths": _decision_paths,
             "enforce_required_scratchpad_read_continuation_contract": (
                 _enforce_required_scratchpad_read_continuation_contract
             ),
-            "final_answer_is_action_plan_without_code_product": _final_answer_is_action_plan_without_code_product,
-            "final_composition_tool_names_from_candidates": _final_composition_tool_names_from_candidates,
-            "repo_analysis_final_answer_model_quality": _repo_analysis_final_answer_model_quality,
-            "repo_analysis_final_answer_quality": _repo_analysis_final_answer_quality,
+            "final_answer_is_action_plan_without_code_product": final_answer_is_action_plan_without_code_product,
+            "final_composition_tool_names_from_candidates": final_composition_tool_names_from_candidates,
+            "repo_analysis_final_answer_model_quality": repo_analysis_final_answer_model_quality,
+            "repo_analysis_final_answer_quality": repo_analysis_final_answer_quality,
             "goal_requires_code_product_report": goal_requires_code_product_report,
             "invalid_code_product_decision_signature_count": _invalid_code_product_decision_signature_count,
             "invalid_decision_signature_key": _invalid_decision_signature_key,
@@ -3467,14 +3465,14 @@ def validate_planner_decision_against_evidence(
             "path_exists_repo_relative": _path_exists_repo_relative,
             "path_under_scope": _path_under_scope,
             "planner_scratchpad_read_selector_present": _planner_scratchpad_read_selector_present,
-            "planner_scratchpad_window_signature": _planner_scratchpad_window_signature,
+            "planner_scratchpad_window_signature": planner_scratchpad_window_signature,
             "prompt_window_consumed_offsets": _prompt_window_consumed_offsets,
             "prompt_window_tracking_metadata_errors": _prompt_window_tracking_metadata_errors,
             "repo_analysis_goal": _repo_analysis_goal,
-            "repo_path_kind": _repo_path_kind,
+            "repo_path_kind": repo_path_kind,
             "repo_read_selector_present": _repo_read_selector_present,
-            "repo_read_window_signature": _repo_read_window_signature,
-            "repo_readable_evidence_file": _repo_readable_evidence_file,
+            "repo_read_window_signature": repo_read_window_signature,
+            "repo_readable_evidence_file": repo_readable_evidence_file,
             "repo_rel_token": _repo_rel_token,
             "repeated_tool_call_count": repeated_tool_call_count,
             "scope_claim_conflict_for_path": _scope_claim_conflict_for_path,
@@ -4047,13 +4045,13 @@ def _specialist_route_audit(
             "diagnostic_only": True,
         })
         return audit
-    satisfaction = _required_next_tool_call_satisfaction(
+    satisfaction = required_next_tool_call_satisfaction(
         {"tool": tool, "arguments": args},
         history,
         successful_repo_read_paths=_agentic_v2_successful_read_paths,
         successful_window_signatures=_successful_window_signatures,
-        repo_read_window_signature=_repo_read_window_signature,
-        planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
+        repo_read_window_signature=repo_read_window_signature,
+        planner_scratchpad_window_signature=planner_scratchpad_window_signature,
         decision_paths=_decision_paths,
     )
     audit["satisfaction"] = satisfaction
@@ -4803,7 +4801,7 @@ def planner_cuda_rewrite_guard_for_validation(
         ),
         4000,
     )
-    guard["runtime_debug_packet"] = _build_runtime_debug_packet(
+    guard["runtime_debug_packet"] = build_runtime_debug_packet(
         job_id=job_id,
         step=step,
         phase="CONTROLLER_GUARD",
@@ -5101,7 +5099,7 @@ def controller_guard_result_for_validation(
                 "repo_propose_code_edit with a complete inline diff/ops payload."
             )
     runtime_debug_extra: dict[str, Any] = {}
-    npu_phi_attempt = _maybe_enqueue_npu_phi_diagnostic(
+    npu_phi_attempt = maybe_enqueue_npu_phi_diagnostic(
         goal=goal,
         evidence_contract=contract,
         validation=validation,
@@ -5111,7 +5109,7 @@ def controller_guard_result_for_validation(
         or npu_phi_attempt.get("status") not in {"disabled", "not_applicable", ""}
     ):
         runtime_debug_extra["npu_phi"] = npu_phi_attempt
-    guard["runtime_debug_packet"] = _build_runtime_debug_packet(
+    guard["runtime_debug_packet"] = build_runtime_debug_packet(
         job_id=job_id,
         step=step,
         phase="VALIDATE_DECISION",
@@ -5148,11 +5146,11 @@ def planner_decision(
         deps={
             "build_planner_user_payload": _build_planner_user_payload,
             "controller_memory_target_key": _controller_memory_target_key,
-            "filter_tool_manifest_for_names": _filter_tool_manifest_for_names,
+            "filter_tool_manifest_for_names": filter_tool_manifest_for_names,
             "history_tool_result": _history_tool_result,
             "input_error_goal": _input_error_goal,
             "native_tool_calls_decision": _native_tool_calls_decision,
-            "native_tools_schema_for_planner": _native_tools_schema_for_planner,
+            "native_tools_schema_for_planner": native_tools_schema_for_planner,
             "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
             "parse_strict_json_object": _parse_strict_json_object,
             "planner_history_messages_for_ollama": _planner_history_messages_for_ollama,
@@ -5212,7 +5210,7 @@ def planner_decision(
 # ---------------------------------------------------------------------------
 
 
-def _compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]:
+def compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]:
     return compact_final_state_result(
         result,
         history_ledger_builder=planner_history_ledger,
@@ -5222,7 +5220,7 @@ def _compact_final_state_result(result: dict[str, Any] | None) -> dict[str, Any]
 _PUBLIC_TERMINAL_POINTER_KEYS = _PUBLIC_TERMINAL_POINTER_KEYS_IMPL
 
 
-def _public_terminal_content_key(key: Any) -> bool:
+def public_terminal_content_key(key: Any) -> bool:
     return public_terminal_content_key(key)
 
 
@@ -5230,42 +5228,42 @@ def _public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
     return public_terminal_sanitize_text(value, content=content)
 
 
-def _public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
+def public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
     return public_terminal_sanitize_value(value, key=key, depth=depth)
 
 
-def _public_terminal_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def public_terminal_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return public_terminal_history_ledger(
         history,
         repo_read_item_full_content=_repo_read_item_full_content,
     )
 
 
-def _public_terminal_result_for_30b(result: dict[str, Any] | None) -> dict[str, Any]:
-    return _public_terminal_result_for_30b_impl(
+def public_terminal_result_for_30b(result: dict[str, Any] | None) -> dict[str, Any]:
+    return public_terminal_result_for_30b_impl(
         result,
         repo_read_item_full_content=_repo_read_item_full_content,
     )
 
 
-def _terminal_context_alias() -> dict[str, Any]:
+def terminal_context_alias() -> dict[str, Any]:
     return terminal_context_alias()
 
 
 
-def _planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return planner_decision_rows(history)
 
 
-def _validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return validation_rejection_rows(history)
 
 
-def _executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return executed_tool_rows(history)
 
 
-def _repo_read_content_views(
+def repo_read_content_views(
     history: list[dict[str, Any]],
     *,
     per_item_limit: int = 60000,
@@ -5279,7 +5277,7 @@ def _repo_read_content_views(
     )
 
 
-def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 12000) -> str:
+def execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 12000) -> str:
     return execution_evidence_digest_text(
         result,
         repo_read_item_full_content=_repo_read_item_full_content,
@@ -5288,7 +5286,7 @@ def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 
     )
 
 
-def _compact_evidence_guide_for_30b(
+def compact_evidence_guide_for_30b(
     *,
     goal: Any,
     status: str,
@@ -5338,34 +5336,34 @@ def _compact_evidence_guide_for_30b(
     return _public_terminal_sanitize_text(_prompt_clip_text("\n".join(lines), limit))
 
 
-def _latest_code_product_payload(history: list[dict[str, Any]]) -> dict[str, Any]:
+def latest_code_product_payload(history: list[dict[str, Any]]) -> dict[str, Any]:
     return latest_code_product_payload(history)
 
 
-def _code_product_answer_text(result: dict[str, Any] | None, limit: int = 180000) -> str:
+def code_product_answer_text(result: dict[str, Any] | None, limit: int = 180000) -> str:
     return code_product_answer_text(result, limit=limit)
 
 
-def _partial_product_clean_text(value: Any, limit: int = 40000) -> str:
+def partial_product_clean_text(value: Any, limit: int = 40000) -> str:
     return partial_product_clean_text(value, limit)
 
 
-def _partial_products_for_30b(history: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
-    return _partial_products_for_30b_impl(
+def partial_products_for_30b(history: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
+    return partial_products_for_30b(
         history,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
         limit=limit,
     )
 
 
-def _best_partial_product_for_30b(history: list[dict[str, Any]]) -> dict[str, Any]:
-    return _best_partial_product_for_30b_impl(
+def best_partial_product_for_30b(history: list[dict[str, Any]]) -> dict[str, Any]:
+    return best_partial_product_for_30b(
         history,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
 
 
-def _partial_product_answer_text(result: dict[str, Any] | None, limit: int = 60000) -> str:
+def partial_product_answer_text(result: dict[str, Any] | None, limit: int = 60000) -> str:
     return partial_product_answer_text(
         result,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
@@ -5373,7 +5371,7 @@ def _partial_product_answer_text(result: dict[str, Any] | None, limit: int = 600
     )
 
 
-def _agent_flow_diagnostics(
+def agent_flow_diagnostics(
     goal: str,
     history: list[dict[str, Any]],
     planner_memory: dict[str, Any] | None = None,
@@ -5394,9 +5392,9 @@ def answer_for_openwebui(status: str, final_summary: str, result: dict[str, Any]
         status,
         final_summary,
         result,
-        code_product_answer_text=_code_product_answer_text,
-        execution_evidence_digest_text=_execution_evidence_digest_text,
-        partial_product_answer_text=_partial_product_answer_text,
+        code_product_answer_text=code_product_answer_text,
+        execution_evidence_digest_text=execution_evidence_digest_text,
+        partial_product_answer_text=partial_product_answer_text,
     )
 
 
@@ -5411,7 +5409,7 @@ def build_tool_context_for_30b(
     final_summary: str,
     result: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    return _build_tool_context_for_30b_impl(
+    return build_tool_context_for_30b(
         job_id,
         state,
         status,
@@ -5421,19 +5419,19 @@ def build_tool_context_for_30b(
         planner_url=PLANNER_URL,
         job_root_for_id=agent_job_root,
         planner_composed_answer=planner_composed_answer,
-        agent_flow_diagnostics=_agent_flow_diagnostics,
-        partial_products_for_30b=_partial_products_for_30b,
-        best_partial_product_for_30b=_best_partial_product_for_30b,
+        agent_flow_diagnostics=agent_flow_diagnostics,
+        partial_products_for_30b=partial_products_for_30b,
+        best_partial_product_for_30b=best_partial_product_for_30b,
         answer_for_openwebui=answer_for_openwebui,
-        execution_evidence_digest_text=_execution_evidence_digest_text,
-        repo_read_content_views=_repo_read_content_views,
+        execution_evidence_digest_text=execution_evidence_digest_text,
+        repo_read_content_views=repo_read_content_views,
         next_action_for_openwebui=next_action_for_openwebui,
         initial_orientation_surface_from_history=_initial_orientation_surface_from_history,
-        planner_decision_rows=_planner_decision_rows,
-        validation_rejection_rows=_validation_rejection_rows,
-        executed_tool_rows=_executed_tool_rows,
+        planner_decision_rows=planner_decision_rows,
+        validation_rejection_rows=validation_rejection_rows,
+        executed_tool_rows=executed_tool_rows,
         planner_turn_memory=_planner_turn_memory,
-        compact_final_state_result=_compact_final_state_result,
+        compact_final_state_result=compact_final_state_result,
         public_tool_artifact_rows=_public_tool_artifact_rows,
         public_tool_context_limits=_public_tool_context_limits,
         planner_evidence_contract=planner_evidence_contract,
@@ -5442,7 +5440,7 @@ def build_tool_context_for_30b(
     )
 
 
-def _controller_memory_lesson_text(
+def controller_memory_lesson_text(
     job_id: str,
     state: dict[str, Any],
     status: str,
@@ -5483,7 +5481,7 @@ def _write_controller_memory_lesson(
     )
 
 
-def _loop_turn_memory_text(
+def loop_turn_memory_text(
     job_id: str,
     state: dict[str, Any],
     row: dict[str, Any],
@@ -5642,7 +5640,7 @@ def judge_blocked_job(
     history = result.get("history") if isinstance(result.get("history"), list) else []
     artifacts = tool_context.get("artifacts") if isinstance(tool_context.get("artifacts"), list) else []
     evidence_contract = planner_evidence_contract(goal, history)
-    repo_read_views = _repo_read_content_views(
+    repo_read_views = repo_read_content_views(
         history,
         per_item_limit=12000,
         total_limit=120000,
@@ -5656,13 +5654,13 @@ def judge_blocked_job(
         "final_summary": _prompt_clip_text(final_summary, 12000),
         "blocked_by": result.get("blocked_by"),
         "validation_rejections": _prompt_clip_value(
-            _validation_rejection_rows(history)[-20:], text_limit=2000, list_limit=20
+            validation_rejection_rows(history)[-20:], text_limit=2000, list_limit=20
         ),
         "planner_decision_tail": _prompt_clip_value(
-            _planner_decision_rows(history)[-20:], text_limit=2000, list_limit=20
+            planner_decision_rows(history)[-20:], text_limit=2000, list_limit=20
         ),
         "tool_results_tail": _prompt_clip_value(
-            _executed_tool_rows(history)[-24:], text_limit=1600, list_limit=24
+            executed_tool_rows(history)[-24:], text_limit=1600, list_limit=24
         ),
         "repo_read_evidence_windows": repo_read_views[:20],
         "final_quality": _prompt_clip_value(
@@ -5895,9 +5893,9 @@ def finalize_agentic_job(
         result["partial_products_for_30b"] = tool_context.get("partial_products_for_30b")
     if tool_context.get("best_partial_product_for_30b") not in (None, "", [], {}):
         result["best_partial_product_for_30b"] = tool_context.get("best_partial_product_for_30b")
-    public_result = _public_terminal_result_for_30b(result)
+    public_result = public_terminal_result_for_30b(result)
     answer = answer_for_openwebui(status, final_summary_with_turns, result)
-    evidence_guide = _compact_evidence_guide_for_30b(
+    evidence_guide = compact_evidence_guide_for_30b(
         goal=state.get("goal"),
         status=status,
         answer=answer,
@@ -5905,7 +5903,7 @@ def finalize_agentic_job(
     )
     public_final_summary = (
         answer
-        if status == "completed" and _latest_code_product_payload(_list_or_empty(result.get("history")))
+        if status == "completed" and latest_code_product_payload(_list_or_empty(result.get("history")))
         else final_summary_with_turns
     )
     next_action = tool_context.get("next_action_for_30b") or {}
@@ -5936,9 +5934,9 @@ def finalize_agentic_job(
         "result": public_result,
         "agent_flow_diagnostics": tool_context.get("agent_flow_diagnostics"),
         "tool_context_for_30b": tool_context,
-        "agent_context_for_30b": _terminal_context_alias(),
-        "structured_context_for_30b": _terminal_context_alias(),
-        "structured_result_for_30b": _terminal_context_alias(),
+        "agent_context_for_30b": terminal_context_alias(),
+        "structured_context_for_30b": terminal_context_alias(),
+        "structured_result_for_30b": terminal_context_alias(),
         "events_path": str(root / "events.ndjson"),
     }
     write_json(root / "final.json", final)
@@ -5956,11 +5954,11 @@ def finalize_agentic_job(
         "priority_evidence_for_30b": materialized["priority_evidence_for_30b"],
         "materialization_report": materialized["materialization_report"],
         "next_action_for_30b": next_action,
-        "result": _compact_final_state_result(public_result),
+        "result": compact_final_state_result(public_result),
         "tool_context_for_30b": tool_context,
-        "agent_context_for_30b": _terminal_context_alias(),
-        "structured_context_for_30b": _terminal_context_alias(),
-        "structured_result_for_30b": _terminal_context_alias(),
+        "agent_context_for_30b": terminal_context_alias(),
+        "structured_context_for_30b": terminal_context_alias(),
+        "structured_result_for_30b": terminal_context_alias(),
     })
     write_agent_job_state(state)
     append_agent_event(
@@ -5974,16 +5972,16 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
     return run_agentic_planner_job(
         job_id,
         deps={
-            "agent_flow_diagnostics": _agent_flow_diagnostics,
+            "agent_flow_diagnostics": agent_flow_diagnostics,
             "agentic_tool_allowed": _agentic_tool_allowed,
             "cached_tool_result": _cached_tool_result,
             "cached_vulkan_repair_result": _cached_vulkan_repair_result,
             "controller_file_code_product_orientation_preseed_plan": _controller_file_code_product_orientation_preseed_plan,
             "controller_guard_rejection_signature": _controller_guard_rejection_signature,
             "controller_guard_rejection_signature_count": _controller_guard_rejection_signature_count,
-            "controller_initial_area_list_plans": _controller_initial_area_list_plans,
-            "controller_initial_area_read_plan": _controller_initial_area_read_plan,
-            "controller_initial_doc_preseed_plan": _controller_initial_doc_preseed_plan,
+            "controller_initial_area_list_plans": controller_initial_area_list_plans,
+            "controller_initial_area_read_plan": controller_initial_area_read_plan,
+            "controller_initial_doc_preseed_plan": controller_initial_doc_preseed_plan,
             "controller_memory_target_key": _controller_memory_target_key,
             "controller_preplanner_rag_query_plan": _controller_preplanner_rag_query_plan,
             "controller_preplanner_rag_preseed_plan": _controller_preplanner_rag_preseed_plan,
@@ -5993,9 +5991,9 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
               "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
               "controller_initial_orientation_candidate_pool": _controller_initial_orientation_candidate_pool,
               "controller_orientation_model_select": _controller_orientation_model_select,
-              "orientation_shadow_effective_mode": _orientation_shadow_effective_mode_impl,
-              "orientation_legacy_selected_candidate_ids": _orientation_legacy_selected_candidate_ids_impl,
-              "orientation_shadow_selection_metrics": _orientation_shadow_selection_metrics_impl,
+              "orientation_shadow_effective_mode": orientation_shadow_effective_mode,
+              "orientation_legacy_selected_candidate_ids": orientation_legacy_selected_candidate_ids,
+              "orientation_shadow_selection_metrics": orientation_shadow_selection_metrics,
               "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
             "native_required_repaired_tool_decision_disallowed": _native_required_repaired_tool_decision_disallowed,
             "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
@@ -6014,7 +6012,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "agent_job_root": agent_job_root,
             "append_agent_event": append_agent_event,
             "compact_tool_result_for_planner": compact_tool_result_for_planner,
-            "build_runtime_debug_packet": _build_runtime_debug_packet,
+            "build_runtime_debug_packet": build_runtime_debug_packet,
             "controller_guard_count": controller_guard_count,
             "controller_guard_result_for_validation": controller_guard_result_for_validation,
             "finalize_agentic_job": finalize_agentic_job,
