@@ -173,10 +173,18 @@ try {
     Assert-PortFree -Port 3572 -Label "old Vulkan Agent"
 
     Write-Host "Starting internal Vulkan Agent on 127.0.0.1:3572..."
+    
+    # Passa PYTHONPATH esplicitamente ad uvicorn invece di affidarsi all'ereditazione
+    $uvicornArgs = @("-m", "uvicorn", "aicarmine_vulkan_tool_broker:app", "--host", "127.0.0.1", "--port", "3572")
+    if ($env:PYTHONPATH) {
+        $uvicornArgs = ("--extra-search-path", $env:PYTHONPATH) + $uvicornArgs
+    }
+    
     $agentProc = Start-Process `
         -FilePath $Py `
-        -ArgumentList "-m uvicorn aicarmine_vulkan_tool_broker:app --host 127.0.0.1 --port 3572" `
+        -ArgumentList $uvicornArgs `
         -WorkingDirectory $Root `
+        -Environment @{PYTHONPATH=$env:PYTHONPATH} `
         -WindowStyle Minimized `
         -PassThru
 
