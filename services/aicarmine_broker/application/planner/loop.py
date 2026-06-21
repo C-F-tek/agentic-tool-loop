@@ -1923,45 +1923,31 @@ def run_agentic_planner_job(
                         }),
                     )
                 continue
-            if "planner_native_tool_call_required" in validation_violations:
-                prior_native_empty_guards = controller_guard_count(
-                    history,
-                    "planner_native_tool_call_required",
-                )
-                if prior_native_empty_guards >= int(retry_limit or 0):
+            # Phase 2: Replace inline native_tool_call guard with GuardEvaluator
+            native_tool_guard = guard_evaluator.evaluate_native_tool_call_guard(
+                validation=validation,
+                decision=decision,
+                history=history,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+                planner_memory_snapshot=planner_memory_snapshot,
+            )
+            if native_tool_guard:
+                if native_tool_guard["should_finalize"]:
                     return finalize_agentic_job(
                         job_id,
                         state,
-                        "blocked_needs_attention",
-                        (
-                            "planner_native_tool_call_required_repeated: planner native tool mode "
-                            "was active, tools were provided to Ollama, but the planner repeatedly "
-                            "returned no message.tool_calls. Controller did not fall back to JSON-text "
-                            "tool execution."
-                        ),
-                        {
+                        native_tool_guard["final_status"],
+                        native_tool_guard["final_reason"],
+                        native_tool_guard.get("final_extra", {
                             "history": history,
                             "planner_decision": decision,
                             "blocked_by": "planner_native_tool_call_required_repeated",
                             "validation": validation,
-                            "agent_flow_diagnostics": _agent_flow_diagnostics(
-                                str(state.get("goal") or ""),
-                                history,
-                                planner_memory_snapshot,
-                            ),
-                        },
+                        }),
                     )
-                guard_result = controller_guard_result_for_validation(
-                    validation,
-                    decision,
-                    job_id=job_id,
-                    step=step,
-                    goal=str(state.get("goal") or ""),
-                )
-                guard_result["guard_type"] = "planner_native_tool_call_required"
-                guard_result["summary"] = "planner_native_tool_call_required"
-                guard_result["retry_count"] = prior_native_empty_guards
-                guard_result["retry_limit"] = int(retry_limit or 0)
+                guard_result = native_tool_guard["guard_result"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
