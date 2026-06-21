@@ -815,117 +815,14 @@ def run_agentic_planner_job(
         max_steps=max_steps,
     )
 
-    def support_subturn_tool(tool: str) -> bool:
-        return normalize_tool_name(tool) in support_subturn_tools
-
-    def support_subturn_decision(planner_decision: dict[str, Any]) -> bool:
-        if str(planner_decision.get("action") or "").strip().lower() != "tool":
-            return False
-        return support_subturn_tool(str(planner_decision.get("tool") or ""))
-
-    def semantic_step_for_physical_step(step_number: int) -> int:
-        physical_step = max(1, int(step_number))
-        counted_support_turns = support_semantic_turns_used
-        if physical_step in support_semantic_steps_marked:
-            counted_support_turns = max(0, counted_support_turns - 1)
-        return max(1, physical_step - counted_support_turns)
-
-    def mark_support_subturn(row: dict[str, Any], *, semantic_step: int) -> None:
-        nonlocal support_semantic_turns_used, support_subturns_used
-        support_subturns_used += 1
-        try:
-            physical_step = int(row.get("step") or 0)
-        except (TypeError, ValueError):
-            physical_step = 0
-        if physical_step > 0 and physical_step not in support_semantic_steps_marked:
-            support_semantic_steps_marked.add(physical_step)
-            support_semantic_turns_used += 1
-        row["support_subturn"] = True
-        row["semantic_step"] = semantic_step
-        result = row.get("tool_result")
-        if isinstance(result, dict):
-            result["support_subturn"] = True
-            result["semantic_step"] = semantic_step
-            result["support_subturn_index"] = support_subturns_used
-            result["support_semantic_turns_used"] = support_semantic_turns_used
-        state["support_subturns_used"] = support_subturns_used
-        state["support_semantic_turns_used"] = support_semantic_turns_used
-
-    def planner_step_budget_guidance(step_number: int) -> dict[str, Any]:
-        remaining_steps = max(0, max_steps - int(step_number) + 1)
-        if remaining_steps <= 0:
-            return {}
-        if remaining_steps == 1:
-            mode = "force_terminal_decision"
-        elif remaining_steps == 2:
-            mode = "prepare_terminal_decision"
-        else:
-            return {}
-        return {
-            "schema": "planner_step_budget_guidance.v1",
-            "mode": mode,
-            "current_step": int(step_number),
-            "max_steps": int(max_steps),
-            "remaining_steps": int(remaining_steps),
-            "source": "AICARMINE_AGENT_MAX_STEPS",
-            "controller_does_not_auto_final": True,
-        }
-
-    def force_terminal_decision_active() -> bool:
-        guidance = state.get("planner_step_budget_guidance")
-        return (
-            isinstance(guidance, dict)
-            and str(guidance.get("mode") or "") == "force_terminal_decision"
-        )
-
-    def final_quality_guided_route_available(validation_row: dict[str, Any]) -> bool:
-        contract = _dict_field(validation_row, "evidence_contract")
-        quality = _dict_field(contract, "repo_analysis_final_quality")
-        if not quality:
-            return False
-        if quality.get("ok") is True:
-            return False
-        decision = str(quality.get("decision") or "").strip().lower()
-        if decision not in {"invalid", "reject", "continue_required"}:
-            return False
-        if str(contract.get("required_next_progress") or "").strip():
-            return True
-        if _dict_field(contract, "required_next_tool_call"):
-            return True
-        return bool(_list_field(contract, "candidate_next_actions"))
-
-    def runtime_debug_packet(
-        *,
-        step_number: int,
-        phase: str,
-        planner_decision: dict[str, Any],
-        validation: dict[str, Any] | None = None,
-        evidence_contract: dict[str, Any] | None = None,
-        extra: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        contract = evidence_contract
-        if contract is None and isinstance(validation, dict):
-            maybe_contract = validation.get("evidence_contract")
-            contract = maybe_contract if isinstance(maybe_contract, dict) else {}
-        return build_runtime_debug_packet(
-            job_id=job_id,
-            step=step_number,
-            phase=phase,
-            goal=str(state.get("goal") or ""),
-            decision=planner_decision,
-            validator_result=validation,
-            evidence_contract=contract or {},
-            extra=extra,
-        )
-
-    def persist_loop_turn_memory(row: dict[str, Any]) -> None:
-        state["controller_loop_turn_memory_last_write"] = _write_loop_turn_memory(
-            job_id,
-            state,
-            row,
-            root,
-            history,
-        )
+    # ======================================================================
+    # Inner functions replaced by extracted class methods
+    # ======================================================================
+    # Note: support_subturn_tool, support_subturn_decision, semantic_step_for_physical_step,
+    # mark_support_subturn, planner_step_budget_guidance, force_terminal_decision_active,
+    # final_quality_guided_route_available, runtime_debug_packet, persist_loop_turn_memory
+    # are now available via loop_controller instance methods.
+    # Inline definitions removed - use loop_controller.<method>() instead.
 
     def enrich_validation_with_replan_specialist(
         step_number: int,
