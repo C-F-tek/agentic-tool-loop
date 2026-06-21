@@ -1,10 +1,17 @@
-"""Multi-step planner loop owner."""
+"""Multi-step planner loop owner.
+
+Refactored to use extracted classes:
+- GuardEvaluator: All guard evaluation logic
+- PlannerLoopController: Main loop execution and decision handling
+- EvidenceContractManager: Centralized contract mutations
+"""
 
 from __future__ import annotations
 
 import itertools
 import traceback
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..controller.rag_preseed import query_plan_continue_without_model
@@ -21,6 +28,9 @@ from ..tool_surface.required_tool_call import (
     append_stale_required_call_marker,
     canonical_required_tool_call_key,
 )
+from .guard_evaluator import GuardEvaluator
+from .loop_controller import PlannerLoopController
+from .evidence_contract_manager import EvidenceContractManager
 
 
 def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
