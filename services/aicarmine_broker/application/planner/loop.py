@@ -2607,6 +2607,10 @@ def run_agentic_planner_job(
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
+                loop_state.append_history_row(row)
+                persist_loop_turn_memory(row)
+                write_agent_job_state(state)
+                continue
 
         decision = _normalize_terminal_planner_decision(decision if isinstance(decision, dict) else {})
         action = str(decision.get("action") or "tool").strip().lower()
@@ -2652,9 +2656,28 @@ def run_agentic_planner_job(
             )
 
         internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
-        is_support_subturn = support_subturn_decision(decision)
+        is_support_subturn = loop_controller.support_subturn_decision(decision)
         if repeated_tool_call_count(history, tool, internal_args) >= 2:
-            append_repeat_guard_result(step, decision, tool, internal_args)
+            # Phase 3: Replace append_repeat_guard_result with loop_controller method
+            repeat_guard_row = {
+                "step": step,
+                "decision": {
+                    "action": "repeat_guard",
+                    "tool": tool,
+                    "arguments": internal_args,
+                },
+                "tool_result": {
+                    "tool": "controller_guard",
+                    "ok": True,
+                    "guard_type": "repeated_tool_call_guard",
+                    "summary": "repeated_tool_call_guard",
+                    "tool": tool,
+                    "arguments": internal_args,
+                },
+            }
+            loop_state.append_history_row(repeat_guard_row)
+            persist_loop_turn_memory(repeat_guard_row)
+            write_agent_job_state(state)
             continue
 
         cache_key = _tool_cache_key(tool, internal_args)
@@ -2714,7 +2737,7 @@ def run_agentic_planner_job(
             "tool_result": compact_result,
         }
         if is_support_subturn:
-            mark_support_subturn(row, semantic_step=semantic_step)
+            loop_controller.mark_support_subturn(row, semantic_step=semantic_step)
         loop_state.append_history_row(row, update_evidence=False)
         persist_loop_turn_memory(row)
         write_agent_job_state(state)
