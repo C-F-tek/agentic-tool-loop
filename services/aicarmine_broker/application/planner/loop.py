@@ -2019,43 +2019,18 @@ def run_agentic_planner_job(
                     }),
                 )
 
-            if _should_retry_incomprehensible_planner_output(
-                decision, history, retry_limit
-            ):
-                output_classification = _raw_planner_text_classification(raw_planner_text)
-                retry_count = _planner_incomprehensible_retry_count(history)
-                validation_for_debug = validation_without_full_evidence_contract(validation)
-                guard_result = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "planner_retry_required",
-                    "summary": "planner_output_incomprehensible_repeat_required",
-                    "classification": f"{output_classification}_retryable",
-                    "retry_count": retry_count,
-                    "retry_limit": int(retry_limit or 0),
-                    "violations": validation.get("violations"),
-                    "raw_planner_text_preview": raw_planner_text[:4000],
-                    "next_instruction": (
-                        "repeat as one pure JSON object; no prose before or after; "
-                        "choose from candidate_next_actions; do not answer unrelated "
-                        "questions"
-                    ),
-                    "rejected_decision": {
-                        k: decision.get(k)
-                        for k in ("action", "tool", "arguments", "reason", "final_answer")
-                        if decision.get(k) not in (None, "", [], {})
-                    },
-                    "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
-                    "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
-                    "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
-                    "runtime_debug_packet": runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        validation=validation_for_debug,
-                        extra={"guard_type": "planner_retry_required"},
-                    ),
-                }
+            # Phase 2: Replace inline incomprehensible_output guard with GuardEvaluator
+            incomprehensible_guard = guard_evaluator.evaluate_incomprehensible_output_guard(
+                decision=decision,
+                validation=validation,
+                history=history,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+                planner_memory_snapshot=planner_memory_snapshot,
+            )
+            if incomprehensible_guard:
+                guard_result = incomprehensible_guard["guard_result"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
@@ -2084,18 +2059,18 @@ def run_agentic_planner_job(
                 write_agent_job_state(state)
                 continue
 
-            if "planner_repeated_invalid_code_product_decision" in {
-                str(v) for v in (validation.get("violations") if isinstance(validation.get("violations"), list) else [])
-            }:
-                guard_result = controller_guard_result_for_validation(
-                    validation,
-                    decision,
-                    job_id=job_id,
-                    step=step,
-                    goal=str(state.get("goal") or ""),
-                )
-                guard_result["guard_type"] = "planner_repeated_invalid_code_product_decision"
-                guard_result["summary"] = "planner_repeated_invalid_code_product_decision"
+            # Phase 2: Replace inline repeated_code_product guard with GuardEvaluator
+            repeated_code_guard = guard_evaluator.evaluate_repeated_code_product_guard(
+                validation=validation,
+                decision=decision,
+                history=history,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+                planner_memory_snapshot=planner_memory_snapshot,
+            )
+            if repeated_code_guard:
+                guard_result = repeated_code_guard["guard_result"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
@@ -2119,28 +2094,17 @@ def run_agentic_planner_job(
                 loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
-                blocker_answer = (
-                    "planner_repeated_invalid_code_product_decision: planner repeated the same invalid "
-                    "repo_propose_code_edit placeholder/missing-payload decision after the validator "
-                    "already required a route shift. Controller did not synthesize a patch or hidden tool call."
-                )
                 return finalize_agentic_job(
                     job_id,
                     state,
-                    "blocked_needs_attention",
-                    blocker_answer,
-                    {
+                    repeated_code_guard["final_status"],
+                    repeated_code_guard["final_reason"],
+                    repeated_code_guard.get("final_extra", {
                         "history": history,
                         "blocked_by": "planner_repeated_invalid_code_product_decision",
                         "planner_decision": decision,
-                        "invalid_decision_signature": validation.get("invalid_decision_signature"),
-                        "invalid_decision_repeat_count": validation.get("invalid_decision_repeat_count"),
-                        "agent_flow_diagnostics": _agent_flow_diagnostics(
-                            str(state.get("goal") or ""),
-                            history,
-                            planner_memory_snapshot,
-                        ),
-                    },
+                        "validation": validation,
+                    }),
                 )
 
             # FASE 4: Controller Guard Monitoring - Alert quando reject_count alto
