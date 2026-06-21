@@ -84,11 +84,145 @@ class PlannerLoopController:
             "runtime_sqlite_memory_search",
             "runtime_sqlite_memory_write",
         })
+        self._dict_field = lambda m, k: (dict(v) if isinstance(v := m.get(k), dict) else {})
+        self._list_field = lambda m, k: (list(v) if isinstance(v := m.get(k), list) else [])
 
         # State tracking
         self.support_subturns_used = 0
         self.support_semantic_turns_used = 0
         self.support_semantic_steps_marked: set[int] = set()
+
+    # ==================================================================
+    # Support Subturn Detection Methods
+    # ==================================================================
+
+    def support_subturn_tool(self, tool: str) -> bool:
+        """Check if tool is a support subturn tool."""
+        return normalize_tool_name(tool) in self._support_subturn_tools
+
+    def support_subturn_decision(self, decision: dict[str, Any]) -> bool:
+        """Check if decision represents a support subturn."""
+        if str(decision.get("action") or "").strip().lower() != "tool":
+            return False
+        return self.support_subturn_tool(str(decision.get("tool") or ""))
+
+    def semantic_step_for_physical_step(self, physical_step: int) -> int:
+        """Calculate semantic step from physical step, accounting for support turns."""
+        try:
+            physical_step_int = max(1, int(physical_step))
+        except (TypeError, ValueError):
+            physical_step_int = 1
+        counted_support_turns = self.support_semantic_turns_used
+        if physical_step_int in self.support_semantic_steps_marked:
+            counted_support_turns = max(0, counted_support_turns - 1)
+        return max(1, physical_step_int - counted_support_turns)
+
+    def mark_support_subturn(
+        self,
+        row: dict[str, Any],
+        semantic_step: int,
+    ) -> None:
+        """Mark a row as support subturn and update state."""
+        self.support_subturns_used += 1
+        try:
+            physical_step = int(row.get("step") or 0)
+        except (TypeError, ValueError):
+            physical_step = 0
+        if physical_step > 0 and physical_step not in self.support_semantic_steps_marked:
+            self.support_semantic_steps_marked.add(physical_step)
+            self.support_semantic_turns_used += 1
+        row["support_subturn"] = True
+        row["semantic_step"] = semantic_step
+        result = row.get("tool_result")
+        if isinstance(result, dict):
+            result["support_subturn"] = True
+            result["semantic_step"] = semantic_step
+            result["support_subturn_index"] = self.support_subturns_used
+            result["support_semantic_turns_used"] = self.support_semantic_turns_used
+        self.state["support_subturns_used"] = self.support_subturns_used
+        self.state["support_semantic_turns_used"] = self.support_semantic_turns_used
+
+    # ==================================================================
+    # Step Budget Guidance
+    # ==================================================================
+
+    def build_step_budget_guidance(self, step_number: int) -> dict[str, Any]:
+        """Build step budget guidance for planner prompt."""
+        remaining_steps = max(0, self.max_steps - int(step_number) + 1)
+        if remaining_steps <= 0:
+            return {}
+        if remaining_steps == 1:
+            mode = "force_terminal_decision"
+        elif remaining_steps == 2:
+            mode = "prepare_terminal_decision"
+        else:
+            return {}
+        return {
+            "schema": "planner_step_budget_guidance.v1",
+            "mode": mode,
+            "current_step": int(step_number),
+            "max_steps": int(self.max_steps),
+            "remaining_steps": int(remaining_steps),
+            "source": "AICARMINE_AGENT_MAX_STEPS",
+            "controller_does_not_auto_final": True,
+        }
+
+    def force_terminal_decision_active(self, semantic_step: int, max_steps: int) -> bool:
+        """Check if force terminal decision mode is active."""
+        return semantic_step >= max_steps
+
+    def final_quality_guided_route_available(self, validation: dict[str, Any]) -> bool:
+        """Check if final quality guided route is available."""
+        return bool(validation.get("final_quality_judge_intervened"))
+
+    # ==================================================================
+    # Runtime Debug Packet
+    # ==================================================================
+
+    def build_runtime_debug_packet(
+        self,
+        step_number: int,
+        phase: str,
+        planner_decision: dict[str, Any],
+        validation: dict[str, Any] | None = None,
+        evidence_contract: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build runtime debug packet for event emission."""
+        return self.deps["build_runtime_debug_packet"](
+            job_id=self.job_id,
+            step=step_number,
+            phase=phase,
+            goal=str(self.state.get("goal") or ""),
+            decision=planner_decision,
+            validator_result=validation,
+            evidence_contract=evidence_contract or {},
+            extra=extra,
+        )
+
+    # ==================================================================
+    # Persistence Methods
+    # ==================================================================
+
+    def persist_turn_memory(self, row: dict[str, Any]) -> None:
+        """Persist loop turn memory to state."""
+        self.state["controller_loop_turn_memory_last_write"] = self.deps["write_loop_turn_memory"](
+            self.job_id,
+            self.state,
+            row,
+            self.root,
+            self.history,
+        )
+
+    def append_history_row(self, row: dict[str, Any]) -> None:
+        """Append row to history and persist."""
+        self.loop_state.append_history_row(row)
+        self.persist_turn_memory(row)
+        self._write_agent_job_state(self.state)
+
+    # ==================================================================
+    # Tool Execution Methods
+    # ==================================================================
 
     def execute_step(
         self,
@@ -98,16 +232,7 @@ class PlannerLoopController:
     ) -> dict[str, Any] | None:
         """Execute a single planner step (tool execution or terminal action).
 
-        This is the main step execution logic extracted from the loop body.
         Returns None on success (continue loop), finalize dict on terminal.
-
-        Args:
-            step: Physical step number.
-            semantic_step: Semantic step number.
-            decision: Normalized planner decision.
-
-        Returns:
-            None if tool executed successfully, finalize dict if terminal.
         """
         action = str(decision.get("action") or "tool").strip().lower()
 
@@ -211,32 +336,26 @@ class PlannerLoopController:
             "approval_mode": approval_mode,
         }
 
+    # ==================================================================
+    # Context Building Methods
+    # ==================================================================
+
     def build_support_subturn_context(
         self,
         step_number: int,
+        decision: dict[str, Any],
     ) -> dict[str, Any]:
         """Build context for support subturn detection.
 
         Returns dict with support_subturn info and semantic_step calculation.
         """
-        tool = ""  # Caller provides this
-        decision = {}  # Caller provides this
-
-        def support_subturn_tool(t: str) -> bool:
-            return normalize_tool_name(t) in self._support_subturn_tools
-
-        def support_subturn_decision(d: dict[str, Any]) -> bool:
-            if str(d.get("action") or "").strip().lower() != "tool":
-                return False
-            return support_subturn_tool(str(d.get("tool") or ""))
-
         physical_step = max(1, int(step_number))
         counted_support_turns = self.support_semantic_turns_used
         if physical_step in self.support_semantic_steps_marked:
             counted_support_turns = max(0, counted_support_turns - 1)
         semantic_step = max(1, physical_step - counted_support_turns)
 
-        is_support_subturn = support_subturn_decision(decision)
+        is_support_subturn = self.support_subturn_decision(decision)
 
         return {
             "is_support_subturn": is_support_subturn,
@@ -244,85 +363,54 @@ class PlannerLoopController:
             "support_subturns_used": self.support_subturns_used,
         }
 
-    def mark_support_subturn(
-        self,
-        row: dict[str, Any],
-        semantic_step: int,
-    ) -> None:
-        """Mark a row as support subturn and update state."""
-        self.support_subturns_used += 1
-        try:
-            physical_step = int(row.get("step") or 0)
-        except (TypeError, ValueError):
-            physical_step = 0
-        if physical_step > 0 and physical_step not in self.support_semantic_steps_marked:
-            self.support_semantic_steps_marked.add(physical_step)
-            self.support_semantic_turns_used += 1
-        row["support_subturn"] = True
-        row["semantic_step"] = semantic_step
-        result = row.get("tool_result")
-        if isinstance(result, dict):
-            result["support_subturn"] = True
-            result["semantic_step"] = semantic_step
-            result["support_subturn_index"] = self.support_subturns_used
-            result["support_semantic_turns_used"] = self.support_semantic_turns_used
-        self.state["support_subturns_used"] = self.support_subturns_used
-        self.state["support_semantic_turns_used"] = self.support_semantic_turns_used
+    # ==================================================================
+    # Coverage Contract Helpers (inline replacements)
+    # ==================================================================
 
-    def build_step_budget_guidance(self, step_number: int) -> dict[str, Any]:
-        """Build step budget guidance for planner prompt."""
-        remaining_steps = max(0, self.max_steps - int(step_number) + 1)
-        if remaining_steps <= 0:
-            return {}
-        if remaining_steps == 1:
-            mode = "force_terminal_decision"
-        elif remaining_steps == 2:
-            mode = "prepare_terminal_decision"
-        else:
-            return {}
-        return {
-            "schema": "planner_step_budget_guidance.v1",
-            "mode": mode,
-            "current_step": int(step_number),
-            "max_steps": int(self.max_steps),
-            "remaining_steps": int(remaining_steps),
-            "source": "AICARMINE_AGENT_MAX_STEPS",
-            "controller_does_not_auto_final": True,
-        }
-
-    def build_runtime_debug_packet(
-        self,
-        step_number: int,
-        phase: str,
-        planner_decision: dict[str, Any],
-        validation: dict[str, Any] | None = None,
-        evidence_contract: dict[str, Any] | None = None,
-        extra: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Build runtime debug packet for event emission."""
-        return self.deps["build_runtime_debug_packet"](
-            job_id=self.job_id,
-            step=step_number,
-            phase=phase,
-            goal=str(self.state.get("goal") or ""),
-            decision=planner_decision,
-            validator_result=validation,
-            evidence_contract=evidence_contract or {},
-            extra=extra,
+    def coverage_contract(self, contract: dict[str, Any] | None) -> dict[str, Any]:
+        """Extract minimum_read_coverage from contract."""
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = contract.get("minimum_read_coverage")
+        if isinstance(coverage, dict):
+            return coverage
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
         )
+        coverage = final_contract.get("minimum_read_coverage")
+        return coverage if isinstance(coverage, dict) else {}
 
-    def persist_turn_memory(self, row: dict[str, Any]) -> None:
-        """Persist loop turn memory to state."""
-        self.state["controller_loop_turn_memory_last_write"] = self.deps["write_loop_turn_memory"](
-            self.job_id,
-            self.state,
-            row,
-            self.root,
-            self.history,
-        )
+    def coverage_satisfied(self, contract: dict[str, Any] | None) -> bool:
+        """Check if coverage is satisfied."""
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = self.coverage_contract(contract)
+        if coverage:
+            return coverage.get("coverage_satisfied") is True
+        return contract.get("coverage_satisfied") is True
 
-    def append_history_row(self, row: dict[str, Any]) -> None:
-        """Append row to history and persist."""
-        self.loop_state.append_history_row(row)
-        self.persist_turn_memory(row)
-        self._write_agent_job_state(self.state)
+    def missing_owner_paths(self, contract: dict[str, Any] | None) -> list[str]:
+        """Extract missing owner paths from contract."""
+        contract = contract if isinstance(contract, dict) else {}
+        coverage = self.coverage_contract(contract)
+        raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
+        return [str(path) for path in raw] if isinstance(raw, list) else []
+
+    # ==================================================================
+    # Dict/List Field Helpers
+    # ==================================================================
+
+    @staticmethod
+    def dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
+        """Safely extract dict field."""
+        value = mapping.get(key)
+        return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def list_field(mapping: Mapping[str, Any], key: str) -> list[Any]:
+        """Safely extract list field."""
+        value = mapping.get(key)
+        return list(value) if isinstance(value, list) else []
+
+
+from ...tool_contract import normalize_tool_name, sanitize_tool_args

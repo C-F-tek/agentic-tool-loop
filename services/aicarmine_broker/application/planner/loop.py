@@ -33,16 +33,6 @@ from .loop_controller import PlannerLoopController
 from .evidence_contract_manager import EvidenceContractManager
 
 
-def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
-    value = mapping.get(key)
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _list_field(mapping: Mapping[str, Any], key: str) -> list[Any]:
-    value = mapping.get(key)
-    return list(value) if isinstance(value, list) else []
-
-
 def evaluate_initial_orientation_shadow(
     *,
     requested_mode: object,
@@ -816,386 +806,19 @@ def run_agentic_planner_job(
     )
 
     # ======================================================================
-    # Inner functions replaced by extracted class methods
+    # Inline helpers replaced by loop_controller methods
     # ======================================================================
-    # Note: support_subturn_tool, support_subturn_decision, semantic_step_for_physical_step,
-    # mark_support_subturn, planner_step_budget_guidance, force_terminal_decision_active,
-    # final_quality_guided_route_available, runtime_debug_packet, persist_loop_turn_memory
-    # are now available via loop_controller instance methods.
-    # Inline definitions removed - use loop_controller.<method>() instead.
-
-    # ======================================================================
-    # Inner functions replaced by extracted class methods
-    # ======================================================================
-    # Note: enrich_validation_with_replan_specialist, append_cached_tool_result,
-    # successful_prior_tool_results_for_feedback, _coverage_contract, _coverage_satisfied,
-    # _missing_owner_paths, enrich_repeated_tool_guard_feedback, append_repeat_guard_result,
-    # execute_validated_tool_decision, match_micro_batch_action
-    # are now available via loop_controller instance methods.
-    # Inline definitions removed - use loop_controller.<method>() instead.
-
-    def append_cached_tool_result(step_number: int, planner_decision: dict[str, Any], cached: dict[str, Any]) -> None:
-        cached_result = _dict_field(cached, "result")
-        support_subturn = support_subturn_decision(planner_decision)
-        semantic_step = semantic_step_for_physical_step(step_number)
-        if support_subturn:
-            cached_result["support_subturn"] = True
-            cached_result["semantic_step"] = semantic_step
-        append_agent_event(
-            job_id,
-            "tool_cache_hit",
-            f"{cached.get('tool')} reused cached intra-job result.",
-            {
-                "tool": cached.get("tool"),
-                "cache_key": cached.get("cache_key"),
-                "cached_from_step": cached_result.get("cached_from_step"),
-                "cached_from_artifact": cached_result.get("cached_from_artifact"),
-                **({"support_subturn": True, "semantic_step": semantic_step} if support_subturn else {}),
-            },
-            step=step_number,
-        )
-        row = {
-            "step": step_number,
-            "decision": {k: v for k, v in planner_decision.items() if k != "raw_planner_text_preview"},
-            "tool_result": cached_result,
-        }
-        if support_subturn:
-            mark_support_subturn(row, semantic_step=semantic_step)
-        loop_state.append_history_row(row)
-        persist_loop_turn_memory(row)
-        write_agent_job_state(state)
-
-    def successful_prior_tool_results_for_feedback(
-        tool: str,
-        internal_args: dict[str, Any],
-        *,
-        limit: int = 3,
-    ) -> list[dict[str, Any]]:
-        wanted_tool = normalize_tool_name(tool)
-        wanted_cache_key = _tool_cache_key(wanted_tool, internal_args)
-        rows: list[dict[str, Any]] = []
-        for item in history:
-            if not isinstance(item, dict):
-                continue
-            result = _dict_field(item, "tool_result")
-            decision = _dict_field(item, "decision")
-            result_tool = normalize_tool_name(str(result.get("tool") or decision.get("tool") or ""))
-            if result_tool != wanted_tool or result.get("ok") is False:
-                continue
-            decision_args = _dict_field(decision, "arguments")
-            try:
-                comparable_args = sanitize_tool_args(
-                    wanted_tool,
-                    dict(decision_args),
-                    original_args,
-                    public_tool_name,
-                )
-            except Exception:
-                comparable_args = dict(decision_args)
-            if wanted_cache_key and _tool_cache_key(wanted_tool, comparable_args) != wanted_cache_key:
-                continue
-            digest: dict[str, Any] = {
-                "step": item.get("step"),
-                "tool": wanted_tool,
-                "ok": result.get("ok", True),
-            }
-            for key in (
-                "summary", "count", "items_total", "dry_run", "changed",
-                "deleted_count", "success_count", "failed_count", "all_ok",
-                "status", "mode",
-            ):
-                value = result.get(key)
-                if value not in (None, "", [], {}):
-                    digest[key] = value
-            if result.get("artifact"):
-                digest["artifact_available"] = True
-            rows.append(digest)
-        return rows[-max(1, int(limit or 1)):]
-
-    def _coverage_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
-        contract = contract if isinstance(contract, dict) else {}
-        coverage = contract.get("minimum_read_coverage")
-        if isinstance(coverage, dict):
-            return coverage
-        final_contract = (
-            contract.get("finalization_contract")
-            if isinstance(contract.get("finalization_contract"), dict)
-            else {}
-        )
-        coverage = final_contract.get("minimum_read_coverage")
-        return coverage if isinstance(coverage, dict) else {}
-
-    def _coverage_satisfied(contract: dict[str, Any] | None) -> bool:
-        contract = contract if isinstance(contract, dict) else {}
-        coverage = _coverage_contract(contract)
-        if coverage:
-            return coverage.get("coverage_satisfied") is True
-        return contract.get("coverage_satisfied") is True
-
-    def _missing_owner_paths(contract: dict[str, Any] | None) -> list[str]:
-        contract = contract if isinstance(contract, dict) else {}
-        coverage = _coverage_contract(contract)
-        raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
-        return [str(path) for path in raw] if isinstance(raw, list) else []
-
-    def enrich_repeated_tool_guard_feedback(
-        guard_result: dict[str, Any],
-        planner_decision: dict[str, Any],
-        validation: dict[str, Any],
-    ) -> None:
-        violations = _list_field(validation, "violations")
-        repeat_violations = {str(item) for item in violations}
-        if not any(
-            item == "repeated_same_tool_arguments_without_progress"
-            or item == "repo_read_window_already_successful_without_progress"
-            or item == "planner_scratchpad_window_already_successful_without_progress"
-            or item.startswith("repo_read_already_successful:")
-            for item in repeat_violations
-        ):
-            return
-        tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
-        if not tool:
-            return
-        raw_args = _dict_field(planner_decision, "arguments")
-        internal_args = sanitize_tool_args(tool, dict(raw_args), original_args, public_tool_name)
-        prior_results = successful_prior_tool_results_for_feedback(tool, internal_args)
-        evidence_contract = guard_result.get("evidence_contract")
-        if not isinstance(evidence_contract, dict):
-            evidence_contract = (
-                validation.get("evidence_contract")
-                if isinstance(validation.get("evidence_contract"), dict)
-                else {}
-            )
-        if isinstance(evidence_contract, dict):
-            required = _dict_field(evidence_contract, "required_next_tool_call")
-            required_key = canonical_required_tool_call_key(required.get("tool"), required.get("arguments"))
-            decision_key = canonical_required_tool_call_key(tool, internal_args)
-            if required and normalize_tool_name(str(required.get("tool") or "")) == tool and required_key == decision_key:
-                stale_marker = {
-                    "satisfied": True,
-                    "tool": tool,
-                    "arguments": _dict_field(required, "arguments"),
-                    "reason": "required_next_tool_call_rejected_as_already_successful",
-                    "key": required_key,
-                }
-                stale = evidence_contract.get("stale_required_next_tool_calls")
-                stale = stale if isinstance(stale, list) else []
-                stale.insert(0, stale_marker)
-                evidence_contract["stale_required_next_tool_calls"] = stale[:8]
-                evidence_contract["required_next_tool_call_satisfied"] = stale_marker
-                evidence_contract.pop("required_next_tool_call", None)
-                guard_result["stale_required_next_tool_call"] = stale_marker
-                guard_result.pop("required_next_tool_call", None)
-                required = {}
-            if required.get("tool") == "planner_scratchpad_read":
-                next_instruction = str(
-                    evidence_contract.get("required_next_progress")
-                    or required.get("reason")
-                    or "Consume the required planner_scratchpad_read continuation before final/block."
-                )
-                guard_result["next_instruction"] = next_instruction
-                guard_result["required_next_progress"] = next_instruction
-                guard_result["planner_may_choose_final"] = False
-                evidence_contract["required_next_progress"] = next_instruction
-                evidence_contract["planner_may_choose_final"] = False
-                operational = evidence_contract.get("operational_notes")
-                operational = operational if isinstance(operational, dict) else {}
-                operational["next_instruction"] = next_instruction
-                evidence_contract["operational_notes"] = operational
-                return
-            if not _coverage_satisfied(evidence_contract):
-                missing_paths = _missing_owner_paths(evidence_contract)
-                next_instruction = (
-                    "coverage_required_after_repeated_tool_result: minimum_read_coverage.coverage_satisfied=false. "
-                    "Do not final from the repeated tool result. Choose a different selective evidence-bound "
-                    f"read/search for missing_owner_paths {missing_paths[:12]}, or return a typed block."
-                )
-                guard_result["next_instruction"] = next_instruction
-                guard_result["required_next_progress"] = "coverage_required_after_repeated_tool_result"
-                guard_result["planner_may_choose_final"] = False
-                guard_result["coverage_satisfied"] = False
-                guard_result["missing_owner_paths"] = missing_paths
-                evidence_contract["required_next_progress"] = next_instruction
-                evidence_contract["planner_may_choose_final"] = False
-                final_contract = (
-                    evidence_contract.get("finalization_contract")
-                    if isinstance(evidence_contract.get("finalization_contract"), dict)
-                    else {}
-                )
-                final_contract["final_allowed"] = False
-                final_contract["planner_may_choose_final"] = False
-                final_contract["coverage_satisfied"] = False
-                final_contract["missing_owner_paths"] = missing_paths
-                evidence_contract["finalization_contract"] = final_contract
-                operational = evidence_contract.get("operational_notes")
-                operational = operational if isinstance(operational, dict) else {}
-                operational["next_instruction"] = next_instruction
-                evidence_contract["operational_notes"] = operational
-                return
-        next_instruction = (
-            f"Do not call {tool} again with the same arguments. Use the successful "
-            "prior tool result evidence already present in history to return action=final, "
-            "or choose a different tool only if it adds new evidence required by the user."
-        )
-        guard_result["next_instruction"] = next_instruction
-        guard_result["required_next_progress"] = "final_from_existing_tool_result_or_different_new_evidence"
-        guard_result["planner_may_choose_final"] = True
-        if prior_results:
-            guard_result["successful_prior_tool_results"] = prior_results
-        if isinstance(evidence_contract, dict):
-            evidence_contract["required_next_progress"] = guard_result["required_next_progress"]
-            evidence_contract["planner_may_choose_final"] = True
-            operational = evidence_contract.get("operational_notes")
-            operational = operational if isinstance(operational, dict) else {}
-            operational["next_instruction"] = next_instruction
-            evidence_contract["operational_notes"] = operational
-
-    def append_repeat_guard_result(
-        step_number: int,
-        planner_decision: dict[str, Any],
-        tool: str,
-        internal_args: dict[str, Any],
-    ) -> None:
-        support_subturn = support_subturn_decision(planner_decision)
-        semantic_step = semantic_step_for_physical_step(step_number)
-        validation_repeat = {
-            "ok": False,
-            "violations": ["repeated_same_tool_arguments_without_progress"],
-            "evidence_contract": planner_evidence_contract(str(state.get("goal") or ""), history),
-        }
-        guard_result = controller_guard_result_for_validation(
-            validation_repeat,
-            planner_decision,
-            job_id=job_id,
-            step=step_number,
-            goal=str(state.get("goal") or ""),
-        )
-        guard_result["guard_type"] = "repeat_guard"
-        guard_result["summary"] = "repeated_same_tool_arguments_without_progress"
-        guard_result["rejected_decision"] = {
-            "action": planner_decision.get("action"),
-            "tool": tool,
-            "arguments": internal_args,
-            "reason": planner_decision.get("reason"),
-        }
-        if support_subturn:
-            guard_result["support_subturn"] = True
-            guard_result["semantic_step"] = semantic_step
-            guard_result["support_subturn_index"] = support_subturns_used + 1
-        enrich_repeated_tool_guard_feedback(guard_result, planner_decision, validation_repeat)
-        append_agent_event(job_id, "planner_decision_rejected", guard_result["summary"], guard_result, step=step_number)
-        row = {
-            "step": step_number,
-            "decision": {"action": "continue_required", "reason": "repeat guard rejected planner proposal"},
-            "tool_result": guard_result,
-        }
-        if support_subturn:
-            mark_support_subturn(row, semantic_step=semantic_step)
-        loop_state.append_history_row(row)
-        persist_loop_turn_memory(row)
-        write_agent_job_state(state)
-
-    def execute_validated_tool_decision(step_number: int, planner_decision: dict[str, Any], substep: int | None = None) -> dict[str, Any] | None:
-        tool = normalize_tool_name(str(planner_decision.get("tool") or ""))
-        args = _dict_field(planner_decision, "arguments")
-        internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
-        is_support_subturn = support_subturn_decision(planner_decision)
-        semantic_step = semantic_step_for_physical_step(step_number)
-        if repeated_tool_call_count(history, tool, internal_args) >= 2:
-            append_repeat_guard_result(step_number, planner_decision, tool, internal_args)
-            return None
-        cache_key = _tool_cache_key(tool, internal_args)
-        if cache_key:
-            hit = _tool_cache_hit(history, tool, internal_args)
-            if hit:
-                cached_result = _cached_tool_result(hit, cache_key)
-                append_cached_tool_result(step_number, planner_decision, {
-                    "tool": tool,
-                    "arguments": internal_args,
-                    "cache_key": cache_key,
-                    "result": cached_result,
-                })
-                return None
-
-        allowed, block_reason = _agentic_tool_allowed(tool, internal_args, approval_mode)
-        if not allowed:
-            append_agent_event(job_id, "tool_blocked", block_reason, {"tool": tool}, step=step_number)
-            return finalize_agentic_job(
-                job_id, state, "blocked_needs_consent", block_reason,
-                {"history": history, "blocked_tool": tool},
-            )
-
-        event_payload = {"tool": tool, "arguments": internal_args}
-        if is_support_subturn:
-            event_payload["support_subturn"] = True
-            event_payload["semantic_step"] = semantic_step
-        if substep is not None:
-            event_payload["substep"] = substep
-        state["status_message"] = f"executing {tool}"
-        write_agent_job_state(state)
-        append_agent_event(job_id, "tool_start", f"Executing {tool}", event_payload, step=step_number)
-
-        result = dispatch_tool(
-            tool, internal_args, root,
-            allow_command=True,
-            user_consent=str(original_args.get("user_consent") or state.get("user_consent") or ""),
-        )
-        suffix = f"-{substep:02d}" if substep is not None else ""
-        tool_result_path = root / "tool-results" / f"step-{step_number:03d}{suffix}-{tool}.json"
-        write_json(tool_result_path, result)
-        compact_result = compact_tool_result_for_planner(tool, result if isinstance(result, dict) else {})
-        compact_result["artifact"] = str(tool_result_path)
-        if is_support_subturn:
-            compact_result["support_subturn"] = True
-            compact_result["semantic_step"] = semantic_step
-        if substep is not None:
-            compact_result["substep"] = substep
-        if cache_key and bool(compact_result.get("ok")):
-            compact_result["cache_key"] = cache_key
-        append_agent_event(job_id, "tool_result", f"{tool} ok={bool(result.get('ok'))}", compact_result, step=step_number)
-        row = {
-            "step": step_number,
-            "decision": {k: v for k, v in planner_decision.items() if k != "raw_planner_text_preview"},
-            "tool_result": compact_result,
-        }
-        if substep is not None:
-            row["substep"] = substep
-        if is_support_subturn:
-            mark_support_subturn(row, semantic_step=semantic_step)
-        loop_state.append_history_row(row, update_evidence=False)
-        persist_loop_turn_memory(row)
-        write_agent_job_state(state)
-        return None
-
-    def match_micro_batch_action(
-        micro_batch_contract: dict[str, Any],
-        *,
-        tool: str,
-        internal_args: dict[str, Any],
-    ) -> dict[str, Any]:
-        actions = micro_batch_contract.get("allowed_batch_actions")
-        if not isinstance(actions, list):
-            return {}
-        wanted_tool = normalize_tool_name(str(tool or ""))
-        wanted_args_key = _canonical_batch_args(internal_args)
-        for action in actions:
-            if not isinstance(action, dict):
-                continue
-            candidate_tool = normalize_tool_name(str(action.get("tool") or ""))
-            if candidate_tool != wanted_tool:
-                continue
-            candidate_raw_args = (
-                action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
-            )
-            candidate_args = sanitize_tool_args(
-                candidate_tool,
-                dict(candidate_raw_args),
-                original_args,
-                public_tool_name,
-            )
-            if _canonical_batch_args(candidate_args) == wanted_args_key:
-                return action
-        return {}
+    # support_subturn_decision → loop_controller.support_subturn_decision()
+    # semantic_step_for_physical_step → loop_controller.semantic_step_for_physical_step()
+    # mark_support_subturn → loop_controller.mark_support_subturn()
+    # force_terminal_decision_active → loop_controller.force_terminal_decision_active()
+    # final_quality_guided_route_available → loop_controller.final_quality_guided_route_available()
+    # runtime_debug_packet → loop_controller.build_runtime_debug_packet()
+    # persist_loop_turn_memory → loop_controller.persist_turn_memory()
+    # _coverage_satisfied → loop_controller.coverage_satisfied()
+    # _missing_owner_paths → loop_controller.missing_owner_paths()
+    # _dict_field → loop_controller.dict_field()
+    # _list_field → loop_controller.list_field()
 
     state.update({
         "status": "running_agentic",
@@ -1747,95 +1370,63 @@ def run_agentic_planner_job(
             else {}
         )
         memory_claim_text = _decision_memory_claim_text(decision)
-        if _planner_memory_false_unavailable_claim(memory_claim_text, planner_memory_snapshot):
-            retry_limit = (
-                AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES
-                if semantic_step < max_steps else 0
+
+        # Phase 2: Replace inline memory claim guard with GuardEvaluator
+        memory_claim_guard = guard_evaluator.evaluate_memory_claim_guard(
+            memory_claim_text=memory_claim_text,
+            decision=decision,
+            validation=validation if 'validation' in dir() else {},
+            history=history,
+            step=step,
+            job_id=job_id,
+            goal=str(state.get("goal") or ""),
+            planner_memory_snapshot=planner_memory_snapshot,
+        )
+        if memory_claim_guard and not memory_claim_guard.get("should_finalize"):
+            guard_result = memory_claim_guard["guard_result"]
+            append_agent_event(
+                job_id,
+                "planner_decision_rejected",
+                guard_result["summary"],
+                guard_result,
+                step=step,
             )
-            retry_count = _planner_incomprehensible_retry_count(history)
-            if int(retry_limit or 0) > 0 and retry_count < int(retry_limit):
-                guard_result = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "planner_memory_false_unavailable_claim",
-                    "summary": "planner_memory_available_but_planner_claimed_unavailable",
-                    "classification": "planner_memory_false_unavailable_claim_retryable",
-                    "retry_count": retry_count,
-                    "retry_limit": int(retry_limit or 0),
-                    "raw_planner_text_preview": memory_claim_text[:4000],
-                    "planner_memory": {
-                        "available": True,
-                        "record_count": planner_memory_snapshot.get("record_count", 0),
-                        "source": planner_memory_snapshot.get("source"),
-                    },
-                    "next_instruction": (
-                        "planner_memory is available; do not claim long-term memory is unavailable; "
-                        "repeat as one pure JSON object; use/cite intrinsic_context and planner_memory first; "
-                        "call runtime_sqlite_memory_search only for a named selective gap"
-                    ),
-                    "rejected_decision": {
-                        k: decision.get(k)
-                        for k in ("action", "tool", "arguments", "reason", "final_answer")
-                        if decision.get(k) not in (None, "", [], {})
-                    },
-                    "runtime_debug_packet": runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        evidence_contract=contract_snapshot,
-                        extra={"guard_type": "planner_memory_false_unavailable_claim"},
-                    ),
-                }
-                append_agent_event(
-                    job_id,
-                    "planner_decision_rejected",
-                    guard_result["summary"],
-                    guard_result,
-                    step=step,
-                )
-                row = {
-                    "step": step,
-                    "decision": {
-                        "action": "continue_required",
-                        "reason": "planner falsely claimed long-term memory unavailable",
-                        "rejected_decision": guard_result["rejected_decision"],
-                    },
-                    "tool_result": guard_result,
-                }
-                loop_state.append_history_row(row)
-                state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
-                    str(state.get("goal") or ""),
-                    history,
-                    planner_memory_snapshot,
-                )
-                persist_loop_turn_memory(row)
-                write_agent_job_state(state)
-                continue
+            row = {
+                "step": step,
+                "decision": {
+                    "action": "continue_required",
+                    "reason": "planner falsely claimed long-term memory unavailable",
+                    "rejected_decision": guard_result["rejected_decision"],
+                },
+                "tool_result": guard_result,
+            }
+            loop_state.append_history_row(row)
+            state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
+                str(state.get("goal") or ""),
+                history,
+                planner_memory_snapshot,
+            )
+            persist_loop_turn_memory(row)
+            write_agent_job_state(state)
+            continue
+        elif memory_claim_guard and memory_claim_guard.get("should_finalize"):
             return finalize_agentic_job(
                 job_id,
                 state,
-                "blocked_needs_attention",
-                (
-                    "Planner claimed long-term memory is unavailable even though "
-                    "the controller injected planner_memory.available=true."
-                ),
-                {
+                memory_claim_guard["final_status"],
+                memory_claim_guard["final_reason"],
+                memory_claim_guard.get("final_extra", {
                     "history": history,
                     "blocked_by": "planner_memory_false_unavailable_claim",
                     "planner_decision": decision,
-                    "agent_flow_diagnostics": _agent_flow_diagnostics(
-                        str(state.get("goal") or ""),
-                        history,
-                        planner_memory_snapshot,
-                    ),
-                },
+                }),
             )
 
         if (
             str(decision.get("action") or "").strip().lower() == "tool_batch"
-            and not force_terminal_decision_active()
+            and not loop_controller.force_terminal_decision_active(semantic_step, max_steps)
         ):
-            calls = _list_field(decision, "tool_calls")
+            calls = loop_controller.list_field(decision, "tool_calls")
             batch_decisions: list[dict[str, Any]] = []
             batch_guard: dict[str, Any] = {}
             batch_evidence_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
@@ -2284,28 +1875,20 @@ def run_agentic_planner_job(
                     else []
                 )
             }
-            if support_subturn_decision(decision):
-                rejection_signature = _controller_guard_rejection_signature(validation, decision)
-                repeated_rejection_count = _controller_guard_rejection_signature_count(
-                    history,
-                    rejection_signature,
-                )
-                repeated_rejection_limit = max(1, int(retry_limit or 0))
-                guard_result = controller_guard_result_for_validation(
-                    validation,
-                    decision,
-                    job_id=job_id,
+
+            # Phase 2: Replace inline support_subturn guard with GuardEvaluator
+            if loop_controller.support_subturn_decision(decision):
+                support_guard = guard_evaluator.evaluate_support_subturn_guard(
+                    decision=decision,
+                    validation=validation,
+                    history=history,
                     step=step,
+                    semantic_step=semantic_step,
+                    support_subturns_used=loop_controller.support_subturns_used,
+                    job_id=job_id,
                     goal=str(state.get("goal") or ""),
                 )
-                guard_result["guard_type"] = "support_subturn_validation_failed"
-                guard_result["summary"] = "support_subturn_validation_failed"
-                guard_result["support_subturn"] = True
-                guard_result["semantic_step"] = semantic_step
-                guard_result["support_subturn_index"] = support_subturns_used + 1
-                guard_result["invalid_decision_signature"] = rejection_signature
-                guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
-                guard_result["retry_limit"] = repeated_rejection_limit
+                guard_result = support_guard["guard_result"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
@@ -2322,30 +1905,22 @@ def run_agentic_planner_job(
                     },
                     "tool_result": guard_result,
                 }
-                mark_support_subturn(row, semantic_step=semantic_step)
+                loop_controller.mark_support_subturn(row, semantic_step=semantic_step)
                 loop_state.append_history_row(row)
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
-                if repeated_rejection_count >= repeated_rejection_limit:
+                if not support_guard.get("should_continue", True):
                     return finalize_agentic_job(
                         job_id,
                         state,
-                        "blocked_needs_attention",
-                        (
-                            "support_subturn_validation_failed_repeated: planner repeated the same "
-                            "invalid support primitive after validator feedback."
-                        ),
-                        {
+                        support_guard["final_status"],
+                        support_guard["final_reason"],
+                        support_guard.get("final_extra", {
                             "history": history,
                             "blocked_by": "support_subturn_validation_failed_repeated",
                             "planner_decision": decision,
                             "validation": validation,
-                            "semantic_step": semantic_step,
-                            "support_subturns_used": support_subturns_used,
-                            "support_semantic_turns_used": support_semantic_turns_used,
-                            "invalid_decision_signature": rejection_signature,
-                            "invalid_decision_repeat_count": repeated_rejection_count + 1,
-                        },
+                        }),
                     )
                 continue
             if "planner_native_tool_call_required" in validation_violations:
@@ -3273,8 +2848,8 @@ def run_agentic_planner_job(
         # structured evidence and decide whether to continue, read more, or final.
 
     terminal_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
-    if not _coverage_satisfied(terminal_contract):
-        missing_paths = _missing_owner_paths(terminal_contract)
+    if not loop_controller.coverage_satisfied(terminal_contract):
+        missing_paths = loop_controller.missing_owner_paths(terminal_contract)
         return finalize_agentic_job(
             job_id,
             state,
