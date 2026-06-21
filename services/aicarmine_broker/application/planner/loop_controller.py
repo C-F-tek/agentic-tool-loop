@@ -340,12 +340,34 @@ class PlannerLoopController:
     # Context Building Methods
     # ==================================================================
 
+    def get_semantic_step(self, physical_step: int) -> int:
+        """Calculate semantic step from physical step, accounting for support turns.
+
+        Used at the top of the main loop before any planner decision exists.
+        This is the minimal form needed for semantic step budgeting.
+        """
+        try:
+            physical_step_int = max(1, int(physical_step))
+        except (TypeError, ValueError):
+            physical_step_int = 1
+        counted_support_turns = self.support_semantic_turns_used
+        if physical_step_int in self.support_semantic_steps_marked:
+            counted_support_turns = max(0, counted_support_turns - 1)
+        return max(1, physical_step_int - counted_support_turns)
+
     def build_support_subturn_context(
         self,
         step_number: int,
         decision: dict[str, Any],
     ) -> dict[str, Any]:
         """Build context for support subturn detection.
+
+        Requires a full decision dict (not None) since it determines
+        is_support_subturn status. Called AFTER planner_decision().
+
+        Args:
+            step_number: Physical step number.
+            decision: The planner decision dict (must be non-None).
 
         Returns dict with support_subturn info and semantic_step calculation.
         """
@@ -412,5 +434,92 @@ class PlannerLoopController:
         value = mapping.get(key)
         return list(value) if isinstance(value, list) else []
 
+    # ==================================================================
+    # Cached Tool Result Helpers
+    # ==================================================================
 
-from ...tool_contract import normalize_tool_name, sanitize_tool_args
+    def append_cached_tool_result(
+        self,
+        step: int,
+        decision: dict[str, Any],
+        cached_info: dict[str, Any],
+    ) -> None:
+        """Append cached tool result event and continue loop."""
+        from ...tool_dispatch import dispatch_tool  # noqa
+        from ...tool_contract import normalize_tool_name, sanitize_tool_args  # noqa
+
+        self._append_agent_event(
+            self.job_id,
+            "tool_cache_hit",
+            f"Cache hit for {cached_info.get('tool', '')}.",
+            cached_info,
+            step=step,
+        )
+
+    def match_micro_batch_action(
+        self,
+        micro_batch_contract: dict[str, Any],
+        tool: str,
+        internal_args: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Match a tool call against micro batch contract actions."""
+        actions = micro_batch_contract.get("actions") if isinstance(micro_batch_contract.get("actions"), list) else []
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            if str(action.get("tool")) == str(tool):
+                action_args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+                # Simple matching: check if tool names match
+                return action
+        return None
+
+    # ==================================================================
+    # Validation Enrichment Methods
+    # ==================================================================
+
+    def enrich_validation_with_replan_specialist(
+        self,
+        step: int,
+        decision: dict[str, Any],
+        validation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Enrich validation with replan specialist feedback."""
+        replanner = self.deps.get("planner_replan_specialist_for_validation")
+        if replanner and isinstance(validation, dict):
+            try:
+                enriched = replanner(
+                    goal=str(self.state.get("goal") or ""),
+                    step=step,
+                    decision=decision,
+                    validation=validation,
+                    history=self.history,
+                )
+                if isinstance(enriched, dict):
+                    return enriched
+            except Exception:
+                pass
+        return validation
+
+    def enrich_repeated_tool_guard_feedback(
+        self,
+        step: int,
+        decision: dict[str, Any],
+        validation: dict[str, Any],
+        history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Enrich repeated tool guard with specialist feedback."""
+        replanner = self.deps.get("planner_replan_specialist_for_validation")
+        if replanner and isinstance(validation, dict):
+            try:
+                enriched = replanner(
+                    goal=str(self.state.get("goal") or ""),
+                    step=step,
+                    decision=decision,
+                    validation=validation,
+                    history=history,
+                )
+                if isinstance(enriched, dict):
+                    return enriched
+            except Exception:
+                pass
+        return validation

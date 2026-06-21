@@ -937,7 +937,7 @@ def run_agentic_planner_job(
             "tool_result": compact_preseed,
         }
         loop_state.append_history_row(row)
-        persist_loop_turn_memory(row)
+        loop_controller.persist_turn_memory(row)
         update_initial_orientation_state()
         return preseed_result if isinstance(preseed_result, dict) else {}, compact_preseed
 
@@ -1080,7 +1080,7 @@ def run_agentic_planner_job(
                 },
             }
             loop_state.append_history_row(row)
-            persist_loop_turn_memory(row)
+            loop_controller.persist_turn_memory(row)
             write_agent_job_state(state)
             # Continue with deterministic RAG preseed instead of blocking
             preplanner_plan = None
@@ -1175,7 +1175,7 @@ def run_agentic_planner_job(
                 preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
 
     for step in itertools.count(1):
-        semantic_step = loop_controller.build_support_subturn_context(step).get("semantic_step", step)
+        semantic_step = loop_controller.get_semantic_step(step)
         if semantic_step > max_steps:
             break
         state = load_agent_job_state(job_id) or state
@@ -1406,7 +1406,7 @@ def run_agentic_planner_job(
                 history,
                 planner_memory_snapshot,
             )
-            persist_loop_turn_memory(row)
+            loop_controller.persist_turn_memory(row)
             write_agent_job_state(state)
             continue
         elif memory_claim_guard and memory_claim_guard.get("should_finalize"):
@@ -1444,7 +1444,7 @@ def run_agentic_planner_job(
                     "guard_type": "native_tool_batch_invalid",
                     "summary": "native_tool_batch_empty",
                     "violations": ["native_tool_batch_empty"],
-                    "runtime_debug_packet": runtime_debug_packet(
+                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                         step_number=step,
                         phase="CONTROLLER_GUARD",
                         planner_decision=decision,
@@ -1464,7 +1464,7 @@ def run_agentic_planner_job(
                     "violations": ["native_tool_batch_too_large"],
                     "native_tool_call_count": len(calls),
                     "native_tool_call_limit": int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1),
-                    "runtime_debug_packet": runtime_debug_packet(
+                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                         step_number=step,
                         phase="CONTROLLER_GUARD",
                         planner_decision=decision,
@@ -1484,7 +1484,7 @@ def run_agentic_planner_job(
                     "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
                     "micro_batch_contract": micro_batch_contract,
                     "native_tool_call_count": len(calls),
-                    "runtime_debug_packet": runtime_debug_packet(
+                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                         step_number=step,
                         phase="CONTROLLER_GUARD",
                         planner_decision=decision,
@@ -1504,7 +1504,7 @@ def run_agentic_planner_job(
                             "guard_type": "native_tool_batch_invalid",
                             "summary": "native_tool_batch_call_invalid",
                             "violations": ["native_tool_batch_call_invalid"],
-                            "runtime_debug_packet": runtime_debug_packet(
+                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                                 step_number=step,
                                 phase="CONTROLLER_GUARD",
                                 planner_decision=decision,
@@ -1546,7 +1546,7 @@ def run_agentic_planner_job(
                             "summary": "native_tool_batch_duplicate_call",
                             "violations": ["native_tool_batch_duplicate_call"],
                             "rejected_decision": call_decision,
-                            "runtime_debug_packet": runtime_debug_packet(
+                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                                 step_number=step,
                                 phase="CONTROLLER_GUARD",
                                 planner_decision=call_decision,
@@ -1559,7 +1559,7 @@ def run_agentic_planner_job(
                         }
                         break
                     used_micro_batch_call_signatures.add(call_signature)
-                    matched_action = match_micro_batch_action(
+                    matched_action = loop_controller.match_micro_batch_action(
                         micro_batch_contract,
                         tool=call_decision["tool"],
                         internal_args=internal_args,
@@ -1573,7 +1573,7 @@ def run_agentic_planner_job(
                             "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
                             "rejected_decision": call_decision,
                             "micro_batch_contract": micro_batch_contract,
-                            "runtime_debug_packet": runtime_debug_packet(
+                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                                 step_number=step,
                                 phase="CONTROLLER_GUARD",
                                 planner_decision=call_decision,
@@ -1606,7 +1606,7 @@ def run_agentic_planner_job(
                             "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
                             "rejected_decision": call_decision,
                             "micro_batch_action_id": action_id,
-                            "runtime_debug_packet": runtime_debug_packet(
+                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                                 step_number=step,
                                 phase="CONTROLLER_GUARD",
                                 planner_decision=call_decision,
@@ -1629,7 +1629,7 @@ def run_agentic_planner_job(
                             "summary": "native_tool_batch_requires_readonly_tools_only",
                             "violations": ["native_tool_batch_non_readonly"],
                             "rejected_decision": call_decision,
-                            "runtime_debug_packet": runtime_debug_packet(
+                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                                 step_number=step,
                                 phase="CONTROLLER_GUARD",
                                 planner_decision=call_decision,
@@ -1679,7 +1679,7 @@ def run_agentic_planner_job(
                                     "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
                                     "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
                                     "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
-                                    "runtime_debug_packet": runtime_debug_packet(
+                                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                                         step_number=step,
                                         phase="CONTROLLER_GUARD",
                                         planner_decision=call_decision,
@@ -1726,7 +1726,7 @@ def run_agentic_planner_job(
                     "tool_result": batch_guard,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             elif batch_decisions:
@@ -1746,7 +1746,7 @@ def run_agentic_planner_job(
                     step=step,
                 )
                 for idx, batch_decision in enumerate(batch_decisions, start=1):
-                    terminal = execute_validated_tool_decision(step, batch_decision, substep=idx)
+                    terminal = loop_controller.execute_step(step, batch_decision, substep=idx)
                     if terminal is not None:
                         return terminal
                 continue
@@ -1755,7 +1755,7 @@ def run_agentic_planner_job(
             str(state.get("goal") or ""), decision, history
         )
         if not validation.get("ok"):
-            if force_terminal_decision_active():
+            if loop_controller.force_terminal_decision_active(semantic_step, max_steps):
                 planner_memory_snapshot = (
                     state.get("planner_memory_surface")
                     if isinstance(state.get("planner_memory_surface"), dict)
@@ -1773,7 +1773,7 @@ def run_agentic_planner_job(
                     "guided_terminal_final_quality_route",
                 )
                 if (
-                    final_quality_guided_route_available(validation)
+                    loop_controller.final_quality_guided_route_available(validation)
                     and prior_final_quality_routes < 1
                 ):
                     guard_result["guard_type"] = "guided_terminal_final_quality_route"
@@ -1802,9 +1802,9 @@ def run_agentic_planner_job(
                         },
                         "tool_result": guard_result,
                     }
-                    mark_support_subturn(row, semantic_step=semantic_step)
+                    loop_controller.mark_support_subturn(row, semantic_step=semantic_step)
                     loop_state.append_history_row(row)
-                    persist_loop_turn_memory(row)
+                    loop_controller.persist_turn_memory(row)
                     write_agent_job_state(state)
                     continue
                 guard_result["guard_type"] = "guided_terminal_decision_validation_failed"
@@ -1830,7 +1830,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 return finalize_agentic_job(
                     job_id,
@@ -1907,7 +1907,7 @@ def run_agentic_planner_job(
                 }
                 loop_controller.mark_support_subturn(row, semantic_step=semantic_step)
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 if not support_guard.get("should_continue", True):
                     return finalize_agentic_job(
@@ -1965,7 +1965,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             # Phase 2: Replace inline memory_claim (raw_planner_text) guard with GuardEvaluator
@@ -2003,7 +2003,7 @@ def run_agentic_planner_job(
                     history,
                     planner_memory_snapshot,
                 )
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             elif memory_claim_guard2 and memory_claim_guard2.get("should_finalize"):
@@ -2055,7 +2055,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
 
@@ -2092,7 +2092,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 return finalize_agentic_job(
                     job_id,
@@ -2136,7 +2136,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 return finalize_agentic_job(
                     job_id,
@@ -2200,7 +2200,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 return finalize_agentic_job(
                     job_id,
@@ -2274,7 +2274,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
             
@@ -2333,7 +2333,7 @@ def run_agentic_planner_job(
                 "tool_result": guard_result,
             }
             loop_state.append_history_row(row)
-            persist_loop_turn_memory(row)
+            loop_controller.persist_turn_memory(row)
             write_agent_job_state(state)
             continue
             if "planner_native_mode_non_json_output" in validation_violations:
@@ -2392,7 +2392,7 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
 
@@ -2508,7 +2508,7 @@ def run_agentic_planner_job(
                         "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
                         "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
                         "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
-                        "runtime_debug_packet": runtime_debug_packet(
+                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
                             step_number=step,
                             phase="CONTROLLER_GUARD",
                             planner_decision=decision,
@@ -2532,7 +2532,7 @@ def run_agentic_planner_job(
                     },
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 if repaired_validation.get("ok"):
                     decision = repaired_decision
@@ -2604,11 +2604,11 @@ def run_agentic_planner_job(
                     "tool_result": guard_result,
                 }
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
                 loop_state.append_history_row(row)
-                persist_loop_turn_memory(row)
+                loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
 
@@ -2676,7 +2676,7 @@ def run_agentic_planner_job(
                 },
             }
             loop_state.append_history_row(repeat_guard_row)
-            persist_loop_turn_memory(repeat_guard_row)
+            loop_controller.persist_turn_memory(repeat_guard_row)
             write_agent_job_state(state)
             continue
 
@@ -2739,7 +2739,7 @@ def run_agentic_planner_job(
         if is_support_subturn:
             loop_controller.mark_support_subturn(row, semantic_step=semantic_step)
         loop_state.append_history_row(row, update_evidence=False)
-        persist_loop_turn_memory(row)
+        loop_controller.persist_turn_memory(row)
         write_agent_job_state(state)
 
         # No controller_auto_final here: the next planner step must inspect the
