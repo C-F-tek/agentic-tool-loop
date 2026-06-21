@@ -12,6 +12,18 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     required_next_tool_call_satisfaction,
 )
 from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
+from aicarmine_broker.application.shared.validation_utils import (
+    _list_or_empty,
+    _repo_path_is_concrete,
+    _coalesce_repo_read_paths,
+    _final_quality_repo_read_allowlist,
+    _collect_repo_paths,
+    _known_contract_repo_paths,
+    _known_contract_repo_dirs,
+    _route_token_is_prose_or_metric,
+    _search_query_is_concrete,
+    _required_next_route_has_deterministic_proof,
+)
 
 
 def _list_or_empty(value: Any) -> list[Any]:

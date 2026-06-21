@@ -21,6 +21,7 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     required_next_tool_call_satisfaction,
 )
 from aicarmine_broker.planner_core.cache import CACHEABLE_READ_TOOLS
+from aicarmine_broker.application.shared.evidence_builder import BaseEvidenceBuilder
 
 
 POST_WRITE_VALIDATION_TOOLS = frozenset({
@@ -400,7 +401,7 @@ def _post_write_validation_contract(
 
 
 @dataclass(frozen=True)
-class EvidenceBuilder:
+class EvidenceBuilder(BaseEvidenceBuilder):
     """Owner for planner evidence contract construction."""
 
     _deps: Mapping[str, Any]
