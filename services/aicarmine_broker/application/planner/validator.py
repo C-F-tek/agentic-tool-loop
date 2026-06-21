@@ -142,6 +142,23 @@ def _escalate_final_rewrite_retry_count(
     has_gap_route: bool,
 ) -> dict[str, Any]:
     contract = contract if isinstance(contract, dict) else {}
+    
+    # Check cuda_rewrite stuck count - force terminal block if exceeded
+    MAX_CUDA_REWRITE_ATTEMPTS = 2
+    cuda_rewrite_count = int(contract.get("planner_rewrite_stuck_count") or 0)
+    if cuda_rewrite_count >= MAX_CUDA_REWRITE_ATTEMPTS:
+        contract["planner_cuda_rewrite_required"] = False
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["reason"] = "cuda_rewrite_max_attempts_exceeded"
+        contract["finalization_contract"] = final_contract
+        return contract
+    
     current_latch = str(contract.get("final_rewrite_latch") or "").strip().lower()
     if not current_latch:
         return contract
