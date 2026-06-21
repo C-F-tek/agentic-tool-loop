@@ -752,7 +752,9 @@ def repo_analysis_final_answer_quality(
     ]
     core_hits = _path_hit_count(stripped, core_paths)
 
-    min_chars = 2200 if len(rows) >= 5 else 900
+    from services.aicarmine_broker.config.entry_points_config import EvidenceContractThresholds
+    thresholds = EvidenceContractThresholds()
+    min_chars = thresholds.min_chars  # 1500
     pathish_evidence = {
         p for p in paths
         if p and ("/" in p or p.endswith((".md", ".py", ".json", ".ps1", ".toml", ".txt")))
