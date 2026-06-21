@@ -768,6 +768,33 @@ def repo_analysis_final_answer_quality(
         violations.append(f"repo_analysis_final_too_short:{len(stripped)}/{min_chars}")
     if path_hits < min_path_hits:
         violations.append(f"repo_analysis_final_missing_concrete_paths:{path_hits}/{min_path_hits}")
+    
+    # ENTRY POINT CHECK: Entry points defined in contract at mount point
+    # Extract entry points from contract's minimum_read_coverage.covered_owner_paths
+    # If no entry points specified, skip this validation
+    entry_points_contract = contract.get("entry_points") if isinstance(contract, dict) else None
+    if entry_points_contract and isinstance(entry_points_contract, dict):
+        verified_content_reads = (
+            contract.get("verified_content_reads")
+            if isinstance(contract, dict) and isinstance(contract.get("verified_content_reads"), list)
+            else []
+        )
+        existing_entry_points = set()
+        for ep_path in entry_points_contract.values():
+            if isinstance(ep_path, str):
+                if ep_path in verified_content_reads:
+                    existing_entry_points.add(ep_path)
+                elif any(ep_path in str(p) for p in paths):
+                    existing_entry_points.add(ep_path)
+        
+        if existing_entry_points:
+            missing_entry_points = [
+                ep for ep in existing_entry_points
+                if ep not in verified_content_reads
+            ]
+            if missing_entry_points:
+                violations.append(f"missing_entry_point:{','.join(missing_entry_points)}")
+    
     if core_paths and core_hits < min(2, len(core_paths)):
         violations.append(f"repo_analysis_final_missing_core_candidate_paths:{core_hits}/{min(2, len(core_paths))}")
     if not _concept_present(

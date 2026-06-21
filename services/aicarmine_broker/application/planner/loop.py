@@ -2860,11 +2860,22 @@ def run_agentic_planner_job(
                     },
                 )
 
+            # FASE 4: Controller Guard Monitoring - Alert quando reject_count alto
             rejection_signature = _controller_guard_rejection_signature(validation, decision)
             repeated_rejection_count = _controller_guard_rejection_signature_count(
                 history,
                 rejection_signature,
             )
+            
+            # EARLY WARNING: Monitor controller guard count
+            high_guard_count_threshold = 2
+            if repeated_rejection_count >= high_guard_count_threshold:
+                import logging
+                logging.warning(
+                    f"High controller guard count detected: {repeated_rejection_count}. "
+                    f"This may indicate repeated rejections that could lead to terminal block."
+                )
+            
             repeated_rejection_limit = max(1, int(retry_limit or 0))
             if repeated_rejection_count >= repeated_rejection_limit:
                 guard_result = controller_guard_result_for_validation(

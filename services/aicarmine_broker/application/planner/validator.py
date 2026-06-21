@@ -143,6 +143,15 @@ def _escalate_final_rewrite_retry_count(
 
     reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
     contract["planner_final_quality_reject_count"] = reject_count
+    
+    # EARLY WARNING: Alert when first rejection occurs
+    if reject_count >= 1:
+        import logging
+        logging.warning(
+            f"Terminal block risk detected: reject_count={reject_count}. "
+            f"Ensure entry points are verified before finalizing."
+        )
+    
     next_latch = _next_final_rewrite_latch(
         current_latch,
         reject_count=reject_count,

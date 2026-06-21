@@ -2301,10 +2301,20 @@ class EvidenceBuilder:
                     ):
                         if key in overlay_final_contract:
                             final_contract[key] = overlay_final_contract.get(key)
-                if latest_evidence_contract_overlay.get("planner_may_choose_final") is False:
-                    final_contract["final_allowed"] = False
-                    final_contract["planner_may_choose_final"] = False
-                    final_contract["reason"] = final_contract.get("reason") or "planner_cuda_rewrite_required"
+                # SURFACE LOCK MANAGEMENT: Clear lock when violations resolved
+                def _clear_surface_lock_if_safe(contract, validation):
+                    """Clear surface lock se tutte le violazioni sono risolte."""
+                    violations = validation.get("violations") or []
+                    if not violations:
+                        # Nessuna violazione → safe to clear lock
+                        if contract.get("surface_lock_reason"):
+                            contract["surface_lock_reason"] = None
+                        if contract.get("final_rewrite_latch") == "terminal_block_required":
+                            contract["final_rewrite_latch"] = "inactive"
+                
+                # Apply surface lock management after overlay processing
+                if latest_evidence_contract_overlay:
+                    _clear_surface_lock_if_safe(contract, latest_evidence_contract_overlay)
                 if "planner_may_choose_block" in latest_evidence_contract_overlay:
                     final_contract["planner_may_choose_block"] = bool(
                         latest_evidence_contract_overlay.get("planner_may_choose_block")
