@@ -1552,7 +1552,7 @@ def run_agentic_planner_job(
                 preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
 
     for step in itertools.count(1):
-        semantic_step = semantic_step_for_physical_step(step)
+        semantic_step = loop_controller.build_support_subturn_context(step).get("semantic_step", step)
         if semantic_step > max_steps:
             break
         state = load_agent_job_state(job_id) or state
@@ -1560,7 +1560,7 @@ def run_agentic_planner_job(
             return finalize_agentic_job(job_id, state, "cancelled", "Job cancelled.", {"history": history})
 
         goal_text = str(state.get("goal") or "")
-        step_budget_guidance = planner_step_budget_guidance(semantic_step)
+        step_budget_guidance = loop_controller.build_step_budget_guidance(semantic_step)
         if step_budget_guidance:
             state["planner_step_budget_guidance"] = step_budget_guidance
         else:
