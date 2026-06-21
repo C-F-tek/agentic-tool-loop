@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aicarmine-services"
+version = "2026.06.01"
+description = "AI-Carmine Services Package - Internal tool broker and related utilities"
+requires-python = ">=3.10"
+dependencies = [
+    # Core web framework
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0",
+    "httpx>=0.25.0",
+    
+    # Data validation and serialization
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "jsonschema>=4.0.0",
+    
+    # HTTP clients and async support
+    "anyio>=4.0.0",
+    "h11>=0.14.0",
+    "httptools>=0.5.0",
+    "orjson>=3.9.0",
+    
+    # Git and file operations
+    "GitPython>=3.1.0",
+    "peewee>=3.16.0",
+    
+    # Configuration and environment
+    "python-dotenv>=1.0.0",
+    "click>=8.0.0",
+    
+    # Testing and development
+    "pytest>=7.0.0",
+    "hypothesis>=6.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    
+    # Tree-sitter for code analysis
+    "tree-sitter>=0.20.0",
+    "tree-sitter-languages>=1.0.0",
+    
+    # YAML and data processing
+    "ruamel.yaml>=0.17.0",
+    "boltons>=21.0.0",
+    
+    # Rich console output
+    "rich>=13.0.0",
+    
+    # Type checking
+    "pyright>=1.1.0",
+    
+    # Optional but useful packages
+    "mcp>=1.0.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "loguru>=0.7.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["services*"]
+
+[tool.setuptools]
+py-modules = ["services"]

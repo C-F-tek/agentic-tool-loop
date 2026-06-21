@@ -2,6 +2,8 @@
 venvs/**
 !venvs/
 !venvs/README.md
+!.venvmapping.env
+!venvs/pyproject.toml
 .venv/
 env/
 node_modules/

@@ -1,7 +1,12 @@
 """Test suite per discovery entry point dinamico."""
 
-import pytest
+import sys
 from pathlib import Path
+
+# Aggiungi services al path per imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "services"))
+
+import pytest
 
 from services.aicarmine_broker.application.evidence.entry_point_analyzer import EntryPointAnalyzer
 from services.aicarmine_broker.application.evidence.entry_point_info import EntryPointInfo

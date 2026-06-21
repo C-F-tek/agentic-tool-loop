@@ -624,7 +624,57 @@ Local patch experiments and proof artifacts.
 
 ### [venvs/](venvs/)
 
-Local Python virtual environments.
+Local Python virtual environments with isolated dependencies per tool family.
+
+**Active Venvs:**
+
+| Name | Purpose | Primary Tools | Python Path |
+|------|---------|---------------|-------------|
+| **labtools** | Internal broker, planner, validator, dispatcher | `repo_*`, `planner_*`, `validator_*` | `venvs/labtools/Scripts/python.exe` |
+| **codeinterpreter** | Jupyter execution, code analysis | `jupyter_execute`, `code_interpreter` | `venvs/codeinterpreter/Scripts/python.exe` |
+| **executor** | Command execution, safe runner | `terminal_run_command_wait`, `repo_command` | `venvs/executor/Scripts/python.exe` |
+| **openwebui** | UI dashboard, public API surface | `vulkan_helper`, `openwebui` | `venvs/openwebui/Scripts/python.exe` |
+| **openvino** | CPU inference, reranking | `rerank`, `embedding`, `npu` | `venvs/openvino/Scripts/python.exe` |
+
+**Activation:**
+
+Use `activate-venv.ps1` to dynamically select the correct venv based on the tool being called:
+
+```powershell
+.\activate-venv.ps1 -tool <tool_name>
+.\activate-venv.ps1 -auto    # Auto-detect from current process
+```
+
+See [.venvmapping.env](.venvmapping.env) for the complete venv-to-tool mapping configuration.
+
+**Package Management:**
+
+Each venv maintains its own dependencies. Use the corresponding pip executable:
+
+```powershell
+& venvs/labtools/Scripts/pip.exe install <package>
+& venvs/codeinterpreter/Scripts/pip.exe install <package>
+& venvs/executor/Scripts/pip.exe install <package>
+& venvs/openwebui/Scripts/pip.exe install <package>
+& venvs/openvino/Scripts/pip.exe install <package>
+```
+
+The `aicarmine-services` package is installed as editable in all venvs via `pyproject.toml`:
+
+```toml
+[project]
+name = "aicarmine-services"
+version = "2026.06.01"
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0",
+    "pydantic>=2.0.0",
+    ...
+]
+```
+
+See [services/pyproject.toml](services/pyproject.toml) for the complete dependency list.
+
 
 ## Git Import Policy
 
