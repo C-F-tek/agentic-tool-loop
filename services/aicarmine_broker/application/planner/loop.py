@@ -1968,49 +1968,19 @@ def run_agentic_planner_job(
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
-            if (
-                _planner_memory_false_unavailable_claim(raw_planner_text, planner_memory_snapshot)
-                and int(retry_limit or 0) > 0
-                and _planner_incomprehensible_retry_count(history) < int(retry_limit)
-            ):
-                retry_count = _planner_incomprehensible_retry_count(history)
-                validation_for_debug = validation_without_full_evidence_contract(validation)
-                guard_result = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "planner_memory_false_unavailable_claim",
-                    "summary": "planner_memory_available_but_planner_claimed_unavailable",
-                    "classification": "plain_text_non_json_retryable",
-                    "retry_count": retry_count,
-                    "retry_limit": int(retry_limit or 0),
-                    "violations": validation.get("violations"),
-                    "raw_planner_text_preview": raw_planner_text[:4000],
-                    "planner_memory": {
-                        "available": True,
-                        "record_count": planner_memory_snapshot.get("record_count", 0),
-                        "source": planner_memory_snapshot.get("source"),
-                    },
-                    "next_instruction": (
-                        "planner_memory is available; do not claim long-term memory is unavailable; "
-                        "repeat as one pure JSON object and either use planner_memory, call a memory tool, "
-                        "or choose another evidence-bound action"
-                    ),
-                    "rejected_decision": {
-                        k: decision.get(k)
-                        for k in ("action", "tool", "arguments", "reason", "final_answer")
-                        if decision.get(k) not in (None, "", [], {})
-                    },
-                    "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
-                    "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
-                    "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
-                    "runtime_debug_packet": runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        validation=validation_for_debug,
-                        extra={"guard_type": "planner_memory_false_unavailable_claim"},
-                    ),
-                }
+            # Phase 2: Replace inline memory_claim (raw_planner_text) guard with GuardEvaluator
+            memory_claim_guard2 = guard_evaluator.evaluate_memory_claim_guard(
+                memory_claim_text=raw_planner_text,
+                decision=decision,
+                validation=validation,
+                history=history,
+                step=step,
+                job_id=job_id,
+                goal=str(state.get("goal") or ""),
+                planner_memory_snapshot=planner_memory_snapshot,
+            )
+            if memory_claim_guard2 and not memory_claim_guard2.get("should_finalize"):
+                guard_result = memory_claim_guard2["guard_result"]
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",
@@ -2036,6 +2006,18 @@ def run_agentic_planner_job(
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
+            elif memory_claim_guard2 and memory_claim_guard2.get("should_finalize"):
+                return finalize_agentic_job(
+                    job_id,
+                    state,
+                    memory_claim_guard2["final_status"],
+                    memory_claim_guard2["final_reason"],
+                    memory_claim_guard2.get("final_extra", {
+                        "history": history,
+                        "blocked_by": "planner_memory_false_unavailable_claim",
+                        "planner_decision": decision,
+                    }),
+                )
 
             if _should_retry_incomprehensible_planner_output(
                 decision, history, retry_limit
