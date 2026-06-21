@@ -272,7 +272,7 @@ $null = Set-UserEnvValue "AICARMINE_AGENT_MAX_STEPS" "100"
 
 $env:AICARMINE_AGENT_DEFAULT_MAX_STEPS = "40"
 $env:AICARMINE_AGENT_MAX_STEPS = "100"
-$PlannerModel = "qwen3.5:9b-coding"
+$PlannerModel = "qwen3.5:9b-cline-coding-v5-2"
 $PlannerNumCtx = "262144"
 $PlannerPromptCharBudget = $PlannerNumCtx
 $AICarminePersistentConfig = @{
