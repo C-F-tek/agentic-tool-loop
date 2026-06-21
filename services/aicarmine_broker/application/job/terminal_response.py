@@ -63,7 +63,9 @@ def _load_job_json_pointer(value: Any, *, job_root: Path | None) -> Any:
             pointer = job_root / pointer
         resolved_pointer = pointer.resolve()
         resolved_root = job_root.resolve()
-        if not str(resolved_pointer).lower().startswith(str(resolved_root).lower()):
+        try:
+            resolved_pointer.relative_to(resolved_root)
+        except ValueError:
             logger.warning(
                 "Ignoring job JSON pointer outside job root. pointer=%s job_root=%s",
                 pointer_text,

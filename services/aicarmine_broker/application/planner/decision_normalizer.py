@@ -78,14 +78,15 @@ def _native_tool_calls_decision(tool_calls: list[dict[str, Any]], raw_text: str 
         return {}
     if len(calls) == 1:
         call = calls[0]
-        if call["tool"] in {"final_answer", "final", "answer", "block", "blocked", "tool_block"}:
+        tool_name = str(call.get("tool") or "").strip().lower()
+        if tool_name in {"final_answer", "final", "answer", "block", "blocked", "tool_block"}:
             answer = _final_answer_from_content_field(call["arguments"])
             if answer:
                 return {
-                    "action": "block" if call["tool"] in {"block", "blocked", "tool_block"} else "final",
+                    "action": "block" if tool_name in {"block", "blocked", "tool_block"} else "final",
                     "final_answer": answer,
                     "reason": "native_terminal_alias_tool_call",
-                    "terminal_alias_normalized": call["tool"],
+                    "terminal_alias_normalized": tool_name,
                     "native_tool_call": True,
                     "raw_native_tool_call": call["raw_tool_call"],
                     "raw_planner_text": raw_text[:4000],

@@ -11,20 +11,11 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     append_stale_required_call_marker,
     required_next_tool_call_satisfaction,
 )
+from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
 
 
-def _repo_path_token(value: Any) -> str:
-    text = str(value or "").strip().replace("\\", "/").strip()
-    if not text:
-        return ""
-    text = text.strip("/")
-    while text.startswith("./"):
-        text = text[2:]
-    while text.startswith("../"):
-        text = text[3:]
-    while "//" in text:
-        text = text.replace("//", "/")
-    return text
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def _repo_path_is_concrete(token: Any) -> bool:
@@ -177,6 +168,112 @@ def _escalate_final_rewrite_retry_count(
     return contract
 
 
+def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any]:
+    contract = contract if isinstance(contract, dict) else {}
+    final_contract = (
+        contract.get("finalization_contract")
+        if isinstance(contract.get("finalization_contract"), dict)
+        else {}
+    )
+
+    # A valid final answer is considered an explicit reset of terminal rewrite/block
+    # pressure for the current contract state.
+    contract["final_rewrite_latch"] = "inactive"
+    contract["planner_may_choose_block"] = False
+    contract["planner_may_choose_final"] = True
+    for key in (
+        "planner_cuda_rewrite_required",
+        "planner_forced_terminal_block",
+        "planner_forced_terminal_block_reason",
+        "planner_final_quality_terminal_block",
+        "planner_final_quality_terminal_block_count",
+        "planner_final_quality_terminal_block_latched",
+        "planner_final_quality_latched_patch_axes",
+        "planner_final_quality_latched_operator_instructions",
+        "planner_final_answer_blocked_reason",
+        "planner_final_quality_public_notice",
+        "required_next_tool_call",
+        "required_next_tool_call_validated",
+        "required_next_tool_call_validation_source",
+        "required_next_tool_call_invalid_tool",
+        "required_next_tool_call_invalid_reason",
+        "required_next_tool_call_satisfied",
+        "required_next_tool_call_satisfied_reason",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "invalid_required_next_missing_evidences",
+        "invalid_required_next_missing_evidence_reason",
+        "invalid_required_next_tool_call_paths",
+        "invalid_required_next_tool_call_reason",
+        "invalid_required_next_tool_call_query",
+        "required_next_progress_model_stale",
+        "required_next_progress_model",
+        "stale_required_next_tool_calls",
+        "required_next_progress",
+        "required_next_tool_call_validation_error",
+        "replan_specialist_route_diagnostics",
+        "replan_specialist_route_audit",
+        "replan_specialist_retry_audit",
+        "replan_specialist_retry_replan",
+    ):
+        contract.pop(key, None)
+
+    existing_actions = (
+        contract.get("candidate_next_actions")
+        if isinstance(contract.get("candidate_next_actions"), list)
+        else []
+    )
+    filtered_actions = [
+        item for item in existing_actions
+        if not (
+            isinstance(item, dict)
+            and (
+                str(item.get("source") or "") == "repo_analysis_final_model_quality"
+                or str(item.get("action_id") or "").startswith("repo_analysis_final_quality:")
+            )
+        )
+    ]
+    if filtered_actions:
+        contract["candidate_next_actions"] = filtered_actions
+    else:
+        contract.pop("candidate_next_actions", None)
+
+    final_contract["final_allowed"] = True
+    final_contract["planner_may_choose_final"] = True
+    final_contract["planner_may_choose_block"] = False
+    for key in (
+        "planner_forced_terminal_block",
+        "planner_forced_terminal_block_reason",
+        "planner_final_quality_terminal_block",
+        "planner_final_quality_terminal_block_count",
+        "planner_final_quality_terminal_block_latched",
+        "planner_final_quality_latched_patch_axes",
+        "planner_final_quality_latched_operator_instructions",
+        "planner_final_answer_blocked_reason",
+        "planner_final_quality_public_notice",
+        "required_next_tool_call",
+        "required_next_missing_evidences",
+        "required_next_output_sections",
+        "replan_specialist_route_diagnostics",
+        "replan_specialist_route_audit",
+        "replan_specialist_retry_audit",
+        "replan_specialist_retry_replan",
+    ):
+        final_contract.pop(key, None)
+    if final_contract.get("reason") in {
+        "repo_analysis_final_quality_no_runnable_gap_terminal_block",
+        "repo_analysis_final_model_quality_rejected_no_runnable_gap",
+        "planner_cuda_rewrite_required_repeated_retry_block_required",
+        "planner_cuda_rewrite_required_retry_gap_only",
+        "planner_cuda_rewrite_required_retry_continue",
+        "required_next_tool_call_unknown_tool",
+        "required_next_tool_call_not_in_current_surface",
+    }:
+        final_contract.pop("reason", None)
+    contract["finalization_contract"] = final_contract
+    return contract
+
+
 def _collect_repo_paths(values: Any) -> set[str]:
     out: set[str] = set()
     if isinstance(values, dict):
@@ -197,6 +294,120 @@ def _collect_repo_paths(values: Any) -> set[str]:
         if token:
             out.add(token)
     return out
+
+
+def _known_contract_repo_paths(contract: dict[str, Any]) -> set[str]:
+    contract = contract if isinstance(contract, dict) else {}
+    paths: set[str] = set()
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "verified_content_reads",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        paths.update(_collect_repo_paths(contract.get(key)))
+    coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        paths.update(_collect_repo_paths(coverage.get(key)))
+    final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+    final_coverage = (
+        final_contract.get("minimum_read_coverage")
+        if isinstance(final_contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        paths.update(_collect_repo_paths(final_coverage.get(key)))
+    return {path for path in paths if path and path != "."}
+
+
+def _known_contract_repo_dirs(contract: dict[str, Any]) -> set[str]:
+    dirs = {"."}
+    for path in _known_contract_repo_paths(contract):
+        parts = [part for part in path.split("/") if part]
+        for index in range(1, len(parts)):
+            dirs.add("/".join(parts[:index]))
+    return dirs
+
+
+def _route_token_is_prose_or_metric(value: Any) -> bool:
+    token = _repo_path_token(value)
+    if not token:
+        return True
+    lowered = token.lower()
+    if lowered in {
+        "ridondanze/rischi",
+        "docs/config",
+        "planner/final-quality",
+        "planner/controller rejection paths",
+    }:
+        return True
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return True
+    if " " in token:
+        return True
+    return False
+
+
+def _search_query_is_concrete(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text or len(text) > 260:
+        return False
+    lowered = text.lower()
+    if lowered in {
+        "docs/config",
+        "ridondanze/rischi",
+        "8/2",
+        "8/8",
+        "9/9",
+        "planner/controller rejection paths",
+    }:
+        return False
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return False
+    useful_tokens = [
+        token
+        for token in lowered.replace(",", " ").replace(";", " ").split()
+        if len(token) >= 3 and "/" not in token and any(ch.isalpha() for ch in token)
+    ]
+    if "/" in lowered and len(useful_tokens) < 2:
+        return False
+    return bool(useful_tokens)
+
+
+def _required_next_route_has_deterministic_proof(
+    required_call: dict[str, Any],
+    contract: dict[str, Any],
+) -> bool:
+    required_call = required_call if isinstance(required_call, dict) else {}
+    tool = str(required_call.get("tool") or "").strip()
+    args = required_call.get("arguments") if isinstance(required_call.get("arguments"), dict) else {}
+    if tool == "repo_read":
+        return True
+    if tool == "repo_list_files":
+        path = _repo_path_token(args.get("path") or ".") or "."
+        if path == ".":
+            return True
+        return not _route_token_is_prose_or_metric(path) and path in _known_contract_repo_dirs(contract)
+    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
+        query = args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
+        if not _search_query_is_concrete(query):
+            return False
+        path = _repo_path_token(args.get("path")) if args.get("path") else ""
+        if path and path not in _known_contract_repo_paths(contract) and path not in _known_contract_repo_dirs(contract):
+            return False
+        return True
+    if tool == "planner_scratchpad_read":
+        document_id = str(args.get("document_id") or "").strip()
+        target_file = _repo_path_token(args.get("target_file")) if args.get("target_file") else ""
+        if document_id and not _route_token_is_prose_or_metric(document_id):
+            return True
+        return bool(target_file and target_file in _known_contract_repo_paths(contract))
+    return False
 
 
 def validate_planner_decision_against_evidence(
@@ -560,19 +771,10 @@ def validate_planner_decision_against_evidence(
             contract["planner_final_quality_reject_count"] = reject_count
             contract["planner_final_quality_last_rewrite_decision"] = step_index
         reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
-        previous_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
         contract["planner_cuda_rewrite_required"] = True
 
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
-        reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
-        contract["planner_final_quality_reject_count"] = reject_count
 
-        required_next_missing_evidences = _list_or_empty(quality.get("required_next_missing_evidences"))
-        if required_next_missing_evidences:
-            contract["required_next_missing_evidences"] = required_next_missing_evidences[:12]
-        required_next_output_sections = _list_or_empty(quality.get("required_next_output_sections"))
-        if required_next_output_sections:
-            contract["required_next_output_sections"] = required_next_output_sections[:8]
         invalid_required_next_tool_call_paths: list[str] = []
         if required_next_progress:
             contract["required_next_progress"] = required_next_progress
@@ -676,6 +878,23 @@ def validate_planner_decision_against_evidence(
             contract["invalid_required_next_tool_call_paths"] = invalid_required_next_tool_call_paths[:12]
         if required_next_tool_call:
             required_next_tool_call = _coalesce_required_next_tool_tool(required_next_tool_call)
+            if not _required_next_route_has_deterministic_proof(required_next_tool_call, contract):
+                tool_name = str(required_next_tool_call.get("tool") or "").strip()
+                args = (
+                    required_next_tool_call.get("arguments")
+                    if isinstance(required_next_tool_call.get("arguments"), dict)
+                    else {}
+                )
+                path_token = _repo_path_token(args.get("path")) if args.get("path") else ""
+                query_text = str(args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text") or "").strip()
+                if path_token:
+                    contract["invalid_required_next_tool_call_paths"] = [path_token]
+                if query_text:
+                    contract["invalid_required_next_tool_call_query"] = query_text[:260]
+                contract["invalid_required_next_tool_call_reason"] = (
+                    f"{tool_name or 'required_next_tool_call'} lacked deterministic concrete route proof"
+                )
+                required_next_tool_call = {}
             if required_next_tool_call.get("tool") == "repo_read":
                 required_args = (
                     required_next_tool_call.get("arguments")
@@ -759,6 +978,8 @@ def validate_planner_decision_against_evidence(
             if satisfaction.get("satisfied") is True:
                 append_stale_required_call_marker(contract, satisfaction)
                 contract.pop("required_next_tool_call", None)
+                contract.pop("required_next_tool_call_validated", None)
+                contract.pop("required_next_tool_call_validation_source", None)
                 contract["required_next_progress"] = (
                     "Final-quality requested an evidence route that is already satisfied in "
                     "verified tool history. Do not call the same tool with the same arguments. "
@@ -767,7 +988,11 @@ def validate_planner_decision_against_evidence(
                 )
                 required_next_tool_call = {}
             else:
+                required_next_tool_call["validated"] = True
+                required_next_tool_call["validation_source"] = "deterministic_validator"
                 contract["required_next_tool_call"] = required_next_tool_call
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
                 tool_name = str(required_next_tool_call.get("tool") or "").strip()
                 arguments = (
                     required_next_tool_call.get("arguments")
@@ -792,21 +1017,49 @@ def validate_planner_decision_against_evidence(
                 ][:12]
         else:
             contract.pop("required_next_tool_call", None)
+            contract.pop("required_next_tool_call_validated", None)
+            contract.pop("required_next_tool_call_validation_source", None)
             fallback_progress = (
                 "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
                 "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
             )
+            final_rewrite_latch = "terminal_block_required" if reject_count >= 2 else "rewrite_required"
+            if final_rewrite_latch == "rewrite_required":
+                if required_next_missing_evidences:
+                    contract["required_next_progress"] = (
+                        "Final-quality rejected with concrete, verified evidence gaps but no runnable required_next_tool_call. "
+                        "You must rewrite the final answer by explicitly addressing the remaining required gaps: "
+                        f"{required_next_missing_evidences[:8]}"
+                    )
+                else:
+                    contract["required_next_progress"] = (
+                        "Final-quality rejected without a concrete runnable gap route. "
+                        "Continue rewrite from verified evidence and existing covered gaps only; "
+                        "do not emit block unless a controller-forced terminal decision is present."
+                    )
             if not contract.get("required_next_progress"):
                 contract["required_next_progress"] = fallback_progress
-        has_gap_route = bool(
-            required_next_tool_call
-            or required_next_missing_evidences
-        )
-        final_rewrite_latch = _next_final_rewrite_latch(
-            str(contract.get("final_rewrite_latch") or ""),
-            reject_count=reject_count,
-            has_gap_route=has_gap_route,
-        )
+            if final_rewrite_latch == "terminal_block_required":
+                contract["planner_may_choose_block"] = True
+                contract["planner_forced_terminal_block"] = True
+                contract["planner_forced_terminal_block_reason"] = (
+                    "repo_analysis_final_quality_no_runnable_gap_terminal_block"
+                )
+            else:
+                contract["planner_may_choose_block"] = False
+        has_gap_route = bool(required_next_tool_call) or bool(required_next_missing_evidences)
+        if required_next_tool_call:
+            final_rewrite_latch = _next_final_rewrite_latch(
+                str(contract.get("final_rewrite_latch") or ""),
+                reject_count=reject_count,
+                has_gap_route=has_gap_route,
+            )
+        elif final_rewrite_latch != "terminal_block_required":
+            final_rewrite_latch = _next_final_rewrite_latch(
+                final_rewrite_latch,
+                reject_count=reject_count,
+                has_gap_route=False,
+            )
         contract["final_rewrite_latch"] = final_rewrite_latch
         contract["planner_may_choose_block"] = final_rewrite_latch == "terminal_block_required"
         contract["planner_may_choose_final"] = False
@@ -819,10 +1072,152 @@ def validate_planner_decision_against_evidence(
         final_contract["planner_may_choose_final"] = False
         if final_rewrite_latch == "terminal_block_required":
             final_contract["planner_may_choose_block"] = True
-            final_contract["reason"] = "repo_analysis_final_model_quality_repeated_reject_block_required"
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                "repo_analysis_final_quality_no_runnable_gap_terminal_block"
+            )
+            final_contract["reason"] = "repo_analysis_final_quality_no_runnable_gap_terminal_block"
         else:
-            final_contract["reason"] = "repo_analysis_final_model_quality_rejected"
+            final_contract["planner_may_choose_block"] = False
+            final_contract["reason"] = "repo_analysis_final_model_quality_rejected_no_runnable_gap"
         contract["finalization_contract"] = final_contract
+
+    def _apply_duplicate_repo_read_path_recovery_contract(
+        contract: dict[str, Any],
+        repeated_reads: list[str],
+        history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        contract = contract if isinstance(contract, dict) else {}
+        history = history if isinstance(history, list) else []
+        normalized: list[str] = []
+        for path in repeated_reads if isinstance(repeated_reads, list) else []:
+            token = _repo_path_token(path)
+            if token and token not in normalized:
+                normalized.append(token)
+        if not normalized:
+            return contract
+
+        forbidden: list[str] = []
+        for item in contract.get("forbidden_repeated_repo_read_paths", []):
+            if isinstance(item, str):
+                token = _repo_path_token(item)
+                if token and token not in forbidden:
+                    forbidden.append(token)
+        for token in normalized:
+            if token not in forbidden:
+                forbidden.append(token)
+        if not forbidden:
+            return contract
+        contract["forbidden_repeated_repo_read_paths"] = forbidden[:40]
+        duplicate_repo_read_recovery_count = (
+            contract.get("duplicate_repo_read_recovery_count")
+            if isinstance(contract.get("duplicate_repo_read_recovery_count"), dict)
+            else {}
+        )
+        for token in normalized:
+            duplicate_repo_read_recovery_count[str(token)] = (
+                int(duplicate_repo_read_recovery_count.get(str(token), 0) or 0) + 1
+            )
+        contract["duplicate_repo_read_recovery_count"] = {
+            key: int(value)
+            for key, value in duplicate_repo_read_recovery_count.items()
+            if str(key).strip()
+        }
+        contract["required_next_tool_call_advisory"] = {
+            "tool": "repo_read",
+            "arguments": {
+                "paths": normalized[:12],
+            },
+            "reason": "already_successful_full_path_read",
+            "source": "duplicate_repo_read_recovery_contract",
+        }
+
+        required_next_tool_call = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if required_next_tool_call:
+            required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            required_args = (
+                required_next_tool_call.get("arguments")
+                if isinstance(required_next_tool_call.get("arguments"), dict)
+                else {}
+            )
+            if required_tool == "repo_read":
+                required_paths = _decision_paths(required_args)
+                if any(path in normalized for path in required_paths):
+                    last_step = None
+                    if history and isinstance(history[-1], dict):
+                        last_step = history[-1].get("step")
+                    append_stale_required_call_marker(
+                        contract,
+                        {
+                            "tool": required_tool,
+                            "arguments": required_args,
+                            "satisfied": True,
+                            "reason": "repo_read_already_successful",
+                            "path_overlap": normalized,
+                            "step": last_step,
+                        },
+                    )
+
+        contract.pop("required_next_tool_call", None)
+        contract.pop("required_next_tool_call_validated", None)
+        contract.pop("required_next_tool_call_validation_source", None)
+        # Patch B: duplicate repo_read recovery con evidence consumption route
+        contract["required_next_progress"] = (
+            "Duplicate repo_read detected. Consume verified evidence windows or rewrite final from existing reads."
+        )
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        if _minimum_read_coverage_satisfied():
+            final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+            if final_rewrite_latch == "inactive":
+                contract["planner_may_choose_final"] = True
+                final_contract["final_allowed"] = True
+                final_contract["planner_may_choose_final"] = True
+            else:
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["reason"] = "duplicate_repo_read_recovery_active_rewrite_latch"
+            coverage = contract.get("minimum_read_coverage")
+            if isinstance(coverage, dict):
+                contract["coverage_satisfied"] = coverage.get("coverage_satisfied", True)
+
+        duplicate_threshold_reached = any(
+            int(duplicate_repo_read_recovery_count.get(path, 0) or 0) >= 2
+            for path in normalized
+        )
+        if duplicate_threshold_reached:
+            # Non forzare planner_scratchpad_read senza document_id/section/offset reali
+            contract["required_next_progress"] = (
+                "Duplicate repo_read recovery: use verified_content_reads and required_working_set.repo_reads; "
+                "do not repeat repo_read. Extract conclusions from existing verified evidence."
+            )
+            # Non impostare required_next_tool_call: attendi documento_id reale da required_working_set
+            contract["planner_may_choose_block"] = True
+            contract["planner_may_choose_final"] = False
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                "duplicate_repo_read_recovery_count_threshold_reached"
+            )
+            final_contract["planner_may_choose_block"] = True
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "duplicate_repo_read_recovery_count_threshold_reached"
+            # Se required_next_progress non è stato settato, mantieni messaggio informativo
+            if not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Duplicate repo_read recovery crossed retry threshold. "
+                    "Return a rewrite constrained to verified evidence or explicit terminal blocker if controller-forced."
+                )
+
+        contract["finalization_contract"] = final_contract
+        return contract
 
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
@@ -995,6 +1390,47 @@ def validate_planner_decision_against_evidence(
 
     if action in {"final", "done", "complete", "completed"}:
         final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+        final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+
+        final_forced_block_payload = final_contract.get("planner_forced_terminal_block")
+        planner_forced_terminal_block = False
+        planner_forced_terminal_block_reason = ""
+        if isinstance(final_forced_block_payload, dict):
+            planner_forced_terminal_block = bool(final_forced_block_payload.get("enabled"))
+            planner_forced_terminal_block_reason = str(final_forced_block_payload.get("reason") or "").strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        else:
+            planner_forced_terminal_block = bool(final_forced_block_payload is True)
+            planner_forced_terminal_block_reason = str(
+                final_contract.get("planner_forced_terminal_block_reason") or ""
+            ).strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        contract["finalization_contract"] = final_contract
+
+        planner_may_choose_block = bool(contract.get("planner_may_choose_block")) or bool(
+            final_contract.get("planner_may_choose_block")
+        )
+        if (final_rewrite_latch == "terminal_block_required" and planner_may_choose_block) or planner_forced_terminal_block:
+            violations.append("terminal_block_required_final_disallowed")
+            contract["terminal_block_final_retry_count"] = int(contract.get("terminal_block_final_retry_count") or 0) + 1
+            contract["planner_cuda_rewrite_required"] = True
+            contract["final_rewrite_latch"] = "terminal_block_required"
+            contract["planner_may_choose_final"] = False
+            contract["planner_may_choose_block"] = True
+            contract["required_next_progress"] = (
+                "Terminal block lane is active after repeated final-quality rejection. "
+                "Return action=block with the remaining blocker; do not emit another final."
+            )
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["planner_may_choose_block"] = True
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                planner_forced_terminal_block_reason or "terminal_block_required_final_disallowed"
+            )
+            final_contract["reason"] = "terminal_block_required_final_disallowed"
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+
         if final_contract and final_contract.get("final_allowed") is False:
             violations.append("final_not_allowed_by_evidence_contract:" + str(final_contract.get("reason") or "insufficient evidence"))
         if post_write_validation_required and not post_write_validation_done:
@@ -1122,6 +1558,8 @@ def validate_planner_decision_against_evidence(
                 expected = min(expected, total_matches)
             if len(read_ok) < expected:
                 violations.append(f"final_before_required_read_count:{len(read_ok)}/{expected}")
+        if not violations:
+            contract = _clear_final_terminal_block_state(contract)
         result = {
             "ok": not violations,
             "violations": violations,
@@ -1182,6 +1620,76 @@ def validate_planner_decision_against_evidence(
             or reason.startswith("PLANNER_DEGENERATE_OUTPUT")
         ):
             violations.append("planner_block_requires_controller_classification:" + reason[:160])
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_forced_block_payload = final_contract.get("planner_forced_terminal_block")
+        planner_forced_terminal_block = False
+        planner_forced_terminal_block_reason = ""
+        if isinstance(final_forced_block_payload, dict):
+            planner_forced_terminal_block = bool(final_forced_block_payload.get("enabled"))
+            planner_forced_terminal_block_reason = str(final_forced_block_payload.get("reason") or "").strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        else:
+            planner_forced_terminal_block = bool(final_forced_block_payload is True)
+            planner_forced_terminal_block_reason = str(
+                final_contract.get("planner_forced_terminal_block_reason") or ""
+            ).strip()
+            final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
+        contract["finalization_contract"] = final_contract
+        planner_may_choose_block = bool(contract.get("planner_may_choose_block")) or bool(
+            final_contract.get("planner_may_choose_block")
+        )
+        block_override_reason = (
+            planner_forced_terminal_block_reason
+            if planner_forced_terminal_block and planner_forced_terminal_block_reason
+            else "planner_forced_terminal_block"
+        )
+        if planner_forced_terminal_block:
+            contract["planner_may_choose_block"] = True
+            if block_override_reason and not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Controller-forced terminal block is active: "
+                    f"{block_override_reason}. Consume and pass through this terminal signal."
+                )
+            return {"ok": True, "violations": [], "evidence_contract": contract}
+        if not planner_may_choose_block:
+            final_quality_reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
+            coverage_required = _minimum_read_coverage_required()
+            coverage_satisfied = _minimum_read_coverage_satisfied()
+            coverage_missing = _minimum_read_coverage_missing_owner_paths()
+            required_tool = ""
+            required_next_tool_call = contract.get("required_next_tool_call")
+            if isinstance(required_next_tool_call, dict):
+                required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            coverage_progress = (
+                f"Block is not authorized after {final_quality_reject_count} final-quality reject"
+                f"{'s' if final_quality_reject_count != 1 else ''}; "
+                "provide rewrite evidence before terminal."
+            )
+            final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+            if required_tool:
+                coverage_progress = (
+                    "Block is not authorized by evidence contract while required_next_tool_call is pending. "
+                    f"Required tool: {required_tool}. "
+                    "Either execute the required tool path or return final only when final is explicitly allowed."
+                )
+            elif coverage_required and not coverage_satisfied:
+                coverage_progress = (
+                    "Block is not authorized by evidence contract because minimum read coverage is not satisfied; "
+                    f"missing_owner_paths={coverage_missing[:12]}."
+                )
+            elif final_rewrite_latch:
+                coverage_progress = (
+                    "Block is not authorized by evidence contract while a final-rewrite/deadlock lane is active; "
+                    f"required_next_progress: {str(contract.get('required_next_progress') or '')[:180] or 'resolve remaining lane'}. "
+                    "Resume rewrite using verified evidence and required evidence gaps."
+                )
+            violations.append("block_not_allowed_by_evidence_contract")
+            contract["required_next_progress"] = coverage_progress
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         return {"ok": True, "violations": [], "evidence_contract": contract}
 
@@ -1246,6 +1754,8 @@ def validate_planner_decision_against_evidence(
                     contract["planner_may_choose_block"] = True
                     contract["planner_may_choose_final"] = False
                     contract["required_next_tool_call"] = {}
+                    contract.pop("required_next_tool_call_validated", None)
+                    contract.pop("required_next_tool_call_validation_source", None)
                     required_next_progress = (
                         "Rewrite lane support-subturn loop detected. Return a rewritten terminal final "
                         "from verified evidence, or explicit block with remaining evidence gaps."
@@ -1270,6 +1780,8 @@ def validate_planner_decision_against_evidence(
                         contract["planner_may_choose_block"] = True
                         contract["planner_may_choose_final"] = False
                         contract["required_next_tool_call"] = {}
+                        contract.pop("required_next_tool_call_validated", None)
+                        contract.pop("required_next_tool_call_validation_source", None)
                         contract["required_next_progress"] = (
                             "Rewrite lane support-subturn loop detected. Return a rewritten terminal final "
                             "from verified evidence, or explicit block with remaining evidence gaps."
@@ -1316,11 +1828,21 @@ def validate_planner_decision_against_evidence(
             if not violations and contract.get("final_rewrite_latch") == "terminal_block_required":
                 contract["planner_may_choose_block"] = True
             if required_rewrite_missing and not violations:
+                required_tool_call["validated"] = True
+                required_tool_call["validation_source"] = "deterministic_validator"
                 contract["required_next_tool_call"] = required_tool_call
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
             elif required_rewrite_paths and not violations:
+                required_tool_call["validated"] = True
+                required_tool_call["validation_source"] = "deterministic_validator"
                 contract["required_next_tool_call"] = required_tool_call
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
             elif not required_rewrite_paths and not violations:
                 violations.append("repo_read_not_allowed_without_required_next_paths")
+                contract.pop("required_next_tool_call_validated", None)
+                contract.pop("required_next_tool_call_validation_source", None)
                 contract["required_next_progress"] = (
                     "Rewrite lane requires a concrete required_next_tool_call, but it has no path arguments."
                 )
@@ -1500,12 +2022,10 @@ def validate_planner_decision_against_evidence(
         repeated_reads = [p for p in _agentic_v2_decision_paths(tool, args) if p in already_read]
         if repeated_reads:
             violations.append("repo_read_already_successful:" + ",".join(repeated_reads[:5]))
-            contract = _escalate_final_rewrite_retry_count(
+            contract = _apply_duplicate_repo_read_path_recovery_contract(
                 contract,
-                has_gap_route=bool(
-                    contract.get("required_next_tool_call")
-                    or contract.get("required_next_missing_evidences")
-                ),
+                repeated_reads=repeated_reads,
+                history=history,
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
 

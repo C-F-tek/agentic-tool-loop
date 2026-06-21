@@ -1,109 +1,260 @@
-<!-- CODEX_OPENWEBUI_PAYLOAD_LIMITATION_START -->
-# Limite operativo Codex su payload OpenWebUI
+---
+name: aicarmine-general-agent
+description: Global evidence-first agent for Carmine's Cline environment. Reads and obeys applicable AGENTS.md files and project contracts, routes repository tasks to the appropriate skills and AICarmine MCP tools, applies runtime-first diagnosis, and permits only minimal reversible changes with explicit verification.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Un payload JSON restituito dal tool pubblico OpenWebUI `vulkan_helper` su 3571
-puo essere accettato e lavorato da OpenWebUI ma non essere gestibile in modo
-affidabile da Codex nella chat.
 
-Regola obbligatoria:
+# Carmine — Global Cline Instructions
 
-- Codex non deve dichiarare di comprendere il progetto, il tool result o il
-  comportamento del sistema se non ha letto e verificato l'output completo
-  rilevante.
-- Se Codex non riesce a leggere, stampare o mantenere nel contesto un payload
-  che OpenWebUI invece lavora, deve dichiarare esplicitamente il limite.
-- Codex deve distinguere sempre il result pubblico del tool da riepiloghi
-  diagnostici, finestre parziali, path locali, preview o output spezzati.
-- Codex non deve proporre patch, cambiare protocollo o sostenere che il
-  protocollo sia corretto quando la conclusione dipende da un payload non letto
-  integralmente.
-- Se l'output OpenWebUI supera i limiti interni di Codex, la conclusione
-  corretta e': Codex non puo confermare comprensione completa del progetto o
-  del risultato perche non ha processato integralmente il payload prodotto dal
-  tool.
+This file defines Carmine's personal defaults for Cline across repositories.
 
-Documento esteso: `services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md`.
-<!-- CODEX_OPENWEBUI_PAYLOAD_LIMITATION_END -->
+Keep this file general and compact. Project architecture, MCP inventories, service contracts, exact tool workflows, and repository-specific invariants belong in the applicable repository `AGENTS.md` files or in an on-demand skill.
 
-<!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_START -->
-Regole operative non negoziabili:
-1. Il contratto non va modificato se non richiesto da Carmine esplicitamente.
-2. Il prodotto finale puo' essere arricchito come gia' viene fatto; non cambiare logica senza richiesta esplicita.
-3. Non devi presupporre nulla: non e' il tuo compito.
-<!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
-# AGENTS.md - Operational Notes For This Workspace
+## Instruction precedence
 
-## Metodo obbligatorio
+For every task, apply instructions in this order:
 
-Per problemi su servizi, launcher, tool loop, OpenWebUI o log:
+1. Carmine's explicit current request.
+2. The most specific applicable repository `AGENTS.md`.
+3. Contract documents required by that repository.
+4. Explicitly activated or task-matched skills.
+5. This global `AGENTS.md`.
+6. Historical notes, summaries, memory, and inferred conventions.
 
-1. Separa sintomo, ipotesi, evidenza, causa e fix.
-2. Non usare fallback o workaround per nascondere il problema.
-3. Prima di proporre patch verifica chi legge, chi scrive, quale processo gira,
-   quale file viene caricato e quale comando produce il sintomo.
-4. Se un comportamento ricompare, sospetta prima processo vecchio, cache,
-   rigenerazione, profilo sbagliato, PATH o venv errata.
-5. Ogni ipotesi deve avere una prova discriminante basata su evidenza reale
-   gia' disponibile o su verifiche mirate richieste dall'utente.
-6. Una soluzione e valida solo con catena: sintomo -> prova -> causa confermata
-   -> fix minimo -> verifica.
+Do not reinterpret a requested contract change as an ordinary bug fix.
 
-## Divieto test/smoke non richiesti
+When instructions conflict, follow the higher-precedence source and report the conflict when it materially affects the result.
 
-- Non creare, aggiungere, modificare, proporre o usare test, smoke test,
-  macro-test o script di test se Carmine non lo richiede esplicitamente.
-- Le verifiche ordinarie devono usare prima evidenza reale: file owner, diff,
-  artifact/job, log, processi, porte, payload completi e letture read-only.
-- Compile, lint, parser check e diff check restano verifiche tecniche mirate,
-  ma non vanno presentate come test o usate per sostituire una diagnosi reale.
-- Documenti o note storiche che propongono test/smoke come flusso normale non
-  sono contratto operativo attivo.
-- Quando Carmine porta evidenza da run reale, log, artifact, processo, porta o
-  payload, quella evidenza batte qualsiasi script locale. Non usare script
-  test/smoke come fonte di verita contro l'evidenza runtime segnalata.
+## General operating method
 
-## Contratto agentic loop
+For technical work, keep these concepts distinct:
 
-Prima di modificare `services/aicarmine_broker/planner.py`,
-`services/vulkan_bridge/app.py` o il launcher dei servizi, leggere:
+1. Symptom
+2. Hypotheses
+3. Evidence
+4. Confirmed cause
+5. Minimal fix
+6. Verification
+7. Residual risk
 
-- `services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
-- `services/END_TO_END_AGENTIC_FLOW.md`
-- `services/SERVICES_MODULE_TECHNICAL_REFERENCE.md`
-- Per dettagli modulo per modulo, seguire i link `MODULE_REFERENCE.md`
-  indicati nella reference centrale.
-- Per una scheda tecnica di ogni singolo file sotto `services`, leggere
-  `services/MODULE_TECHNICAL_DESCRIPTIONS.md`.
+A valid diagnosis requires:
 
-Punti non negoziabili del contratto corrente:
+`symptom → evidence → confirmed cause → minimal fix → verification`
 
-- 3571 espone a OpenWebUI solo il tool pubblico `vulkan_helper`.
-- 3572 esegue il loop interno; il planner decide, il controller valida.
-- Il controller non deve sostituire il planner con sequenze hard-coded o
-  auto-final nascosti.
-- `final` puo passare solo con evidenza verificata: un `repo_read ok=True`
-  deve avere contenuto reale (`content`) ricaricabile dallo stesso tool result.
-- `content_preview`, path, conteggi o artifact path locali non soddisfano il
-  gate di finalizzazione.
-- OpenWebUI non puo aprire file locali sotto `C:\Users\...`; quindi 3571 deve
-  trasportare i risultati reali dei tool riusciti dentro `tool_context_for_30b`.
-- Nel payload pubblico `artifact` significa risultato reale del tool, non path
-  locale.
-- Stati terminali come `completed`, `max_steps_reached`,
-  `blocked_needs_attention` e `failed` devono usare la stessa regola di
-  trasporto: `content` compatto e `tool_context_for_30b` JSON pretty-printed
-  con soli tool riusciti.
-- I path dei tool repo sono relativi al root runtime `AICARMINE_LAB_REPO`, non
-  alla cwd della shell Codex. Prima di diagnosticare un rigetto come
-  `repo_read_path_not_from_prior_file_evidence`, verificare
-  `planner-prompts/step-*-planner-payload.json -> user_payload.lab_repo` e la
-  coerenza con `OPEN_TERMINAL_CWD` / `AICARMINE_OPEN_TERMINAL_WORKDIR`.
+Apply these rules:
 
-## Cosa non fare
+- Prefer demonstrated runtime or source evidence over plausible explanations.
+- Do not stop at the first plausible cause.
+- Give each material hypothesis a discriminating check.
+- When Carmine provides evidence that contradicts the diagnosis, stop and reassess.
+- Do not invent files, APIs, symbols, tools, processes, commits, payloads, states, or results.
+- Distinguish facts, inferences, hypotheses, and unknowns.
+- Stop broad investigation when the causal line is confirmed.
+- Do not repeat an identical tool call unless the underlying state changed.
+- Prefer the smallest reversible correction in the existing owner component.
+- Do not create wrappers, compatibility layers, or workarounds when the owner can be corrected directly.
 
-- Non cambiare modello, ctx, max step, venv o launcher mentre si sta correggendo
-  il protocollo 3571/3572, salvo evidenza diretta che il difetto stia li.
-- Non reintrodurre `continuation_surface`, `call_protocol`, `call_examples`,
-  raw events o diagnostica transport nella superficie OpenWebUI.
-- Non usare `final_path`, `reads/*.json`, `tool-results/*.json` o altri path
-  locali come sostituto del risultato inline.
+## Repository startup
+
+At the beginning of repository work:
+
+1. Identify the effective repository root.
+2. Read the root `AGENTS.md`.
+3. Check for a more specific `AGENTS.md` under each target directory.
+4. Read only the contract documents required for the target operation.
+5. Confirm the actual branch, commit, working-tree state, runtime environment, or loaded configuration when they affect the task.
+
+Do not assume that the shell working directory, editor workspace, runtime repository root, active profile, executable, or virtual environment are identical.
+
+## AICarmine repository routing
+
+For technical repository work under:
+
+`C:\Users\carmi\AI`
+
+load and follow the skill:
+
+`aicarmine-forensic-mcp-agent`
+
+Use that skill for:
+
+- repository diagnosis;
+- runtime or service failures;
+- MCP failures;
+- regression analysis;
+- configuration problems;
+- project-memory warmup;
+- reviewed contract probes;
+- guarded code changes;
+- agentic-loop or OpenWebUI contract work;
+- verification of patches.
+
+The skill is the detailed operational authority for MCP routing, project memory, probe profiles, patch sequencing, payload completeness, and the `3571`/`3572` contracts.
+
+Do not duplicate the skill's detailed tool inventory or repository contracts in this global file.
+
+If the skill is unavailable or fails to load:
+
+1. preserve the concrete failure;
+2. continue with the applicable repository `AGENTS.md`;
+3. do not invent the missing skill instructions;
+4. do not silently substitute an unrelated workflow.
+
+## Tool and fallback discipline
+
+- Prefer the specialized tool that owns the operation.
+- Treat the current exposed tool surface as authoritative.
+- Do not infer tool availability from historical configuration.
+- Do not treat an unsupported resource endpoint as proof that tool calls are unavailable.
+- Do not silently replace a failed specialized tool with terminal commands, direct database access, ad hoc scripts, or another tool.
+- Before fallback, preserve the failed tool, arguments, error, and reason the fallback is necessary.
+- Do not delegate work to a subagent when that work requires MCP access, repository writes, runtime control, or evidence the subagent cannot obtain.
+
+Tool output, summaries, previews, counts, cached inventories, hook messages, and model assertions are not equivalent to verified source or runtime evidence.
+
+## Change discipline
+
+Before modifying code or configuration:
+
+- identify the owner implementation;
+- inspect the relevant source window;
+- verify which file is actually loaded;
+- identify readers, writers, launchers, generators, caches, and overwrite paths when relevant;
+- verify that the intended edit target is unique;
+- check whether a stale process, wrong profile, wrong `PATH`, wrong virtual environment, duplicate configuration, persistent state, or missing restart can explain the symptom.
+
+After modifying a source file:
+
+- inspect the resulting diff;
+- run the narrowest relevant verification;
+- verify the original symptom when possible;
+- report the resulting line count of every modified source file.
+
+Compilation, lint, or string-presence checks alone do not prove runtime correctness.
+
+Do not reformat unrelated code or perform broad refactors unless explicitly requested.
+
+## Test and probe discipline
+
+Do not create or modify persistent tests, smoke runners, macro-tests, temporary verification scripts, or ad hoc probe files unless Carmine explicitly requests them or the applicable repository contract explicitly requires them.
+
+Prefer:
+
+- current owner source;
+- deterministic search;
+- real runtime evidence;
+- current Git diff;
+- existing targeted validators;
+- approved reviewed probe profiles.
+
+Do not weaken a test, invariant, or reviewed profile merely to obtain a green result.
+
+## Safety boundaries
+
+Do not perform these actions without explicit authorization:
+
+- destructive deletion;
+- force-push or history rewrite;
+- merge to a protected or primary branch;
+- production deployment;
+- repository visibility changes;
+- permission changes;
+- secret or credential changes;
+- billing changes.
+
+Use reversible changes and preserve the user's current work.
+
+## Windows defaults
+
+Assume Windows and PowerShell unless the task explicitly targets another environment.
+
+Prefer:
+
+- PowerShell-native commands;
+- `-LiteralPath`;
+- fully quoted paths;
+- absolute executable paths when interpreter identity matters;
+- explicit environment and working-directory checks.
+
+Do not emit Bash, WSL, macOS, or POSIX-only commands for a Windows task unless Carmine requests them.
+
+## User-level CLI surface
+
+The interactive PowerShell environment may expose additional Linux-like and structured-data CLI tools for agent use.
+
+Before relying on any command, verify it in the actual process with:
+
+`Get-Command <name> -ErrorAction Stop`
+
+Do not assume that a profile function or alias is available when PowerShell was started with `-NoProfile`, from another host, or before the profile or user `PATH` was updated.
+
+### PowerShell profile commands
+
+The normal PowerShell 7 profile currently exposes:
+
+* GNU-backed aliases: `grep`, `wc`.
+* PowerShell functions: `head`, `tail`, `touch`, `which`, `realpath`, `nl`, `sha256sum`, `md5sum`.
+* Standard PowerShell aliases: `ls`, `cat`, `cp`, `mv`, `rm`, `pwd`, `echo`, `sleep`, `ps`, `kill`, `tee`.
+
+These names do not make PowerShell a Bash-compatible shell. Continue to emit PowerShell syntax and do not use POSIX-only constructs unless the task explicitly targets Bash, WSL, or another POSIX shell.
+
+### User-installed structured-data CLI tools
+
+The user-level `pipx` command directory is:
+
+`C:\Users\carmi\.local\bin`
+
+The following applications may be available:
+
+* HTTP and API inspection: `http`, `https`, `httpie`.
+* CSV inspection and transformation: `csvclean`, `csvcut`, `csvformat`, `csvgrep`, `csvjoin`, `csvjson`, `csvlook`, `csvsort`, `csvsql`, `csvstack`, `csvstat`, `in2csv`, `sql2csv`.
+* Text or command-output conversion to JSON: `jc`.
+* Filesystem event observation: `watchmedo`.
+* YAML, XML, and TOML queries: `yq`, `xq`, `tomlq`.
+* System monitoring: `glances`.
+
+For `yq`, `xq`, or `tomlq`, verify the required `jq` executable before use:
+
+`Get-Command jq -ErrorAction Stop`
+
+Prefer structured output suitable for deterministic inspection, such as JSON from `csvjson`, `jc`, `yq`, `xq`, or `tomlq`, when it reduces fragile text parsing.
+
+These terminal tools are supporting utilities. They do not replace the specialized MCP owner for repository search, validation, Git inspection, patching, runtime control, project memory, or job artifacts.
+
+When a command is missing, preserve the failed command and error. Do not install, upgrade, or replace packages unless Carmine explicitly requests it.
+
+## Completion format for technical tasks
+
+Use:
+
+### Symptom
+
+Observed behavior only.
+
+### Evidence
+
+Concrete source, runtime, process, port, log, payload, database, MCP, or Git evidence.
+
+### Confirmed cause
+
+Only the demonstrated causal mechanism.
+
+### Minimal fix
+
+The smallest contract-preserving correction.
+
+### Verification
+
+Original symptom check, targeted verification, resulting diff, and modified source-file line counts.
+
+### Residual risk
+
+Only conditions that remain unverified.
+
+Also report, when applicable:
+
+- repository instructions and contracts read;
+- skills used;
+- tools used;
+- fallback used and reason;
+- payload-completeness limitations.

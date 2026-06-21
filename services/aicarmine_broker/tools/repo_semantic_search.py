@@ -329,7 +329,14 @@ def _query_rag_db(
 
 
 def repo_semantic_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    query = str(args.get("query") or "").strip()
+    query = str(
+        args.get("query")
+        or args.get("pattern")
+        or args.get("symbol")
+        or args.get("text")
+        or args.get("needle")
+        or ""
+    ).strip()
     if not query:
         return {"ok": False, "tool": TOOL, "error": "missing_query"}
 

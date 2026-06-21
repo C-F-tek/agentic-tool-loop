@@ -87,7 +87,11 @@ class ToolSurfacePolicy:
             if isinstance(contract.get("required_next_tool_call"), dict)
             else None
         )
-        if required_tools is not None and not self._required_call_is_marked_satisfied(contract):
+        if (
+            required_tools is not None
+            and self._required_call_is_deterministically_validated(contract)
+            and not self._required_call_is_marked_satisfied(contract)
+        ):
             return self._ordered(set(required_tools))
 
         rewrite_latch_tools = self._rewrite_latch_tools(contract)
@@ -156,6 +160,13 @@ class ToolSurfacePolicy:
             else []
         )
         progress = safe_text(contract.get("required_next_progress"), limit=4000).strip().lower()
+
+        policy: dict[str, Any] = {
+            "schema": "planner_turn_tool_surface_policy.v1",
+            "reason": "",
+            "allowed_tool_names": [],
+            "candidate_actions_filtered": False,
+        }
         strict_code_product_payload = any(
             token in progress
             for token in (
@@ -169,12 +180,6 @@ class ToolSurfacePolicy:
                 "code_product_route_shift_target_already_read",
             )
         )
-        policy: dict[str, Any] = {
-            "schema": "planner_turn_tool_surface_policy.v1",
-            "reason": "",
-            "allowed_tool_names": [],
-            "candidate_actions_filtered": False,
-        }
         if surface_diagnostics:
             policy["tool_surface_diagnostics"] = surface_diagnostics
         required = (
@@ -182,10 +187,15 @@ class ToolSurfacePolicy:
             if isinstance(contract.get("required_next_tool_call"), dict)
             else {}
         )
+        required_validated = self._required_call_is_deterministically_validated(contract)
         rewrite_latch = self._final_rewrite_latch(contract)
         if rewrite_latch:
             required_tool = self._required_next_tool_call_tool(required)
-            if required_tool in self._REPO_DISCOVERY_TOOLS and not self._required_call_is_marked_satisfied(contract):
+            if (
+                required_tool in self._REPO_DISCOVERY_TOOLS
+                and required_validated
+                and not self._required_call_is_marked_satisfied(contract)
+            ):
                 arguments = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
                 reason = safe_text(required.get("reason") or progress or "final_rewrite_latch", limit=900)
                 action = {
@@ -202,16 +212,35 @@ class ToolSurfacePolicy:
                     "arguments": arguments,
                     "reason": reason,
                     "source": action["source"],
+                    "validated": True,
+                    "validation_source": safe_text(
+                        required.get("validation_source")
+                        or contract.get("required_next_tool_call_validation_source")
+                        or "deterministic_validator",
+                        limit=160,
+                    ),
                 }
+                contract["required_next_tool_call_validated"] = True
+                contract["required_next_tool_call_validation_source"] = contract["required_next_tool_call"]["validation_source"]
                 final_contract = (
                     contract.get("finalization_contract")
                     if isinstance(contract.get("finalization_contract"), dict)
                     else {}
                 )
+                final_contract_planner_forced_block = final_contract.get("planner_forced_terminal_block")
+                planner_forced_terminal_block = False
+                if isinstance(final_contract_planner_forced_block, dict):
+                    planner_forced_terminal_block = bool(final_contract_planner_forced_block.get("enabled"))
+                elif final_contract_planner_forced_block is True:
+                    planner_forced_terminal_block = True
                 final_contract["final_allowed"] = False
                 final_contract["planner_may_choose_final"] = False
                 contract["planner_may_choose_final"] = False
-                contract["planner_may_choose_block"] = False
+                if planner_forced_terminal_block:
+                    contract["planner_may_choose_block"] = True
+                    final_contract["planner_may_choose_block"] = True
+                else:
+                    contract["planner_may_choose_block"] = False
                 contract["turn_tool_surface_policy"] = {
                     **policy,
                     "reason": "final_rewrite_latch_required_tool",
@@ -222,6 +251,12 @@ class ToolSurfacePolicy:
                 }
                 contract["finalization_contract"] = final_contract
                 return contract
+            if required and not required_validated:
+                contract["required_next_tool_call_advisory"] = required
+                contract.pop("required_next_tool_call", None)
+                contract.pop("required_next_tool_call_validated", None)
+                contract.pop("required_next_tool_call_validation_source", None)
+                policy["required_next_tool_call_unvalidated_advisory"] = True
             final_contract = (
                 contract.get("finalization_contract")
                 if isinstance(contract.get("finalization_contract"), dict)
@@ -249,8 +284,11 @@ class ToolSurfacePolicy:
 
         if required and self._required_call_is_marked_satisfied(contract):
             contract.pop("required_next_tool_call", None)
+            contract.pop("required_next_tool_call_validated", None)
+            contract.pop("required_next_tool_call_validation_source", None)
             required = {}
-        if required.get("tool") == "planner_scratchpad_read":
+            required_validated = False
+        if required.get("tool") == "planner_scratchpad_read" and required_validated:
             enforced = enforce_required_scratchpad_read_continuation_contract(
                 contract,
                 {
@@ -278,7 +316,7 @@ class ToolSurfacePolicy:
             return contract
 
         required_tool = normalize_tool_name(safe_text(required.get("tool"), limit=160))
-        if required_tool in self._REPO_DISCOVERY_TOOLS:
+        if required_tool in self._REPO_DISCOVERY_TOOLS and required_validated:
             arguments = required.get("arguments") if isinstance(required.get("arguments"), dict) else {}
             reason = safe_text(required.get("reason") or progress or "required_next_tool_call", limit=900).strip()
             action = {
@@ -295,7 +333,16 @@ class ToolSurfacePolicy:
                 "arguments": arguments,
                 "reason": reason,
                 "source": action["source"],
+                "validated": True,
+                "validation_source": safe_text(
+                    required.get("validation_source")
+                    or contract.get("required_next_tool_call_validation_source")
+                    or "deterministic_validator",
+                    limit=160,
+                ),
             }
+            contract["required_next_tool_call_validated"] = True
+            contract["required_next_tool_call_validation_source"] = contract["required_next_tool_call"]["validation_source"]
             contract["planner_may_choose_final"] = False
             final_contract = (
                 contract.get("finalization_contract")
@@ -316,6 +363,15 @@ class ToolSurfacePolicy:
             )
             contract["turn_tool_surface_policy"] = policy
             return contract
+
+        if required and not required_validated:
+            contract["required_next_tool_call_advisory"] = required
+            contract.pop("required_next_tool_call", None)
+            contract.pop("required_next_tool_call_validated", None)
+            contract.pop("required_next_tool_call_validation_source", None)
+            policy["required_next_tool_call_unvalidated_advisory"] = True
+            policy["reason"] = "required_next_tool_call_unvalidated_advisory"
+            contract["turn_tool_surface_policy"] = policy
 
         if self._contract_coverage_required(contract) and not self._contract_coverage_satisfied(contract):
             coverage_actions = [
@@ -708,7 +764,7 @@ class ToolSurfacePolicy:
         if self._required_call_is_marked_satisfied(contract):
             return None
         required_tool = self._required_next_tool_call_tool(required)
-        if required_tool in self._REPO_DISCOVERY_TOOLS:
+        if required_tool in self._REPO_DISCOVERY_TOOLS and self._required_call_is_deterministically_validated(contract):
             return [required_tool]
         if latch in {"rewrite_required", "required_gap_only", "terminal_block_required"}:
             return []
@@ -824,6 +880,20 @@ class ToolSurfacePolicy:
                 return True
         return False
 
+    @staticmethod
+    def _required_call_is_deterministically_validated(contract: dict[str, Any]) -> bool:
+        contract = contract if isinstance(contract, dict) else {}
+        required = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if not required:
+            return False
+        if required.get("validated") is True:
+            return True
+        return contract.get("required_next_tool_call_validated") is True
+
     def _set_actions(
         self,
         contract: dict[str, Any],
@@ -859,13 +929,73 @@ class ToolSurfacePolicy:
         *,
         suppress_support_expansion: bool = False,
     ) -> None:
-        policy["candidate_actions_filtered"] = False
-        policy["reason"] = reason
-        if suppress_support_expansion:
-            policy["suppress_non_terminal_support_expansion"] = True
-        policy["allowed_tool_names"] = self._ordered(allowed_names)
-        contract["turn_tool_surface_policy"] = policy
+        normalized_allowed = {
+            normalize_tool_name(safe_text(name, limit=160))
+            for name in allowed_names
+            if normalize_tool_name(safe_text(name, limit=160))
+        }
 
+        existing_actions = (
+            contract.get("candidate_next_actions")
+            if isinstance(
+                contract.get("candidate_next_actions"),
+                list,
+            )
+            else []
+        )
+
+        kept_actions = [
+            action
+            for action in existing_actions
+            if candidate_action_tool(action) in normalized_allowed
+        ]
+        removed_actions = [
+            action
+            for action in existing_actions
+            if candidate_action_tool(action) not in normalized_allowed
+        ]
+
+        contract["candidate_next_actions"] = (
+            dedupe_candidate_actions(kept_actions)
+        )
+
+        if removed_actions:
+            stale_actions = (
+                contract.get("stale_candidate_next_actions")
+                if isinstance(
+                    contract.get("stale_candidate_next_actions"),
+                    list,
+                )
+                else []
+            )
+
+            contract["stale_candidate_next_actions"] = (
+                dedupe_candidate_actions(
+                    [
+                        *removed_actions,
+                        *stale_actions,
+                    ]
+                )[:32]
+            )
+
+        policy["candidate_actions_filtered"] = bool(
+            removed_actions
+        )
+        policy["reason"] = reason
+
+        if suppress_support_expansion:
+            policy[
+                "suppress_non_terminal_support_expansion"
+            ] = True
+
+        policy["allowed_tool_names"] = self._ordered(
+            normalized_allowed
+        )
+
+        if not normalized_allowed:
+            policy["locked_empty_tool_surface"] = True
+
+        contract["turn_tool_surface_policy"] = policy
     def _add_allowed_tools(
         self,
         contract: dict[str, Any],

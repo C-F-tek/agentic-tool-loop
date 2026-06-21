@@ -16,6 +16,24 @@ from .config import PLANNER_MEMORY_DB, PLANNER_MEMORY_RETENTION_DAYS
 logger = logging.getLogger(__name__)
 
 
+def _memory_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:
+    """Helper locale per parsing bounded int senza dipendenze circolari."""
+    keys = (names,) if isinstance(names, str) else names
+    selected: Any = None
+    for key in keys:
+        value = args.get(key)
+        if value is not None and str(value).strip() != "":
+            selected = value
+            break
+    if selected is None:
+        selected = default
+    try:
+        parsed = int(selected)
+    except (TypeError, ValueError, OverflowError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
 def _preview(value: Any, *, limit: int = 500) -> str:
     try:
         return str(value)[:limit]
@@ -430,14 +448,20 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
     document_id = str(args.get("document_id") or args.get("id") or "").strip()
     section = str(args.get("section") or args.get("tag") or "").strip()
     query = str(args.get("query") or "").strip()
-    limit = max(1, int(args.get("limit") or 3))
-    max_chars = max(500, int(args.get("max_chars") or 3000))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=3, minimum=1, maximum=100)
+    except Exception:
+        limit = 3
+    try:
+        max_chars = max(500, _memory_bounded_int_arg(args, ("max_chars",), default=3000, minimum=500, maximum=100000))
+    except Exception:
+        max_chars = 3000
     offset_arg = args.get("offset")
     offset = None
     if offset_arg not in (None, ""):
         try:
-            offset = max(0, int(offset_arg))
-        except (TypeError, ValueError):
+            offset = _memory_bounded_int_arg(args, ("offset",), default=0, minimum=0, maximum=1000000)
+        except Exception:
             return {
                 "ok": False,
                 "tool": "planner_scratchpad_read",
@@ -559,7 +583,10 @@ def planner_scratchpad_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
     rows = _read_scratchpad(root)
     query = str(args.get("query") or "").lower()
     tag = str(args.get("tag") or "")
-    limit = max(1, int(args.get("limit") or 50))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=50, minimum=1, maximum=500)
+    except Exception:
+        limit = 50
     selected: list[dict[str, Any]] = []
     for row in reversed(rows):
         text = str(row.get("text") or "")
@@ -642,8 +669,8 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
     now = time.time()
     ttl_days = args.get("ttl_days")
     try:
-        retention_days = int(ttl_days if ttl_days not in (None, "") else PLANNER_MEMORY_RETENTION_DAYS)
-    except (TypeError, ValueError):
+        retention_days = _memory_bounded_int_arg(args, ("ttl_days",), default=PLANNER_MEMORY_RETENTION_DAYS, minimum=0, maximum=36500)
+    except Exception:
         return {
             "ok": False,
             "tool": "runtime_sqlite_memory_write",
@@ -731,8 +758,8 @@ def runtime_sqlite_memory_search(args: dict[str, Any], root: Path) -> dict[str, 
     db_path = _memory_db(args)
     query = str(args.get("query") or "").strip()
     try:
-        limit = max(1, int(args.get("limit") or 50))
-    except (TypeError, ValueError):
+        limit = _memory_bounded_int_arg(args, ("limit",), default=50, minimum=1, maximum=500)
+    except Exception:
         limit = 50
     kind = str(args.get("kind") or "")
     tag = str(args.get("tag") or "")
@@ -798,7 +825,10 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
     merely because it has not called a memory tool yet.
     """
     goal = str(args.get("goal") or "")
-    limit = max(1, int(args.get("limit") or 12))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=12, minimum=1, maximum=100)
+    except Exception:
+        limit = 12
     target_key = str(args.get("target_key") or args.get("tag") or "").strip()
     db_path = _memory_db(args)
     scratchpad = planner_scratchpad_read({"limit": limit}, root)

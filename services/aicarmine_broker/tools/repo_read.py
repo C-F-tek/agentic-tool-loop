@@ -6,6 +6,7 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error
 
 
 def _read_paths_from_items(value: object) -> list[str]:
@@ -44,11 +45,21 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
             deduped.append(raw_s)
     paths = deduped
 
-    max_chars = int(args.get("max_chars") or 80000)
-    max_paths = max(1, int(args.get("max_paths") or args.get("limit") or 200))
-    line = args.get("line")
-    before = int(args.get("before") or 40)
-    after = int(args.get("after") or 120)
+    try:
+        max_chars = bounded_int_arg(args, "max_chars", default=80000, minimum=1, maximum=200000)
+        requested_max_paths = bounded_int_arg(
+            args,
+            ("max_paths", "limit"),
+            default=len(paths) or 1,
+            minimum=1,
+            maximum=max(1, len(paths)),
+        )
+        max_paths = min(requested_max_paths, len(paths))
+        before = bounded_int_arg(args, "before", default=40, minimum=0, maximum=1000)
+        after = bounded_int_arg(args, "after", default=120, minimum=0, maximum=1000)
+        line = bounded_int_arg(args, "line", default=0, minimum=0, maximum=10_000_000)
+    except Exception as exc:
+        return deterministic_input_error("repo_read", exc)
     items: list[dict[str, Any]] = []
 
     for raw in paths[:max_paths]:

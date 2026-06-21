@@ -288,7 +288,11 @@ def _post_write_validation_candidates(
     if validation_failed and paths:
         candidates.append({
             "tool": "repo_read",
-            "arguments": {"paths": paths, "max_chars": 50000},
+            "arguments": {
+                "paths": paths,
+                "max_chars": 50000,
+                "max_paths": len(paths),
+            },
             "reason": "post_write_validation_failed_read_modified_files",
             "source": "post_write_validation_contract",
         })
@@ -802,13 +806,27 @@ class EvidenceBuilder:
             list_failed,
             core_discovery_candidates,
         )
+        valid_unread_suggested_read_paths: list[str] = []
+        for path in semantic_suggested_read_paths:
+            if path in verified_read_path_set:
+                continue
+            if not _path_exists_repo_relative(path):
+                continue
+            if not _repo_readable_evidence_file(path):
+                continue
+            if target_scope and not _path_under_scope(path, target_scope):
+                continue
+            valid_unread_suggested_read_paths.append(path)
+
         semantic_suggested_actions: list[dict[str, Any]] = []
-        if semantic_suggested_read_paths:
+        if valid_unread_suggested_read_paths:
+            semantic_suggested_batch_paths = valid_unread_suggested_read_paths[:8]
             semantic_suggested_actions.append({
                 "tool": "repo_read",
                 "arguments": {
-                    "paths": semantic_suggested_read_paths[:8],
+                    "paths": semantic_suggested_batch_paths,
                     "max_chars": semantic_suggested_read_max_chars,
+                    "max_paths": len(semantic_suggested_batch_paths),
                 },
                 "reason": (
                     "repo_semantic_search returned concrete suggested_repo_read paths; "
@@ -816,7 +834,7 @@ class EvidenceBuilder:
                 ),
                 "source": "repo_semantic_search.suggested_repo_read",
             })
-            for path in semantic_suggested_read_paths[:8]:
+            for path in valid_unread_suggested_read_paths[:8]:
                 semantic_suggested_actions.append({
                     "tool": "repo_read",
                     "arguments": {"path": path, "max_chars": semantic_suggested_read_max_chars},
@@ -1021,9 +1039,14 @@ class EvidenceBuilder:
                     "Planner must return a typed block instead of generic repository discovery."
                 )
             elif apply_unread_target_files:
+                apply_unread_batch_paths = apply_unread_target_files[:6]
                 candidates = [{
                     "tool": "repo_read",
-                    "arguments": {"paths": apply_unread_target_files[:6], "max_chars": 50000},
+                    "arguments": {
+                        "paths": apply_unread_batch_paths,
+                        "max_chars": 50000,
+                        "max_paths": len(apply_unread_batch_paths),
+                    },
                     "reason": "apply_write_preloop_target_read_required",
                     "source": "apply_write_contract",
                 }]
@@ -1362,6 +1385,8 @@ class EvidenceBuilder:
                         if isinstance(result.get("required_next_tool_call"), dict)
                         else {}
                     ),
+                    "required_next_tool_call_validated": result.get("required_next_tool_call_validated"),
+                    "required_next_tool_call_validation_source": result.get("required_next_tool_call_validation_source"),
                     "evidence_contract_overlay": (
                         result.get("evidence_contract_overlay")
                         if isinstance(result.get("evidence_contract_overlay"), dict)
@@ -1399,37 +1424,83 @@ class EvidenceBuilder:
         latest_required_next_tool_call: dict[str, Any] = {}
         latest_required_next_progress = ""
         latest_evidence_contract_overlay: dict[str, Any] = {}
+        latest_evidence_contract_overlay_required_call: dict[str, Any] = {}
         stale_required_next_tool_calls: list[dict[str, Any]] = []
+
         for row in reversed(validation_rejections):
             overlay = row.get("evidence_contract_overlay")
-            if isinstance(overlay, dict) and overlay and not latest_evidence_contract_overlay:
+            if (
+                isinstance(overlay, dict)
+                and overlay
+                and not latest_evidence_contract_overlay
+            ):
                 latest_evidence_contract_overlay = overlay
+
+                overlay_required_call = row.get(
+                    "required_next_tool_call"
+                )
+                if (
+                    isinstance(overlay_required_call, dict)
+                    and overlay_required_call
+                ):
+                    latest_evidence_contract_overlay_required_call = (
+                        overlay_required_call
+                    )
+
             required_call = row.get("required_next_tool_call")
-            if isinstance(required_call, dict) and required_call and not latest_required_next_tool_call:
+            if (
+                isinstance(required_call, dict)
+                and required_call
+                and not latest_required_next_tool_call
+            ):
                 satisfaction = required_next_tool_call_satisfaction(
                     required_call,
                     history,
                     successful_repo_read_paths=successful_repo_read_paths,
-                    successful_window_signatures=_successful_window_signatures,
-                    repo_read_window_signature=_repo_read_window_signature,
-                    planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
-                    decision_paths=lambda call_args: _agentic_v2_decision_paths("repo_read", call_args),
+                    successful_window_signatures=(
+                        _successful_window_signatures
+                    ),
+                    repo_read_window_signature=(
+                        _repo_read_window_signature
+                    ),
+                    planner_scratchpad_window_signature=(
+                        _planner_scratchpad_window_signature
+                    ),
+                    decision_paths=lambda call_args: (
+                        _agentic_v2_decision_paths(
+                            "repo_read",
+                            call_args,
+                        )
+                    ),
                 )
+
                 if satisfaction.get("satisfied") is True:
-                    row["required_next_tool_call_satisfied"] = satisfaction
-                    stale_required_next_tool_calls.append(satisfaction)
+                    row["required_next_tool_call_satisfied"] = (
+                        satisfaction
+                    )
+                    stale_required_next_tool_calls.append(
+                        satisfaction
+                    )
                 else:
                     latest_required_next_tool_call = required_call
-                    latest_required_next_progress = str(row.get("next_instruction") or "").strip()
-            candidate = str(row.get("action_plan_candidate") or "").strip()
+                    latest_required_next_progress = str(
+                        row.get("next_instruction") or ""
+                    ).strip()
+
+            candidate = str(
+                row.get("action_plan_candidate") or ""
+            ).strip()
             if candidate:
                 action_plan_candidate = candidate
+
             if action_plan_candidate and latest_required_next_tool_call:
                 break
-        disallowed_invalid_decision_signatures = _disallowed_invalid_code_product_signatures(
-            validation_rejections
-        )
 
+        disallowed_invalid_decision_signatures = (
+            _disallowed_invalid_code_product_signatures(
+                validation_rejections
+            )
+        )
         contract = {
             "contract_type": "planner_decides_controller_validates",
             "planner_must_decide_next_action": True,
@@ -1506,11 +1577,15 @@ class EvidenceBuilder:
             "ranked_core_candidate_dirs": core_candidates,
             "semantic_search_followup": {
                 "schema": "semantic_search_followup.v1",
-                "suggested_next_tool": "repo_read" if semantic_suggested_read_paths else "",
-                "suggested_repo_read_paths": semantic_suggested_read_paths[:40],
-                "suggested_repo_read_count": len(semantic_suggested_read_paths),
+                "suggested_next_tool": "repo_read" if valid_unread_suggested_read_paths else "",  # Patch P2a: usare valid_unread
+                "suggested_repo_read_paths": valid_unread_suggested_read_paths[:40],
+                "suggested_repo_read_count": len(valid_unread_suggested_read_paths),
                 "max_chars": semantic_suggested_read_max_chars if semantic_suggested_read_paths else None,
                 "source": "repo_semantic_search.suggested_repo_read",
+                **(
+                    {"suppressed_reason": "no_valid_unread_suggested_repo_read_paths"}
+                    if not valid_unread_suggested_read_paths else {}
+                ),
             },
             "candidate_next_actions": candidates,
             "disallowed_next_decision_signatures": disallowed_invalid_decision_signatures,
@@ -1652,6 +1727,69 @@ class EvidenceBuilder:
         }
         for stale_status in stale_required_next_tool_calls:
             append_stale_required_call_marker(contract, stale_status)
+        rewrite_latch_active = str(contract.get("final_rewrite_latch") or "").strip() in {
+            "rewrite_required",
+            "required_gap_only",
+            "terminal_block_required",
+        }
+        if (
+            rewrite_latch_active
+            and not latest_required_next_tool_call
+            and valid_unread_suggested_read_paths
+            and not (
+                isinstance(contract.get("required_next_tool_call"), dict)
+                and bool(contract.get("required_next_tool_call"))
+            )
+        ):
+            suggested_read_paths = valid_unread_suggested_read_paths[:8]
+            required_next_tool_call: dict[str, Any] = {
+                "tool": "repo_read",
+                "arguments": {
+                    "paths": suggested_read_paths,
+                    "max_chars": semantic_suggested_read_max_chars,
+                    "max_paths": len(suggested_read_paths),
+                },
+                "reason": (
+                    "repo_semantic_search returned concrete unread suggested_repo_read paths; "
+                    "read them before another final attempt."
+                ),
+                "source": "repo_semantic_search.suggested_repo_read",
+                "validated": True,
+                "validation_source": "deterministic_builder_semantic_followup",
+            }
+            contract["required_next_tool_call"] = required_next_tool_call
+            contract["required_next_tool_call_validated"] = True
+            contract["required_next_tool_call_validation_source"] = "deterministic_builder_semantic_followup"
+            if not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Required next tool was promoted from repo_semantic_search suggested_repo_read paths "
+                    "in rewrite lane."
+                )
+            contract["planner_may_choose_final"] = False
+            required_next_action = {
+                "tool": "repo_read",
+                "arguments": required_next_tool_call.get("arguments") or {},
+                "reason": required_next_tool_call.get("reason") or "",
+                "source": required_next_tool_call.get("source") or "repo_semantic_search.suggested_repo_read",
+            }
+            existing_keys = {
+                (
+                    str(item.get("tool") or ""),
+                    tuple((item.get("arguments") or {}).get("paths") or []),
+                )
+                for item in contract.get("candidate_next_actions") or []
+                if isinstance(item, dict)
+            }
+            if (
+                "repo_read",
+                tuple(suggested_read_paths),
+            ) not in existing_keys:
+                contract["candidate_next_actions"] = [required_next_action] + list(contract.get("candidate_next_actions") or [])[:15]
+            final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "required_next_tool_call_from_previous_guard"
+            contract["finalization_contract"] = final_contract
         if stale_required_next_tool_calls and not latest_required_next_tool_call and not contract.get("required_next_progress"):
             contract["required_next_progress"] = (
                 "A previous required_next_tool_call is already satisfied by successful tool history. "
@@ -2031,7 +2169,73 @@ class EvidenceBuilder:
             contract["required_next_progress"] = (
                 "Use prior evidence. If enough, final with concrete cited paths; otherwise choose a new evidence-bound tool."
             )
-        if latest_evidence_contract_overlay:
+        overlay_required_route_status: dict[str, Any] = {}
+
+        if latest_evidence_contract_overlay_required_call:
+            overlay_required_route_status = (
+                required_next_tool_call_satisfaction(
+                    latest_evidence_contract_overlay_required_call,
+                    history,
+                    successful_repo_read_paths=(
+                        successful_repo_read_paths
+                    ),
+                    successful_window_signatures=(
+                        _successful_window_signatures
+                    ),
+                    repo_read_window_signature=(
+                        _repo_read_window_signature
+                    ),
+                    planner_scratchpad_window_signature=(
+                        _planner_scratchpad_window_signature
+                    ),
+                    decision_paths=lambda call_args: (
+                        _agentic_v2_decision_paths(
+                            "repo_read",
+                            call_args,
+                        )
+                    ),
+                )
+            )
+
+        overlay_required_route_consumed = (
+            overlay_required_route_status.get("satisfied") is True
+        )
+
+        if overlay_required_route_consumed:
+            append_stale_required_call_marker(
+                contract,
+                overlay_required_route_status,
+            )
+
+            contract["post_final_required_route_satisfied"] = (
+                overlay_required_route_status
+            )
+
+            if (
+                not latest_required_next_tool_call
+                and contract.get("planner_may_choose_final") is True
+            ):
+                contract["required_next_progress"] = (
+                    "The required post-final evidence route succeeded. "
+                    "Rewrite the final using verified evidence; do not "
+                    "repeat the satisfied tool call."
+                )
+            elif (
+                not latest_required_next_tool_call
+                and not str(
+                    contract.get("required_next_progress") or ""
+                ).strip()
+            ):
+                contract["required_next_progress"] = (
+                    "The previous required post-final route succeeded. "
+                    "Continue from the current evidence contract without "
+                    "repeating that tool call."
+                )
+
+        if (
+            latest_evidence_contract_overlay
+            and not overlay_required_route_consumed
+        ):
             overlay_latch = str(latest_evidence_contract_overlay.get("final_rewrite_latch") or "").strip()
             overlay_cuda_required = latest_evidence_contract_overlay.get("planner_cuda_rewrite_required") is True
             if overlay_latch or overlay_cuda_required:
@@ -2049,6 +2253,10 @@ class EvidenceBuilder:
                     "required_next_missing_evidences",
                     "required_next_output_sections",
                     "invalid_required_next_tool_call_paths",
+                    "invalid_required_next_tool_call_query",
+                    "invalid_required_next_tool_call_reason",
+                    "required_next_tool_call_validated",
+                    "required_next_tool_call_validation_source",
                     "stale_required_next_tool_calls",
                 ):
                     value = latest_evidence_contract_overlay.get(key)
@@ -2088,6 +2296,8 @@ class EvidenceBuilder:
                         "planner_may_choose_final",
                         "planner_may_choose_block",
                         "reason",
+                        "planner_forced_terminal_block",
+                        "planner_forced_terminal_block_reason",
                     ):
                         if key in overlay_final_contract:
                             final_contract[key] = overlay_final_contract.get(key)
@@ -2099,6 +2309,27 @@ class EvidenceBuilder:
                     final_contract["planner_may_choose_block"] = bool(
                         latest_evidence_contract_overlay.get("planner_may_choose_block")
                     )
+                if (
+                    contract.get("final_rewrite_latch") in {
+                        "rewrite_required",
+                        "required_gap_only",
+                        "terminal_block_required",
+                    }
+                ):
+                    final_contract["final_allowed"] = False
+                    final_contract["planner_may_choose_final"] = False
+                    if contract.get("final_rewrite_latch") == "terminal_block_required":
+                        final_contract["planner_may_choose_block"] = True
+                        final_contract.setdefault("planner_forced_terminal_block", True)
+                        final_contract.setdefault(
+                            "planner_forced_terminal_block_reason",
+                            "planner_cuda_rewrite_required_history_overlay",
+                        )
+                        contract["planner_may_choose_block"] = True
+                    else:
+                        final_contract["planner_may_choose_block"] = final_contract.get("planner_may_choose_block") is True
+                        contract["planner_may_choose_block"] = bool(final_contract.get("planner_may_choose_block"))
+                    final_contract.setdefault("reason", "final_rewrite_latch_active")
                 contract["finalization_contract"] = final_contract
         proofed_candidates: list[dict[str, Any]] = []
         for action in contract.get("candidate_next_actions") or []:

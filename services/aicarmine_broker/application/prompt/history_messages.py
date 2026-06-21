@@ -230,7 +230,18 @@ def planner_repo_read_history_payload(item: dict[str, Any], result: dict[str, An
             "full_content_not_repeated_in_history": True,
             "primary_context": "required_working_set.repo_reads",
             "history_contains_path_listing_only": True,
-            "planner_can_use_required_working_set_or_read_selectively": True,
+            "forbidden_full_path_repo_read_paths": [
+                row.get("path")
+                for row in read_items
+                if isinstance(row, dict) and row.get("path")
+            ][:24],
+            "planner_must_not_repeat_full_path_repo_read_for_listed_paths": True,
+            "planner_can_use_required_working_set": True,
+            "planner_additional_context_policy": [
+                "planner_scratchpad_read window",
+                "repo_read explicit line/window",
+                "search tools with concrete query",
+            ],
             "artifact_payload_available": bool(result.get("artifact")),
         },
     }

@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe\" \"C:\\Users\\carmi\\AI\\.codex\\hooks\\aicarmine_mcp_probe_all.py\"",
+            "timeout": 240,
+            "statusMessage": "Probing all AI-Carmine MCP servers"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe\" \"C:\\Users\\carmi\\AI\\.codex\\hooks\\aicarmine_mcp_probe_all.py\" --quick",
+            "timeout": 240,
+            "statusMessage": "Refreshing MCP probe report"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe\" \"C:\\Users\\carmi\\AI\\.codex\\hooks\\aicarmine_mcp_tool_log.py\" pre",
+            "timeout": 60,
+            "statusMessage": "Logging MCP tool attempt"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe\" \"C:\\Users\\carmi\\AI\\.codex\\hooks\\aicarmine_mcp_tool_log.py\" post",
+            "timeout": 60,
+            "statusMessage": "Logging MCP tool result"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
+from pathlib import Path
 
 from .env_loader import EnvMapping, env_bool, env_error_context, env_first, env_float, env_int, env_int_any, env_str
-
 
 @dataclass(frozen=True)
 class BrokerConfig:
     service_name: str
+    orientation_lane_mode: str
     app_title: str
     app_version: str
     app_description: str
@@ -76,6 +76,22 @@ class BrokerConfig:
     max_tool_result_chars: int
     v6_marker: str
 
+def _normalized_lane_mode(value: object, *, default: str = "legacy") -> str:
+    """Normalize lane mode value.
+    Contract:
+    - valori ammessi: legacy, shadow, active;
+    - trim e lowercase;
+    - valore assente, vuoto o sconosciuto => legacy;
+    - nessuna eccezione per valore sconosciuto;
+    - nessun logging;
+    - nessun side effect.
+    """
+    if not isinstance(value, str):
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"legacy", "shadow", "active"}:
+        return normalized
+    return default
 
 def _resolved_path(value: Any, *, env_name: str) -> Path:
     try:
@@ -95,10 +111,8 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-
-DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding"
+DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding-v5-1"
 DEFAULT_PLANNER_NUM_CTX = 262144
-
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
     try:
@@ -108,7 +122,6 @@ def _default_prompt_char_budget(num_ctx_effective: int) -> int:
     if ctx <= 0:
         return 48000
     return max(48000, ctx)
-
 
 def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
     num_ctx_requested = env_int("AICARMINE_AGENTIC_PLANNER_NUM_CTX", DEFAULT_PLANNER_NUM_CTX, env)
@@ -269,4 +282,11 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
             env,
         ),
         v6_marker="public_x_v6_vulkan_select_dispatcher_execute_deterministic_wrap",
+        orientation_lane_mode=_normalized_lane_mode(
+            env_str(
+                "AICARMINE_ORIENTATION_LANE_MODE",
+                "legacy",
+                env,
+            ),
+        ),
     )

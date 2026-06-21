@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from .job_html_assets import BASE_CSS, BASE_JS, render_page_shell, render_json_page, render_json_section, render_status_badge, render_metric_grid, render_pre_block, render_section_link, render_toolbar, render_job_nav, render_active_job_panel
 from .job_store import agent_job_root, compact_agent_status, list_agent_jobs, load_agent_job_state, read_agent_events, read_json
 
 
@@ -379,11 +380,144 @@ def agent_job_planner_stream_text(job_id: str) -> str:
 
 
 def _html_pre(value: Any) -> str:
+    """Render a pre-formatted code block with HTML escaping."""
     if isinstance(value, str):
         text = _clip_text(value)
     else:
         text = _json_pretty(value)
     return f"<pre>{html.escape(text)}</pre>"
+
+
+def _html_page(title: str, body: str, *, extra_css: str = "", extra_js: str = "") -> str:
+    extra_css_attr = f'<style>{extra_css}</style>' if extra_css else ""
+    extra_js_script = f'<script>{extra_js}</script>' if extra_js else ""
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{html.escape(title)}</title>
+{extra_css_attr}
+</head>
+<body>
+{body}
+{extra_js_script}
+</body>
+</html>"""
+
+
+def _html_json_page(title: str, payload: Any, *, section_url: str = "", max_chars: int = 300_000) -> str:
+    json_text = _json_pretty(payload, max_chars=max_chars)
+    body = f"""
+<div class="card">
+  <h2>{html.escape(title)}</h2>
+  <pre>{json_text}</pre>
+</div>
+"""
+    if section_url:
+        body += f'<a href="{html.escape(section_url)}">← Back</a>'
+    return _html_page(title, body)
+
+
+def _html_json_section(title: str, payload: Any, *, parent_url: str = "", max_chars: int = 300_000) -> str:
+    json_text = _json_pretty(payload, max_chars=max_chars)
+    body = f"""
+<h3>{html.escape(title)}</h3>
+<pre>{json_text}</pre>
+"""
+    if parent_url:
+        body += f'<a href="{html.escape(parent_url)}">↑ Parent</a>'
+    return body
+
+
+def _html_status_badge(ok: bool) -> str:
+    if ok:
+        return '<span class="pill ok">✓ OK</span>'
+    elif ok is False:
+        return '<span class="pill bad">✗ Failed</span>'
+    else:
+        return '<span class="pill warn">⚠ Warning</span>'
+
+
+def _html_metric_grid(metrics: dict[str, Any]) -> str:
+    if not metrics:
+        return ""
+    rows = []
+    for key, value in sorted(metrics.items()):
+        rows.append(f'<div class="metric-row"><span>{html.escape(key)}</span><b>{html.escape(str(value))}</b></div>')
+    return "\n".join(rows)
+
+
+def _html_pre_block(value: Any, language: str = "json") -> str:
+    text = _json_pretty(value) if isinstance(value, (dict, list)) else str(value)
+    return f'<pre class="{html.escape(language)}">{text}</pre>'
+
+
+def _html_section_link(label: str, href: str) -> str:
+    return f'<a href="{html.escape(href)}">{html.escape(label)}</a>'
+
+
+def _html_toolbar(actions: list[tuple[str, str]]) -> str:
+    if not actions:
+        return ""
+    parts = []
+    for label, href in actions:
+        btn_class = ""
+        if "secondary" in str(label).lower():
+            btn_class = " secondary"
+        parts.append(f'<button class="btn{btn_class}" onclick="location.href=\'{html.escape(href)}\'">{html.escape(label)}</button>')
+    return " ".join(parts)
+
+
+def _html_job_nav(job_id: str) -> str:
+    actions = [
+        ("job lab", f"{job_id}/planner-lab"),
+        ("IA view", f"{job_id}/ia-view"),
+        ("events", f"{job_id}/events"),
+        ("planner stream", f"{job_id}/planner-stream"),
+        ("final json", f"{job_id}/final.json"),
+        ("status json", f"{job_id}/json"),
+    ]
+    return _html_toolbar([(label, href) for label, href in actions])
+
+
+def _html_active_job_panel(job_id: str, status_text: str) -> str:
+    return f"""
+<div class="card active-job">
+  <div class="shell-header">
+    <div>
+      <h2 class="shell-title">Active loop</h2>
+      <div class="status-line"><span>job</span><b>{html.escape(job_id)}</b><span class="muted">{html.escape(status_text)}</span></div>
+    </div>
+    <div class="toolbar">
+      <button onclick="loadJob(true)">Load</button>
+      <button class="secondary" onclick="startPolling()">Poll</button>
+      <button class="secondary" onclick="stopPolling()">Stop poll</button>
+    </div>
+  </div>
+  <div class="job-actions">
+    {_html_job_nav(job_id)}
+  </div>
+</div>
+"""
+
+
+def _html_recent_job_card(job_id: str, goal: str, actions: list[tuple[str, str]], status: str = "") -> str:
+    status_badge = _html_status_badge(bool(status)) if status else ""
+    actions_html = _html_toolbar(actions)
+    return f"""
+<div class="recent-job">
+  <div class="recent-job-head">
+    <div>
+      <div class="recent-job-id">{html.escape(job_id)}</div>
+      <div class="recent-job-goal">{html.escape(goal)}</div>
+      {status_badge}
+    </div>
+    <div class="recent-job-actions">
+      {actions_html}
+    </div>
+  </div>
+</div>
+"""
 
 
 def _ia_debug_lanes(

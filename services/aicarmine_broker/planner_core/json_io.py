@@ -31,8 +31,9 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    stream_timeout_seconds = max(3600, int(timeout or 3600))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=stream_timeout_seconds) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except (socket.timeout, TimeoutError) as exc:
         return {
@@ -41,7 +42,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "backend_unreachable": False,
             "error_type": type(exc).__name__,
             "error": str(exc),
-            "timeout_seconds": int(timeout or 0),
+            "timeout_seconds": stream_timeout_seconds,
         }
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", None)
@@ -54,7 +55,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "error_type": type(exc).__name__,
             "error": str(exc),
             "network_reason_type": type(reason).__name__ if reason is not None else None,
-            "timeout_seconds": int(timeout or 0),
+            "timeout_seconds": stream_timeout_seconds,
         }
     except OSError as exc:
         is_timeout = "timed out" in str(exc).lower()
@@ -64,7 +65,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "backend_unreachable": not is_timeout,
             "error_type": type(exc).__name__,
             "error": str(exc),
-            "timeout_seconds": int(timeout or 0),
+            "timeout_seconds": stream_timeout_seconds,
         }
     try:
         decoded = json.loads(raw)
@@ -265,7 +266,7 @@ def post_json_stream_to_file(
     allow_plain_text_without_json: bool = False,
 ) -> dict[str, Any]:
     started = time.time()
-    stream_timeout_seconds = max(3600, int(timeout or 1))
+    stream_timeout_seconds = max(3600, int(timeout or 3600))
     chunks: list[str] = []
     guard_chunks: list[str] = []
     native_tool_calls: list[dict[str, Any]] = []
@@ -304,7 +305,7 @@ def post_json_stream_to_file(
 
     def open_response() -> None:
         try:
-            response = urllib.request.urlopen(req, timeout=timeout)
+            response = urllib.request.urlopen(req, timeout=stream_timeout_seconds)
             if response_abandoned.is_set():
                 try:
                     response.close()
@@ -395,14 +396,15 @@ def post_json_stream_to_file(
             while True:
                 if time.time() >= deadline:
                     return {
-                        "ok": False,
-                        "backend_timeout": True,
-                        "backend_unreachable": False,
-                        "error_type": "PlannerStreamTimeout",
-                        "error": f"planner stream exceeded {timeout}s",
-                        "partial_content": "".join(chunks)[-12000:],
-                        "stream_path": str(stream_path),
-                    }
+                    "ok": False,
+                    "backend_timeout": True,
+                    "backend_unreachable": False,
+                    "error_type": "PlannerStreamTimeout",
+                    "error": f"planner stream exceeded {stream_timeout_seconds}s",
+                    "partial_content": "".join(chunks)[-12000:],
+                    "stream_path": str(stream_path),
+                    "timeout_seconds": stream_timeout_seconds,
+                }
                 try:
                     raw_line = response.readline()
                 except (socket.timeout, TimeoutError):

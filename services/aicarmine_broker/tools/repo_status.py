@@ -88,14 +88,18 @@ def repo_capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         {
             "name": "repo_search",
             "risk": "read_only",
-            "when_to_use": "Find symbols, paths, functions, errors, TODO/FIXME in file content. Accepts query, pattern or symbol.",
-            "required_args": ["query|pattern|symbol"],
+            "when_to_use": "Find symbols, paths, functions, errors, TODO/FIXME in file content. Accepts query, pattern, symbol, needle or text.",
+            "required_args": ["query|pattern|symbol|needle|text"],
         },
         {
             "name": "repo_semantic_search",
-            "risk": "read_only",
-            "when_to_use": "Rank repo files/chunks with the delta RAG index when lexical search is too broad; follow with repo_read on returned paths.",
-            "required_args": ["query"],
+            "risk": "state_mutating_rag_reindex_by_default",
+            "when_to_use": (
+                "Rank repo files/chunks with the delta RAG index when lexical search is too broad; "
+                "default reindex=true may update the local RAG SQLite index; "
+                "follow with repo_read on returned paths. Accepts query, pattern, symbol, text or needle."
+            ),
+            "required_args": ["query|pattern|symbol|text|needle"],
         },
         {
             "name": "repo_read",

@@ -81,28 +81,34 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "repo_search": _tool_schema(
         "repo_search",
-        "Search repo code/docs by query/pattern/symbol. Requires query, pattern or symbol.",
+        "Search repo code/docs by query/pattern/symbol/needle/text. Requires one of query, pattern, symbol, needle or text.",
         {
             "query": {"type": "string"},
             "pattern": {"type": "string"},
             "symbol": {"type": "string"},
+            "needle": {"type": "string"},
+            "text": {"type": "string"},
             "path": {"type": "string", "default": "."},
             "mode": {"type": "string", "enum": ["rg", "git_grep", "fd"], "default": "rg"},
             "max_results": {"type": "integer", "default": 80},
         },
         argument_contract={
-            "requires_one_of": [["query"], ["pattern"], ["symbol"]],
-            "violation": "repo_search_missing_query_pattern_or_symbol",
+            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["needle"], ["text"]],
+            "violation": "repo_search_missing_query_pattern_symbol_needle_or_text",
         },
     ),
     "repo_semantic_search": _tool_schema(
         "repo_semantic_search",
         (
             "Semantic repo search over the delta RAG index. Use before targeted repo_read "
-            "when lexical search or repo_tree is too broad. Requires query."
+            "when lexical search or repo_tree is too broad. Requires query or one of pattern, symbol, text, needle."
         ),
         {
             "query": {"type": "string"},
+            "pattern": {"type": "string"},
+            "symbol": {"type": "string"},
+            "needle": {"type": "string"},
+            "text": {"type": "string"},
             "path": {"type": "string", "default": "."},
             "limit": {"type": "integer", "default": 8},
             "top_k": {"type": "integer", "default": 8},
@@ -115,8 +121,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "rerank_doc_chars": {"type": "integer", "default": 2500},
             "rerank_timeout_seconds": {"type": "number", "default": 30.0},
         },
-        ["query"],
-        argument_contract={"required": ["query"]},
+        argument_contract={
+            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["needle"], ["text"]],
+            "violation": "repo_semantic_search_missing_query",
+        },
     ),
     "repo_fd_files": _tool_schema(
         "repo_fd_files",
@@ -310,6 +318,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "item": {"type": "object"},
             "items": {"type": "array", "items": {"type": "object"}},
             "max_chars": {"type": "integer", "default": 80000},
+            "max_paths": {"type": "integer", "default": 200},
             "line": {"type": "integer"},
             "before": {"type": "integer", "default": 40},
             "after": {"type": "integer", "default": 120},
@@ -740,6 +749,7 @@ COMMAND_EXEC_TOOLS: frozenset[str] = frozenset(
         "repo_ruff_check",
         "repo_semgrep_scan",
         "repo_shellcheck",
+        "repo_validate",
     }
 )
 

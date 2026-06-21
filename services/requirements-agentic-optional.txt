@@ -1,6 +1,6 @@
-# Optional public packages for a stronger OpenWebUI agentic loop.
-# These are not imported by default by the patched code; install when you want
-# token budgeting, schema validation, retry policies, or faster JSON handling.
+# Optional public packages for agentic runtime and validation features.
+# These are not imported by every default execution path; install them when
+# enabling the corresponding optional service or validation capability.
 
 # Token counting/budgeting before sending history/tool results to local models.
 tiktoken
@@ -13,3 +13,5 @@ tenacity
 
 # Optional faster JSON serialization for very large artifacts.
 orjson
+# Property-based validation for deterministic repository probe profiles.
+hypothesis

@@ -16,6 +16,24 @@ from aicarmine_broker.tools.command_safety import classify_command
 from aicarmine_broker.tools.powershell_runner import run_ps
 
 
+def _repo_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:
+    """Helper locale per parsing bounded int senza dipendenze circolari."""
+    keys = (names,) if isinstance(names, str) else names
+    selected: Any = None
+    for key in keys:
+        value = args.get(key)
+        if value is not None and str(value).strip() != "":
+            selected = value
+            break
+    if selected is None:
+        selected = default
+    try:
+        parsed = int(selected)
+    except (TypeError, ValueError, OverflowError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
 def _repo_relative_existing_path(root: Path, value: str) -> str:
     raw = str(value or "").strip().replace("\\", "/")
     if not raw:
@@ -245,7 +263,10 @@ def repo_command(
         return {"ok": False, "tool": "repo_command", "error": "commands disabled by request"}
 
     command = str(args.get("command") or "").strip()
-    timeout = int(args.get("timeout_seconds") or COMMAND_TIMEOUT_SECONDS)
+    try:
+        timeout = _repo_bounded_int_arg(args, ("timeout_seconds", "timeout"), default=COMMAND_TIMEOUT_SECONDS, minimum=1, maximum=3600)
+    except Exception as exc:
+        return {"ok": False, "tool": "repo_command", "error": str(exc), "error_type": type(exc).__name__}
 
     if not command:
         return {"ok": False, "tool": "repo_command", "error": "missing command"}

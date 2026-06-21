@@ -38,6 +38,7 @@ EVIDENCE_PROMPT_KEEP_KEYS = (
     "validation_rejections_tail",
     "failed_repo_read_paths",
     "failed_repo_list_files_paths",
+    "forbidden_repeated_repo_read_paths",
     "read_admissible_paths",
     "validator_admissible_repo_read_paths",
 )
@@ -142,6 +143,7 @@ def compact_evidence_contract_for_prompt(
         "candidate_owner_paths",
         "failed_repo_read_paths",
         "failed_repo_list_files_paths",
+        "forbidden_repeated_repo_read_paths",
         "read_admissible_paths",
         "validator_admissible_repo_read_paths",
     ):
@@ -152,6 +154,10 @@ def compact_evidence_contract_for_prompt(
         "validation_rejections_tail",
     ):
         _apply_counted_top_list(out, key, item_limit=8, text_limit=320)
+    if out.get("forbidden_repeated_repo_read_paths"):
+        out["forbidden_repeated_repo_read_paths_note"] = (
+            "Do not repeat full-path repo_read for forbidden_repeated_repo_read_paths."
+        )
     if isinstance(out.get("initial_orientation_surface"), dict):
         out["initial_orientation_surface"] = prompt_clip_value(
             out["initial_orientation_surface"],

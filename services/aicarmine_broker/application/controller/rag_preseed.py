@@ -435,7 +435,8 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return decoded if isinstance(decoded, dict) else None
 
 
-def _query_plan_continue_without_model(
+# Re-export for use in loop.py
+def query_plan_continue_without_model(
     report: Mapping[str, Any],
     *,
     reason: str,
@@ -892,7 +893,7 @@ def controller_preplanner_rag_query_plan(
             last_sanitized = {**report, "status": "failed", "reason": "non_mapping_response"}
             break
         if response.get("backend_unreachable") or response.get("backend_timeout") or response.get("error"):
-            return _query_plan_continue_without_model(
+            return query_plan_continue_without_model(
                 report,
                 reason="planner_query_plan_request_failed",
                 attempt=attempt,
@@ -938,7 +939,7 @@ def controller_preplanner_rag_query_plan(
         if sanitized.get("ok"):
             return sanitized
     if last_sanitized.get("json_parse_error_type") or last_sanitized.get("original_json_parse_error_type"):
-        return _query_plan_continue_without_model(
+        return query_plan_continue_without_model(
             report,
             reason="planner_query_plan_invalid_json_after_repair",
             attempt=attempts,
@@ -2005,7 +2006,11 @@ def controller_preplanner_rag_preseed_plan(
         "event": "controller_preseed_preplanner_rag_ranked_read",
         "result_event": "controller_preseed_preplanner_rag_ranked_read_result",
         "tool": "repo_read",
-        "arguments": {"paths": selected_paths, "max_chars": max_chars_per_path},
+        "arguments": {
+            "paths": selected_paths,
+            "max_chars": max_chars_per_path,
+            "max_paths": len(selected_paths),
+        },
         "reason": "loop_start_delta_rag_reindex_ranked_preplanner_context",
         "artifact_suffix": "preplanner_rag_ranked-repo_read",
         "dynamic_initial_orientation": True,
