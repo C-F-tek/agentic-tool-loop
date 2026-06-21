@@ -730,8 +730,8 @@ def run_agentic_planner_job(
     _is_unrecoverable_plain_text_planner_output = deps["is_unrecoverable_plain_text_planner_output"]
     _native_required_repaired_tool_decision_disallowed = deps["native_required_repaired_tool_decision_disallowed"]
     _normalize_terminal_planner_decision = deps["normalize_terminal_planner_decision"]
-    planner_cuda_rewrite_guard_for_validation = deps["planner_cuda_rewrite_guard_for_validation"]
-    planner_cuda_rewrite_target = deps["planner_cuda_rewrite_target"]
+    # NOTE: planner_cuda_rewrite_* deps are kept for validator.py and turn.py usage
+    # but the loop-level cuda_rewrite guard has been replaced by judge_lane
     _planner_incomprehensible_retry_count = deps["planner_incomprehensible_retry_count"]
     _planner_memory_false_unavailable_claim = deps["planner_memory_false_unavailable_claim"]
     _planner_replan_specialist_for_validation = deps["planner_replan_specialist_for_validation"]
@@ -2935,20 +2935,24 @@ def run_agentic_planner_job(
                     },
                 )
 
-            rewrite_target = str(planner_cuda_rewrite_target(validation, decision) or "")
+            # Judge lane evaluation: replace cuda_rewrite guard with judge authority pattern
+            # Import judge_lane at the point of use to avoid circular imports
+            from .judge_lane import execute_judge_lane, prepare_judge_context
             
-            # Count previous cuda_rewrite attempts in history
-            cuda_rewrite_history_count = sum(
-                1 for row in history
-                if isinstance(row.get("tool_result"), dict)
-                and str(row.get("tool_result", {}).get("guard_type") or "") == "planner_cuda_rewrite_required"
+            # Evaluate judge decision based on evidence_contract
+            judge_result = execute_judge_lane(
+                str(state.get("goal") or ""),
+                history,
+                validation.get("evidence_contract", {}) if isinstance(validation.get("evidence_contract"), dict) else {},
+                deps=deps,
+                config=config,
             )
             
-            # Configurable max attempts (default 2)
-            MAX_CUDA_REWRITE_ATTEMPTS = int_env("MAX_CUDA_REWRITE_ATTEMPTS", 2, {})
+            # Handle judge decision
+            judge_decision = judge_result.get("decision", "continue_discovery")
             
-            if cuda_rewrite_history_count >= MAX_CUDA_REWRITE_ATTEMPTS:
-                # Block instead of continuing - model cannot satisfy evidence contract
+            if judge_decision == "terminal_block":
+                # Judge determined terminal block - job cannot proceed
                 guard_result = controller_guard_result_for_validation(
                     validation,
                     decision,
@@ -2956,23 +2960,21 @@ def run_agentic_planner_job(
                     step=step,
                     goal=str(state.get("goal") or ""),
                 )
-                guard_result["guard_type"] = "planner_cuda_rewrite_max_attempts_exceeded"
-                guard_result["summary"] = "planner_cuda_rewrite_max_attempts_exceeded"
-                guard_result["rewrite_target"] = rewrite_target
-                guard_result["cuda_rewrite_history_count"] = cuda_rewrite_history_count
-                guard_result["max_allowed"] = MAX_CUDA_REWRITE_ATTEMPTS
+                guard_result["guard_type"] = "judge_terminal_block"
+                guard_result["summary"] = "judge_terminal_block"
+                guard_result["judge_rationale"] = judge_result.get("rationale", "")
                 append_agent_event(
                     job_id,
-                    "planner_decision_rejected",
-                    guard_result["summary"],
-                    guard_result,
+                    "judge_decision",
+                    f"Judge: TERMINAL_BLOCK - {judge_result.get('rationale', '')}",
+                    judge_result,
                     step=step,
                 )
                 row = {
                     "step": step,
                     "decision": {
                         "action": "block",
-                        "reason": f"planner CUDA rewrite exceeded max attempts ({MAX_CUDA_REWRITE_ATTEMPTS})",
+                        "reason": "Judge terminal block - insufficient evidence after maximum retries",
                         "rejected_decision": {
                             k: decision.get(k)
                             for k in ("action", "tool", "arguments", "reason", "final_answer", "raw_planner_text")
@@ -2988,19 +2990,13 @@ def run_agentic_planner_job(
                     job_id,
                     state,
                     "blocked_needs_attention",
-                    (
-                        f"planner_cuda_rewrite_required:{rewrite_target} exceeded max attempts "
-                        f"({cuda_rewrite_history_count}/{MAX_CUDA_REWRITE_ATTEMPTS}). "
-                        f"Model cannot satisfy evidence contract. Needs attention."
-                    ),
+                    f"Judge terminal block: {judge_result.get('rationale', '')}",
                     {
                         "history": history,
-                        "blocked_by": "planner_cuda_rewrite_max_attempts_exceeded",
+                        "blocked_by": "judge_terminal_block",
                         "planner_decision": decision,
                         "validation": validation,
-                        "cuda_rewrite_history_count": cuda_rewrite_history_count,
-                        "max_allowed": MAX_CUDA_REWRITE_ATTEMPTS,
-                        "rewrite_target": rewrite_target,
+                        "judge_result": judge_result,
                         "agent_flow_diagnostics": _agent_flow_diagnostics(
                             str(state.get("goal") or ""),
                             history,
@@ -3009,77 +3005,53 @@ def run_agentic_planner_job(
                     },
                 )
             
-            if (
-                rewrite_target
-                and int(retry_limit or 0) > 0
-                and repeated_rejection_count == 0
-            ):
-                guard_result = planner_cuda_rewrite_guard_for_validation(
+            if judge_decision == "final_allowed":
+                # Judge approved final - allow planner to choose final
+                validation["evidence_contract"]["planner_may_choose_final"] = True
+                validation["evidence_contract"]["finalization_contract"]["final_allowed"] = True
+                validation["evidence_contract"]["finalization_contract"]["planner_may_choose_final"] = True
+                
+                append_agent_event(
+                    job_id,
+                    "judge_decision",
+                    "Judge: FINAL_ALLOWED - evidence sufficient for finalization",
+                    judge_result,
+                    step=step,
+                )
+                
+                # Continue to normal decision handling below (planner can now choose final)
+                pass
+            
+            elif judge_decision == "rewrite_required":
+                # Judge determined rewrite required - send to cuda_rewrite lane
+                guard_result = controller_guard_result_for_validation(
                     validation,
                     decision,
                     job_id=job_id,
                     step=step,
                     goal=str(state.get("goal") or ""),
                 )
-                guard_result["invalid_decision_signature"] = rejection_signature
-                guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
-                guard_result["retry_count"] = repeated_rejection_count
-                guard_result["retry_limit"] = 1
-                rejected_for_role = {
-                    key: decision.get(key)
-                    for key in ("action", "tool", "arguments", "reason")
-                    if decision.get(key) not in (None, "", [], {})
-                }
-                if decision.get("final_answer") not in (None, ""):
-                    rejected_for_role["final_answer"] = str(
-                        decision.get("final_answer") or ""
-                    )[:16000]
-                state["planner_role_override"] = {
-                    "schema": "planner_role_override.v1",
-                    "role": "planner_cuda_rewrite",
-                    "provider": "gpu1_planner",
-                    "one_shot": True,
-                    "rewrite_target": rewrite_target,
-                    "source_step": step,
-                    "instruction": str(guard_result.get("next_instruction") or "")[:4000],
-                    "rejected_decision": rejected_for_role,
-                    "validator_violations": [
-                        str(item)
-                        for item in (
-                            validation.get("violations")
-                            if isinstance(validation.get("violations"), list)
-                            else []
-                        )
-                    ][:32],
-                    "evidence_contract_sha256": guard_result.get("evidence_contract_sha256"),
-                }
-                guard_result["planner_role_scheduled"] = state["planner_role_override"]
-                
-                # Detect if rewrite_target is stuck on same value (model inability)
-                previous_targets = [
-                    str(row.get("tool_result", {}).get("rewrite_target") or "")
-                    for row in history[-10:]
-                    if isinstance(row.get("tool_result"), dict)
-                ]
-                if len(set(previous_targets)) == 1 and previous_targets[0] == rewrite_target:
-                    state["planner_stuck_on_rewrite_target"] = rewrite_target
-                    state["planner_rewrite_stuck_count"] = cuda_rewrite_history_count + 1
+                guard_result["guard_type"] = "judge_rewrite_required"
+                guard_result["summary"] = "judge_rewrite_required"
+                guard_result["judge_rationale"] = judge_result.get("rationale", "")
+                guard_result["suggestions"] = judge_result.get("suggestions", [])
                 
                 append_agent_event(
                     job_id,
-                    "planner_decision_rejected",
-                    guard_result["summary"],
-                    guard_result,
+                    "judge_decision",
+                    f"Judge: REWRITE_REQUIRED - {judge_result.get('rationale', '')}",
+                    judge_result,
                     step=step,
                 )
+                
                 row = {
                     "step": step,
                     "decision": {
                         "action": "continue_required",
-                        "reason": f"planner CUDA rewrite required for rejected {rewrite_target} proposal",
+                        "reason": "Judge determined rewrite required",
                         "rejected_decision": {
                             k: decision.get(k)
-                            for k in ("action", "tool", "arguments", "reason", "final_answer", "raw_planner_text")
+                            for k in ("action", "tool", "arguments", "reason", "final_answer")
                             if decision.get(k) not in (None, "", [], {})
                         },
                     },
@@ -3089,6 +3061,65 @@ def run_agentic_planner_job(
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
+            
+            else:
+                # Default: CONTINUE_DISCOVERY with suggestions
+                suggestions = judge_result.get("suggestions", [])
+                required_next_progress = judge_result.get("required_next_progress", "")
+                
+                append_agent_event(
+                    job_id,
+                    "judge_decision",
+                    f"Judge: CONTINUE_DISCOVERY - {judge_result.get('rationale', '')}",
+                    judge_result,
+                    step=step,
+                )
+                
+                # Inject suggestions into evidence_contract
+                if required_next_progress:
+                    validation["evidence_contract"]["required_next_progress"] = required_next_progress
+                if suggestions:
+                    validation["evidence_contract"]["judge_suggestions"] = suggestions[:5]
+                
+                # Continue to normal decision handling (planner will get suggestions in prompt)
+                pass
+            
+            # Detect if rewrite_target is stuck on same value (model inability)
+            previous_targets = [
+                str(row.get("tool_result", {}).get("rewrite_target") or "")
+                for row in history[-10:]
+                if isinstance(row.get("tool_result"), dict)
+            ]
+            if len(set(previous_targets)) == 1 and previous_targets[0] == rewrite_target:
+                state["planner_stuck_on_rewrite_target"] = rewrite_target
+                state["planner_rewrite_stuck_count"] = cuda_rewrite_history_count + 1
+            
+            guard_result["planner_role_scheduled"] = state["planner_role_override"]
+            
+            append_agent_event(
+                job_id,
+                "planner_decision_rejected",
+                guard_result["summary"],
+                guard_result,
+                step=step,
+            )
+            row = {
+                "step": step,
+                "decision": {
+                    "action": "continue_required",
+                    "reason": f"planner CUDA rewrite required for rejected {rewrite_target} proposal",
+                    "rejected_decision": {
+                        k: decision.get(k)
+                        for k in ("action", "tool", "arguments", "reason", "final_answer", "raw_planner_text")
+                        if decision.get(k) not in (None, "", [], {})
+                    },
+                },
+                "tool_result": guard_result,
+            }
+            loop_state.append_history_row(row)
+            persist_loop_turn_memory(row)
+            write_agent_job_state(state)
+            continue
             if "planner_native_mode_non_json_output" in validation_violations:
                 prior_native_text_guards = controller_guard_count(
                     history,
