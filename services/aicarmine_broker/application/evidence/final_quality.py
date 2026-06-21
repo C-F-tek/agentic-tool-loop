@@ -764,7 +764,7 @@ def repo_analysis_final_answer_quality(
     ]
     core_hits = _path_hit_count(stripped, core_paths)
 
-    from services.aicarmine_broker.config.entry_points_config import EvidenceContractThresholds
+    from aicarmine_broker.config.entry_points_config import EvidenceContractThresholds
     thresholds = EvidenceContractThresholds()
     min_chars = thresholds.min_chars  # 1500
     pathish_evidence = {

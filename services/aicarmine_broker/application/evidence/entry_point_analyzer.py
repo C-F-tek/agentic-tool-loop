@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 from typing import Any
 
-from services.aicarmine_broker.application.evidence.entry_point_info import EntryPointInfo
+from aicarmine_broker.application.evidence.entry_point_info import EntryPointInfo
 
 
 class EntryPointAnalyzer:
