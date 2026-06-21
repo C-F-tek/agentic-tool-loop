@@ -144,6 +144,23 @@ function Test-OllamaTask {
 
 Set-Location $Root
 
+# Aggiungi services al PYTHONPATH prima di lanciare uvicorn
+if ([string]::IsNullOrWhiteSpace($env:PYTHONPATH)) {
+    $env:PYTHONPATH = "$Root"
+} else {
+    # Assicurati che Root sia incluso in PYTHONPATH
+    if ($env:PYTHONPATH -notlike "*$Root*") {
+        $env:PYTHONPATH = "$Root;$env:PYTHONPATH"
+    }
+}
+
+# Verifica che 'services' sia importabile
+try {
+    & $Py -c "import sys; print('PYTHONPATH:', sys.path); import services; print('OK: services imported')" 2>&1 | Out-Host
+} catch {
+    Write-Warning "Import test failed: $_"
+}
+
 $agentProc = $null
 try {
     if (-not (Test-OllamaTask)) {
