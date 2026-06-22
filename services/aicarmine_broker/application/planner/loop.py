@@ -760,7 +760,7 @@ def run_agentic_planner_job(
     write_agent_job_state = deps["write_agent_job_state"]
     write_json = deps["write_json"]
 
-    from ..import_refs import _resolve_lazy
+    from ...import_refs import _resolve_lazy
 
     # Import dependencies via registry
     dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
@@ -1863,7 +1863,7 @@ def run_agentic_planner_job(
                         ),
                     },
                 )
-            validation = enrich_validation_with_replan_specialist(step, decision, validation)
+            validation = loop_controller.enrich_validation_with_replan_specialist(step, decision, validation)
             raw_planner_text = _decision_raw_planner_text(decision)
             retry_limit = (
                 AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES

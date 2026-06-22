@@ -577,6 +577,20 @@ def _raw_planner_text_has_valid_embedded_json_with_prose(text: str) -> bool:
     return False
 
 
+def _normalize_terminal_planner_decision(
+    decision: dict[str, Any]
+) -> dict[str, Any]:
+    """Normalize terminal planner decision."""
+    from ...import_refs import _resolve_lazy
+
+    # Import dependencies via registry
+    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
+    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
+
+    return decision
+
+
 def vulkan_repair_invalid_planner_decision(
     *,
     goal: str,

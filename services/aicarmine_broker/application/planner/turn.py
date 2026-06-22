@@ -252,7 +252,7 @@ def _looks_like_malformed_native_protocol(text: str) -> bool:
         or lowered.startswith("<tool_call")
         or lowered.startswith("tool_call")
         or lowered.startswith("message.tool_calls")
-        or "</tool_call>" in lowered
+        or "<tool_call>" in lowered
     )
 
 
@@ -399,6 +399,20 @@ def _post_final_reject_turn_tool_names(
     if final_rewrite_latch in {"rewrite_required", "required_gap_only"}:
         return []
     return []
+
+
+def _normalize_terminal_planner_decision(
+    decision: dict[str, Any]
+) -> dict[str, Any]:
+    """Normalize terminal planner decision."""
+    from ...import_refs import _resolve_lazy
+
+    # Import dependencies via registry
+    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
+    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
+
+    return decision
 
 
 def planner_decision(
