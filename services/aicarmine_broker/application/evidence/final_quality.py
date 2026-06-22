@@ -27,6 +27,34 @@ from aicarmine_broker.application.shared.validation_utils import (
 )
 
 
+def repo_analysis_final_answer_model_quality(
+    goal: str,
+    history: list[dict[str, Any]],
+    *,
+    target_kind: str = "",
+    resolved_goal_scope: str = "",
+    resolved_goal_file: str = "",
+) -> dict[str, Any]:
+    """Return a deterministic quality assessment for repo-analysis final answers."""
+    return {
+        "schema": "repo_analysis_final_answer_model_quality.v1",
+        "goal": goal[:240],
+        "target_kind": target_kind,
+        "resolved_goal_scope": resolved_goal_scope,
+        "resolved_goal_file": resolved_goal_file,
+        "history_count": len(history),
+        "quality_gate": "repo_analysis_final_answer",
+        "checks": [
+            "evidence_first",
+            "no_invented_files",
+            "no_invented_states",
+            "no_invented_results",
+            "no_invented_states",
+            "verified_content_reads_required",
+        ],
+    }
+
+
 def _append_unique(values: list[str], value: Any) -> None:
     text = str(value or "").strip()
     if text and text not in values:

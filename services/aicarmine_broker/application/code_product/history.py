@@ -30,6 +30,22 @@ ArtifactPayloadLoader = Callable[[dict[str, Any]], dict[str, Any]]
 RepoReadFullContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
 NextScratchpadWindowAction = Callable[[dict[str, Any], list[dict[str, Any]]], dict[str, Any]]
 
+
+def invalid_code_product_decision_signature_count(history: list[dict[str, Any]]) -> int:
+    """Return the count of history items with invalid code-product decision signatures."""
+    return sum(
+        1
+        for item in history if isinstance(item, dict)
+        and (item.get("decision") or {}).get("invalid_code_product") is True
+    )
+
+
+def invalid_decision_signature_key(history: list[dict[str, Any]]) -> str:
+    """Return a deterministic key for invalid decision signatures in history."""
+    count = invalid_code_product_decision_signature_count(history)
+    return f"invalid_decision_signature_count:{count}"
+
+
 CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS = {
     "repo_propose_code_edit_missing_unified_diff",
     "repo_propose_code_edit_missing_structured_operations",

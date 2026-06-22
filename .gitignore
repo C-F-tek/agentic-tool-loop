@@ -169,3 +169,5 @@ services/**/tool_registry_temp.txt
 *.avi
 *.wav
 *.mp3
+# CocoIndex Code (ccc)
+/.cocoindex_code/

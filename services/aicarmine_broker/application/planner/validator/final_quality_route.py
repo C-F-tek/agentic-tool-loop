@@ -25,7 +25,7 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     append_stale_required_call_marker,
 )
 
-from .path_utils import coalesce_repo_read_paths, is_concrete_repo_path
+from .path_utilis import coalesce_repo_read_paths, is_concrete_repo_path
 from .contract_utils import (
     final_quality_repo_read_allowlist,
     required_next_route_has_deterministic_proof,

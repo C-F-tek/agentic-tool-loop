@@ -18,7 +18,7 @@ __init__.py — re-export pubblico
 """
 
 # Import and re-export all validator modules
-from .path_utils import (  # type: ignore
+from .path_utilis import (  # type: ignore
     is_concrete_repo_path,
     coalesce_repo_read_paths,
     collect_repo_paths,

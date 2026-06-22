@@ -7,6 +7,16 @@ from typing import Any, Mapping, Sequence
 logger = logging.getLogger(__name__)
 
 
+def post_json(url: str, payload: dict[str, Any], *, timeout_seconds: int = 120) -> dict[str, Any]:
+    """Post JSON to a URL and return the parsed response."""
+    import httpx
+    headers = {"Content-Type": "application/json"}
+    with httpx.Client(timeout=timeout_seconds) as client:
+        response = client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+
 class OllamaPlannerClient:
     """HTTP adapter for one planner turn."""
 

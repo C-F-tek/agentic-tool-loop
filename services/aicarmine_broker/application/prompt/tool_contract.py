@@ -33,6 +33,27 @@ def available_tools_for_user_payload(
     }
 
 
+def filter_tool_manifest_for_names(manifest: list[dict[str, Any]], names: list[str]) -> list[dict[str, Any]]:
+    """Filter a tool manifest to only include tools whose names are in the given list."""
+    wanted = set(names)
+    return [row for row in manifest if isinstance(row, dict) and str(row.get("name", "")) in wanted]
+
+
+def native_tools_schema_for_planner(*, native_tools: bool) -> dict[str, Any]:
+    """Return the native tools schema for planner prompts."""
+    if native_tools:
+        return {
+            "schema": "planner_native_tools_schema.v1",
+            "transport": "native_tool_calls",
+            "enabled": True,
+        }
+    return {
+        "schema": "planner_native_tools_schema.v1",
+        "transport": "legacy_json_content",
+        "enabled": False,
+    }
+
+
 def tool_shape_examples_for_prompt(
     *,
     native_tools: bool,

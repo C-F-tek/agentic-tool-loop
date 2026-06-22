@@ -28,7 +28,7 @@ from .final_quality_route import (
     apply_final_quality_route,
     apply_duplicate_repo_read_path_recovery_contract,
 )
-from .path_utils import coalesce_repo_read_paths, collect_repo_paths, is_concrete_repo_path
+from .path_utilis import coalesce_repo_read_paths, collect_repo_paths, is_concrete_repo_path
 from .rewrite_latch import coerce_latch_state, escalate_terminal_block_state
 
 

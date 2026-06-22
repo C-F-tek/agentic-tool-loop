@@ -12,6 +12,13 @@ MemoryWriter = Callable[[dict[str, Any], Path], dict[str, Any]]
 TargetKeyBuilder = Callable[[str, dict[str, Any]], str]
 ValueClipper = Callable[..., Any]
 
+
+def controller_memory_target_key(goal: str, memory_record: dict[str, Any]) -> str:
+    """Return a deterministic target key for controller memory records."""
+    from ..shared.path_tokens import repo_rel_token
+    target = repo_rel_token(memory_record.get("target_file") or "")
+    return f"controller_memory:{target}:{goal[:40]}" if target else f"controller_memory:{goal[:40]}"
+
 CONTROLLER_MEMORY_LESSON_TEXT_LIMIT = 1200
 LOOP_TURN_MEMORY_TEXT_LIMIT = 4000
 

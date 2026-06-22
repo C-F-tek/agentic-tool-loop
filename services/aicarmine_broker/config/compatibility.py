@@ -115,6 +115,7 @@ __all__ = [
     "VALID_INTERNAL_TOOLS_PROMPT",
     "VALID_INTERNAL_TOOLS_PROMPT_EXCLUDING_VULKAN",
     "WRITE_GUARDED_TOOLS",
+    "CODE_PRODUCT_BUILD_STATE_KIND",
 ]
 
 
@@ -222,6 +223,8 @@ V6_MARKER: str = BROKER_CONFIG.v6_marker
 
 AGENT_JOB_BACKGROUND_THREADS: dict[str, object] = {}
 AGENT_JOB_LOCK: threading.RLock = threading.RLock()
+
+CODE_PRODUCT_BUILD_STATE_KIND: str = "code_product"
 
 
 def internal_tools_list(exclude_vulkan: bool = False) -> list[str]:

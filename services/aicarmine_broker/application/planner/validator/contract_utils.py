@@ -12,7 +12,7 @@ from typing import Any
 
 from aicarmine_broker.application.shared.path_tokens import repo_path_token
 
-from .path_utils import collect_repo_paths, is_concrete_repo_path, is_concrete_search_query, is_prose_or_metric_token
+from .path_utilis import collect_repo_paths, is_concrete_repo_path, is_concrete_search_query, is_prose_or_metric_token
 
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,27 @@ TextHash = Callable[[str], str]
 GoalTargetFile = Callable[[str], str]
 
 
+def repo_readable_evidence_file(history: list[dict[str, Any]], target_file: str) -> dict[str, Any]:
+    """Return evidence file info for a target_file from history repo_read items."""
+    from ..shared.history_queries import history_tool_result
+    from ..shared.path_tokens import repo_rel_token
+    target = repo_rel_token(target_file)
+    for item in reversed(history if isinstance(history, list) else []):
+        result = history_tool_result(item)
+        if result.get("tool") != "repo_read" or result.get("ok") is not True:
+            continue
+        items = result.get("items") if isinstance(result.get("items"), list) else []
+        for sub in items:
+            if isinstance(sub, dict) and sub.get("ok") and repo_rel_token(sub.get("path") or "") == target:
+                return {
+                    "path": target,
+                    "line_count": sub.get("line_count", 0),
+                    "sha256": sub.get("sha256"),
+                    "truncated": sub.get("truncated", False),
+                }
+    return {}
+
+
 def repo_read_items_for_prompt(
     history: list[dict[str, Any]],
     paths: set[str],
