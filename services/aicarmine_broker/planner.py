@@ -2658,13 +2658,14 @@ def _initial_orientation_surface_from_history(
         path_under_scope=_path_under_scope,
     )
 
-
+from .application.evidence.builder import planner_evidence_contract as _planner_evidence_contract_impl
 def planner_evidence_contract(
+    
     goal: str,
     history: list[dict[str, Any]],
     intrinsic_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return planner_evidence_contract(
+    return  _planner_evidence_contract_impl(
         goal,
         history,
         intrinsic_context,
@@ -5969,96 +5970,18 @@ def finalize_agentic_job(
 
 
 def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
-    from .application.planner.lane_catalog import control_lane_event_metadata
-    return run_agentic_planner_job(
-        job_id,
-        deps={
-            "agent_flow_diagnostics": agent_flow_diagnostics,
-            "agentic_tool_allowed": _agentic_tool_allowed,
-            "cached_tool_result": _cached_tool_result,
-            "cached_vulkan_repair_result": _cached_vulkan_repair_result,
-            "controller_file_code_product_orientation_preseed_plan": _controller_file_code_product_orientation_preseed_plan,
-            "controller_guard_rejection_signature": _controller_guard_rejection_signature,
-            "controller_guard_rejection_signature_count": _controller_guard_rejection_signature_count,
-            "controller_initial_area_list_plans": controller_initial_area_list_plans,
-            "controller_initial_area_read_plan": controller_initial_area_read_plan,
-            "controller_initial_doc_preseed_plan": controller_initial_doc_preseed_plan,
-            "controller_memory_target_key": _controller_memory_target_key,
-            "controller_preplanner_rag_query_plan": _controller_preplanner_rag_query_plan,
-            "controller_preplanner_rag_preseed_plan": _controller_preplanner_rag_preseed_plan,
-            "controller_preseed_plan": _controller_preseed_plan,
-            "decision_memory_claim_text": _decision_memory_claim_text,
-            "decision_raw_planner_text": _decision_raw_planner_text,
-              "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
-              "controller_initial_orientation_candidate_pool": _controller_initial_orientation_candidate_pool,
-              "controller_orientation_model_select": _controller_orientation_model_select,
-              "orientation_shadow_effective_mode": orientation_shadow_effective_mode,
-              "orientation_legacy_selected_candidate_ids": orientation_legacy_selected_candidate_ids,
-              "orientation_shadow_selection_metrics": orientation_shadow_selection_metrics,
-              "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
-            "native_required_repaired_tool_decision_disallowed": _native_required_repaired_tool_decision_disallowed,
-            "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
-            "planner_cuda_rewrite_guard_for_validation": planner_cuda_rewrite_guard_for_validation,
-            "planner_cuda_rewrite_target": planner_cuda_rewrite_target,
-            "planner_incomprehensible_retry_count": _planner_incomprehensible_retry_count,
-            "planner_memory_false_unavailable_claim": _planner_memory_false_unavailable_claim,
-            "planner_replan_specialist_for_validation": planner_replan_specialist_for_validation,
-            "raw_planner_text_classification": _raw_planner_text_classification,
-            "should_attempt_vulkan_repair": _should_attempt_vulkan_repair,
-            "should_retry_incomprehensible_planner_output": _should_retry_incomprehensible_planner_output,
-            "specialist_route_audit": _specialist_route_audit,
-            "tool_cache_hit": _tool_cache_hit,
-            "tool_cache_key": _tool_cache_key,
-            "write_loop_turn_memory": _write_loop_turn_memory,
-            "agent_job_root": agent_job_root,
-            "append_agent_event": append_agent_event,
-            "compact_tool_result_for_planner": compact_tool_result_for_planner,
-            "build_runtime_debug_packet": build_runtime_debug_packet,
-            "controller_guard_count": controller_guard_count,
-            "controller_guard_result_for_validation": controller_guard_result_for_validation,
-            "finalize_agentic_job": finalize_agentic_job,
-            "goal_has_write_intent": goal_has_write_intent,
-            "history_has_tool": history_has_tool,
-            "load_agent_job_state": load_agent_job_state,
-            "planner_decision": planner_decision,
-            "planner_evidence_contract": planner_evidence_contract,
-            "planner_history_ledger": planner_history_ledger,
-            "planner_memory_surface": planner_memory_surface,
-            "repeated_tool_call_count": repeated_tool_call_count,
-            "validate_planner_decision_against_evidence": validate_planner_decision_against_evidence,
-            "vulkan_repair_invalid_planner_decision": vulkan_repair_invalid_planner_decision,
-            "write_agent_job_state": write_agent_job_state,
-            "write_json": write_json,
-            "control_lane_event_metadata": control_lane_event_metadata,
-        },
-        config={
-            "AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES": AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,
-            "AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY": AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY,
-            "AGENT_DEFAULT_MAX_STEPS": AGENT_DEFAULT_MAX_STEPS,
-            "AGENT_MAX_STEPS": AGENT_MAX_STEPS,
-            "OLLAMA_TASK_MODEL": OLLAMA_TASK_MODEL,
-            "OLLAMA_TASK_URL": OLLAMA_TASK_URL,
-            "PLANNER_MODEL": PLANNER_MODEL,
-            "PLANNER_URL": PLANNER_URL,
-            "VALID_INTERNAL_TOOLS": VALID_INTERNAL_TOOLS,
-            "AICARMINE_ORIENTATION_LANE_MODE": AICARMINE_ORIENTATION_LANE_MODE,
-        },
-    )
+    """Delegate to the extracted planner_loop module.
+    
+    This is a re-export layer. The actual implementation lives in
+    services/aicarmine_broker/planner_loop.py.
+    """
+    from .planner_loop import run_agentic_planner_job as _inner
+    return _inner(job_id)
 
 
 def _agentic_tool_allowed(
     tool: str, args: dict[str, Any], approval_mode: str
 ) -> tuple[bool, str]:
-    mode = str(approval_mode or "safe_write_lab").lower()
-    readonly_modes = {"read_only", "readonly", "no_write", "dry_run"}
-    # Use WRITE_GUARDED_TOOLS directly instead of hardcoded names to prevent drift
-    if tool in WRITE_GUARDED_TOOLS and mode in readonly_modes:
-        return False, f"{tool} blocked by read_only approval_mode"
-    # repo_command has an additional safety gate beyond write-guard
-    if tool == "repo_command":
-        from .repo_tools import dangerous_command  # noqa: PLC0415
-        if mode in readonly_modes and dangerous_command(
-            str(args.get("command") or "")
-        ):
-            return False, "dangerous repo_command blocked by read_only approval_mode"
-    return True, ""
+    """Delegate to the extracted planner_loop module."""
+    from .planner_loop import _agentic_tool_allowed as _inner
+    return _inner(tool, args, approval_mode)

@@ -760,8 +760,12 @@ def run_agentic_planner_job(
     write_agent_job_state = deps["write_agent_job_state"]
     write_json = deps["write_json"]
 
-    from ...tool_dispatch import dispatch_tool
-    from ...tool_contract import normalize_tool_name, sanitize_tool_args
+    from ..import_refs import _resolve_lazy
+
+    # Import dependencies via registry
+    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
+    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
 
     state = load_agent_job_state(job_id)
     if not state:

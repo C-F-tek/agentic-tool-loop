@@ -295,8 +295,12 @@ class PlannerLoopController:
         semantic_step: int,
     ) -> dict[str, Any] | None:
         """Handle tool execution decision."""
-        from ...tool_dispatch import dispatch_tool
-        from ...tool_contract import normalize_tool_name, sanitize_tool_args
+        from ...import_refs import _resolve_lazy
+
+        # Import dependencies via registry
+        dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+        normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
+        sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
 
         VALID_INTERNAL_TOOLS = self.config["VALID_INTERNAL_TOOLS"]
         original_args = dict(self.state.get("original_args") or {})
