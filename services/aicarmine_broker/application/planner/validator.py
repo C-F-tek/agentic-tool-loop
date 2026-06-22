@@ -1,29 +1,13 @@
-"""Planner decision validator owner."""
 
-from __future__ import annotations
 
+from collections.abc import Mapping
 import json
-from typing import Any, Mapping
+from typing import Any
 
 from aicarmine_broker.application.evidence.audit_guidance import goal_requests_semantic_audit
 from aicarmine_broker.application.evidence.goal_classifier import effective_repo_analysis_goal
-from aicarmine_broker.application.tool_surface.required_tool_call import (
-    append_stale_required_call_marker,
-    required_next_tool_call_satisfaction,
-)
-from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
-from aicarmine_broker.application.shared.validation_utils import (
-    _list_or_empty,
-    _repo_path_is_concrete,
-    _coalesce_repo_read_paths,
-    _final_quality_repo_read_allowlist,
-    _collect_repo_paths,
-    _known_contract_repo_paths,
-    _known_contract_repo_dirs,
-    _route_token_is_prose_or_metric,
-    _search_query_is_concrete,
-    _required_next_route_has_deterministic_proof,
-)
+from aicarmine_broker.application.shared.path_tokens import repo_path_token
+from aicarmine_broker.application.tool_surface.required_tool_call import append_stale_required_call_marker
 
 
 def _normalize_terminal_planner_decision(
@@ -45,7 +29,7 @@ def _list_or_empty(value: Any) -> list[Any]:
 
 
 def _repo_path_is_concrete(token: Any) -> bool:
-    token = _repo_path_token(token)
+    token = repo_path_token(token)
     if not token:
         return False
     lowered = token.lower()
@@ -69,7 +53,7 @@ def _coalesce_repo_read_paths(values: Any) -> list[str]:
         return []
     out: list[str] = []
     for value in values:
-        token = _repo_path_token(value)
+        token = repo_path_token(value)
         if not _repo_path_is_concrete(token):
             continue
         if token not in out:
@@ -88,7 +72,7 @@ def _final_quality_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
     ]
 
     def add_token(raw: Any) -> None:
-        token = _repo_path_token(raw)
+        token = repo_path_token(raw)
         if token and _repo_path_is_concrete(token):
             allowlist.add(token)
 
@@ -331,19 +315,19 @@ def _collect_repo_paths(values: Any) -> set[str]:
     out: set[str] = set()
     if isinstance(values, dict):
         for item in values.values():
-            token = _repo_path_token(item)
+            token = repo_path_token(item)
             if token:
                 out.add(token)
     elif isinstance(values, list):
         for item in values:
             if isinstance(item, dict):
-                token = _repo_path_token(item.get("path") or item.get("source_path") or item.get("repo_path"))
+                token = repo_path_token(item.get("path") or item.get("source_path") or item.get("repo_path"))
             else:
-                token = _repo_path_token(item)
+                token = repo_path_token(item)
             if token:
                 out.add(token)
     else:
-        token = _repo_path_token(values)
+        token = repo_path_token(values)
         if token:
             out.add(token)
     return out
@@ -386,7 +370,7 @@ def _known_contract_repo_dirs(contract: dict[str, Any]) -> set[str]:
 
 
 def _route_token_is_prose_or_metric(value: Any) -> bool:
-    token = _repo_path_token(value)
+    token = repo_path_token(value)
     if not token:
         return True
     lowered = token.lower()
@@ -442,7 +426,7 @@ def _required_next_route_has_deterministic_proof(
     if tool == "repo_read":
         return True
     if tool == "repo_list_files":
-        path = _repo_path_token(args.get("path") or ".") or "."
+        path = repo_path_token(args.get("path") or ".") or "."
         if path == ".":
             return True
         return not _route_token_is_prose_or_metric(path) and path in _known_contract_repo_dirs(contract)
@@ -450,13 +434,13 @@ def _required_next_route_has_deterministic_proof(
         query = args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
         if not _search_query_is_concrete(query):
             return False
-        path = _repo_path_token(args.get("path")) if args.get("path") else ""
+        path = repo_path_token(args.get("path")) if args.get("path") else ""
         if path and path not in _known_contract_repo_paths(contract) and path not in _known_contract_repo_dirs(contract):
             return False
         return True
     if tool == "planner_scratchpad_read":
         document_id = str(args.get("document_id") or "").strip()
-        target_file = _repo_path_token(args.get("target_file")) if args.get("target_file") else ""
+        target_file = repo_path_token(args.get("target_file")) if args.get("target_file") else ""
         if document_id and not _route_token_is_prose_or_metric(document_id):
             return True
         return bool(target_file and target_file in _known_contract_repo_paths(contract))
@@ -938,7 +922,7 @@ def validate_planner_decision_against_evidence(
                     if isinstance(required_next_tool_call.get("arguments"), dict)
                     else {}
                 )
-                path_token = _repo_path_token(args.get("path") if args.get("path") else "")
+                path_token = repo_path_token(args.get("path") if args.get("path") else "")
                 query_text = str(args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text") or "").strip()
                 if path_token:
                     contract["invalid_required_next_tool_call_paths"] = [path_token]
@@ -1300,21 +1284,21 @@ def validate_planner_decision_against_evidence(
     known_paths_set.update(_collect_repo_paths(contract.get("successful_repo_read_paths")))
     for item in (contract.get("file_memory") if isinstance(contract.get("file_memory"), list) else []):
         if isinstance(item, dict):
-            token = _repo_path_token(item.get("path"))
+            token = repo_path_token(item.get("path"))
             if token:
                 known_paths_set.add(token)
             for path in item.get("mentioned_paths", []) if isinstance(item.get("mentioned_paths"), list) else []:
-                token = _repo_path_token(path)
+                token = repo_path_token(path)
                 if token:
                     known_paths_set.add(token)
     operational_notes = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
     for item in operational_notes.get("read_notes", []) if isinstance(operational_notes.get("read_notes"), list) else []:
         if isinstance(item, dict):
-            token = _repo_path_token(item.get("path"))
+            token = repo_path_token(item.get("path"))
             if token:
                 known_paths_set.add(token)
             for path in item.get("mentioned_paths", []) if isinstance(item.get("mentioned_paths"), list) else []:
-                token = _repo_path_token(path)
+                token = repo_path_token(path)
                 if token:
                     known_paths_set.add(token)
     known_paths = sorted(known_paths_set)
