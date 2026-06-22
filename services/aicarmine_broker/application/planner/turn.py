@@ -1,4 +1,8 @@
-"""Single planner-turn owner for 11434 decision calls."""
+"""Single planner-turn owner for 11434 decision calls.
+
+This module uses dependency injection to avoid circular imports with planner.py.
+The lane_catalog import is the primary source of the circular dependency.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
-from ..planner.lane_catalog import control_lane_event_metadata
 from ..prompt.pack_builder import explicit_request_context_from_state
 from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
@@ -472,7 +475,8 @@ def planner_decision(
         planner_lane_id = "planner.primary"
         trigger = "planner_turn"
 
-    planner_lane_metadata = control_lane_event_metadata(
+    _control_lane_event_metadata = deps.get("control_lane_event_metadata")
+    planner_lane_metadata = _control_lane_event_metadata(
         planner_lane_id,
         step=step,
         attempt=1,

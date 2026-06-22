@@ -5969,6 +5969,7 @@ def finalize_agentic_job(
 
 
 def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
+    from .application.planner.lane_catalog import control_lane_event_metadata
     return run_agentic_planner_job(
         job_id,
         deps={
@@ -6028,6 +6029,7 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "vulkan_repair_invalid_planner_decision": vulkan_repair_invalid_planner_decision,
             "write_agent_job_state": write_agent_job_state,
             "write_json": write_json,
+            "control_lane_event_metadata": control_lane_event_metadata,
         },
         config={
             "AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES": AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,

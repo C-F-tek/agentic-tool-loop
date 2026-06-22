@@ -51,7 +51,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.planner import _successful_window_signatures
+from aicarmine_broker.planner import _agentic_v2_decision_paths, _agentic_v2_read_has_window, _agentic_v2_successful_read_paths, _any_argument_group_present, _apply_unverified_old_text_replan_contract, _argument_value_present, _canonical_invalid_code_product_decision_signature, _code_product_low_signal_target, _native_required_tool_decision_has_transport_provenance, _old_text_verified_by_repo_read, _path_exists_repo_relative, _planner_scratchpad_read_selector_present, _repo_analysis_goal, _repo_read_selector_present, _successful_window_signatures
+
+from codex_ollama_bridge_applied.aicarmine_vulkan_tool_broker import OLLAMA_TASK_MODEL, OLLAMA_TASK_URL
 
 from ...config import (
     AGENTIC_PLANNER_NATIVE_TOOLS,
@@ -128,6 +130,7 @@ from ...planner_core.json_io import (
     parse_strict_json_object_diagnostics,
 )
 from ...planner_core.cache import (
+    _decision_paths,
     repeated_tool_call_count,
 )
 from ..evidence.execution_digest import (
