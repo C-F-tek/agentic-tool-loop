@@ -12,6 +12,8 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     required_next_tool_call_satisfaction,
 )
 from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
+
+# Import validation utilities from shared module
 from aicarmine_broker.application.shared.validation_utils import (
     _list_or_empty,
     _repo_path_is_concrete,
@@ -230,3 +232,34 @@ def _search_query_is_concrete(value: Any) -> bool:
     if "/" in lowered and len(useful_tokens) < 2:
         return False
     return bool(useful_tokens)
+
+
+def _required_next_route_has_deterministic_proof(
+    required_call: dict[str, Any],
+    contract: dict[str, Any],
+) -> bool:
+    required_call = required_call if isinstance(required_call, dict) else {}
+    tool = str(required_call.get("tool") or "").strip()
+    args = required_call.get("arguments") if isinstance(required_call.get("arguments"), dict) else {}
+    if tool == "repo_read":
+        return True
+    if tool == "repo_list_files":
+        path = _repo_path_token(args.get("path") or ".") or "."
+        if path == ".":
+            return True
+        return not _route_token_is_prose_or_metric(path) and path in _known_contract_repo_dirs(contract)
+    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
+        query = args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text")
+        if not _search_query_is_concrete(query):
+            return False
+        path = _repo_path_token(args.get("path")) if args.get("path") else ""
+        if path and path not in _known_contract_repo_paths(contract) and path not in _known_contract_repo_dirs(contract):
+            return False
+        return True
+    if tool == "planner_scratchpad_read":
+        document_id = str(args.get("document_id") or "").strip()
+        target_file = _repo_path_token(args.get("target_file")) if args.get("target_file") else ""
+        if document_id and not _route_token_is_prose_or_metric(document_id):
+            return True
+        return bool(target_file and target_file in _known_contract_repo_paths(contract))
+    return False

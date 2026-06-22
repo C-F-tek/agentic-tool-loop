@@ -11,6 +11,8 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     required_next_tool_call_satisfaction,
 )
 from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token, repo_rel_token
+
+# Import validation utilities from shared module
 from aicarmine_broker.application.shared.validation_utils import (
     _list_or_empty,
     _repo_path_is_concrete,
