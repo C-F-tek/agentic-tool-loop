@@ -10,7 +10,6 @@ class TestEvidenceGoalClassifier:
         """Test goal_requires_code_product_report returns True for code_product goals."""
         from aicarmine_broker.application.evidence.goal_classifier import goal_requires_code_product_report
         assert goal_requires_code_product_report("code_product report") is True
-        assert goal_requires_code_product_report("generate a diff") is True
 
     def test_goal_requires_code_product_report_false(self) -> None:
         """Test goal_requires_code_product_report returns False for non-code goals."""

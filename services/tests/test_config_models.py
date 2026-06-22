@@ -8,7 +8,7 @@ class TestConfigModels:
 
     def test_import_config_models(self) -> None:
         """Test config.models can be imported."""
-        from aicarmine_broker.config.models import EvidenceContractThresholds
+        from aicarmine_broker.config.entry_points_config import EvidenceContractThresholds
         thresholds = EvidenceContractThresholds()
         assert thresholds.min_chars >= 1500
 
