@@ -24,7 +24,7 @@ def _normalize_terminal_planner_decision(
     return decision
 
 
-def _list_or_empty(value: Any) -> list[Any]:
+def list_or_empty(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
