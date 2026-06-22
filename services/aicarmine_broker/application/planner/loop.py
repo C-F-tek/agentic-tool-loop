@@ -2313,9 +2313,9 @@ def run_agentic_planner_job(
                 for row in history[-10:]
                 if isinstance(row.get("tool_result"), dict)
             ]
-            if len(set(previous_targets)) == 1 and previous_targets[0] == rewrite_target:
-                state["planner_stuck_on_rewrite_target"] = rewrite_target
-                state["planner_rewrite_stuck_count"] = cuda_rewrite_history_count + 1
+            if len(set(previous_targets)) == 1 and previous_targets[0] == loop_controller.rewrite_target:
+                state["planner_stuck_on_rewrite_target"] = loop_controller.rewrite_target
+                state["planner_rewrite_stuck_count"] = loop_controller.cuda_rewrite_history_count + 1
             
             guard_result["planner_role_scheduled"] = state["planner_role_override"]
             
@@ -2330,7 +2330,7 @@ def run_agentic_planner_job(
                 "step": step,
                 "decision": {
                     "action": "continue_required",
-                    "reason": f"planner CUDA rewrite required for rejected {rewrite_target} proposal",
+                    "reason": f"planner CUDA rewrite required for rejected {loop_controller.rewrite_target} proposal",
                     "rejected_decision": {
                         k: decision.get(k)
                         for k in ("action", "tool", "arguments", "reason", "final_answer", "raw_planner_text")
@@ -2691,7 +2691,7 @@ def run_agentic_planner_job(
         hit = _tool_cache_hit(history, tool, internal_args)
         if hit:
             effective_cache_key = cache_key or str(hit.get("cache_key") or "")
-            append_cached_tool_result(
+            loop_controller.append_cached_tool_result(
                 step,
                 decision,
                 {
