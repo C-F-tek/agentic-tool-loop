@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
+import time
 import ast
 from pathlib import Path
 from typing import Any
@@ -219,6 +221,7 @@ class CodeDepGraphManager:
     # -----------------------------------------------------------------------
 
     def _extract_imports(self, source: str) -> list[str]:
+        """Extract full dotted import paths from source code."""
         try:
             tree = ast.parse(source)
             imports = []
@@ -227,7 +230,7 @@ class CodeDepGraphManager:
                 # Track `import X` (absolute imports)
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        name = alias.name.split(".")[0]
+                        name = alias.name
                         if name not in seen:
                             seen.add(name)
                             imports.append(name)
@@ -236,54 +239,135 @@ class CodeDepGraphManager:
                     module = node.module or ""
                     # Absolute imports (level == 0)
                     if node.level == 0 and module:
-                        name = module.split(".")[0]
-                        if name not in seen:
-                            seen.add(name)
-                            imports.append(name)
-                    # Relative imports (level > 0) — resolve from file context
+                        if module not in seen:
+                            seen.add(module)
+                            imports.append(module)
+                    # Relative imports (level > 0) — keep full dotted path
                     elif node.level > 0 and module:
-                        parts = module.split(".")
-                        if parts:
-                            name = parts[0]
-                            if name not in seen:
-                                seen.add(name)
-                                imports.append(name)
+                        if module not in seen:
+                            seen.add(module)
+                            imports.append(module)
             return imports
         except Exception:
             return []
 
+    def _import_to_file_path(self, import_path: str) -> str | None:
+        """Convert a dotted import path to a relative file path.
+        
+        e.g., "services.aicarmine_broker.application.planner.evidence_contract_manager"
+        → "services/aicarmine_broker/application/planner/evidence_contract_manager.py"
+        """
+        # Try as .py file directly
+        rel = import_path.replace(".", "/") + ".py"
+        if rel in self._file_index:
+            return rel
+        
+        # Try as __init__.py (package)
+        rel_init = import_path.replace(".", "/") + "/__init__.py"
+        if rel_init in self._file_index:
+            return rel_init
+        
+        return None
+
+    def _build_file_index(self) -> set[str]:
+        """Build a set of all candidate file paths for quick lookup."""
+        candidate_paths = self._git_candidate_paths()
+        result: set[str] = set()
+        for rel in candidate_paths:
+            if rel.endswith(".py"):
+                result.add(rel)
+        return result
+
+    def _git_candidate_paths(self) -> list[str]:
+        """Get candidate files using git ls-files (same technique as RAG index)."""
+        result = subprocess.run(
+            ["git", "-C", str(self.repo_root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return []
+
+        paths: list[str] = []
+        seen: set[str] = set()
+        for item in result.stdout.split("\0"):
+            rel = item.replace("\\", "/").strip("/")
+            if not rel or rel in seen:
+                continue
+            seen.add(rel)
+            paths.append(rel)
+        return paths
+
     def _get_or_build_graph(self) -> dict[str, set[str]]:
-        if self._graph is None:
-            with self._lock:
+        """Build graph (thread-safe). Uses git ls-files candidate selection."""
+        if self._graph is not None:
+            return self._graph
+
+        with self._lock:
+            if self._graph is None:
                 self._graph = self._build_dependency_graph()
         return self._graph
 
     def _get_or_build_reverse_graph(self) -> dict[str, set[str]]:
-        if self._reverse_graph is None:
-            with self._lock:
+        """Build reverse graph (thread-safe) with timeout protection."""
+        if self._reverse_graph is not None:
+            return self._reverse_graph
+
+        with self._lock:
+            if self._reverse_graph is None:
                 self._reverse_graph = self._build_reverse_graph()
         return self._reverse_graph
 
     def _build_dependency_graph(self) -> dict[str, set[str]]:
+        """Build dependency graph using git ls-files candidate selection.
+        
+        Uses the same strategy as RAG index and Symbol Index:
+        - git ls-files --cached --others --exclude-standard to select files
+        - Respects .gitignore for inclusion/exclusion
+        - Only indexes .py files from the candidate surface
+        - Maps dotted imports to relative file paths for proper caller resolution
+        """
         graph: dict[str, set[str]] = {}
-        all_py_files = list(self.repo_root.rglob("*.py"))[:2000]
+        self._file_index = self._build_file_index()
+        start_time = time.time()
 
-        for file_path in all_py_files:
+        for i, rel in enumerate(self._file_index):
+            # Timeout check every 100 files (60 second limit)
+            if i % 100 == 0 and (time.time() - start_time) > 60:
+                return graph  # Partial result
+            
+            file_path = self.repo_root / rel
             try:
                 source = file_path.read_text(encoding="utf-8")
-                rel_path = str(file_path.relative_to(self.repo_root))
                 imports = self._extract_imports(source)
-                graph[rel_path] = set(imports) | set(graph.get(rel_path, set()))
+                
+                # Convert dotted imports to relative file paths
+                resolved_deps: set[str] = set()
+                for imp in imports:
+                    fp = self._import_to_file_path(imp)
+                    if fp:
+                        resolved_deps.add(fp)
+                    else:
+                        resolved_deps.add(imp)
+                
+                graph[rel] = resolved_deps | set(graph.get(rel, set()))
             except Exception:
                 continue
 
         return graph
 
     def _build_reverse_graph(self) -> dict[str, set[str]]:
+        """Build reverse graph from forward graph with timeout."""
+        start_time = time.time()
         forward = self._get_or_build_graph()
         reverse: dict[str, set[str]] = defaultdict(set)
 
-        for source, targets in forward.items():
+        for i, (source, targets) in enumerate(forward.items()):
+            # Timeout check every 100 entries (30 second limit for reverse build)
+            if i % 100 == 0 and (time.time() - start_time) > 30:
+                return dict(reverse)
+            
             for target in targets:
                 reverse[target].add(source)
 

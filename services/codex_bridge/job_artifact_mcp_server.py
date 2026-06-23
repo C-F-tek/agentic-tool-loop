@@ -2,7 +2,6 @@
 """Read-only MCP server for persisted agent job artifacts."""
 
 from __future__ import annotations
-
 from collections import Counter
 import json
 import os
@@ -10,7 +9,6 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
-
 from repo_mcp_common import (
     ToolSpec,
     health_payload,
@@ -18,7 +16,6 @@ from repo_mcp_common import (
     self_test,
     serve,
 )
-
 SERVER_NAME = "aicarmine-job-artifact-mcp"
 SERVER_VERSION = "0.1.0"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -31,30 +28,20 @@ SUPPORT_SUBTURN_TOOLS = frozenset(
         "runtime_sqlite_memory_write",
     }
 )
-
-
 def string_prop(default: str | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if default is not None:
         schema["default"] = default
     return schema
-
-
 def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
     return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
 def boolean_prop(default: bool) -> dict[str, Any]:
     return {"type": "boolean", "default": default}
-
-
 def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
     if default is not None:
         schema["default"] = default
     return schema
-
-
 def _safe_int(value: Any, default: int, low: int, high: int) -> int:
     try:
         number = int(value)
@@ -82,8 +69,6 @@ def _dedupe(paths: list[Path]) -> list[Path]:
         seen.add(key)
         out.append(resolved)
     return out
-
-
 def _job_roots(root: Path) -> list[Path]:
     codex_agentic_loop_roots: list[Path] = []
     codex_agentic_loop_root = root / "state" / "codex_bridge" / "agentic_loop_client"
@@ -103,8 +88,6 @@ def _job_roots(root: Path) -> list[Path]:
         root / "agent_jobs",
     ]
     return _dedupe([path for path in candidates if path is not None])
-
-
 def _safe_job_id(value: Any) -> str:
     job_id = str(value or "").strip()
     if not job_id:
@@ -118,8 +101,6 @@ def _safe_job_id(value: Any) -> str:
             f"{preview}; allowed_pattern={JOB_ID_RE.pattern}; example_valid=abc-123_def.456"
         )
     return job_id
-
-
 def _find_job_dir(root: Path, job_id: str) -> Path | None:
     for jobs_root in _job_roots(root):
         candidate = jobs_root / job_id
@@ -131,15 +112,11 @@ def _find_job_dir(root: Path, job_id: str) -> Path | None:
         if resolved.is_dir():
             return resolved
     return None
-
-
 def _read_text(path: Path, *, max_chars: int) -> tuple[str, bool]:
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         text = handle.read(max_chars + 1)
     truncated = len(text) > max_chars
     return text[:max_chars], truncated
-
-
 def _read_text_page(path: Path, *, offset: int, max_chars: int) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="replace")
     start = max(0, min(int(offset or 0), len(text)))
@@ -156,8 +133,6 @@ def _read_text_page(path: Path, *, offset: int, max_chars: int) -> dict[str, Any
         "truncated": truncated,
         "next_offset": next_offset,
     }
-
-
 def _read_json(path: Path, *, max_chars: int = 2_000_000) -> Any:
     try:
         del max_chars
