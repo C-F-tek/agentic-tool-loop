@@ -560,3 +560,90 @@ def object_schema(properties: dict[str, Any] | None = None, required: list[str] 
     if required:
         schema["required"] = required
     return schema
+
+
+# ── Shared schema builders (replaces per-server duplicates) ──────────────
+
+def string_prop(default: str | None = None) -> dict[str, Any]:
+    """Build a JSON Schema string property. Compatible with all server variants."""
+    schema: dict[str, Any] = {"type": "string"}
+    if default is not None:
+        schema["default"] = default
+    return schema
+
+
+def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
+    """Build a JSON Schema integer property. Compatible with all server variants."""
+    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
+
+
+def boolean_prop(default: bool) -> dict[str, Any]:
+    """Build a JSON Schema boolean property. Compatible with all server variants."""
+    return {"type": "boolean", "default": default}
+
+
+# ── Shared safe converters (replaces per-server duplicates) ──────────────
+
+def safe_int(value: Any, default: int = 0, low: int | None = None, high: int | None = None) -> int:
+    """Safely convert to int with optional clamping. Compatible with all server variants."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    if low is not None and high is not None:
+        return max(low, min(high, number))
+    return number
+
+
+def safe_float(value: Any, default: float = 0.0, low: float | None = None, high: float | None = None) -> float:
+    """Safely convert to float with optional clamping."""
+    try:
+        result = float(value)
+    except (ValueError, TypeError):
+        result = default
+    if low is not None and high is not None:
+        return max(low, min(high, result))
+    return result
+
+
+def safe_bool(value: Any, default: bool = False) -> bool:
+    """Safely convert to bool. Handles str/int/bool inputs."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value) if default else False
+
+
+# ── Shared json helpers (replaces per-server duplicates) ─────────────────
+
+def json_text(value: Any) -> str:
+    """JSON serialization with indent=2. Compatible with _json_text variants."""
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def json_path_select(value: Any, path: str) -> tuple[Any, str]:
+    """Select a sub-element from JSON structure by dot-path. Returns (value, normalized_path)."""
+    current = value
+    normalized = str(path or "").strip().strip(".")
+    if not normalized:
+        return current, ""
+    traversed: list[str] = []
+    for part in normalized.split("."):
+        if isinstance(current, dict):
+            if part not in current:
+                raise KeyError(".".join([*traversed, part]))
+            current = current[part]
+        elif isinstance(current, list):
+            try:
+                index = int(part)
+            except ValueError as exc:
+                raise KeyError(".".join([*traversed, part])) from exc
+            try:
+                current = current[index]
+            except IndexError as exc:
+                raise KeyError(".".join([*traversed, part])) from exc
+        else:
+            raise KeyError(".".join([*traversed, part]))
+        traversed.append(part)
+    return current, ".".join(traversed)

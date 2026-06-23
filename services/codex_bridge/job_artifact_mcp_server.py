@@ -15,6 +15,12 @@ from repo_mcp_common import (
     object_schema,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    boolean_prop,
+    safe_int,
+    json_text,
+    json_path_select,
 )
 SERVER_NAME = "aicarmine-job-artifact-mcp"
 SERVER_VERSION = "0.1.0"
@@ -28,26 +34,11 @@ SUPPORT_SUBTURN_TOOLS = frozenset(
         "runtime_sqlite_memory_write",
     }
 )
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
 def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
     if default is not None:
         schema["default"] = default
     return schema
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
 
 
 def _env_path(name: str) -> Path | None:
@@ -148,39 +139,10 @@ def _read_json(path: Path, *, max_chars: int = 2_000_000) -> Any:
         return {"_read_error": str(exc), "_artifact_path": str(path)}
 
 
-def _json_text(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
-
-
-def _json_path_select(value: Any, path: str) -> tuple[Any, str]:
-    current = value
-    normalized = str(path or "").strip().strip(".")
-    if not normalized:
-        return current, ""
-    traversed: list[str] = []
-    for part in normalized.split("."):
-        if isinstance(current, dict):
-            if part not in current:
-                raise KeyError(".".join([*traversed, part]))
-            current = current[part]
-        elif isinstance(current, list):
-            try:
-                index = int(part)
-            except ValueError as exc:
-                raise KeyError(".".join([*traversed, part])) from exc
-            try:
-                current = current[index]
-            except IndexError as exc:
-                raise KeyError(".".join([*traversed, part])) from exc
-        else:
-            raise KeyError(".".join([*traversed, part]))
-        traversed.append(part)
-    return current, ".".join(traversed)
-
 
 def _json_page(value: Any, *, path: str, offset: int, max_chars: int) -> dict[str, Any]:
     try:
-        selected, normalized_path = _json_path_select(value, path)
+        selected, normalized_path = json_path_select(value, path)
     except KeyError as exc:
         return {
             "ok": False,
@@ -188,7 +150,7 @@ def _json_page(value: Any, *, path: str, offset: int, max_chars: int) -> dict[st
             "json_path": str(path or ""),
             "missing_at": str(exc).strip("'"),
         }
-    text = _json_text(selected)
+    text = json_text(selected)
     start = max(0, min(int(offset or 0), len(text)))
     returned = text[start:start + max_chars]
     next_offset = start + len(returned) if start + len(returned) < len(text) else None
@@ -207,13 +169,13 @@ def _json_page(value: Any, *, path: str, offset: int, max_chars: int) -> dict[st
 
 
 def _json_overview(value: Any, *, path: str = "", depth: int = 0) -> dict[str, Any]:
-    text = _json_text(value)
+    text = json_text(value)
     if isinstance(value, dict):
         scalar_values: dict[str, Any] = {}
         child_fields: list[dict[str, Any]] = []
         for key, child in value.items():
             child_path = f"{path}.{key}" if path else str(key)
-            child_text = _json_text(child)
+            child_text = json_text(child)
             if isinstance(child, (str, int, float, bool)) or child is None:
                 scalar_values[str(key)] = child if len(str(child)) <= 500 else str(child)[:500]
             elif depth < 1:
@@ -240,7 +202,7 @@ def _json_overview(value: Any, *, path: str = "", depth: int = 0) -> dict[str, A
             "chars": len(text),
             "length": len(value),
             "first_items": [
-                {"index": index, "type": type(item).__name__, "chars": len(_json_text(item))}
+                {"index": index, "type": type(item).__name__, "chars": len(json_text(item))}
                 for index, item in enumerate(value[:20])
             ],
         }
@@ -452,7 +414,7 @@ def _job_file_overview(job_dir: Path) -> list[dict[str, Any]]:
 
 
 def _list_jobs(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    limit = _safe_int(args.get("limit") or args.get("max_results"), 50, 1, 500)
+    limit = safe_int(args.get("limit") or args.get("max_results"), 50, 1, 500)
     rows: list[dict[str, Any]] = []
     roots = _job_roots(root)
     for jobs_root in roots:
@@ -539,8 +501,8 @@ def _events(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if job_dir is None:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
 
-    tail = _safe_int(args.get("tail") or args.get("limit"), 100, 1, 2000)
-    max_lines = _safe_int(args.get("max_lines"), 10000, 1, 100000)
+    tail = safe_int(args.get("tail") or args.get("limit"), 100, 1, 2000)
+    max_lines = safe_int(args.get("max_lines"), 10000, 1, 100000)
     raw_types = args.get("types")
     types = {str(item) for item in raw_types} if isinstance(raw_types, list) else set()
     step = args.get("step")
@@ -578,8 +540,8 @@ def _final(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if job_dir is None:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
 
-    max_chars = _safe_int(args.get("max_chars"), 200_000, 1000, 5_000_000)
-    offset = _safe_int(args.get("offset"), 0, 0, 500_000_000)
+    max_chars = safe_int(args.get("max_chars"), 200_000, 1000, 5_000_000)
+    offset = safe_int(args.get("offset"), 0, 0, 500_000_000)
     json_path = str(args.get("json_path") or "").strip()
     include_full_json = bool(args.get("include_full_json", False))
     final_json_path = job_dir / "final.json"
@@ -589,7 +551,7 @@ def _final(args: dict[str, Any], root: Path) -> dict[str, Any]:
         isinstance(final_json, dict)
         and final_json.get("_read_error")
     )
-    final_json_text_chars = len(_json_text(final_json)) if final_json_parse_ok else 0
+    final_json_text_chars = len(json_text(final_json)) if final_json_parse_ok else 0
     default_json_path = json_path
     if not default_json_path and isinstance(final_json, dict):
         for candidate in OPENWEBUI_INLINE_TRANSPORT_FIELDS:
@@ -647,8 +609,8 @@ def _tool_results(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if not tool_dir.is_dir():
         return {"ok": True, "tool": "aicarmine_job_artifact_tool_results", "job_id": job_id, "results": [], "count": 0}
     include_payload = bool(args.get("include_payload", False))
-    max_results = _safe_int(args.get("max_results") or args.get("limit"), 50, 1, 500)
-    max_chars = _safe_int(args.get("max_chars"), 40000, 1000, 500000)
+    max_results = safe_int(args.get("max_results") or args.get("limit"), 50, 1, 500)
+    max_chars = safe_int(args.get("max_chars"), 40000, 1000, 500000)
     tool_filter = str(args.get("tool_filter") or args.get("tool") or "").strip().lower()
 
     rows: list[dict[str, Any]] = []
@@ -693,10 +655,10 @@ def _subturns(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if job_dir is None:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
 
-    tail = _safe_int(args.get("tail") or args.get("limit"), 200, 1, 5000)
-    max_lines = _safe_int(args.get("max_lines"), 300000, 1, 500000)
+    tail = safe_int(args.get("tail") or args.get("limit"), 200, 1, 5000)
+    max_lines = safe_int(args.get("max_lines"), 300000, 1, 500000)
     include_payload = bool(args.get("include_payload", False))
-    max_chars = _safe_int(args.get("max_chars"), 8000, 500, 100000)
+    max_chars = safe_int(args.get("max_chars"), 8000, 500, 100000)
     events = _read_events(job_dir / "events.ndjson", max_lines=max_lines)
     support_events = [_compact_subturn_event(event, include_payload=include_payload, max_chars=max_chars) for event in events if _support_subturn_event(event)]
 
@@ -769,7 +731,7 @@ def _planner_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "error": "planner_payload_not_found", "job_id": job_id, "step": raw_step}
 
     include_payload = bool(args.get("include_payload", True))
-    max_chars = _safe_int(args.get("max_chars"), 500000, 1000, 2_000_000)
+    max_chars = safe_int(args.get("max_chars"), 500000, 1000, 2_000_000)
     payload = _read_json(path, max_chars=max_chars)
     summary: dict[str, Any] = {}
     if isinstance(payload, dict):
@@ -818,8 +780,8 @@ def _rejections(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if job_dir is None:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
 
-    tail = _safe_int(args.get("tail") or args.get("limit"), 100, 1, 1000)
-    events = _read_events(job_dir / "events.ndjson", max_lines=_safe_int(args.get("max_lines"), 100000, 1, 300000))
+    tail = safe_int(args.get("tail") or args.get("limit"), 100, 1, 1000)
+    events = _read_events(job_dir / "events.ndjson", max_lines=safe_int(args.get("max_lines"), 100000, 1, 300000))
     selected = _select_rejection_events(events)
     compacted: list[dict[str, Any]] = []
     for event in selected[-tail:]:
