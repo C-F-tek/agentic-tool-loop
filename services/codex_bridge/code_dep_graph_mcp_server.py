@@ -43,11 +43,18 @@ class CodeDepGraphManager:
         if not target.exists():
             return {"ok": True, "error": f"Path not found: {target}"}
 
-        files = list(target.rglob(f"*.{language}")) if language == "python" else []
+        ext = {
+            "python": ".py",
+            "javascript": ".js",
+            "typescript": ".ts",
+            "go": ".go",
+            "java": ".java",
+        }.get(language, f".{language}")
+        files = list(target.rglob(f"*{ext}")) if ext else []
         edges = []
         nodes = set()
 
-        for file_path in files[:200]:
+        for file_path in files[:2000]:
             try:
                 source = file_path.read_text(encoding="utf-8")
                 imports = self._extract_imports(source)
@@ -215,16 +222,32 @@ class CodeDepGraphManager:
         try:
             tree = ast.parse(source)
             imports = []
+            seen: set[str] = set()
             for node in tree.body:
+                # Track `import X` (absolute imports)
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         name = alias.name.split(".")[0]
-                        imports.append(name)
+                        if name not in seen:
+                            seen.add(name)
+                            imports.append(name)
+                # Track `from X import Y` (relative and absolute)
                 elif isinstance(node, ast.ImportFrom):
                     module = node.module or ""
+                    # Absolute imports (level == 0)
                     if node.level == 0 and module:
                         name = module.split(".")[0]
-                        imports.append(name)
+                        if name not in seen:
+                            seen.add(name)
+                            imports.append(name)
+                    # Relative imports (level > 0) — resolve from file context
+                    elif node.level > 0 and module:
+                        parts = module.split(".")
+                        if parts:
+                            name = parts[0]
+                            if name not in seen:
+                                seen.add(name)
+                                imports.append(name)
             return imports
         except Exception:
             return []
@@ -243,7 +266,7 @@ class CodeDepGraphManager:
 
     def _build_dependency_graph(self) -> dict[str, set[str]]:
         graph: dict[str, set[str]] = {}
-        all_py_files = list(self.repo_root.rglob("*.py"))[:500]
+        all_py_files = list(self.repo_root.rglob("*.py"))[:2000]
 
         for file_path in all_py_files:
             try:

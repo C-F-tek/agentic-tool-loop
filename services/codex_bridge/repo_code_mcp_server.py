@@ -39,7 +39,7 @@ class ContextPreservationLayer:
     re-analysis of unchanged code regions.
     """
 
-    def __init__(self, max_entries: int = 256, ttl_seconds: int = 600) -> None:
+    def __init__(self, max_entries: int = 1024, ttl_seconds: int = 600) -> None:
         self._cache: OrderedDict[str, Any] = OrderedDict()
         self._max_entries = max_entries
         self._ttl = ttl_seconds
@@ -132,7 +132,7 @@ def context_preservation_layer() -> ContextPreservationLayer:
     if _context_preservation is None:
         with _context_lock:
             if _context_preservation is None:
-                _context_preservation = ContextPreservationLayer(max_entries=256, ttl_seconds=600)
+                _context_preservation = ContextPreservationLayer(max_entries=1024, ttl_seconds=600)
     return _context_preservation
 
 
@@ -491,7 +491,7 @@ def _tools() -> dict[str, ToolSpec]:
         payload["context_preservation"] = {
             "enabled": True,
             "stats": ctx_layer.stats(),
-            "max_entries": 256,
+            "max_entries": 1024,
             "ttl_seconds": 600,
         }
         payload["context_tracking"] = {

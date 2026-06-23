@@ -43,7 +43,7 @@ DEFAULT_SUFFIXES = {
 
 MAX_FILE_BYTES_DEFAULT = 2_000_000
 CHUNK_LINES_DEFAULT = 180
-CHUNK_CHARS_DEFAULT = 12_000
+CHUNK_CHARS_DEFAULT = 35_000
 SOURCE_GIT_DEFAULT = "git"
 SOURCE_FILESYSTEM = "filesystem"
 MODE_DELTA = "delta"
@@ -407,12 +407,24 @@ def build_index(
         else:
             _ensure_schema(conn)
 
+        # Track current commit for delta indexing
+        try:
+            commit_result = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            indexed_commit = commit_result.stdout.strip() if commit_result.returncode == 0 else ""
+        except Exception:
+            indexed_commit = ""
         _upsert_meta(conn, "repo_root", str(repo_root))
         _upsert_meta(conn, "indexed_at", str(now))
         _upsert_meta(conn, "index_version", "2")
         _upsert_meta(conn, "index_source", source)
         _upsert_meta(conn, "index_mode", mode)
         _upsert_meta(conn, "selector", "git ls-files --cached --others --exclude-standard")
+        _upsert_meta(conn, "indexed_commit", indexed_commit)
 
         old_chunk_paths = {row[0] for row in conn.execute("SELECT DISTINCT path FROM chunks")}
         old_file_paths = {row[0] for row in conn.execute("SELECT path FROM files")}

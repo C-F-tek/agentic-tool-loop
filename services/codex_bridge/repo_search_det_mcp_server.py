@@ -33,7 +33,7 @@ class SymbolMemoryManager:
     code elements.
     """
 
-    def __init__(self, max_entries: int = 512, ttl_seconds: int = 600) -> None:
+    def __init__(self, max_entries: int = 2048, ttl_seconds: int = 600) -> None:
         self._cache: OrderedDict[str, Any] = OrderedDict()
         self._max_entries = max_entries
         self._ttl = ttl_seconds
@@ -125,7 +125,7 @@ def _get_symbol_memory() -> SymbolMemoryManager:
     if _symbol_memory is None:
         with _context_lock:
             if _symbol_memory is None:
-                _symbol_memory = SymbolMemoryManager(max_entries=512, ttl_seconds=600)
+                _symbol_memory = SymbolMemoryManager(max_entries=2048, ttl_seconds=600)
     return _symbol_memory
 
 
@@ -204,7 +204,7 @@ def _tools() -> dict[str, ToolSpec]:
         payload["symbol_memory"] = {
             "enabled": True,
             "stats": symbol_memory.stats(),
-            "max_entries": 512,
+            "max_entries": 2048,
             "ttl_seconds": 600,
         }
         payload["context_tracking"] = {

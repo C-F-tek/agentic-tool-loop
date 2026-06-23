@@ -123,6 +123,10 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
         "code_dep_graph_mcp_server.py",
         "aicarmine_code_dep_health",
     ),
+    "aicarmine_ollama_subagent": LocalMcpServer(
+        "ollama_subagent_mcp_server.py",
+        "aicarmine_ollama_subagent_health",
+    ),
 }
 
 
