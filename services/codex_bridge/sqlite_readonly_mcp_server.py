@@ -20,6 +20,10 @@ from repo_mcp_common import (
     object_schema,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    boolean_prop,
+    safe_int,
 )
 
 SERVER_NAME = "aicarmine-sqlite-readonly-mcp"
@@ -36,27 +40,6 @@ BLOCKED_SQL_RE = re.compile(
 )
 
 
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
 
 
 def _path_is_under(child: Path, parent: Path) -> bool:
@@ -264,7 +247,7 @@ def _schema(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     include_columns = bool(args.get("include_columns", True))
     include_sql = bool(args.get("include_sql", False))
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 5, 1, 30)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 5, 1, 30)
 
     with _connect_readonly(db_path, timeout_seconds=timeout_seconds) as conn:
         tables = _table_names(conn)
@@ -298,9 +281,9 @@ def _query(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return sql_problem
     assert sql is not None
 
-    row_limit = _safe_int(args.get("row_limit") or args.get("limit"), 100, 1, 1000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 5, 1, 30)
-    max_cell_chars = _safe_int(args.get("max_cell_chars"), 4000, 200, 20000)
+    row_limit = safe_int(args.get("row_limit") or args.get("limit"), 100, 1, 1000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 5, 1, 30)
+    max_cell_chars = safe_int(args.get("max_cell_chars"), 4000, 200, 20000)
 
     try:
         with _connect_readonly(db_path, timeout_seconds=timeout_seconds) as conn:
@@ -337,8 +320,8 @@ def _query(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _list_databases(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    max_results = _safe_int(args.get("max_results") or args.get("limit"), 200, 1, 1000)
-    max_depth = _safe_int(args.get("max_depth"), 6, 1, 12)
+    max_results = safe_int(args.get("max_results") or args.get("limit"), 200, 1, 1000)
+    max_depth = safe_int(args.get("max_depth"), 6, 1, 12)
     search_roots = _dedupe_paths(
         [
             root / "state",

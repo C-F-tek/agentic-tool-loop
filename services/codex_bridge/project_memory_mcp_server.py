@@ -20,6 +20,11 @@ from repo_mcp_common import (
     run_git,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    boolean_prop,
+    safe_int,
+    safe_float,
 )
 
 SERVER_NAME = "aicarmine-project-memory-mcp"
@@ -36,23 +41,6 @@ SUPERSEDE_CONFIRM = "project_memory_supersede"
 MAX_SOURCE_FILE_BYTES = 100_000_000
 
 
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def number_prop(default: float, minimum: float, maximum: float) -> dict[str, Any]:
-    return {"type": "number", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
 
 
 def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
@@ -62,20 +50,6 @@ def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
     return schema
 
 
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _safe_float(value: Any, default: float, low: float, high: float) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
 
 
 def _diagnostic_preview(value: Any, limit: int = 500) -> str:
@@ -93,7 +67,7 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _json_text(value: Any) -> str:
+def _json_text_sorted(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
@@ -517,7 +491,7 @@ def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "count": 0,
         }
     query = str(args.get("query") or "").strip()
-    limit = _safe_int(args.get("limit") or args.get("max_results"), 20, 1, 200)
+    limit = safe_int(args.get("limit") or args.get("max_results"), default=20, low=1, high=200)
     status = str(args.get("status") or "active").strip().lower()
     scope = str(args.get("scope") or "").strip().lower()
     source_type = str(args.get("source_type") or "").strip().lower()
@@ -636,7 +610,7 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
     git = _git_context(root)
     branch = str(args.get("branch") or git["branch"] or "").strip()
     commit_sha = str(args.get("commit_sha") or git["commit_sha"] or "").strip()
-    confidence = _safe_float(args.get("confidence"), 1.0, 0.0, 1.0)
+    confidence = safe_float(args.get("confidence"), 1.0, low=0.0, high=1.0)
     tags = _parse_tags(args.get("tags"))
     metadata = _parse_metadata(args.get("metadata"))
     now = _now_iso()
@@ -677,8 +651,8 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
                     source_ref,
                     commit_sha,
                     confidence,
-                    _json_text(tags),
-                    _json_text(metadata),
+                    _json_text_sorted(tags),
+                    _json_text_sorted(metadata),
                     existing["record_id"],
                 ),
             )
@@ -719,8 +693,8 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 now,
                 status,
                 confidence,
-                _json_text(tags),
-                _json_text(metadata),
+                _json_text_sorted(tags),
+                _json_text_sorted(metadata),
             ),
         )
         if existing is not None and supersede_existing:
@@ -806,7 +780,7 @@ def _mark_stale(args: dict[str, Any], root: Path) -> dict[str, Any]:
             SET status = 'stale', obsolete_reason = ?, updated_at = ?, metadata_json = ?
             WHERE record_id = ?
             """,
-            (reason, now, _json_text(metadata), row["record_id"]),
+            (reason, now, _json_text_sorted(metadata), row["record_id"]),
         )
         conn.commit()
         committed = True
@@ -900,7 +874,7 @@ def _audit_sources(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "records_checked": 0,
         }
     status = str(args.get("status") or "active").strip().lower()
-    limit = _safe_int(args.get("limit") or args.get("max_results"), 200, 1, 1000)
+    limit = safe_int(args.get("limit") or args.get("max_results"), default=200, low=1, high=1000)
     clauses = ["repo_root = ?"]
     values: list[Any] = [str(root.resolve())]
     if status and status != "any":
@@ -1003,7 +977,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "branch": string_prop(),
                 "commit_sha": string_prop(),
                 "status": string_prop("active"),
-                "confidence": number_prop(1.0, 0.0, 1.0),
+                "confidence": {"type": "number", "default": 1.0, "minimum": 0.0, "maximum": 1.0},
                 "tags": string_array_prop(),
                 "metadata": {"type": "object"},
                 "confirm_write": string_prop(),
@@ -1049,7 +1023,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "value": string_prop(),
                 "source_type": string_prop(),
                 "source_ref": string_prop(),
-                "confidence": number_prop(1.0, 0.0, 1.0),
+                "confidence": {"type": "number", "default": 1.0, "minimum": 0.0, "maximum": 1.0},
                 "tags": string_array_prop(),
                 "metadata": {"type": "object"},
                 "obsolete_reason": string_prop(),

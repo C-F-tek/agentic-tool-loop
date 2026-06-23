@@ -20,6 +20,8 @@ from repo_mcp_common import (
     selected_repo_root,
     self_test,
     serve,
+    integer_prop,
+    boolean_prop,
 )
 
 SERVER_NAME = "aicarmine-codex-ops-mcp"
@@ -144,20 +146,12 @@ def integer_array_prop(default: list[int] | None = None) -> dict[str, Any]:
     return schema
 
 
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
 
 
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _json_text(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 def _frame(payload: dict[str, Any], transport: str) -> bytes:
-    raw = _json_text(payload).encode("utf-8")
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
     if transport == "content-length":
         return f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii") + raw
     return raw + b"\n"

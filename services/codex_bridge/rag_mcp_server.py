@@ -28,6 +28,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from repo_mcp_common import (
+    json_text as json_dumps,
+    safe_int,
+    safe_float,
+    safe_bool,
+    tool_content,
+    ok as _ok_response,
+    err as _err_response,
+)
 from rag_index_repo import (
     CHUNK_CHARS_DEFAULT,
     CHUNK_LINES_DEFAULT,
@@ -58,60 +67,6 @@ def _log(message: str) -> None:
         print(f"[{SERVER_NAME}] {message}", file=sys.stderr, flush=True)
 
 
-def _json_dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
-
-
-def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": _json_dumps(value)}], "isError": is_error}
-
-
-def _ok(msg_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
-
-
-def _err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
-    error = {"code": code, "message": message}
-    if data is not None:
-        error["data"] = data
-    return {"jsonrpc": "2.0", "id": msg_id, "error": error}
-
-
-def _safe_int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    if low is not None:
-        number = max(low, number)
-    if high is not None:
-        number = min(high, number)
-    return number
-
-
-def _safe_float(value: Any, default: float, low: float | None = None, high: float | None = None) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        number = default
-    if low is not None:
-        number = max(low, number)
-    if high is not None:
-        number = min(high, number)
-    return number
-
-
-def _safe_bool(value: Any, default: bool = True) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "on"}:
-        return True
-    if text in {"0", "false", "no", "off"}:
-        return False
-    return default
 
 
 def _env_path(name: str, default: str = "") -> Path | None:
@@ -448,7 +403,7 @@ def _rerank(
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     warnings: list[str] = []
     started = time.monotonic()
-    effective_timeout = _safe_float(timeout_seconds, DEFAULT_RERANK_TIMEOUT_SECONDS, low=1.0, high=60.0)
+    effective_timeout = safe_float(timeout_seconds, DEFAULT_RERANK_TIMEOUT_SECONDS, low=1.0, high=60.0)
     url = os.environ.get("AICARMINE_RAG_RERANK_URL", DEFAULT_RERANK_URL).strip() or DEFAULT_RERANK_URL
     model = os.environ.get("AICARMINE_RAG_RERANK_MODEL", DEFAULT_RERANK_MODEL).strip() or DEFAULT_RERANK_MODEL
     meta: dict[str, Any] = {
@@ -566,11 +521,11 @@ def _rerank(
 
 
 def _env_int(name: str, default: int, *, low: int, high: int) -> int:
-    return _safe_int(os.environ.get(name), default, low=low, high=high)
+    return safe_int(os.environ.get(name), default, low=low, high=high)
 
 
 def _env_float(name: str, default: float, *, low: float, high: float) -> float:
-    return _safe_float(os.environ.get(name), default, low=low, high=high)
+    return safe_float(os.environ.get(name), default, low=low, high=high)
 
 
 def _search(args: dict[str, Any]) -> dict[str, Any]:
@@ -579,29 +534,29 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "missing query"}
 
     db = Path(args.get("db") or _db_path()).expanduser()
-    candidate_limit = _safe_int(args.get("candidate_limit"), 80, low=1, high=300)
-    top_k = _safe_int(args.get("top_k"), 12, low=1, high=50)
-    max_chunk_chars = _safe_int(args.get("max_chunk_chars"), 4000, low=400, high=20000)
-    rerank_enabled = _safe_bool(args.get("rerank"), default=True)
-    rerank_candidate_limit = _safe_int(
+    candidate_limit = safe_int(args.get("candidate_limit"), 80, low=1, high=300)
+    top_k = safe_int(args.get("top_k"), 12, low=1, high=50)
+    max_chunk_chars = safe_int(args.get("max_chunk_chars"), 4000, low=400, high=20000)
+    rerank_enabled = safe_bool(args.get("rerank"), default=True)
+    rerank_candidate_limit = safe_int(
         args.get("rerank_candidate_limit"),
         _env_int("AICARMINE_RAG_RERANK_CANDIDATE_LIMIT", DEFAULT_RERANK_CANDIDATE_LIMIT, low=1, high=100),
         low=1,
         high=min(100, candidate_limit),
     )
-    rerank_doc_chars = _safe_int(
+    rerank_doc_chars = safe_int(
         args.get("rerank_doc_chars"),
         _env_int("AICARMINE_RAG_RERANK_DOC_CHARS", DEFAULT_RERANK_DOC_CHARS, low=200, high=20000),
         low=200,
         high=20000,
     )
-    rerank_timeout_seconds = _safe_float(
+    rerank_timeout_seconds = safe_float(
         args.get("rerank_timeout_seconds"),
         _env_float("AICARMINE_RAG_RERANK_TIMEOUT_SECONDS", DEFAULT_RERANK_TIMEOUT_SECONDS, low=1.0, high=120.0),
         low=1.0,
         high=120.0,
     )
-    max_total_chars = _safe_int(
+    max_total_chars = safe_int(
         args.get("max_total_chars") or os.environ.get("AICARMINE_RAG_MAX_TOTAL_CHARS"),
         50_000,
         low=1000,
@@ -707,9 +662,9 @@ def _reindex(args: dict[str, Any]) -> dict[str, Any]:
     source = str(args.get("source") or os.environ.get("AICARMINE_RAG_INDEX_SOURCE") or SOURCE_GIT_DEFAULT).strip().lower()
     mode = str(args.get("mode") or os.environ.get("AICARMINE_RAG_INDEX_MODE") or MODE_DELTA).strip().lower()
     suffixes = _parse_csv(args.get("suffixes"), DEFAULT_SUFFIXES)
-    max_file_bytes = _safe_int(args.get("max_file_bytes"), MAX_FILE_BYTES_DEFAULT, low=1, high=100_000_000)
-    chunk_lines = _safe_int(args.get("chunk_lines"), CHUNK_LINES_DEFAULT, low=20, high=2000)
-    chunk_chars = _safe_int(args.get("chunk_chars"), CHUNK_CHARS_DEFAULT, low=1000, high=200_000)
+    max_file_bytes = safe_int(args.get("max_file_bytes"), MAX_FILE_BYTES_DEFAULT, low=1, high=100_000_000)
+    chunk_lines = safe_int(args.get("chunk_lines"), CHUNK_LINES_DEFAULT, low=20, high=2000)
+    chunk_chars = safe_int(args.get("chunk_chars"), CHUNK_CHARS_DEFAULT, low=1000, high=200_000)
 
     if source not in {SOURCE_GIT_DEFAULT, SOURCE_FILESYSTEM}:
         return {"ok": False, "error": f"unsupported source: {source}"}
@@ -743,7 +698,7 @@ def _handle_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         inspect_result = _db_inspect(db)
         repo = _repo_root(arguments).resolve()
         rag_metadata = _safe_rag_metadata(repo, db, inspect_result)
-        return _tool_content(
+        return tool_content(
             {
                 "ok": bool(inspect_result.get("ok")),
                 "db": str(db),
@@ -758,21 +713,21 @@ def _handle_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         )
 
     if operation == "inspect":
-        return _tool_content(_db_inspect(db))
+        return tool_content(_db_inspect(db))
 
     if operation == "search":
-        return _tool_content(_search(arguments))
+        return tool_content(_search(arguments))
 
-    return _tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
+    return tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
 
 
 def _handle_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
-    return _tool_content(_index_status(arguments))
+    return tool_content(_index_status(arguments))
 
 
 def _handle_reindex_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     result = _reindex(arguments)
-    return _tool_content(result, is_error=not bool(result.get("ok")))
+    return tool_content(result, is_error=not bool(result.get("ok")))
 
 
 TOOL_SCHEMAS = [
@@ -846,7 +801,7 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 
     try:
         if method == "initialize":
-            return _ok(
+            return _ok_response(
                 msg_id,
                 {
                     "protocolVersion": params.get("protocolVersion") or "2024-11-05",
@@ -857,10 +812,10 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
             )
 
         if method == "ping":
-            return _ok(msg_id, {})
+            return _ok_response(msg_id, {})
 
         if method == "tools/list":
-            return _ok(msg_id, {"tools": TOOL_SCHEMAS})
+            return _ok_response(msg_id, {"tools": TOOL_SCHEMAS})
 
         if method == "tools/call":
             name = str(params.get("name") or "")
@@ -872,13 +827,13 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
             }
             handler = handlers.get(name)
             if handler is None:
-                return _ok(msg_id, _tool_content({"ok": False, "error": f"unknown tool: {name}"}, is_error=True))
-            return _ok(msg_id, handler(arguments))
+                return _ok_response(msg_id, tool_content({"ok": False, "error": f"unknown tool: {name}"}, is_error=True))
+            return _ok_response(msg_id, handler(arguments))
 
-        return _err(msg_id, -32601, f"method not found: {method}")
+        return _err_response(msg_id, -32601, f"method not found: {method}")
     except Exception as exc:
         _log(traceback.format_exc())
-        return _ok(msg_id, _tool_content({"ok": False, "error": type(exc).__name__, "detail": str(exc)}, is_error=True))
+        return _ok_response(msg_id, tool_content({"ok": False, "error": type(exc).__name__, "detail": str(exc)}, is_error=True))
 
 
 def main() -> int:
