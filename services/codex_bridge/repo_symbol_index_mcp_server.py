@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -99,14 +100,6 @@ class SymbolIndexManager:
 
         conn.commit()
         conn.close()
-
-    def _compute_file_hash(self, file_path: str) -> str:
-        """Compute MD5 hash of file content."""
-        try:
-            with open(file_path, "rb") as f:
-                return hashlib.md5(f.read()).hexdigest()
-        except (IOError, OSError):
-            return ""
 
     def index_file(self, file_path: str, language: str = "python") -> dict[str, Any]:
         """Index symbols from a single file."""
@@ -304,8 +297,6 @@ class SymbolIndexManager:
             "top_symbols": top_symbols,
         }
 
-
-import hashlib
 
 # Module-level singleton
 _symbol_index: SymbolIndexManager | None = None

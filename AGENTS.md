@@ -66,7 +66,7 @@ At the beginning of repository work:
 
 Do not assume that the shell working directory, editor workspace, runtime repository root, active profile, executable, or virtual environment are identical.
 
-## AICarmine repository routing
+## AICArmine repository routing
 
 For technical repository work under:
 
@@ -90,6 +90,42 @@ Use that skill for:
 - verification of patches.
 
 The skill is the detailed operational authority for MCP routing, project memory, probe profiles, patch sequencing, payload completeness, and the `3571`/`3572` contracts.
+
+## Available MCP Servers
+
+The following 15 MCP servers are configured in this workspace:
+
+### Core Repository Tools
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_repo_state` | repo_state_mcp_server.py | 3 | Health, status, capabilities |
+| `aicarmine_repo_search_det` | repo_search_det_mcp_server.py | 8 | fd, rg, ast-grep, ctags, jq, tree-sitter |
+| `aicarmine_repo_validate` | repo_validate_mcp_server.py | 9 | ruff, pyright, semgrep, shellcheck, pytest, probes |
+| `aicarmine_repo_code` | repo_code_mcp_server.py | 5 | propose_edit, apply_patch, git_apply_check, unidiff_validate |
+
+### Data & Query Tools
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_rag` | rag_mcp_server.py | 3 | RAG search, index management, reindexing |
+| `aicarmine_sqlite_readonly` | sqlite_readonly_mcp_server.py | 4 | Query, schema, list databases |
+| `aicarmine_project_memory` | project_memory_mcp_server.py | 7 | Search, get, upsert, mark_stale, supersede |
+
+### Job & Artifact Tools
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_job_artifact` | job_artifact_mcp_server.py | 9 | Events, final, tool results, planner payloads |
+| `aicarmine_job_view` | job_view_mcp_server.py | 8 | HTML rendering, IA payload, validation |
+| `aicarmine_git_readonly` | git_readonly_mcp_server.py | 6 | log, show, diff, blame, branch_compare |
+
+### Operations & Discovery Tools
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_codex_ops` | ops_mcp_server.py | 7 | MCP inventory probe, service state snapshot |
+| `aicarmine_repo_symbol_index` | repo_symbol_index_mcp_server.py | 4 | Symbol indexing, query, summary |
+| `aicarmine_test_discovery` | test_discovery_mcp_server.py | 5 | Discover patterns, find uncovered, generate scaffolds |
+| `aicarmine_code_dep_graph` | code_dep_graph_mcp_server.py | 7 | Build dep graph, find chains, detect cycles, callers, dependents, breakage risk |
+
+The static allowlist is maintained in `services/codex_bridge/ops_mcp_server.py` (`LOCAL_MCP_SERVERS`).
 
 Do not duplicate the skill's detailed tool inventory or repository contracts in this global file.
 
