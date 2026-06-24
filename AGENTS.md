@@ -93,7 +93,7 @@ The skill is the detailed operational authority for MCP routing, project memory,
 
 ## Available MCP Servers 
 
-The following 19 MCP servers are configured in this workspace:
+The following 20 MCP servers are configured in this workspace:
 
 ### Core Repository Tools
 | Server | Script | Tools | Purpose |
@@ -124,6 +124,7 @@ The following 19 MCP servers are configured in this workspace:
 | `aicarmine_repo_symbol_index` | repo_symbol_index_mcp_server.py | 4 | Symbol indexing, query, summary |
 | `aicarmine_test_discovery` | test_discovery_mcp_server.py | 5 | Discover patterns, find uncovered, generate scaffolds |
 | `aicarmine_code_dep_graph` | code_dep_graph_mcp_server.py | 7 | Build dep graph, find chains, detect cycles, callers, dependents, breakage risk |
+| `aicarmine_index_bridge` | index_bridge_mcp_server.py | 5 | Cross-reference RAG + Symbol Index, unified search, persistent memory |
 
 ### Refactoring Tools
 | Server | Script | Tools | Purpose |

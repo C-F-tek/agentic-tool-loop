@@ -400,10 +400,13 @@ function Get-AICarmineMcpRoutingHint {
 
                 'semantic_search' {
                     Add-AICarmineTool -Name 'aicarmine_rag_health'
+                    Add-AICarmineTool -Name 'aicarmine_index_bridge_health'
                     if ($normalized -match '\b(?:search|context|retrieve)\b') { Add-AICarmineTool -Name 'aicarmine_rag_context' }
                     if ($normalized -match '\b(?:index bridge|cross-reference|bridge)\b') {
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_build'
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_query'
+                        Add-AICarmineTool -Name 'aicarmine_index_bridge_persist'
+                        Add-AICarmineTool -Name 'aicarmine_index_bridge_get_memory'
                     }
                 }
                 'repository_refactor' {
