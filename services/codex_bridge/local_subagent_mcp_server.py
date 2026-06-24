@@ -10,22 +10,23 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 import agentic_loop_client_mcp_server as agentic_loop_client
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
     health_payload,
+    integer_prop,
+    object_prop,
     object_schema,
+    safe_bool,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    boolean_prop,
-    safe_int,
-    safe_bool,
+    string_prop_with_enum,
 )
 
 SERVER_NAME = "aicarmine-local-subagent-mcp"
@@ -34,17 +35,6 @@ SERVER_VERSION = "0.2.0"
 FORBIDDEN_PORTS = {3571, 3572, 8080, 11434, 11435}
 
 
-def string_prop_with_enum(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    if enum is not None:
-        schema["enum"] = enum
-    return schema
-
-
-def object_prop() -> dict[str, Any]:
-    return {"type": "object", "additionalProperties": True}
 
 
 def _subagent_contract(initial_context: str) -> dict[str, Any]:

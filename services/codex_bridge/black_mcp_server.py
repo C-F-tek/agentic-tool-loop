@@ -9,11 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from repo_mcp_common import ok, err, tool_content as _tool_content
+
 SERVER_NAME = "aicarmine_black"
 SERVER_VERSION = "1.0.0"
 
 
-def _find_black() -> str | None:
+def find_black() -> str | None:
     """Locate the black binary/CLI entry point."""
     candidates = [
         "black",
@@ -35,9 +37,9 @@ def _find_black() -> str | None:
     return None
 
 
-def _run_black(target: str | None, action: str, **kwargs: Any) -> dict[str, Any]:
+def run_black(target: str | None, action: str, **kwargs: Any) -> dict[str, Any]:
     """Run black on the given target path or stdin."""
-    black_path = _find_black()
+    black_path = find_black()
     if not black_path:
         return {
             "ok": False,
@@ -86,19 +88,6 @@ def _run_black(target: str | None, action: str, **kwargs: Any) -> dict[str, Any]
         return {"ok": False, "error": str(exc), "message": f"Failed to run black: {exc}"}
 
 
-def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, indent=2)}], "isError": is_error}
-
-
-def _ok(msg_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
-
-
-def _err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
-    error = {"code": code, "message": message}
-    if data is not None:
-        error["data"] = data
-    return {"jsonrpc": "2.0", "id": msg_id, "error": error}
 
 
 TOOLS: dict[str, dict[str, Any]] = {
@@ -154,40 +143,40 @@ TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
-def _handle_check_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_check_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     diff = args.get("diff", False)
     line_length = args.get("line_length", 88)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_black(target, "check", diff=diff, line_length=line_length)
+    result = run_black(target, "check", diff=diff, line_length=line_length)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     line_length = args.get("line_length", 88)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_black(target, "format", write=False, line_length=line_length)
+    result = run_black(target, "format", write=False, line_length=line_length)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_file_write(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_file_write(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     line_length = args.get("line_length", 88)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_black(target, "format", write=True, line_length=line_length)
+    result = run_black(target, "format", write=True, line_length=line_length)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
     content = args.get("content", "")
     line_length = args.get("line_length", 88)
 
     try:
-        black_path = _find_black()
+        black_path = find_black()
         if not black_path:
             return _tool_content({"ok": False, "error": "black_not_found"}, is_error=True)
 
@@ -213,10 +202,10 @@ def _handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 HANDLERS = {
-    "check_file": _handle_check_file,
-    "format_file": _handle_format_file,
-    "format_file_write": _handle_format_file_write,
-    "format_stdin": _handle_format_stdin,
+    "check_file": handle_check_file,
+    "format_file": handle_format_file,
+    "format_file_write": handle_format_file_write,
+    "format_stdin": handle_format_stdin,
 }
 
 
@@ -233,22 +222,22 @@ def handle_request(
     params = request.get("params", {})
 
     if method == "initialize":
-        return _ok(msg_id, {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": server_name, "version": server_version}})
+        return ok(msg_id, {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": server_name, "version": server_version}})
     if method == "notifications/initialized":
         return None
     if method == "tools/list":
-        return _ok(msg_id, {"tools": [{"name": v["name"], "description": v["description"], "inputSchema": v["inputSchema"]} for v in tools.values()]})
+        return ok(msg_id, {"tools": [{"name": v["name"], "description": v["description"], "inputSchema": v["inputSchema"]} for v in tools.values()]})
     if method == "tools/call":
         name = params.get("name", "")
         tool_args = params.get("arguments", {})
         handler = HANDLERS.get(name)
         if handler:
             result = handler(tool_args, root)
-            return _ok(msg_id, result)
-        return _err(msg_id, -32601, f"unknown_tool: {name}")
+            return ok(msg_id, result)
+        return err(msg_id, -32601, f"unknown_tool: {name}")
     if method == "ping":
-        return _ok(msg_id, {})
-    return _err(msg_id, -32601, f"method_not_found: {method}")
+        return ok(msg_id, {})
+    return err(msg_id, -32601, f"method_not_found: {method}")
 
 
 def serve() -> int:

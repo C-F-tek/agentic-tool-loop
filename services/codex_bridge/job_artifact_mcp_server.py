@@ -2,26 +2,30 @@
 """Read-only MCP server for persisted agent job artifacts."""
 
 from __future__ import annotations
-from collections import Counter
+
 import json
 import os
-from pathlib import Path
 import re
 import sys
+from collections import Counter
+from pathlib import Path
 from typing import Any
+
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
     health_payload,
+    integer_prop,
+    json_path_select,
+    json_text,
     object_schema,
+    safe_int,
     self_test,
     serve,
+    string_array_prop,
     string_prop,
-    integer_prop,
-    boolean_prop,
-    safe_int,
-    json_text,
-    json_path_select,
 )
+
 SERVER_NAME = "aicarmine-job-artifact-mcp"
 SERVER_VERSION = "0.1.0"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -34,11 +38,6 @@ SUPPORT_SUBTURN_TOOLS = frozenset(
         "runtime_sqlite_memory_write",
     }
 )
-def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
-    if default is not None:
-        schema["default"] = default
-    return schema
 
 
 def _env_path(name: str) -> Path | None:
@@ -380,7 +379,10 @@ def _compact_subturn_tool_result(path: Path, payload: Any, *, include_payload: b
         "path": str(path),
         "step": _tool_result_step_from_name(path.name),
         "tool": _tool_from_result_payload_or_name(payload, path.name),
-        "support_subturn": bool(data.get("support_subturn")) or _tool_from_result_payload_or_name(payload, path.name) in SUPPORT_SUBTURN_TOOLS,
+        "support_subturn": (
+            bool(data.get("support_subturn"))
+            or _tool_from_result_payload_or_name(payload, path.name) in SUPPORT_SUBTURN_TOOLS
+        ),
         "semantic_step": data.get("semantic_step"),
         "support_subturn_index": data.get("support_subturn_index"),
         "ok": data.get("ok"),
@@ -465,7 +467,8 @@ def _summary(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
     job_dir = _find_job_dir(root, job_id)
     if job_dir is None:
-        return {"ok": False, "error": "job_not_found", "job_id": job_id, "roots": [str(path) for path in _job_roots(root)]}
+        roots = [str(p) for p in _job_roots(root)]
+        return {"ok": False, "error": "job_not_found", "job_id": job_id, "roots": roots}
 
     job_json = _read_json(job_dir / "job.json") if (job_dir / "job.json").is_file() else {}
     final_json = _read_json(job_dir / "final.json") if (job_dir / "final.json").is_file() else {}
@@ -660,7 +663,11 @@ def _subturns(args: dict[str, Any], root: Path) -> dict[str, Any]:
     include_payload = bool(args.get("include_payload", False))
     max_chars = safe_int(args.get("max_chars"), 8000, 500, 100000)
     events = _read_events(job_dir / "events.ndjson", max_lines=max_lines)
-    support_events = [_compact_subturn_event(event, include_payload=include_payload, max_chars=max_chars) for event in events if _support_subturn_event(event)]
+    support_events = [
+        _compact_subturn_event(event, include_payload=include_payload, max_chars=max_chars)
+        for event in events
+        if _support_subturn_event(event)
+    ]
 
     tool_result_rows: list[dict[str, Any]] = []
     tool_dir = job_dir / "tool-results"
@@ -672,7 +679,11 @@ def _subturns(args: dict[str, Any], root: Path) -> dict[str, Any]:
             tool = _tool_from_result_payload_or_name(payload, path.name)
             if tool not in SUPPORT_SUBTURN_TOOLS and not (isinstance(payload, dict) and payload.get("support_subturn")):
                 continue
-            tool_result_rows.append(_compact_subturn_tool_result(path, payload, include_payload=include_payload, max_chars=max_chars))
+            tool_result_rows.append(
+                _compact_subturn_tool_result(
+                    path, payload, include_payload=include_payload, max_chars=max_chars
+                )
+            )
 
     by_tool = Counter(str(row.get("tool") or "<missing>") for row in support_events if row.get("tool"))
     by_kind = Counter(str(row.get("kind") or "<missing>") for row in support_events if row.get("kind"))
@@ -741,7 +752,10 @@ def _planner_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
         tools = planner_payload.get("tools")
         summary = {
             "top_level_keys": sorted(str(key) for key in payload.keys()),
-            "planner_payload_keys": sorted(str(key) for key in planner_payload.keys()) if planner_payload is not payload else [],
+            "planner_payload_keys": (
+                sorted(str(key) for key in planner_payload.keys())
+                if planner_payload is not payload else []
+            ),
             "messages_count": len(messages) if isinstance(messages, list) else None,
             "tools_count": len(tools) if isinstance(tools, list) else None,
             "model": planner_payload.get("model") or payload.get("planner_model"),

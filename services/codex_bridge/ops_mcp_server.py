@@ -3,25 +3,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    diagnostic_preview,
     health_payload,
+    integer_prop,
     object_schema,
     selected_repo_root,
     self_test,
     serve,
-    integer_prop,
-    boolean_prop,
+    string_array_prop,
 )
 
 SERVER_NAME = "aicarmine-codex-ops-mcp"
@@ -38,17 +40,6 @@ DEFAULT_PROCESS_PATTERNS = [
     "rerank",
     "python",
 ]
-
-
-def _diagnostic_preview(value: Any, limit: int = 500) -> str:
-    try:
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
-        try:
-            text = str(value)
-        except Exception:
-            text = f"<unprintable {type(value).__name__}>"
-    return text[:limit]
 
 
 def _safe_int_param(
@@ -130,24 +121,6 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
         "aicarmine_ollama_subagent_health",
     ),
 }
-
-
-def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def integer_array_prop(default: list[int] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "array", "items": {"type": "integer"}}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-
-
 
 
 def _frame(payload: dict[str, Any], transport: str) -> bytes:
@@ -561,7 +534,11 @@ def service_state_ports(args: dict[str, Any], root: Path) -> dict[str, Any]:
         ports = DEFAULT_PORTS
     ports = [port for port in ports if 0 < port < 65536]
     include_all = args.get("include_all_listeners") is True
-    timeout_seconds = _safe_int_param(args.get("timeout_seconds"), 10, 1, 60, name="timeout_seconds", diagnostics=diagnostics)
+    timeout_seconds = _safe_int_param(
+        args.get("timeout_seconds"), 10, 1, 60,
+        name="timeout_seconds",
+        diagnostics=diagnostics
+    )
     ports_json = json.dumps(ports)
     if include_all:
         script = """
@@ -580,8 +557,15 @@ $Ports = ConvertFrom-Json @'
 '@
 $Rows = @()
 foreach ($Port in $Ports) {{
-    $Rows += Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort ([int]$Port) -State Listen -ErrorAction SilentlyContinue |
-        Select-Object LocalAddress,LocalPort,State,OwningProcess
+    $conn = Get-NetTCPConnection `
+        -LocalAddress 127.0.0.1 `
+        -LocalPort ([int]$Port) `
+        -State Listen `
+        -ErrorAction SilentlyContinue
+    if ($conn) {{
+        $Rows += $conn | Select-Object `
+            LocalAddress,LocalPort,State,OwningProcess
+    }}
 }}
 ConvertTo-Json -InputObject @($Rows) -Depth 5 -Compress
 """
@@ -615,7 +599,11 @@ def service_state_processes(args: dict[str, Any], root: Path) -> dict[str, Any]:
         else DEFAULT_PROCESS_PATTERNS
     )
     limit = _safe_int_param(args.get("limit"), 50, 1, 200, name="limit", diagnostics=diagnostics)
-    timeout_seconds = _safe_int_param(args.get("timeout_seconds"), 10, 1, 60, name="timeout_seconds", diagnostics=diagnostics)
+    timeout_seconds = _safe_int_param(
+        args.get("timeout_seconds"), 10, 1, 60,
+        name="timeout_seconds",
+        diagnostics=diagnostics
+    )
     patterns_json = json.dumps(patterns)
     script = f"""
 $ErrorActionPreference = "Stop"
@@ -833,7 +821,7 @@ def _tools() -> dict[str, ToolSpec]:
         description="Read local listening sockets without calling HTTP health endpoints.",
         input_schema=object_schema(
             {
-                "ports": integer_array_prop(DEFAULT_PORTS),
+                "ports": {"type": "array", "items": {"type": "integer"}, "default": DEFAULT_PORTS},
                 "include_all_listeners": boolean_prop(False),
                 "timeout_seconds": integer_prop(10, 1, 60),
             }
@@ -870,7 +858,7 @@ def _tools() -> dict[str, ToolSpec]:
         description="Return one read-only snapshot of ports, process command lines and repo-local log tails.",
         input_schema=object_schema(
             {
-                "ports": integer_array_prop(DEFAULT_PORTS),
+                "ports": {"type": "array", "items": {"type": "integer"}, "default": DEFAULT_PORTS},
                 "include_all_listeners": boolean_prop(False),
                 "patterns": string_array_prop(DEFAULT_PROCESS_PATTERNS),
                 "limit": integer_prop(50, 1, 200),

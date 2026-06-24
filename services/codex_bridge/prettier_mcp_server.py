@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from repo_mcp_common import ok, err, tool_content as _tool_content
+
 SERVER_NAME = "aicarmine_prettier"
 SERVER_VERSION = "1.0.0"
 
@@ -17,7 +19,7 @@ def _log(message: str) -> None:
     print(f"[{SERVER_NAME}] {message}", file=sys.stderr, flush=True)
 
 
-def _find_prettier() -> str | None:
+def find_prettier() -> str | None:
     """Locate the prettier binary/CLI entry point."""
     # Try global npm install first
     candidates = [
@@ -41,9 +43,9 @@ def _find_prettier() -> str | None:
     return None
 
 
-def _run_prettier(target: str, write: bool = False, tab_width: int = 2, parser: str | None = None) -> dict[str, Any]:
+def run_prettier(target: str, write: bool = False, tab_width: int = 2, parser: str | None = None) -> dict[str, Any]:
     """Run prettier on the given target path or stdin."""
-    prettier_path = _find_prettier()
+    prettier_path = find_prettier()
     if not prettier_path:
         return {
             "ok": False,
@@ -93,19 +95,6 @@ def _run_prettier(target: str, write: bool = False, tab_width: int = 2, parser: 
         }
 
 
-def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, indent=2)}], "isError": is_error}
-
-
-def _ok(msg_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
-
-
-def _err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
-    error = {"code": code, "message": message}
-    if data is not None:
-        error["data"] = data
-    return {"jsonrpc": "2.0", "id": msg_id, "error": error}
 
 
 # --- Tool definitions ---
@@ -176,34 +165,34 @@ TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
-def _handle_format_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     parser = args.get("parser", "typescript")
     tab_width = args.get("tab_width", 2)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_prettier(target, write=False, tab_width=tab_width, parser=parser)
+    result = run_prettier(target, write=False, tab_width=tab_width, parser=parser)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_file_write(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_file_write(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     parser = args.get("parser", "typescript")
     tab_width = args.get("tab_width", 2)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_prettier(target, write=True, tab_width=tab_width, parser=parser)
+    result = run_prettier(target, write=True, tab_width=tab_width, parser=parser)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
     content = args.get("content", "")
     parser = args.get("parser", "typescript")
     tab_width = args.get("tab_width", 2)
 
     try:
         proc = subprocess.run(
-            [_find_prettier(), f"--stdin-filepath=temp.{parser}", f"--tab-width={tab_width}"],
+            [find_prettier(), f"--stdin-filepath=temp.{parser}", f"--tab-width={tab_width}"],
             input=content,
             capture_output=True,
             text=True,
@@ -220,7 +209,7 @@ def _handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return _tool_content({"ok": False, "error": str(exc)}, is_error=True)
 
 
-def _handle_list_parsers(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_list_parsers(args: dict[str, Any], root: Path) -> dict[str, Any]:
     parsers = {
         "babel": ".js, .jsx, .flow, .graphql",
         "typescript": ".ts, .tsx, .cts, .mts",
@@ -234,15 +223,15 @@ def _handle_list_parsers(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 HANDLERS = {
-    "format_file": _handle_format_file,
-    "format_file_write": _handle_format_file_write,
-    "format_stdin": _handle_format_stdin,
-    "list_supported_parsers": _handle_list_parsers,
+    "format_file": handle_format_file,
+    "format_file_write": handle_format_file_write,
+    "format_stdin": handle_format_stdin,
+    "list_supported_parsers": handle_list_parsers,
 }
 
 
-def _health(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    prettier_path = _find_prettier()
+def health(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    prettier_path = find_prettier()
     return {
         "ok": bool(prettier_path),
         "server": SERVER_NAME,
@@ -266,22 +255,22 @@ def handle_request(
     params = request.get("params", {})
 
     if method == "initialize":
-        return _ok(msg_id, {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": server_name, "version": server_version}})
+        return ok(msg_id, {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": server_name, "version": server_version}})
     if method == "notifications/initialized":
         return None
     if method == "tools/list":
-        return _ok(msg_id, {"tools": [{"name": v["name"], "description": v["description"], "inputSchema": v["inputSchema"]} for v in tools.values()]})
+        return ok(msg_id, {"tools": [{"name": v["name"], "description": v["description"], "inputSchema": v["inputSchema"]} for v in tools.values()]})
     if method == "tools/call":
         name = params.get("name", "")
         tool_args = params.get("arguments", {})
         handler = HANDLERS.get(name)
         if handler:
             result = handler(tool_args, root)
-            return _ok(msg_id, result)
-        return _err(msg_id, -32601, f"unknown_tool: {name}")
+            return ok(msg_id, result)
+        return err(msg_id, -32601, f"unknown_tool: {name}")
     if method == "ping":
-        return _ok(msg_id, {})
-    return _err(msg_id, -32601, f"method_not_found: {method}")
+        return ok(msg_id, {})
+    return err(msg_id, -32601, f"method_not_found: {method}")
 
 
 def serve() -> int:

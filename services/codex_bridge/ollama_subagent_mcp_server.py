@@ -7,15 +7,14 @@ import json
 import os
 import sys
 import threading
-import urllib.request
 import urllib.error
+import urllib.request
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
-from collections import OrderedDict
 
 from repo_mcp_common import (
     ToolSpec,
-    handle_request,
     health_payload,
     object_schema,
     serve,

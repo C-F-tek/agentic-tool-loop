@@ -3,27 +3,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import sys
 import time
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_int,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    boolean_prop,
-    safe_int,
+    path_is_under,
 )
 
 SERVER_NAME = "aicarmine-sqlite-readonly-mcp"
@@ -42,17 +43,6 @@ BLOCKED_SQL_RE = re.compile(
 
 
 
-def _path_is_under(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve().relative_to(parent.resolve())
-        return True
-    except ValueError:
-        pass
-    except OSError:
-        return False
-    child_text = str(child.resolve()).lower().rstrip("\\/")
-    parent_text = str(parent.resolve()).lower().rstrip("\\/")
-    return child_text == parent_text or child_text.startswith(parent_text + "\\") or child_text.startswith(parent_text + "/")
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:

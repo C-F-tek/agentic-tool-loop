@@ -11,20 +11,15 @@ All tools are read-only and use existing MCP infrastructure.
 """
 from __future__ import annotations
 
+import ast
 import json
-import os
 import sys
 import threading
-import ast
-import configparser
-import re
 from pathlib import Path
 from typing import Any
-from collections import defaultdict
 
 from repo_mcp_common import (
     ToolSpec,
-    handle_request,
     health_payload,
     object_schema,
     serve,

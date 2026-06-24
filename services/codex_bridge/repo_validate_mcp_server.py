@@ -5,25 +5,25 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 import threading
-from typing import Any
+import time
 from collections import OrderedDict
+from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_int,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    safe_int,
 )
 from repo_probe_profiles import (
     PROFILE_ORIENTATION_SELECTOR,
-    PROFILE_ORIENTATION_SHADOW_HELPERS,
     PROFILE_ORIENTATION_SHADOW_EVALUATOR,
+    PROFILE_ORIENTATION_SHADOW_HELPERS,
     repo_probe_profiles,
     repo_probe_run,
 )

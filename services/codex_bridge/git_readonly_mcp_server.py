@@ -4,22 +4,24 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    compact_text_tuple,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_int,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    boolean_prop,
-    safe_int,
+    path_is_under,
 )
 
 SERVER_NAME = "aicarmine-git-readonly-mcp"
@@ -27,6 +29,8 @@ SERVER_VERSION = "0.1.0"
 REV_RE = re.compile(r"^[A-Za-z0-9_./:@{}^~+-]+$")
 
 
+# Alias for local callers that expect `_compact_text` name
+_compact_text = compact_text_tuple
 
 
 def _compact_text(text: str, max_chars: int) -> tuple[str, bool]:
@@ -44,12 +48,6 @@ def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tu
     return text, None
 
 
-def _path_is_under(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve(strict=False).relative_to(parent.resolve(strict=False))
-        return True
-    except (OSError, RuntimeError, ValueError):
-        return False
 
 
 def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None]:
@@ -77,7 +75,7 @@ def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None
             "error_type": type(exc).__name__,
             "message": str(exc),
         }
-    if not _path_is_under(resolved, root):
+    if not path_is_under(resolved, root):
         return None, {"ok": False, "error": "path_not_under_repo", "path": text, "resolved": str(resolved), "repo_root": str(root)}
     try:
         return str(resolved.relative_to(root.resolve())), None

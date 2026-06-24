@@ -15,17 +15,15 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import sqlite3
+import sys
 import threading
 from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
-    handle_request,
     health_payload,
-    mcp_text_result,
     object_schema,
     serve,
 )
@@ -40,7 +38,7 @@ SERVER_VERSION = "1.0.0"
 
 class IndexBridgeManager:
     """Builds cross-reference tables from existing RAG + Symbol Index DBs.
-    
+
     Does NOT re-index files. Reads from existing databases and builds
     a bridge layer that connects RAG chunks to symbol index entries.
     """
@@ -110,19 +108,19 @@ class IndexBridgeManager:
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_unified_path 
+            CREATE INDEX IF NOT EXISTS idx_unified_path
             ON unified_search_index(path)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_unified_symbol 
+            CREATE INDEX IF NOT EXISTS idx_unified_symbol
             ON unified_search_index(symbol_name)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_persist_key 
+            CREATE INDEX IF NOT EXISTS idx_persist_key
             ON persistent_symbol_memory(key)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_persist_scope_key 
+            CREATE INDEX IF NOT EXISTS idx_persist_scope_key
             ON persistent_symbol_memory(scope, key)
         """)
 
@@ -131,7 +129,7 @@ class IndexBridgeManager:
 
     def build_bridge(self) -> dict[str, Any]:
         """Build cross-reference tables from existing RAG + Symbol Index DBs.
-        
+
         Reads from existing databases without re-indexing files.
         """
         if not self.rag_db_path.exists():
@@ -146,16 +144,16 @@ class IndexBridgeManager:
         rag_conn = sqlite3.connect(str(self.rag_db_path))
         rag_conn.row_factory = sqlite3.Row
         rag_cursor = rag_conn.cursor()
-        
+
         rag_cursor.execute("SELECT id, path, symbol, kind, content FROM chunks")
         rag_chunks = rag_cursor.fetchall()
-        
+
         for chunk in rag_chunks:
             cursor.execute(
-                """INSERT INTO unified_search_index 
+                """INSERT INTO unified_search_index
                    (source, path, content, symbol_name, symbol_type, line_number, content_hash)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                ("rag", chunk["path"], chunk["content"][:10000], 
+                ("rag", chunk["path"], chunk["content"][:10000],
                  chunk["symbol"] or "", chunk["kind"] or "", 0,
                  hashlib.sha256(chunk["content"].encode()).hexdigest()[:32])
             )
@@ -164,16 +162,16 @@ class IndexBridgeManager:
         sym_conn = sqlite3.connect(str(self.symbol_db_path))
         sym_conn.row_factory = sqlite3.Row
         sym_cursor = sym_conn.cursor()
-        
+
         sym_cursor.execute("SELECT file_path, symbol_name, symbol_type, line_number FROM symbols")
         symbols = sym_cursor.fetchall()
-        
+
         for sym in symbols:
             cursor.execute(
-                """INSERT INTO unified_search_index 
+                """INSERT INTO unified_search_index
                    (source, path, content, symbol_name, symbol_type, line_number, content_hash)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                ("symbol", sym["file_path"], "", sym["symbol_name"], 
+                ("symbol", sym["file_path"], "", sym["symbol_name"],
                  sym["symbol_type"], sym["line_number"],
                  hashlib.sha256(f"{sym['file_path']}:{sym['symbol_name']}".encode()).hexdigest()[:32])
             )
@@ -183,14 +181,14 @@ class IndexBridgeManager:
         for chunk in rag_chunks:
             if chunk["path"] and chunk["symbol"]:
                 cursor.execute(
-                    """INSERT INTO chunk_symbol_refs 
+                    """INSERT INTO chunk_symbol_refs
                        (rag_chunk_id, symbol_file_path, symbol_name, symbol_type, confidence)
                        VALUES (?, ?, ?, ?, ?)""",
                     (chunk["id"], chunk["path"], chunk["symbol"], "unknown", 0.8)
                 )
 
         conn.commit()
-        
+
         # Count results
         unified_count = cursor.execute("SELECT COUNT(*) FROM unified_search_index").fetchone()[0]
         ref_count = cursor.execute("SELECT COUNT(*) FROM chunk_symbol_refs").fetchone()[0]
@@ -245,14 +243,14 @@ class IndexBridgeManager:
                      source_type: str = "user", source_ref: str = "") -> dict[str, Any]:
         """Persist symbol memory across server restarts."""
         import hashlib
-        
+
         conn = sqlite3.connect(str(self.bridge_db_path))
         cursor = conn.cursor()
-        
+
         value_hash = hashlib.sha256(value.encode()).hexdigest()[:16]
-        
+
         cursor.execute(
-            """INSERT INTO persistent_symbol_memory 
+            """INSERT INTO persistent_symbol_memory
                (scope, key, value, source_type, source_ref, value_hash)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(scope, key) DO UPDATE SET
@@ -260,7 +258,7 @@ class IndexBridgeManager:
                    updated_at=strftime('%s', 'now')""",
             (scope, key, value, source_type, source_ref, value_hash)
         )
-        
+
         conn.commit()
         conn.close()
 

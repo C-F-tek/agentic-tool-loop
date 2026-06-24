@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """MCP adapter for repository symbol indexing and querying with tree-sitter."""
 from __future__ import annotations
+
 import hashlib
 import json
 import os
 import sys
-import time
 import threading
 from pathlib import Path
 from typing import Any
-from collections import OrderedDict
+
 from repo_mcp_common import (
     ToolSpec,
-    handle_request,
     health_payload,
-    mcp_text_result,
+    integer_prop,
     object_schema,
     serve,
     string_prop,
-    integer_prop,
 )
+
 SERVER_NAME = "aicarmine-repo-symbol-index-mcp"
 SERVER_VERSION = "1.0.0"
 # ---------------------------------------------------------------------------
@@ -68,19 +67,19 @@ class SymbolIndexManager:
             )
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_symbols_name 
+            CREATE INDEX IF NOT EXISTS idx_symbols_name
             ON symbols(symbol_name)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_symbols_type 
+            CREATE INDEX IF NOT EXISTS idx_symbols_type
             ON symbols(symbol_type)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_symbols_file 
+            CREATE INDEX IF NOT EXISTS idx_symbols_file
             ON symbols(file_path)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_symbols_name_type 
+            CREATE INDEX IF NOT EXISTS idx_symbols_name_type
             ON symbols(symbol_name, symbol_type)
         """)
         conn.commit()
@@ -110,7 +109,7 @@ class SymbolIndexManager:
             for i, line in enumerate(lines, 1):
                 match = re.match(r'^(\s*)class\s+(\w+)', line)
                 if match:
-                    indent = len(match.group(1))
+                    len(match.group(1))
                     symbols.append({
                         "name": match.group(2),
                         "type": "class",
@@ -123,7 +122,7 @@ class SymbolIndexManager:
             for i, line in enumerate(lines, 1):
                 match = re.match(r'^(\s*)(async\s+)?def\s+(\w+)\s*\(', line)
                 if match:
-                    indent = len(match.group(1))
+                    len(match.group(1))
                     is_async = bool(match.group(2))
                     name = match.group(3)
                     # Check if this is inside a class (method)
@@ -230,7 +229,7 @@ class SymbolIndexManager:
         # Insert new symbols
         for sym in symbols:
             cursor.execute("""
-                INSERT INTO symbols (file_path, symbol_name, symbol_type, line_number, 
+                INSERT INTO symbols (file_path, symbol_name, symbol_type, line_number,
                 column_number, signature, parent_symbol)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -273,14 +272,14 @@ class SymbolIndexManager:
             seen.add(rel)
             paths.append(rel)
         return paths
-    def index_directory(self, 
+    def index_directory(self,
                        language: str = "python",
                        suffixes: set[str] | None = None,
                        max_file_bytes: int = 2_000_000,
                        mode: str = "full") -> dict[str, Any]:
-        """Index symbols using git candidate surface (same technique as RAG index). 
+        """Index symbols using git candidate surface (same technique as RAG index).
         Uses 'git ls-files --cached --others --exclude-standard' to select files,
-        respecting .gitignore. Only indexes files with matching suffixes.    
+        respecting .gitignore. Only indexes files with matching suffixes.
         Args:
             language: Language for symbol extraction (python, powershell, etc.)
             suffixes: Set of file extensions to index (e.g., {'.py', '.ps1'})
@@ -435,10 +434,10 @@ class SymbolIndexManager:
         total_symbols = cursor.fetchone()[0]
         # Top symbols by reference count
         cursor.execute("""
-            SELECT symbol_name, COUNT(*) as ref_count 
-            FROM symbols 
-            GROUP BY symbol_name 
-            ORDER BY ref_count DESC 
+            SELECT symbol_name, COUNT(*) as ref_count
+            FROM symbols
+            GROUP BY symbol_name
+            ORDER BY ref_count DESC
             LIMIT 20
         """)
         top_symbols = [{"name": row[0], "count": row[1]} for row in cursor.fetchall()]

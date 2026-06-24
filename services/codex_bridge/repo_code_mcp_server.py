@@ -3,28 +3,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
 import threading
-from typing import Any
+import time
 from collections import OrderedDict
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
     handle_request,
     health_payload,
+    integer_prop,
     mcp_text_result,
     object_schema,
     serve,
     string_prop,
-    integer_prop,
-    safe_int,
 )
 
 SERVER_NAME = "aicarmine-repo-code-mcp"
@@ -214,6 +213,14 @@ def _guarded_source_write(
 
 
 def _tools() -> dict[str, ToolSpec]:
+    from repo_code_change_set import (
+        build_structured_edit_diff,
+        change_set_error_payload,
+        materialize_change_set,
+        public_change_set_fields,
+        resolve_change_set,
+    )
+
     from aicarmine_broker.tools.repo_code_product import (
         repo_propose_code_edit,
         repo_propose_unified_diff,
@@ -225,13 +232,6 @@ def _tools() -> dict[str, ToolSpec]:
     from aicarmine_broker.tools.repo_patch import (
         repo_apply_patch,
         repo_apply_unified_diff,
-    )
-    from repo_code_change_set import (
-        build_structured_edit_diff,
-        change_set_error_payload,
-        materialize_change_set,
-        public_change_set_fields,
-        resolve_change_set,
     )
 
     tools: dict[str, ToolSpec] = {}
@@ -738,7 +738,7 @@ def _repo_code_self_test(tools: dict[str, ToolSpec]) -> dict[str, Any]:
             ),
             {},
         )
-        edit_schema_present = bool(
+        bool(
             isinstance(propose_schema, dict)
             and isinstance(propose_schema.get("properties"), dict)
             and "edits" in propose_schema["properties"]
@@ -759,7 +759,7 @@ def _repo_code_self_test(tools: dict[str, ToolSpec]) -> dict[str, Any]:
             )
             _self_test_repo(root, {"hook.ps1": powershell_before})
             select_root(root)
-            health = call("aicarmine_repo_code_health", {})
+            call("aicarmine_repo_code_health", {})
             proposal = call(
                 "aicarmine_repo_code_propose_edit",
                 {

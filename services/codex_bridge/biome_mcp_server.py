@@ -9,11 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from repo_mcp_common import ok, err, tool_content as _tool_content
+
 SERVER_NAME = "aicarmine_biome"
 SERVER_VERSION = "1.0.0"
 
 
-def _find_biome() -> str | None:
+def find_biome() -> str | None:
     """Locate the biome binary/CLI entry point."""
     candidates = [
         "biome",
@@ -36,9 +38,9 @@ def _find_biome() -> str | None:
     return None
 
 
-def _run_biome(target: str | None, action: str, **kwargs: Any) -> dict[str, Any]:
+def run_biome(target: str | None, action: str, **kwargs: Any) -> dict[str, Any]:
     """Run biome on the given target path or stdin."""
-    biome_path = _find_biome()
+    biome_path = find_biome()
     if not biome_path:
         return {
             "ok": False,
@@ -96,19 +98,6 @@ def _run_biome(target: str | None, action: str, **kwargs: Any) -> dict[str, Any]
         return {"ok": False, "error": str(exc), "message": f"Failed to run biome: {exc}"}
 
 
-def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, indent=2)}], "isError": is_error}
-
-
-def _ok(msg_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
-
-
-def _err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
-    error = {"code": code, "message": message}
-    if data is not None:
-        error["data"] = data
-    return {"jsonrpc": "2.0", "id": msg_id, "error": error}
 
 
 TOOLS: dict[str, dict[str, Any]] = {
@@ -171,42 +160,42 @@ TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
-def _handle_format_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     indent_style = args.get("indent_style", "space")
     indent_width = args.get("indent_width", 2)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_biome(target, "format", write=False, indent_style=indent_style, indent_width=indent_width)
+    result = run_biome(target, "format", write=False, indent_style=indent_style, indent_width=indent_width)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_file_write(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_file_write(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     indent_style = args.get("indent_style", "space")
     indent_width = args.get("indent_width", 2)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_biome(target, "format", write=True, indent_style=indent_style, indent_width=indent_width)
+    result = run_biome(target, "format", write=True, indent_style=indent_style, indent_width=indent_width)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_check_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_check_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_path = args.get("file_path", "")
     fix = args.get("fix", False)
 
     target = str(root / file_path) if not Path(file_path).is_absolute() else file_path
-    result = _run_biome(target, "check", fix=fix)
+    result = run_biome(target, "check", fix=fix)
     return _tool_content(result, is_error=not result.get("ok"))
 
 
-def _handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
     content = args.get("content", "")
     indent_style = args.get("indent_style", "space")
     indent_width = args.get("indent_width", 2)
 
     try:
-        biome_path = _find_biome()
+        biome_path = find_biome()
         if not biome_path:
             return _tool_content({"ok": False, "error": "biome_not_found"}, is_error=True)
 
@@ -228,7 +217,7 @@ def _handle_format_stdin(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return _tool_content({"ok": False, "error": str(exc)}, is_error=True)
 
 
-def _handle_list_types(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def handle_list_types(args: dict[str, Any], root: Path) -> dict[str, Any]:
     file_types = {
         "JavaScript": ".js",
         "TypeScript": ".ts, .tsx, .cts, .mts",
@@ -240,16 +229,16 @@ def _handle_list_types(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 HANDLERS = {
-    "format_file": _handle_format_file,
-    "format_file_write": _handle_format_file_write,
-    "check_file": _handle_check_file,
-    "format_stdin": _handle_format_stdin,
-    "list_supported_file_types": _handle_list_types,
+    "format_file": handle_format_file,
+    "format_file_write": handle_format_file_write,
+    "check_file": handle_check_file,
+    "format_stdin": handle_format_stdin,
+    "list_supported_file_types": handle_list_types,
 }
 
 
-def _health(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    biome_path = _find_biome()
+def health(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    biome_path = find_biome()
     return {
         "ok": bool(biome_path),
         "server": SERVER_NAME,
@@ -273,22 +262,22 @@ def handle_request(
     params = request.get("params", {})
 
     if method == "initialize":
-        return _ok(msg_id, {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": server_name, "version": server_version}})
+        return ok(msg_id, {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": server_name, "version": server_version}})
     if method == "notifications/initialized":
         return None
     if method == "tools/list":
-        return _ok(msg_id, {"tools": [{"name": v["name"], "description": v["description"], "inputSchema": v["inputSchema"]} for v in tools.values()]})
+        return ok(msg_id, {"tools": [{"name": v["name"], "description": v["description"], "inputSchema": v["inputSchema"]} for v in tools.values()]})
     if method == "tools/call":
         name = params.get("name", "")
         tool_args = params.get("arguments", {})
         handler = HANDLERS.get(name)
         if handler:
             result = handler(tool_args, root)
-            return _ok(msg_id, result)
-        return _err(msg_id, -32601, f"unknown_tool: {name}")
+            return ok(msg_id, result)
+        return err(msg_id, -32601, f"unknown_tool: {name}")
     if method == "ping":
-        return _ok(msg_id, {})
-    return _err(msg_id, -32601, f"method_not_found: {method}")
+        return ok(msg_id, {})
+    return err(msg_id, -32601, f"method_not_found: {method}")
 
 
 def serve() -> int:

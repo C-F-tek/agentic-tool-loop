@@ -3,15 +3,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import traceback
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, BinaryIO, Callable
-
 
 SERVICES_ROOT = Path(__file__).resolve().parents[1]
 REPO_HOME_ROOT = Path(__file__).resolve().parents[2]
@@ -572,6 +571,14 @@ def string_prop(default: str | None = None) -> dict[str, Any]:
     return schema
 
 
+def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
+    """Build a JSON Schema array-of-strings property. Replaces per-server duplicates."""
+    schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
+    if default is not None:
+        schema["default"] = default
+    return schema
+
+
 def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
     """Build a JSON Schema integer property. Compatible with all server variants."""
     return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
@@ -580,6 +587,132 @@ def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
 def boolean_prop(default: bool) -> dict[str, Any]:
     """Build a JSON Schema boolean property. Compatible with all server variants."""
     return {"type": "boolean", "default": default}
+
+
+def string_prop_with_enum(
+    default: str | None = None, *, enum: list[str] | None = None
+) -> dict[str, Any]:
+    """Build a JSON Schema string property with optional enum constraint. Replaces per-server duplicates."""
+    schema: dict[str, Any] = {"type": "string"}
+    if default is not None:
+        schema["default"] = default
+    if enum is not None:
+        schema["enum"] = enum
+
+
+# ── Shared generic helpers (from mcp_server.py, reused by aicarmine_codex_mcp_server) ──
+
+
+def _json_dumps(value: Any) -> str:
+    """JSON dumps with ensure_ascii=False and indent=2. Replaces per-server duplicates."""
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def compact_text_generic(value: Any, limit: int = MAX_TEXT) -> str:
+    """Compact a value to string with truncation. Replaces 6 identical _compact_text implementations."""
+    text = value if isinstance(value, str) else _json_dumps(value)
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 180)].rstrip() + "\n\n...[truncated]"
+
+
+def compact_text_tuple(value: Any, max_chars: int) -> tuple[str, bool]:
+    """Compact text returning (text, truncated_bool). Replaces agentic_loop_client variant."""
+    text = value if isinstance(value, str) else _json_dumps(value)
+    if len(text) <= max_chars:
+        return text, False
+    suffix = f"\n...[truncated by {SERVER_NAME}]"
+    return text[: max(0, max_chars - len(suffix))].rstrip() + suffix, True
+
+
+def _diagnostic_preview(value: Any, limit: int = 500) -> str:
+    """Diagnostic preview for error messages. Replaces per-server duplicates."""
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        try:
+            text = str(value)
+        except Exception:
+            text = f"<unprintable {type(value).__name__}>"
+    return text[:limit]
+
+
+def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
+    """MCP tool content wrapper. Replaces per-server duplicates."""
+    return {"content": [{"type": "text", "text": compact_text_generic(value)}], "isError": is_error}
+
+
+def _ok(msg_id: Any, result: Any) -> dict[str, Any]:
+    """JSON-RPC 2.0 success response. Replaces per-server duplicates."""
+    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+
+def _err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
+    """JSON-RPC 2.0 error response. Replaces per-server duplicates."""
+    error = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "id": msg_id, "error": error}
+
+
+def safe_int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
+    """Safe integer conversion with clamping. Replaces per-server duplicates."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    if low is not None:
+        number = max(low, number)
+    if high is not None:
+        number = min(high, number)
+    return number
+
+
+def _safe_int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
+    """Alias for callers that expect `_safe_int` name."""
+    return safe_int(value, default, low, high)
+
+
+def read_tail(path: Path, max_lines: int, max_bytes: int) -> str:
+    """Read tail of a file with line/byte limits. Replaces ops_mcp_server _read_tail."""
+    try:
+        if not path.is_file():
+            return ""
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return ""
+    selected = lines[-max_lines:] if len(lines) > max_lines else lines
+    text = "\n".join(selected)
+    if len(text.encode("utf-8")) <= max_bytes:
+        return text
+    while len(text.encode("utf-8")) > max_bytes and text:
+        text = text[:-1]
+    return text.rstrip()
+
+
+def _read_tail(path: Path, max_lines: int = 200, max_bytes: int = 4000) -> str:
+    """Alias for callers that expect `_read_tail` name."""
+    return read_tail(path, max_lines, max_bytes)
+
+
+def path_is_under(path: Path, parent: Path) -> bool:
+    """Check if path is under parent directory. Replaces per-server duplicates."""
+    try:
+        path.resolve(strict=False).relative_to(parent.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def diagnostic_preview(value: Any, limit: int = 500) -> str:
+    """Public alias for _diagnostic_preview."""
+    return _diagnostic_preview(value, limit)
+    return schema
+
+
+def object_prop() -> dict[str, Any]:
+    """Build a JSON Schema object property with additionalProperties=True. Replaces per-server duplicates."""
+    return {"type": "object", "additionalProperties": True}
 
 
 # ── Shared safe converters (replaces per-server duplicates) ──────────────
@@ -647,3 +780,62 @@ def json_path_select(value: Any, path: str) -> tuple[Any, str]:
             raise KeyError(".".join([*traversed, part]))
         traversed.append(part)
     return current, ".".join(traversed)
+
+
+# ── Shared path helpers (replaces per-server duplicates) ─────────────────
+
+def path_is_under(child: Path, parent: Path) -> bool:
+    """Check if child path is under parent path. Replaces 4 identical implementations."""
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+# ── Shared text preview helpers (replaces per-server duplicates) ──────────
+
+def diagnostic_preview(value: Any, limit: int = 500) -> str:
+    """Preview a value as JSON with truncation. Replaces 4 identical implementations."""
+    if isinstance(value, str):
+        return value[:limit] if len(value) > limit else value
+    try:
+        text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+        return text[:limit] if len(text) > limit else text
+    except Exception:
+        return str(value)[:limit]
+
+
+# ── Shared compact_text helpers (replaces 8 per-server duplicates) ─────────
+
+def compact_text_generic(value: Any, limit: int = MAX_TEXT) -> str:
+    """Compact a value to string with truncation. Replaces 6 identical _compact_text implementations."""
+    if not isinstance(value, str):
+        return json_dumps(value)
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 170)].rstrip() + "\n\n...[truncated by aicarmine_repo_mcp]"
+
+
+def compact_text_tuple(value: Any, max_chars: int) -> tuple[str, bool]:
+    """Compact text returning (text, truncated_bool). Replaces agentic_loop_client variant."""
+    if not isinstance(value, str):
+        text = json_dumps(value)
+    else:
+        text = value
+    truncated = len(text) > max_chars
+    if truncated:
+        text = text[:max_chars]
+    return text, truncated
+
+
+def read_tail(path: Path, max_lines: int, max_bytes: int) -> str:
+    """Read tail of a file with line/byte limits. Replaces ops_mcp_server _read_tail."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        if size > max_bytes:
+            handle.seek(-max_bytes, os.SEEK_END)
+        raw = handle.read()
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    return "\n".join(lines[-max_lines:])

@@ -5,27 +5,31 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
-from typing import Any, cast
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
+from typing import Any, cast
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    compact_text_tuple,
     health_payload,
+    integer_prop,
+    object_prop,
     object_schema,
+    path_is_under,
+    safe_bool,
+    safe_int,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    boolean_prop,
-    safe_int,
-    safe_bool,
+    string_prop_with_enum,
 )
 
 _safe_bool = safe_bool
@@ -77,25 +81,8 @@ TERMINAL_STATUSES = {
 }
 
 
-def string_prop_with_enum(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    if enum is not None:
-        schema["enum"] = enum
-    return schema
-
-
-def object_prop() -> dict[str, Any]:
-    return {"type": "object", "additionalProperties": True}
-
-
-def _compact_text(value: Any, max_chars: int) -> tuple[str, bool]:
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    if len(text) <= max_chars:
-        return text, False
-    suffix = f"\n...[truncated by {SERVER_NAME}; original_chars={len(text)}]"
-    return text[: max(0, max_chars - len(suffix))].rstrip() + suffix, True
+# Alias for local callers that expect `_compact_text` name
+_compact_text = compact_text_tuple
 
 
 def _default_endpoint_for_path(expected_path: str, *, port: int | None = None) -> str:
@@ -492,10 +479,6 @@ def _start_broker_process(
     rerank_url: str = DEFAULT_RERANKER_URL,
     reranker_ready_url: str = DEFAULT_RERANKER_READY_URL,
 ) -> dict[str, Any]:
-    # The dedicated 3579 broker owns in-process background job workers. Uvicorn
-    # --reload terminates those workers mid-job and can leave persisted state at
-    # running_agentic without terminal events. Loading new code for this broker
-    # must use a manual operator restart outside the MCP tool surface.
     reload_policy = {
         "reload_requested": False,
         "reload_applied": False,

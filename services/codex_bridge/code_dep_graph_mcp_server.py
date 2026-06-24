@@ -3,20 +3,18 @@
 
 from __future__ import annotations
 
+import ast
 import json
-import os
 import subprocess
 import sys
 import threading
 import time
-import ast
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
-from collections import defaultdict, deque
 
 from repo_mcp_common import (
     ToolSpec,
-    handle_request,
     health_payload,
     object_schema,
     serve,
@@ -253,7 +251,7 @@ class CodeDepGraphManager:
 
     def _import_to_file_path(self, import_path: str) -> str | None:
         """Convert a dotted import path to a relative file path.
-        
+
         e.g., "services.aicarmine_broker.application.planner.evidence_contract_manager"
         → "services/aicarmine_broker/application/planner/evidence_contract_manager.py"
         """
@@ -261,12 +259,12 @@ class CodeDepGraphManager:
         rel = import_path.replace(".", "/") + ".py"
         if rel in self._file_index:
             return rel
-        
+
         # Try as __init__.py (package)
         rel_init = import_path.replace(".", "/") + "/__init__.py"
         if rel_init in self._file_index:
             return rel_init
-        
+
         return None
 
     def _build_file_index(self) -> set[str]:
@@ -321,7 +319,7 @@ class CodeDepGraphManager:
 
     def _build_dependency_graph(self) -> dict[str, set[str]]:
         """Build dependency graph using git ls-files candidate selection.
-        
+
         Uses the same strategy as RAG index and Symbol Index:
         - git ls-files --cached --others --exclude-standard to select files
         - Respects .gitignore for inclusion/exclusion
@@ -336,12 +334,12 @@ class CodeDepGraphManager:
             # Timeout check every 100 files (60 second limit)
             if i % 100 == 0 and (time.time() - start_time) > 60:
                 return graph  # Partial result
-            
+
             file_path = self.repo_root / rel
             try:
                 source = file_path.read_text(encoding="utf-8")
                 imports = self._extract_imports(source)
-                
+
                 # Convert dotted imports to relative file paths
                 resolved_deps: set[str] = set()
                 for imp in imports:
@@ -350,7 +348,7 @@ class CodeDepGraphManager:
                         resolved_deps.add(fp)
                     else:
                         resolved_deps.add(imp)
-                
+
                 graph[rel] = resolved_deps | set(graph.get(rel, set()))
             except Exception:
                 continue
@@ -367,7 +365,7 @@ class CodeDepGraphManager:
             # Timeout check every 100 entries (30 second limit for reverse build)
             if i % 100 == 0 and (time.time() - start_time) > 30:
                 return dict(reverse)
-            
+
             for target in targets:
                 reverse[target].add(source)
 

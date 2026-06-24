@@ -3,19 +3,16 @@
 
 from __future__ import annotations
 
-import hashlib
+import ast
 import json
-import os
 import sys
 import threading
-import ast
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
-from collections import defaultdict
 
 from repo_mcp_common import (
     ToolSpec,
-    handle_request,
     health_payload,
     object_schema,
     serve,
@@ -238,7 +235,7 @@ class TestDiscoveryManager:
     ) -> str:
         lines = [
             '"""Auto-generated test scaffold."""',
-            f"import pytest",
+            "import pytest",
             "",
             "",
             f"class Test{class_name}:  # Replace with actual test class name",
@@ -262,9 +259,9 @@ class TestDiscoveryManager:
                 lines.extend([
                     f"    def test_{sym['name']}_{self._generate_stub_suffix(len(args))}:",
                     f'        """Test {sym["name"]}."""',
-                    f"        # Replace with actual assertions",
+                    "        # Replace with actual assertions",
                     f"        # result = TargetClass.{sym['name']}({args})",
-                    f"        # assert result is not None",
+                    "        # assert result is not None",
                     "",
                 ])
             elif sym["type"] == "class":
@@ -272,7 +269,7 @@ class TestDiscoveryManager:
                     f"    def test_{sym['name']}_instantiation(self):",
                     f'        """Test {sym["name"]} can be instantiated."""',
                     f"        # obj = {sym['name']}()",
-                    f"        # assert obj is not None",
+                    "        # assert obj is not None",
                     "",
                 ])
 
@@ -305,10 +302,10 @@ class TestDiscoveryManager:
             lines.extend([
                 f"def test_{sym['name']}({args}):",
                 f'    """Test {sym["name"]} function."""',
-                f"    # Replace with actual test logic",
+                "    # Replace with actual test logic",
                 f"    # from your_module import {sym['name']}",
                 f"    # result = {sym['name']}({args})",
-                f"    # assert result is not None",
+                "    # assert result is not None",
                 "",
                 "",
             ])

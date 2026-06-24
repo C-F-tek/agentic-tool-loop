@@ -3,26 +3,27 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from html.parser import HTMLParser
 import json
 import os
-from pathlib import Path
 import re
 import sys
+from collections import Counter
+from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_bool,
+    safe_int,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    boolean_prop,
-    safe_int,
-    safe_bool,
+    string_prop_with_enum,
 )
 
 SERVER_NAME = "aicarmine-job-view-mcp"
@@ -63,16 +64,6 @@ VIEW_NAMES = {
     "planner_lab_index",
     "planner_lab",
 }
-
-
-def string_prop_with_enum(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    if enum is not None:
-        schema["enum"] = enum
-    return schema
-
 
 
 def _resolve_path(value: str, default: Path, root: Path) -> Path:
@@ -136,7 +127,7 @@ def _patch_broker_modules(root: Path) -> dict[str, Path]:
 
 def _load_renderers(root: Path) -> tuple[Any, Any, dict[str, Path]]:
     paths = _patch_broker_modules(root)
-    from aicarmine_broker import job_html, job_planner_lab  
+    from aicarmine_broker import job_html, job_planner_lab
 
     _patch_broker_modules(root)
     return job_html, job_planner_lab, paths

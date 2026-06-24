@@ -28,15 +28,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from repo_mcp_common import (
-    json_text as json_dumps,
-    safe_int,
-    safe_float,
-    safe_bool,
-    tool_content,
-    ok as _ok_response,
-    err as _err_response,
-)
 from rag_index_repo import (
     CHUNK_CHARS_DEFAULT,
     CHUNK_LINES_DEFAULT,
@@ -47,6 +38,18 @@ from rag_index_repo import (
     SOURCE_FILESYSTEM,
     SOURCE_GIT_DEFAULT,
     build_index,
+)
+from repo_mcp_common import (
+    err as _err_response,
+)
+from repo_mcp_common import (
+    ok as _ok_response,
+)
+from repo_mcp_common import (
+    safe_bool,
+    safe_float,
+    safe_int,
+    tool_content,
 )
 
 SERVER_NAME = "aicarmine-codex-rag-mcp"

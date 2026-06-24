@@ -5,20 +5,20 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 import threading
-from typing import Any
+import time
 from collections import OrderedDict
+from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_int,
     self_test,
     serve,
     string_prop,
-    integer_prop,
-    safe_int,
 )
 
 SERVER_NAME = "aicarmine-repo-search-det-mcp"
