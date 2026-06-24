@@ -33,12 +33,6 @@ REV_RE = re.compile(r"^[A-Za-z0-9_./:@{}^~+-]+$")
 _compact_text = compact_text_tuple
 
 
-def _compact_text(text: str, max_chars: int) -> tuple[str, bool]:
-    if len(text) <= max_chars:
-        return text, False
-    return text[: max(0, max_chars - 80)].rstrip() + f"\n...[truncated chars={len(text)}]", True
-
-
 def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tuple[str | None, dict[str, Any] | None]:
     text = str(value or default).strip()
     if not text:

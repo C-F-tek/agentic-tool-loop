@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import bz2
 import json
 import os
 import subprocess
@@ -21,6 +22,7 @@ MAX_TEXT = int(os.environ.get("AICARMINE_REPO_MCP_MAX_TEXT_CHARS", "24000"))
 STDIO_TRANSPORT = os.environ.get("AICARMINE_REPO_MCP_STDIO_TRANSPORT", "").strip().lower()
 DEBUG = os.environ.get("AICARMINE_REPO_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 INITIAL_AICARMINE_LAB_REPO = os.environ.get("AICARMINE_LAB_REPO", "")
+COMPRESSION_ENABLED = os.environ.get("AICARMINE_REPO_MCP_COMPRESSION", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 CODEX_ROOT_ENV_NAMES = (
     "AICARMINE_CODEX_MCP_REPO_ROOT",
@@ -56,6 +58,29 @@ def json_dumps(value: Any, *, compact: bool = False) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
+def json_compress(value: Any) -> str:
+    """Compress JSON payload using bz2 for large responses. Replaces per-server duplicates."""
+    raw = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    compressed = bz2.compress(raw.encode("utf-8"))
+    return compressed.hex()
+
+
+def json_decompress(hex_data: str) -> Any:
+    """Decompress bz2-compressed JSON payload. Returns parsed JSON."""
+    raw = bz2.decompress(bytes.fromhex(hex_data))
+    return json.loads(raw.decode("utf-8"))
+
+
+def smart_json_dumps(value: Any, *, use_compression: bool | None = None) -> str:
+    """Smart JSON serialization: compresses if payload exceeds threshold. Replaces per-server duplicates."""
+    if use_compression is None:
+        use_compression = COMPRESSION_ENABLED
+    raw = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    if use_compression and len(raw) > 10000:
+        return f"__compressed__:{json_compress(value)}"
+    return raw
+
+
 def compact_text(value: Any, limit: int = MAX_TEXT) -> str:
     if not isinstance(value, str):
         return json_dumps(value)
@@ -65,7 +90,24 @@ def compact_text(value: Any, limit: int = MAX_TEXT) -> str:
 
 
 def tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": compact_text(value)}], "isError": is_error}
+    """MCP tool content wrapper with optional bz2 compression for large payloads."""
+    text = compact_text(value)
+    # Compress if payload exceeds threshold and compression is enabled
+    if COMPRESSION_ENABLED and len(text.encode("utf-8")) > 10000:
+        compressed = json_compress(value)
+        text = f"__compressed__:{compressed}"
+    return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+def decompress_tool_text(text: str) -> str:
+    """Decompress bz2-compressed MCP tool text. Returns original or decompressed text."""
+    if isinstance(text, str) and text.startswith("__compressed__:"):
+        hex_data = text[len("__compressed__:"):]
+        try:
+            return json_decompress(hex_data)
+        except Exception:
+            return text  # Return original if decompression fails
+    return text
 
 
 def ok(msg_id: Any, result: Any) -> dict[str, Any]:
@@ -465,6 +507,133 @@ def serve(server_name: str, server_version: str, tools: dict[str, ToolSpec]) -> 
             write_message(stdout, response)
 
 
+# ── Extended MCP handlers with resources/prompts/roots (replaces mcp_server.py _handle_rpc) ──
+
+
+def mcp_handle_request_extended(
+    request: dict[str, Any],
+    *,
+    server_name: str,
+    server_version: str,
+    tools: list[dict[str, Any]],
+    tools_call_handler: Callable[[str, dict[str, Any]], Any],
+    resources_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
+    resources_read_handler: Callable[[dict[str, Any]], dict[str, Any]],
+    roots_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any] | None:
+    """
+    Handle one JSON-RPC message for servers with resources/prompts/roots support.
+
+    Replaces identical _handle_rpc() from mcp_server.py (~100 lines).
+    Supports: initialize, ping, tools/list, tools/call, resources/list,
+              resources/read, roots/list, notifications/*, logging/setLevel.
+    """
+    method = str(request.get("method") or "")
+    msg_id = request.get("id")
+    params = request.get("params", {})
+
+    if method == "initialize":
+        return ok(
+            msg_id,
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {"listChanged": False},
+                    "resources": {"subscribe": False, "listChanged": False},
+                    "prompts": {"listChanged": False},
+                    "roots": {"listChanged": False},
+                    "completion": {},
+                },
+                "serverInfo": {"name": server_name, "version": server_version},
+            },
+        )
+    if method == "notifications/initialized":
+        return None
+    if method == "ping":
+        return ok(msg_id, {})
+    if method == "tools/list":
+        return ok(msg_id, {"tools": tools})
+    if method == "tools/call":
+        name = params.get("name", "")
+        tool_args = params.get("arguments", {})
+        result = tools_call_handler(name, tool_args)
+        return ok(msg_id, result)
+    if method == "resources/list":
+        return ok(msg_id, resources_list_handler(params))
+    if method == "resources/read":
+        return ok(msg_id, resources_read_handler(params))
+    if method == "roots/list":
+        return ok(msg_id, roots_list_handler(params))
+    if method == "logging/setLevel":
+        return ok(msg_id, {})
+    if method.startswith("notifications/"):
+        return None
+    return err(msg_id, -32601, f"method_not_found: {method}")
+
+
+def mcp_serve_extended(
+    stdin: BinaryIO,
+    stdout: BinaryIO,
+    *,
+    server_name: str,
+    server_version: str,
+    tools: list[dict[str, Any]],
+    tools_call_handler: Callable[[str, dict[str, Any]], Any],
+    resources_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
+    resources_read_handler: Callable[[dict[str, Any]], dict[str, Any]],
+    roots_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
+) -> int:
+    """
+    Main serve loop for servers with resources/prompts/roots support.
+
+    Replaces identical serve() from mcp_server.py (~15 lines).
+    """
+    while True:
+        first = stdin.readline()
+        if not first:
+            return 0
+        decoded = first.decode("utf-8-sig", errors="replace").strip()
+        if decoded:
+            break
+
+    if decoded.startswith("{"):
+        request = json.loads(decoded)
+    else:
+        headers: dict[str, str] = {}
+        while True:
+            line = stdin.readline()
+            if not line:
+                return 0
+            decoded = line.decode("utf-8", errors="replace").strip()
+            if decoded == "":
+                break
+            if ":" in decoded:
+                key, value = decoded.split(":", 1)
+                headers[key.strip().lower()] = value.strip()
+        length = int(headers.get("content-length", "0"))
+        body = stdin.read(length)
+        request = json.loads(body.decode("utf-8-sig", errors="replace"))
+
+    response = mcp_handle_request_extended(
+        request,
+        server_name=server_name,
+        server_version=server_version,
+        tools=tools,
+        tools_call_handler=tools_call_handler,
+        resources_list_handler=resources_list_handler,
+        resources_read_handler=resources_read_handler,
+        roots_list_handler=roots_list_handler,
+    )
+    if response is not None:
+        raw = json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        stdout.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii"))
+        stdout.write(raw)
+        stdout.flush()
+
+    return 0
+
+
+# ── End of extended MCP handlers ──
 def mcp_text_result(response: dict[str, Any]) -> dict[str, Any]:
     raw_result = response.get("result")
     result = raw_result if isinstance(raw_result, dict) else {}
@@ -839,3 +1008,123 @@ def read_tail(path: Path, max_lines: int, max_bytes: int) -> str:
     text = raw.decode("utf-8", errors="replace")
     lines = text.splitlines()
     return "\n".join(lines[-max_lines:])
+
+
+# ── Shared MCP request handler and serve loop (replaces 6 per-server duplicates) ──
+
+
+def mcp_handle_request(
+    request: dict[str, Any],
+    *,
+    server_name: str,
+    server_version: str,
+    tools: dict[str, dict[str, Any]],
+    handlers: dict[str, Any],
+    root: Path,
+) -> dict[str, Any] | None:
+    """
+    Handle one JSON-RPC message for CLI tool MCP servers.
+
+    Replaces identical handle_request() from ruff, black, prettier, biome,
+    eslint, and clang_format MCP servers (~30 lines each = ~180 lines saved).
+    """
+    method = str(request.get("method") or "")
+    msg_id = request.get("id")
+    params = request.get("params", {})
+
+    if method == "initialize":
+        return ok(
+            msg_id,
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": server_name, "version": server_version},
+            },
+        )
+    if method == "notifications/initialized":
+        return None
+    if method == "tools/list":
+        return ok(
+            msg_id,
+            {
+                "tools": [
+                    {
+                        "name": v["name"],
+                        "description": v["description"],
+                        "inputSchema": v["inputSchema"],
+                    }
+                    for v in tools.values()
+                ]
+            },
+        )
+    if method == "tools/call":
+        name = params.get("name", "")
+        tool_args = params.get("arguments", {})
+        handler = handlers.get(name)
+        if handler:
+            result = handler(tool_args, root)
+            return ok(msg_id, result)
+        return err(msg_id, -32601, f"unknown_tool: {name}")
+    if method == "ping":
+        return ok(msg_id, {})
+    return err(msg_id, -32601, f"method_not_found: {method}")
+
+
+def mcp_serve(
+    stdin: BinaryIO,
+    stdout: BinaryIO,
+    *,
+    server_name: str,
+    server_version: str,
+    tools: dict[str, dict[str, Any]],
+    handlers: dict[str, Any],
+) -> int:
+    """
+    Main serve loop for CLI tool MCP servers.
+
+    Replaces identical serve() from ruff, black, prettier, biome, eslint,
+    and clang_format MCP servers (~45 lines each = ~270 lines saved).
+
+    Returns 0 on normal exit (empty stdin), 1 on error.
+    """
+    while True:
+        first = stdin.readline()
+        if not first:
+            return 0
+        decoded = first.decode("utf-8-sig", errors="replace").strip()
+        if decoded:
+            break
+
+    if decoded.startswith("{"):
+        request = json.loads(decoded)
+    else:
+        headers: dict[str, str] = {}
+        while True:
+            line = stdin.readline()
+            if not line:
+                return 0
+            decoded = line.decode("utf-8", errors="replace").strip()
+            if decoded == "":
+                break
+            if ":" in decoded:
+                key, value = decoded.split(":", 1)
+                headers[key.strip().lower()] = value.strip()
+        length = int(headers.get("content-length", "0"))
+        body = stdin.read(length)
+        request = json.loads(body.decode("utf-8-sig", errors="replace"))
+
+    response = mcp_handle_request(
+        request,
+        server_name=server_name,
+        server_version=server_version,
+        tools=tools,
+        handlers=handlers,
+        root=Path.cwd(),
+    )
+    if response is not None:
+        raw = json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        stdout.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii"))
+        stdout.write(raw)
+        stdout.flush()
+
+    return 0

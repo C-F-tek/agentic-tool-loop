@@ -15,6 +15,7 @@ from typing import Any
 from repo_mcp_common import (
     ToolSpec,
     boolean_prop,
+    diagnostic_preview as _diagnostic_preview,
     health_payload,
     integer_prop,
     object_schema,
@@ -156,15 +157,7 @@ def _truncate_text(value: str, limit: int) -> tuple[str, bool]:
     return value[: max(0, limit - len(suffix))].rstrip() + suffix, True
 
 
-def _diagnostic_preview(value: Any, limit: int = 500) -> str:
-    try:
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
-        try:
-            text = str(value)
-        except Exception:
-            text = f"<unprintable {type(value).__name__}>"
-    return text[:limit]
+# _diagnostic_preview imported from repo_mcp_common
 
 
 def _json_pretty_result(value: Any) -> tuple[str, dict[str, Any] | None]:

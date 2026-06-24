@@ -16,10 +16,12 @@ from typing import Any
 from repo_mcp_common import (
     ToolSpec,
     boolean_prop,
-    diagnostic_preview,
+    diagnostic_preview as _diagnostic_preview,
     health_payload,
     integer_prop,
     object_schema,
+    read_tail as _read_tail,
+    safe_int as _safe_int_param,
     selected_repo_root,
     self_test,
     serve,
@@ -664,15 +666,7 @@ def _default_log_paths(root: Path, max_files: int) -> tuple[Path, list[Path]]:
     return logs_dir, files[:max_files]
 
 
-def _read_tail(path: Path, max_lines: int, max_bytes: int) -> str:
-    size = path.stat().st_size
-    with path.open("rb") as handle:
-        if size > max_bytes:
-            handle.seek(-max_bytes, os.SEEK_END)
-        raw = handle.read()
-    text = raw.decode("utf-8", errors="replace")
-    lines = text.splitlines()
-    return "\n".join(lines[-max_lines:])
+# _read_tail imported from repo_mcp_common
 
 
 def service_state_logs(args: dict[str, Any], root: Path) -> dict[str, Any]:

@@ -44,6 +44,10 @@ SUPERSEDE_CONFIRM = "project_memory_supersede"
 MAX_SOURCE_FILE_BYTES = 100_000_000
 
 
+def _memory_db(root: Path) -> Path:
+    """Return the path to the project-local memory SQLite database."""
+    return root / "state" / "project_memory" / "memory.sqlite"
+
 
 
 
