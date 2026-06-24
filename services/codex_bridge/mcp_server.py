@@ -64,6 +64,7 @@ Transport:
   - diagnostics go to stderr only
 """
 from __future__ import annotations
+from collections.abc import Callable
 import json
 import os
 import subprocess
@@ -1075,7 +1076,7 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
     Handle one JSON-RPC message.  
     Uses mcp_handle_request_extended from repo_mcp_common for common methods,
     with server-specific extensions for prompts/completion/logging/templates.
-    Refactored: ~65 lines of method-dispatch logic reduced to ~45 lines.
+    INSTRUCTIONS now passed via extended handler parameter.
     """
     from repo_mcp_common import mcp_handle_request_extended
     method = str(message.get("method") or "")
@@ -1090,10 +1091,9 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
         return _handle_prompts_get(p)
     def _completion_complete(p: dict[str, Any]) -> dict[str, Any]:
         return _handle_completion_complete(p)
-    # Server-specific resources/read with INSTRUCTIONS capability (not in extended handler)
-    def _resources_read_with_instructions(p: dict[str, Any]) -> dict[str, Any]:
-        result = _handle_resources_read(p)
-        return result
+    # Server-specific resources/read (INSTRUCTIONS now passed via extended handler)
+    def _resources_read_handler(p: dict[str, Any]) -> dict[str, Any]:
+        return _handle_resources_read(p)
     try:
         result = mcp_handle_request_extended(
             message,
@@ -1102,29 +1102,14 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
             tools=TOOL_SCHEMAS,
             tools_call_handler=_handle_tools_call,
             resources_list_handler=_handle_resources_list,
-            resources_read_handler=_resources_read_with_instructions,
+            resources_read_handler=_resources_read_handler,
             roots_list_handler=_handle_roots_list,
+            instructions=INSTRUCTIONS,
         )
-        # Handle methods not covered by extended handler
+        # Handle methods not covered by extended handler (templates/list, prompts/get, completion/complete)
         if result is None and method.startswith("notifications/"):
             return None
-        if result is None or method in ("resources/templates/list", "prompts/list", "prompts/get", "completion/complete", "logging/setLevel"):
-            if method == "initialize":
-                return _ok(
-                    msg_id,
-                    {
-                        "protocolVersion": params.get("protocolVersion") or "2024-11-05",
-                        "capabilities": {
-                            "tools": {"listChanged": False},
-                            "resources": {"subscribe": False, "listChanged": False},
-                            "prompts": {"listChanged": False},
-                            "roots": {"listChanged": False},
-                            "completion": {},
-                        },
-                        "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                        "instructions": INSTRUCTIONS,
-                    },
-                )
+        if result is None or method in ("resources/templates/list", "prompts/list", "prompts/get", "completion/complete"):
             if method == "resources/templates/list":
                 return _ok(msg_id, _resources_templates_list(params))
             if method == "prompts/list":
@@ -1133,8 +1118,7 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
                 return _ok(msg_id, _prompts_get(params))
             if method == "completion/complete":
                 return _ok(msg_id, _completion_complete(params))
-            if method == "logging/setLevel":
-                return _ok(msg_id, {})
+
         return result
     except Exception as exc:
         data = {"exception": str(exc), "traceback": traceback.format_exc()[-6000:]}
@@ -1235,4 +1219,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

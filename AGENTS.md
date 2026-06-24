@@ -91,9 +91,9 @@ Use that skill for:
 
 The skill is the detailed operational authority for MCP routing, project memory, probe profiles, patch sequencing, payload completeness, and the `3571`/`3572` contracts.
 
-## Available MCP Servers
+## Available MCP Servers 
 
-The following 15 MCP servers are configured in this workspace:
+The following 19 MCP servers are configured in this workspace:
 
 ### Core Repository Tools
 | Server | Script | Tools | Purpose |
@@ -125,7 +125,38 @@ The following 15 MCP servers are configured in this workspace:
 | `aicarmine_test_discovery` | test_discovery_mcp_server.py | 5 | Discover patterns, find uncovered, generate scaffolds |
 | `aicarmine_code_dep_graph` | code_dep_graph_mcp_server.py | 7 | Build dep graph, find chains, detect cycles, callers, dependents, breakage risk |
 
+### Refactoring Tools
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_refactor` | refactor_mcp_server.py | 8 | libcst rename, rope cross-file rename, bowler git-rollback, git-tracked scope-aware refactoring |
+
+### Agent & Loop Clients
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_local_subagent` | local_subagent_mcp_server.py | 3 | Local subagent with port 3579 |
+| `aicarmine_agentic_loop_client` | agentic_loop_client_mcp_server.py | 7 | Agentic loop client with port 3579 |
+| `aicarmine_ollama_subagent` | ollama_subagent_mcp_server.py | 4 | Ollama subagent with GPU (port 11435) |
+
 The static allowlist is maintained in `services/codex_bridge/ops_mcp_server.py` (`LOCAL_MCP_SERVERS`).
+
+## Refactoring MCP Skill
+
+When the user requests code refactoring, symbol renaming, or AST-based transformations:
+
+1. Use `aicarmine_refactor` MCP server for all Python refactoring operations.
+2. The server provides these tools:
+   - `refactor_rename_symbol` — Single-file rename via libcst (AST-aware)
+   - `refactor_rename_symbol_rope` — Cross-file rename via rope (project-wide)
+   - `refactor_add_parameter` — Add keyword parameter to function calls
+   - `refactor_extract_function` — Extract code block into new function
+   - `refactor_rename_project` — Rename across git-tracked files only (respects .gitignore)
+   - `refactor_rename_project_bowler` — Rename with bowler + automatic git rollback
+   - `git_list_tracked_files` — List all tracked Python files in repository
+   - `refactor_health` — Check tool availability (libcst, rope, bowler)
+
+3. Always use `scope="tracked"` for project-wide renames to exclude external packages and respect `.gitignore`.
+
+4. For safe refactoring with rollback support, prefer `refactor_rename_project_bowler` with `dry_run=true` first, then `dry_run=false` to apply.
 
 Do not duplicate the skill's detailed tool inventory or repository contracts in this global file.
 

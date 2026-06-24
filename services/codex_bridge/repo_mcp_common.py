@@ -520,6 +520,7 @@ def mcp_handle_request_extended(
     resources_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
     resources_read_handler: Callable[[dict[str, Any]], dict[str, Any]],
     roots_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
+    instructions: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Handle one JSON-RPC message for servers with resources/prompts/roots support.
@@ -527,26 +528,29 @@ def mcp_handle_request_extended(
     Replaces identical _handle_rpc() from mcp_server.py (~100 lines).
     Supports: initialize, ping, tools/list, tools/call, resources/list,
               resources/read, roots/list, notifications/*, logging/setLevel.
+    
+    Args:
+        instructions: Optional server instructions included in initialize response.
     """
     method = str(request.get("method") or "")
     msg_id = request.get("id")
     params = request.get("params", {})
 
     if method == "initialize":
-        return ok(
-            msg_id,
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {"listChanged": False},
-                    "resources": {"subscribe": False, "listChanged": False},
-                    "prompts": {"listChanged": False},
-                    "roots": {"listChanged": False},
-                    "completion": {},
-                },
-                "serverInfo": {"name": server_name, "version": server_version},
+        response_data: dict[str, Any] = {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {
+                "tools": {"listChanged": False},
+                "resources": {"subscribe": False, "listChanged": False},
+                "prompts": {"listChanged": False},
+                "roots": {"listChanged": False},
+                "completion": {},
             },
-        )
+            "serverInfo": {"name": server_name, "version": server_version},
+        }
+        if instructions:
+            response_data["instructions"] = instructions
+        return ok(msg_id, response_data)
     if method == "notifications/initialized":
         return None
     if method == "ping":
@@ -582,6 +586,7 @@ def mcp_serve_extended(
     resources_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
     resources_read_handler: Callable[[dict[str, Any]], dict[str, Any]],
     roots_list_handler: Callable[[dict[str, Any]], dict[str, Any]],
+    instructions: str | None = None,
 ) -> int:
     """
     Main serve loop for servers with resources/prompts/roots support.
@@ -623,6 +628,7 @@ def mcp_serve_extended(
         resources_list_handler=resources_list_handler,
         resources_read_handler=resources_read_handler,
         roots_list_handler=roots_list_handler,
+        instructions=instructions,
     )
     if response is not None:
         raw = json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -785,12 +791,12 @@ def compact_text_generic(value: Any, limit: int = MAX_TEXT) -> str:
     return text[: max(0, limit - 180)].rstrip() + "\n\n...[truncated]"
 
 
-def compact_text_tuple(value: Any, max_chars: int) -> tuple[str, bool]:
+def compact_text_tuple(value: Any, max_chars: int, server_name: str = "repo_mcp") -> tuple[str, bool]:
     """Compact text returning (text, truncated_bool). Replaces agentic_loop_client variant."""
     text = value if isinstance(value, str) else _json_dumps(value)
     if len(text) <= max_chars:
         return text, False
-    suffix = f"\n...[truncated by {SERVER_NAME}]"
+    suffix = f"\n...[truncated by {server_name}]"
     return text[: max(0, max_chars - len(suffix))].rstrip() + suffix, True
 
 

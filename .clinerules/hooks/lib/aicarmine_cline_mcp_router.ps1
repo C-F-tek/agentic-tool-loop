@@ -164,11 +164,16 @@ function Get-AICarmineMcpRoutingHint {
         $scores = [ordered]@{
             repository_validation = 0
             repository_patch = 0
+            repository_refactor = 0
             repository_search = 0
             project_memory = 0
             repository_state = 0
             git_readonly = 0
             job_diagnostics = 0
+            code_format = 0
+            code_analysis = 0
+            data_query = 0
+            semantic_search = 0
         }
 
         if ($reviewedProbe) { $scores.repository_validation += 100 }
@@ -197,8 +202,17 @@ function Get-AICarmineMcpRoutingHint {
             $scores.repository_patch = [Math]::Min($scores.repository_patch, 10)
         }
 
-        if ($normalized -match '\b(?:aicarmine_repo_search_rg|aicarmine_repo_search_ctags|rg|ctags|ast-grep|tree[\s-]sitter)\b') {
-            $scores.repository_search += 100
+        if ($normalized -match '\b(?:refactor|rename symbol|AST transformation|code refactoring|symbol rename|cross-file rename|git-tracked files|\.gitignore|scope=tracked)\b') {
+            $scores.repository_refactor += 100
+        }
+        if ($normalized -match '\b(?:libcst|rope|bowler)\b') {
+            $scores.repository_refactor += 80
+        }
+        if ($normalized -match '\b(?:format|prettier|black|clang-format|biome)\b') {
+            $scores.code_format += 60
+        }
+        if ($normalized -match '\b(?:lint|ruff|eslint|flake8|mypy)\b') {
+            $scores.repository_validation += 40
         }
         if (Test-AICarminePositiveSignal -Text $normalized -Pattern '\b(?:trova|cerca|localizza|search|find|locate)\b') {
             $scores.repository_search += 60
@@ -246,22 +260,51 @@ function Get-AICarmineMcpRoutingHint {
             $scores.job_diagnostics += 10
         }
 
+        if ($normalized -match '\b(?:code dependency|dep graph|import chain|circular dep|callers?|dependents?|breakage risk)\b') {
+            $scores.code_analysis += 80
+        }
+        if ($normalized -match '\b(?:test discover|uncovered|scaffold|test map|test pattern)\b') {
+            $scores.code_analysis += 60
+        }
+        if ($normalized -match '\b(?:symbol index|definition|signature|callable)\b') {
+            $scores.code_analysis += 40
+        }
+
+        if ($normalized -match '\b(?:sqlite|query|schema|database|table|column)\b') {
+            $scores.data_query += 80
+        }
+        if ($normalized -match '\b(?:port|process|service state|listening socket|log tail)\b') {
+            $scores.data_query += 60
+        }
+
+        if ($normalized -match '\b(?:RAG|semantic search|context search|reindex|bge rerank|document chunk)\b') {
+            $scores.semantic_search += 100
+        }
+        if ($normalized -match '\b(?:enhanced analysis|index bridge|model detail|API inspection)\b') {
+            $scores.semantic_search += 60
+        }
+
         $classes = [System.Collections.Generic.List[string]]::new()
         $tools = [System.Collections.Generic.List[string]]::new()
         $tieOrder = @{
             repository_validation = 0
             repository_patch = 1
-            repository_search = 2
-            project_memory = 3
-            repository_state = 4
-            git_readonly = 5
-            job_diagnostics = 6
+            repository_refactor = 2
+            repository_search = 3
+            code_format = 4
+            code_analysis = 5
+            data_query = 6
+            project_memory = 7
+            repository_state = 8
+            git_readonly = 9
+            job_diagnostics = 10
+            semantic_search = 11
         }
         $rankedClasses = @(
             $scores.GetEnumerator() |
                 Where-Object { [int]$_.Value -ge 20 } |
                 Sort-Object -Property @{ Expression = { -[int]$_.Value } }, @{ Expression = { $tieOrder[[string]$_.Key] } } |
-                Select-Object -First 4
+                Select-Object -First 7
         )
         foreach ($entry in $rankedClasses) {
             [void]$classes.Add([string]$entry.Key)
@@ -281,6 +324,19 @@ function Get-AICarmineMcpRoutingHint {
 
         foreach ($className in $classes) {
             switch ($className) {
+                'repository_refactor' {
+                    [void]$classes.Remove('repository_refactor')
+                    # Insert at position 0 (highest priority)
+                    $newClasses = [System.Collections.Generic.List[string]]::new()
+                    [void]$newClasses.Add('repository_refactor')
+                    foreach ($c in $classes) {
+                        if ($c -ne 'repository_refactor') {
+                            [void]$newClasses.Add($c)
+                        }
+                    }
+                    $classes = $newClasses
+                    continue
+                }
                 'repository_validation' {
                     if ($explicitExistingDiff) {
                         Add-AICarmineTool -Name 'aicarmine_repo_code_unidiff_validate'
@@ -304,17 +360,70 @@ function Get-AICarmineMcpRoutingHint {
                         }
                     }
                 }
-                'repository_search' {
-                    Add-AICarmineTool -Name 'aicarmine_repo_search_det_health'
-                    if ($normalized -match '\b(?:definition|definizione|caller|call site|riferiment[oi]|reference|rg|grep)\b') {
-                        Add-AICarmineTool -Name 'aicarmine_repo_search_rg'
+
+                'code_format' {
+                    if ($normalized -match '\b(?:prettier|javascript|typescript|json|html|css)\b') { Add-AICarmineTool -Name 'format_file' }
+                    if ($normalized -match '\b(?:black|python format)\b') { Add-AICarmineTool -Name 'format_file' }
+                    if ($normalized -match '\b(?:clang-format|c\+\+|cpp)\b') { Add-AICarmineTool -Name 'format' }
+                    if ($normalized -match '\b(?:biome|lint)\b') { Add-AICarmineTool -Name 'check_file' }
+                }
+
+                'code_analysis' {
+                    Add-AICarmineTool -Name 'aicarmine_code_dep_graph_health'
+                    if ($normalized -match '\b(?:dep graph|dependency)\b') { Add-AICarmineTool -Name 'code_build_dep_graph' }
+                    if ($normalized -match '\b(?:callers?|dependents?)\b') { Add-AICarmineTool -Name 'code_find_callers' }
+                    if ($normalized -match '\b(?:circular|cycle)\b') { Add-AICarmineTool -Name 'code_detect_circular_deps' }
+                    Add-AICarmineTool -Name 'aicarmine_test_discovery_health'
+                    if ($normalized -match '\b(?:uncovered|coverage)\b') { Add-AICarmineTool -Name 'test_find_uncovered' }
+                    Add-AICarmineTool -Name 'aicarmine_repo_symbol_index_health'
+                    if ($normalized -match '\b(?:symbol|definition)\b') { Add-AICarmineTool -Name 'repo_symbol_query' }
+                    if ($normalized -match '\b(?:summarize|overview|api surface|config validator|module overview)\b') {
+                        Add-AICarmineTool -Name 'aicarmine_code_summarize_module'
+                        Add-AICarmineTool -Name 'aicarmine_code_api_surface'
+                        Add-AICarmineTool -Name 'aicarmine_config_validator'
                     }
-                    if ($normalized -match '\b(?:file|path)\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_fd' }
-                    if ($normalized -match '\b(?:ast|ast-grep)\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_ast_grep' }
-                    if ($normalized -match '\btree[\s-]sitter\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_tree_sitter_parse' }
-                    if ($normalized -match '\b(?:ctags|symbol|simbolo|definition|definizione)\b') {
-                        Add-AICarmineTool -Name 'aicarmine_repo_search_ctags'
+                    if ($normalized -match '\b(?:generate|completion|llm|gpu|ollama|model generation|text generation|streaming)\b') {
+                        Add-AICarmineTool -Name 'aicarmine_ollama_subagent_health'
+                        Add-AICarmineTool -Name 'aicarmine_ollama_subagent_generate'
+                        Add-AICarmineTool -Name 'aicarmine_ollama_subagent_generate_stream'
+                        Add-AICarmineTool -Name 'aicarmine_ollama_subagent_list_models'
                     }
+                }
+
+                'data_query' {
+                    Add-AICarmineTool -Name 'aicarmine_sqlite_readonly_health'
+                    if ($normalized -match '\b(?:query|sql)\b') { Add-AICarmineTool -Name 'aicarmine_sqlite_readonly_query' }
+                    Add-AICarmineTool -Name 'aicarmine_service_state_ports'
+                    Add-AICarmineTool -Name 'aicarmine_service_state_processes'
+                    Add-AICarmineTool -Name 'aicarmine_service_state_logs'
+                }
+
+                'semantic_search' {
+                    Add-AICarmineTool -Name 'aicarmine_rag_health'
+                    if ($normalized -match '\b(?:search|context|retrieve)\b') { Add-AICarmineTool -Name 'aicarmine_rag_context' }
+                    if ($normalized -match '\b(?:index bridge|cross-reference|bridge)\b') {
+                        Add-AICarmineTool -Name 'aicarmine_index_bridge_build'
+                        Add-AICarmineTool -Name 'aicarmine_index_bridge_query'
+                    }
+                }
+                'repository_refactor' {
+                    Add-AICarmineTool -Name 'aicarmine_refactor_health'
+                    if ($normalized -match '\b(?:cross-file|rope|project-wide)\b') {
+                        Add-AICarmineTool -Name 'refactor_rename_symbol_rope'
+                    }
+                    if ($normalized -match '\b(?:git-tracked|scope=tracked|\.gitignore|bowler|rollback)\b') {
+                        Add-AICarmineTool -Name 'refactor_rename_project_bowler'
+                    }
+                    if ($normalized -match '\b(?:list|tracked files)\b') {
+                        Add-AICarmineTool -Name 'git_list_tracked_files'
+                    }
+                    if ($normalized -match '\b(?:extract|extract-function)\b') {
+                        Add-AICarmineTool -Name 'refactor_extract_function'
+                    }
+                    if ($normalized -match '\b(?:add-param|add parameter)\b') {
+                        Add-AICarmineTool -Name 'refactor_add_parameter'
+                    }
+                    Add-AICarmineTool -Name 'refactor_rename_symbol'
                 }
                 'project_memory' {
                     Add-AICarmineTool -Name 'aicarmine_project_memory_health'
@@ -342,6 +451,18 @@ function Get-AICarmineMcpRoutingHint {
                 'job_diagnostics' {
                     Add-AICarmineTool -Name 'aicarmine_job_artifact'
                     Add-AICarmineTool -Name 'aicarmine_job_view'
+                }
+                'repository_search' {
+                    Add-AICarmineTool -Name 'aicarmine_repo_search_det_health'
+                    if ($normalized -match '\b(?:rg|grep|regex|pattern)\b') {
+                        Add-AICarmineTool -Name 'aicarmine_repo_search_rg'
+                    }
+                    if ($normalized -match '\b(?:file|path)\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_fd' }
+                    if ($normalized -match '\b(?:ast|ast-grep)\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_ast_grep' }
+                    if ($normalized -match '\btree[\s-]sitter\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_tree_sitter_parse' }
+                    if ($normalized -match '\b(?:ctags|symbol|simbolo|definition|definizione)\b') {
+                        Add-AICarmineTool -Name 'aicarmine_repo_search_ctags'
+                    }
                 }
             }
         }
@@ -383,6 +504,10 @@ function Get-AICarmineMcpRoutingHint {
         }
         if ($readOnly) {
             [void]$lines.Add('- Read-only: validate and apply-check are allowed; do not call apply_patch or state-write tools.')
+        }
+        if ($classes.Contains('repository_refactor')) {
+            [void]$lines.Add('- Use scope=tracked for project-wide renames to exclude external packages.')
+            [void]$lines.Add('- Prefer dry_run=true first, then dry_run=false to apply changes.')
         }
         if ($reviewedProbe) {
             [void]$lines.Add('- Use the exact profile_id returned by probe_profiles before probe_run.')
