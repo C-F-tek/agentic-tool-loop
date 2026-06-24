@@ -726,6 +726,19 @@ The dataclass automatically generates `__init__`, `__repr__`, `__eq__`, and `__h
 
 **File**: `services/aicarmine_broker/tool_schemas.py`
 
+### Case Study F: Tool Selection with Inline Conditionals
+
+**Anti-pattern**: `is_generic_repo_analysis` and `needs_composite_review` using inline tuple conditionals for token matching
+
+**Fixes applied**:
+- Created `_REPO_TOKENS`, `_REVIEW_TOKENS`, `_REPO_SEARCH_QUERY_TOKENS` lookup tables (§4)
+- Added `_get()` query helper for safe dict navigation (§8.4)
+- Extracted `select_internal_tool` into guard-clause style with early returns (§8.3)
+- Formatted multi-line strings (system prompt, user message) for readability
+- Replaced inline tuple conditionals with frozenset membership checks
+
+**File**: `services/aicarmine_broker/tool_selection.py`
+
 ### Verification Results (All Cases)
 
 | Check | Result |
