@@ -16,6 +16,10 @@ from repo_mcp_common import (
     object_schema,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    boolean_prop,
+    safe_int,
 )
 
 SERVER_NAME = "aicarmine-git-readonly-mcp"
@@ -23,27 +27,6 @@ SERVER_VERSION = "0.1.0"
 REV_RE = re.compile(r"^[A-Za-z0-9_./:@{}^~+-]+$")
 
 
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
 
 
 def _compact_text(text: str, max_chars: int) -> tuple[str, bool]:
@@ -191,8 +174,8 @@ def _current_branch(root: Path) -> str:
 
 
 def _log(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    max_count = _safe_int(args.get("max_count") or args.get("limit"), 20, 1, 200)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    max_count = safe_int(args.get("max_count") or args.get("limit"), 20, 1, 200)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     rev, problem = _validate_rev(args.get("rev"), default="HEAD", name="rev")
     if problem is not None:
         return problem
@@ -239,8 +222,8 @@ def _show(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if problem is not None:
         return problem
     include_patch = bool(args.get("include_patch", False))
-    max_chars = _safe_int(args.get("max_chars"), 60000, 1000, 500000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    max_chars = safe_int(args.get("max_chars"), 60000, 1000, 500000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     cmd = ["show", "--no-ext-diff", "--stat", "--format=fuller", rev or "HEAD"]
     if not include_patch:
         cmd.append("--no-patch")
@@ -249,8 +232,8 @@ def _show(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 500000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    max_chars = safe_int(args.get("max_chars"), 80000, 1000, 500000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     pathspec, path_problem = _pathspec(args.get("path"), root)
     if path_problem is not None:
         return path_problem
@@ -282,10 +265,10 @@ def _blame(args: dict[str, Any], root: Path) -> dict[str, Any]:
     rev, problem = _validate_rev(args.get("rev"), default="HEAD", name="rev")
     if problem is not None:
         return problem
-    start = _safe_int(args.get("start_line"), 1, 1, 1_000_000)
-    end = _safe_int(args.get("end_line"), start, start, 1_000_000)
-    max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 500000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    start = safe_int(args.get("start_line"), 1, 1, 1_000_000)
+    end = safe_int(args.get("end_line"), start, start, 1_000_000)
+    max_chars = safe_int(args.get("max_chars"), 80000, 1000, 500000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     cmd = ["blame", "--line-porcelain", "-L", f"{start},{end}", rev or "HEAD", "--", pathspec]
     result = _run_git(root, cmd, timeout_seconds=timeout_seconds, max_chars=max_chars)
     return {"ok": result["returncode"] == 0, "tool": "aicarmine_git_readonly_blame", "git": result, "read_only": True}
@@ -302,7 +285,7 @@ def _branch_compare(args: dict[str, Any], root: Path) -> dict[str, Any]:
     remote_ref, remote_problem = _validate_rev(f"{remote}/{branch}", default=f"{remote}/{branch}", name="remote_ref")
     if remote_problem is not None:
         return remote_problem
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     left_right = _run_git(
         root,
         ["rev-list", "--left-right", "--count", f"{branch_rev}...{remote_ref}"],

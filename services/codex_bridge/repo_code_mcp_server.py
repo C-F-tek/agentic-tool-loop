@@ -22,6 +22,9 @@ from repo_mcp_common import (
     mcp_text_result,
     object_schema,
     serve,
+    string_prop,
+    integer_prop,
+    safe_int,
 )
 
 SERVER_NAME = "aicarmine-repo-code-mcp"
@@ -136,31 +139,9 @@ def context_preservation_layer() -> ContextPreservationLayer:
     return _context_preservation
 
 
-def _safe_int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    if low is not None:
-        number = max(low, number)
-    if high is not None:
-        number = min(high, number)
-    return number
-
-
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
 def enum_string_prop(values: list[str]) -> dict[str, Any]:
     return {"type": "string", "enum": values}
 
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
 
 
 def _report_only(

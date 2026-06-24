@@ -21,7 +21,15 @@ from repo_mcp_common import (
     object_schema,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    boolean_prop,
+    safe_int,
+    safe_bool,
 )
+
+_safe_bool = safe_bool
+_safe_int = safe_int
 
 SERVER_NAME = "aicarmine-agentic-loop-client-mcp"
 SERVER_VERSION = "0.1.0"
@@ -69,7 +77,7 @@ TERMINAL_STATUSES = {
 }
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
+def string_prop_with_enum(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if default is not None:
         schema["default"] = default
@@ -78,36 +86,8 @@ def string_prop(default: str | None = None, *, enum: list[str] | None = None) ->
     return schema
 
 
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
 def object_prop() -> dict[str, Any]:
     return {"type": "object", "additionalProperties": True}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _safe_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-    return default
 
 
 def _compact_text(value: Any, max_chars: int) -> tuple[str, bool]:
@@ -835,12 +815,12 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "rerank_port": rerank_port,
             "reranker_started": False,
         }
-    timeout_seconds = _safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
+    timeout_seconds = safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
     health = _get_health(ready_url, timeout_seconds=timeout_seconds)
     if health.get("ok") is True:
         functional_probe = _probe_reranker_functional(
             rerank_url,
-            timeout_seconds=_safe_int(
+            timeout_seconds=safe_int(
                 args.get("functional_timeout_seconds") or args.get("timeout_seconds"),
                 30,
                 1,
@@ -916,16 +896,16 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    port = _safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
-    if _safe_bool(args.get("reload"), False) or _safe_bool(args.get("restart"), False) or args.get("confirm_restart_broker"):
+    port = safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
+    if safe_int(args.get("reload"), False) or safe_int(args.get("restart"), False) or args.get("confirm_restart_broker"):
         return {
             "ok": False,
             "tool": "aicarmine_agentic_loop_ensure_broker",
             "error": "broker_reload_restart_removed_from_mcp",
             "broker_started": False,
             "broker_running": "unknown",
-            "reload_requested": _safe_bool(args.get("reload"), False),
-            "restart_requested": _safe_bool(args.get("restart"), False),
+            "reload_requested": safe_int(args.get("reload"), False),
+            "restart_requested": safe_int(args.get("restart"), False),
             "operator_hint": (
                 "Reload/restart from MCP is disabled for the dedicated 3579 broker "
                 "because it can interrupt in-process job workers. Stop and restart "
@@ -1636,7 +1616,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
-                "return_mode": string_prop("wait", enum=["wait", "background", "async", "fire_and_forget"]),
+                "return_mode": string_prop_with_enum("wait", enum=["wait", "background", "async", "fire_and_forget"]),
                 "wait_seconds": integer_prop(30, 1, 600),
                 "max_steps": integer_prop(20, 1, 80),
                 "timeout_seconds": integer_prop(120, 15, 900),
@@ -1686,7 +1666,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "job_id": string_prop(),
                 "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
-                "audience": string_prop("operator", enum=["openwebui", "operator", "internal"]),
+                "audience": string_prop_with_enum("operator", enum=["openwebui", "operator", "internal"]),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "timeout_seconds": integer_prop(30, 5, 120),
                 "response_budget_chars": integer_prop(16000, 1000, 60000),

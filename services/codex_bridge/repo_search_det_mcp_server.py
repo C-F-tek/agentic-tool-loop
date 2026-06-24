@@ -16,6 +16,9 @@ from repo_mcp_common import (
     object_schema,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    safe_int,
 )
 
 SERVER_NAME = "aicarmine-repo-search-det-mcp"
@@ -137,7 +140,7 @@ def symbol_memory_manager(args: dict[str, Any]) -> dict[str, Any]:
     """
     context_id = str(args.get("context_id") or f"ctx-{int(time.time() * 1000) % 100000}").strip()
     tool_name = str(args.get("tool_name", "repo_search")).strip()
-    context_depth = _safe_int(args.get("context_depth"), 0, low=0, high=100)
+    context_depth = safe_int(args.get("context_depth"), 0, low=0, high=100)
 
     with _context_lock:
         _context_store[context_id] = ToolContext(
@@ -158,27 +161,6 @@ def symbol_memory_manager(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _safe_int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    if low is not None:
-        number = max(low, number)
-    if high is not None:
-        number = min(high, number)
-    return number
-
-
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
 
 
 def _tools() -> dict[str, ToolSpec]:

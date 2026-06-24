@@ -18,6 +18,11 @@ from repo_mcp_common import (
     object_schema,
     self_test,
     serve,
+    string_prop,
+    integer_prop,
+    boolean_prop,
+    safe_int,
+    safe_bool,
 )
 
 SERVER_NAME = "aicarmine-job-view-mcp"
@@ -60,7 +65,7 @@ VIEW_NAMES = {
 }
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
+def string_prop_with_enum(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if default is not None:
         schema["default"] = default
@@ -68,33 +73,6 @@ def string_prop(default: str | None = None, *, enum: list[str] | None = None) ->
         schema["enum"] = enum
     return schema
 
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _safe_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-    return default
 
 
 def _resolve_path(value: str, default: Path, root: Path) -> Path:
@@ -375,8 +353,8 @@ def _validate_html_text(html_text: str) -> dict[str, Any]:
 
 def _render_html(view: str, args: dict[str, Any], root: Path) -> tuple[str, dict[str, Any]]:
     job_html, job_planner_lab, paths = _load_renderers(root)
-    limit = _safe_int(args.get("limit"), 50, 1, 200)
-    refresh_seconds = _safe_int(args.get("refresh_seconds"), 0, 0, 60)
+    limit = safe_int(args.get("limit"), 50, 1, 200)
+    refresh_seconds = safe_int(args.get("refresh_seconds"), 0, 0, 60)
     meta: dict[str, Any] = {
         "view": view,
         "read_only": True,
@@ -393,8 +371,8 @@ def _render_html(view: str, args: dict[str, Any], root: Path) -> tuple[str, dict
     meta["job_id"] = job_id
     section = str(args.get("section") or "").strip()
     key = str(args.get("key") or "").strip()
-    index = _safe_int(args.get("index"), 0, 0, 100000)
-    step = _safe_int(args.get("step"), 0, 0, 100000)
+    index = safe_int(args.get("index"), 0, 0, 100000)
+    step = safe_int(args.get("step"), 0, 0, 100000)
 
     if view == "job_dashboard":
         return job_html.agent_job_html(job_id), meta
@@ -493,9 +471,9 @@ def _render(args: dict[str, Any], root: Path) -> dict[str, Any]:
         html_text, meta = _render_html(view, args, root)
     except Exception as exc:
         return _render_failure("aicarmine_job_view_render", args, root, exc)
-    max_chars = _safe_int(args.get("max_chars"), 50000, 1000, 500000)
-    include_html = _safe_bool(args.get("include_html"), True)
-    include_outline = _safe_bool(args.get("include_outline"), True)
+    max_chars = safe_int(args.get("max_chars"), 50000, 1000, 500000)
+    include_html = safe_bool(args.get("include_html"), True)
+    include_outline = safe_bool(args.get("include_outline"), True)
     compact_html, truncated = _truncate_text(html_text, max_chars)
     result = {
         "ok": True,
@@ -529,8 +507,8 @@ def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
         job_id = _safe_job_id(args.get("job_id"))
     except Exception as exc:
         return _render_failure("aicarmine_job_view_ia_payload", args, root, exc)
-    include_heavy = _safe_bool(args.get("include_heavy"), False)
-    max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 1000000)
+    include_heavy = safe_bool(args.get("include_heavy"), False)
+    max_chars = safe_int(args.get("max_chars"), 80000, 1000, 1000000)
     try:
         payload = job_html.agent_job_ia_view_payload(job_id, include_heavy=include_heavy)
     except Exception as exc:
@@ -632,7 +610,7 @@ def _tools() -> dict[str, ToolSpec]:
         return _health(args, root, tools)
 
     render_props = {
-        "view": string_prop("job_dashboard", enum=sorted(VIEW_NAMES)),
+        "view": string_prop_with_enum("job_dashboard", enum=sorted(VIEW_NAMES)),
         "job_id": string_prop(),
         "section": string_prop(),
         "key": string_prop(),
@@ -646,7 +624,7 @@ def _tools() -> dict[str, ToolSpec]:
         "max_chars": integer_prop(50000, 1000, 500000),
     }
     section_props = dict(render_props)
-    section_props["view"] = string_prop("ia_view_section", enum=["status_json_section", "final_json_section", "events_section", "ia_view_section"])
+    section_props["view"] = string_prop_with_enum("ia_view_section", enum=["status_json_section", "final_json_section", "events_section", "ia_view_section"])
 
     tools["aicarmine_job_view_health"] = ToolSpec(
         name="aicarmine_job_view_health",

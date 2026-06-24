@@ -17,6 +17,8 @@ from repo_mcp_common import (
     mcp_text_result,
     object_schema,
     serve,
+    string_prop,
+    integer_prop,
 )
 SERVER_NAME = "aicarmine-repo-symbol-index-mcp"
 SERVER_VERSION = "1.0.0"
@@ -525,15 +527,9 @@ def _tools() -> dict[str, ToolSpec]:
         ),
     )
     return tools
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
 def enum_string_prop(values: list[str]) -> dict[str, Any]:
     return {"type": "string", "enum": values}
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv[1:])
     tools = _tools()
