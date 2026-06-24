@@ -501,6 +501,9 @@ function Get-AICarmineMcpRoutingHint {
             [void]$lines.Add('- Do not manually calculate unified-diff hunk headers.')
             [void]$lines.Add('- Propagate change_set_id through validate and apply-check; apply only when explicitly authorized.')
             [void]$lines.Add('- Do not reconstruct whole files or create manual .diff transport files.')
+            [void]$lines.Add('- Before calling propose_edit, read the target file first to get actual working-tree content.')
+            [void]$lines.Add('- Use exact old_text from the actual file; do not guess or use stale anchors.')
+            [void]$lines.Add('- If anchor_not_found error occurs, re-read the file and retry with correct anchors.')
         }
         if ($readOnly) {
             [void]$lines.Add('- Read-only: validate and apply-check are allowed; do not call apply_patch or state-write tools.')
@@ -511,6 +514,10 @@ function Get-AICarmineMcpRoutingHint {
         }
         if ($reviewedProbe) {
             [void]$lines.Add('- Use the exact profile_id returned by probe_profiles before probe_run.')
+        }
+        if ($classes.Contains('repository_search') -and $normalized -match '\b(?:ast-grep|ast_grep)\b') {
+            [void]$lines.Add('- ast-grep patterns use sgtree syntax (e.g. "class $IDENTIFIER:", "def $FUNC($PARAMS) -> $RET:").')
+            [void]$lines.Add('- Do not use regex-like patterns; ast-grep uses its own pattern language with variable prefixes like $VAR.')
         }
 
         $hint = [string]::Join([Environment]::NewLine, $lines.ToArray())

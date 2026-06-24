@@ -15,16 +15,28 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from repo_mcp_common import (
-    ToolSpec,
-    handle_request,
-    health_payload,
-    integer_prop,
-    mcp_text_result,
-    object_schema,
-    serve,
-    string_prop,
-)
+try:
+    from services.codex_bridge.repo_mcp_common import (
+        ToolSpec,
+        handle_request,
+        health_payload,
+        integer_prop,
+        mcp_text_result,
+        object_schema,
+        serve,
+        string_prop,
+    )
+except ImportError:
+    from repo_mcp_common import (
+        ToolSpec,
+        handle_request,
+        health_payload,
+        integer_prop,
+        mcp_text_result,
+        object_schema,
+        serve,
+        string_prop,
+    )
 
 SERVER_NAME = "aicarmine-repo-code-mcp"
 SERVER_VERSION = "0.1.0-incubator"

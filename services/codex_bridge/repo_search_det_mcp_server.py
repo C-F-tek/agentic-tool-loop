@@ -10,16 +10,28 @@ import time
 from collections import OrderedDict
 from typing import Any
 
-from repo_mcp_common import (
-    ToolSpec,
-    health_payload,
-    integer_prop,
-    object_schema,
-    safe_int,
-    self_test,
-    serve,
-    string_prop,
-)
+try:
+    from services.codex_bridge.repo_mcp_common import (
+        ToolSpec,
+        health_payload,
+        integer_prop,
+        object_schema,
+        safe_int,
+        self_test,
+        serve,
+        string_prop,
+    )
+except ImportError:
+    from repo_mcp_common import (
+        ToolSpec,
+        health_payload,
+        integer_prop,
+        object_schema,
+        safe_int,
+        self_test,
+        serve,
+        string_prop,
+    )
 
 SERVER_NAME = "aicarmine-repo-search-det-mcp"
 SERVER_VERSION = "1.0.0"

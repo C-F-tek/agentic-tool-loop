@@ -1,4 +1,10 @@
-"""Planner evidence contract builder owner."""
+"""Planner evidence contract builder owner.
+
+Refactored using principles from PYTHON_REFACTORING_GUIDE.md:
+- Query helper for nested dict navigation (§8.4)
+- Flat code with early returns (§8.3)
+- Strategy pattern replacing if/elif chains (§5)
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,23 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
 from aicarmine_broker.planner_core.cache import CACHEABLE_READ_TOOLS
 from aicarmine_broker.application.shared.evidence_builder import BaseEvidenceBuilder
 
+# ---------------------------------------------------------------------------
+# Query helper for nested dictionary navigation (Guide §8.4)
+# ---------------------------------------------------------------------------
+
+def _get(d: dict, *keys: str, default: Any = None) -> Any:
+    """Safely navigate nested dictionaries."""
+    current: Any = d
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key, default)
+    return current
+
+
+# ---------------------------------------------------------------------------
+# Constants and configuration
+# ---------------------------------------------------------------------------
 
 POST_WRITE_VALIDATION_TOOLS = frozenset({
     "repo_validate",
@@ -41,68 +64,102 @@ _PREPLANNER_GOAL_CLASSES = frozenset({
     "generic",
 })
 
+# Goal class → deliverable description lookup table (Guide §4 - lookup table)
+_GOAL_DELIVERABLE_MAP = {
+    "apply_write": "apply/edit/fix/write",
+    "code_product_report": "report-only code product",
+    "code_security_analysis": "code/security repository analysis",
+    "repo_analysis": "repository analysis",
+    "analysis_only": "general answer with evidence",
+    "generic": "general answer with evidence",
+}
+
+
+# ---------------------------------------------------------------------------
+# Preplanner semantic intent extraction (Guide §8.3 - flat code with early returns)
+# ---------------------------------------------------------------------------
 
 def _preplanner_semantic_intent_from_orientation(
     initial_orientation_surface: Mapping[str, Any],
 ) -> dict[str, Any]:
+    """Extract preplanner semantic intent using nested dict query helper."""
     if not isinstance(initial_orientation_surface, Mapping):
         return {}
-    preplanner_rag = initial_orientation_surface.get("preplanner_rag")
+
+    # Navigate nested structure using query helper instead of deep nesting
+    preplanner_rag = _get(initial_orientation_surface, "preplanner_rag")
     if not isinstance(preplanner_rag, Mapping):
         return {}
-    ranking = preplanner_rag.get("ranking")
+
+    ranking = _get(preplanner_rag, "ranking")
     if not isinstance(ranking, Mapping):
         return {}
-    query_plan = ranking.get("query_plan")
+
+    query_plan = _get(ranking, "query_plan")
     if not isinstance(query_plan, Mapping):
         return {}
-    intent = query_plan.get("semantic_intent")
+
+    intent = _get(query_plan, "semantic_intent")
     if not isinstance(intent, Mapping):
         return {}
-    if str(intent.get("schema") or "") != "agentic_loop_preplanner_semantic_intent.v1":
+
+    # Validate schema contract
+    if str(_get(intent, "schema") or "") != "agentic_loop_preplanner_semantic_intent.v1":
         return {}
-    goal_class = str(intent.get("goal_class") or "").strip()
+
+    goal_class = str(_get(intent, "goal_class", default="")).strip()
     if goal_class not in _PREPLANNER_GOAL_CLASSES:
         return {}
+
     return {str(key): value for key, value in intent.items()}
 
+
+# ---------------------------------------------------------------------------
+# Semantic classification with preplanner intent (Guide §8.3 - flat code)
+# ---------------------------------------------------------------------------
 
 def _semantic_classification_with_preplanner_intent(
     fallback: Mapping[str, Any],
     preplanner_intent: Mapping[str, Any],
 ) -> dict[str, Any]:
+    """Classify goal using controlled preplanner semantic intent."""
     classification = dict(fallback if isinstance(fallback, Mapping) else {})
+
     if not isinstance(preplanner_intent, Mapping):
         return classification
-    if str(preplanner_intent.get("source") or "") != "planner_query_plan":
+
+    # Validate source contract
+    if str(_get(preplanner_intent, "source") or "") != "planner_query_plan":
         return classification
-    goal_class = str(preplanner_intent.get("goal_class") or "").strip()
+
+    goal_class = str(_get(preplanner_intent, "goal_class", default="")).strip()
     if goal_class not in _PREPLANNER_GOAL_CLASSES:
         return classification
 
+    # Derive contract class with guard clauses (Guide §8.3 - flat code)
     contract_class = goal_class
     if goal_class in {"repo_analysis", "generic"}:
         contract_class = "analysis_only"
-    code_product_requested = bool(preplanner_intent.get("code_product_requested"))
+
+    code_product_requested = bool(_get(preplanner_intent, "code_product_requested"))
     if goal_class == "code_product_report" and not code_product_requested:
         contract_class = "analysis_only"
+
     must_code_product = goal_class == "code_product_report" and code_product_requested
-    requires_security = bool(preplanner_intent.get("requires_code_security_coverage")) or (
+    requires_security = bool(_get(preplanner_intent, "requires_code_security_coverage")) or (
         goal_class == "code_security_analysis"
     )
-    requested = {
-        "apply_write": "apply/edit/fix/write",
-        "code_product_report": "report-only code product",
-        "code_security_analysis": "code/security repository analysis",
-        "repo_analysis": "repository analysis",
-        "analysis_only": "general answer with evidence",
-        "generic": "general answer with evidence",
-    }.get(goal_class, str(classification.get("requested_deliverable") or "general answer with evidence"))
+
+    # Use lookup table instead of inline dict (Guide §4)
+    requested = _GOAL_DELIVERABLE_MAP.get(
+        goal_class,
+        str(classification.get("requested_deliverable") or "general answer with evidence"),
+    )
 
     classification.update({
         "schema": "planner_goal_classification.v1",
         "class": contract_class,
-        "confidence": max(float(classification.get("confidence") or 0.0), 0.9),
+        "confidence": max(float(_get(classification, "confidence", default=0.0)) or 0.0, 0.9),
         "reason": "controlled preplanner semantic intent",
         "requested_deliverable": requested,
         "must_produce_code_product": must_code_product,
@@ -116,18 +173,23 @@ def _semantic_classification_with_preplanner_intent(
     return classification
 
 
+# ---------------------------------------------------------------------------
+# Goal request extraction helpers (Guide §8.3 - flat code)
+# ---------------------------------------------------------------------------
+
 def _goal_requests_code_product_from_semantics(
     *,
     fallback_value: bool,
     preplanner_intent: Mapping[str, Any],
 ) -> bool:
+    """Check if the goal requests a code product based on semantic intent."""
     if (
         isinstance(preplanner_intent, Mapping)
-        and str(preplanner_intent.get("source") or "") == "planner_query_plan"
+        and str(_get(preplanner_intent, "source") or "") == "planner_query_plan"
     ):
         return (
-            str(preplanner_intent.get("goal_class") or "").strip() == "code_product_report"
-            and preplanner_intent.get("code_product_requested") is True
+            str(_get(preplanner_intent, "goal_class", default="")).strip() == "code_product_report"
+            and _get(preplanner_intent, "code_product_requested") is True
         )
     return bool(fallback_value)
 
@@ -137,11 +199,12 @@ def _goal_requests_apply_from_semantics(
     fallback_value: bool,
     preplanner_intent: Mapping[str, Any],
 ) -> bool:
+    """Check if the goal requests apply/edit based on semantic intent."""
     if (
         isinstance(preplanner_intent, Mapping)
-        and str(preplanner_intent.get("source") or "") == "planner_query_plan"
+        and str(_get(preplanner_intent, "source") or "") == "planner_query_plan"
     ):
-        return str(preplanner_intent.get("goal_class") or "").strip() == "apply_write"
+        return str(_get(preplanner_intent, "goal_class", default="")).strip() == "apply_write"
     return bool(fallback_value)
 
 
@@ -663,7 +726,6 @@ class EvidenceBuilder(BaseEvidenceBuilder):
             or len(code_reads) >= code_security_read_required
         )
         repo_goal_class = str(semantic_classification.get("class") or "")
-        goal_low_for_audit = str(goal or "").lower()
         deep_repo_audit_goal = goal_requests_semantic_audit(goal)
         orientative_repo_final_goal = (
             repo_goal

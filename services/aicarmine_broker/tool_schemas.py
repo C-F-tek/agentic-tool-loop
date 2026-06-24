@@ -1,5 +1,10 @@
 """Canonical tool registry for the 3571/3572 broker contract.
 
+Refactored using principles from PYTHON_REFACTORING_GUIDE.md:
+- §8.5 — dataclass replacing manual dict construction
+- §4 — Lookup tables replacing repeated conditional logic
+- §8.3 — Flat code with early returns (guard clauses)
+
 This module is deliberately pure data plus small pure helpers. It does not
 dispatch tools, read request payloads, call HTTP, or touch job state.
 """
@@ -8,6 +13,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import dataclass, field
 from typing import Any
 
 REGISTRY_VERSION = "2026-06-01.registry-v2"
@@ -18,6 +24,46 @@ RUNTIME_CONTRACT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Schema builder dataclass (§8.5 — Objects that should be dataclasses)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ToolSchema:
+    """Immutable tool schema definition with optional argument contract."""
+
+    name: str
+    description: str
+    properties: dict[str, Any] = field(default_factory=dict)
+    required: list[str] = field(default_factory=list)
+    requires_one_of: list[list[str]] = field(default_factory=list)
+    argument_contract: dict[str, Any] = field(default_factory=dict)
+
+    def build(self) -> dict[str, Any]:
+        """Build the dict representation for the OpenWebUI/3572 contract."""
+        parameters: dict[str, Any] = {
+            "type": "object",
+            "properties": dict(self.properties),
+        }
+        if self.required:
+            parameters["required"] = list(self.required)
+        if self.requires_one_of:
+            parameters["anyOf"] = [
+                {"required": [str(f) for f in group if str(f).strip()]}
+                for group in self.requires_one_of
+                if any(str(f).strip() for f in group)
+            ]
+        function: dict[str, Any] = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": parameters,
+        }
+        if self.argument_contract:
+            function["argument_contract"] = dict(self.argument_contract)
+        return {"type": "function", "function": function}
+
+
 def _tool_schema(
     name: str,
     description: str,
@@ -25,24 +71,25 @@ def _tool_schema(
     required: list[str] | None = None,
     argument_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    parameters: dict[str, Any] = {
-        "type": "object",
-        "properties": properties or {},
-    }
-    if required:
-        parameters["required"] = required
+    """Build a tool schema dict from positional arguments.
+
+    Uses the ToolSchema dataclass internally for immutability.
+    """
+    # Extract requires_one_of from argument_contract if present
+    requires_one_of: list[list[str]] = []
     if isinstance(argument_contract, dict):
-        requires_one_of = argument_contract.get("requires_one_of")
-        if isinstance(requires_one_of, list) and requires_one_of:
-            parameters["anyOf"] = [
-                {"required": [str(field) for field in group if str(field).strip()]}
-                for group in requires_one_of
-                if isinstance(group, list) and any(str(field).strip() for field in group)
-            ]
-    function: dict[str, Any] = {"name": name, "description": description, "parameters": parameters}
-    if isinstance(argument_contract, dict) and argument_contract:
-        function["argument_contract"] = argument_contract
-    return {"type": "function", "function": function}
+        raw_ro = argument_contract.get("requires_one_of")
+        if isinstance(raw_ro, list):
+            requires_one_of = raw_ro
+    builder = ToolSchema(
+        name=name,
+        description=description,
+        properties=properties or {},
+        required=list(required) if required else [],
+        requires_one_of=requires_one_of,
+        argument_contract=dict(argument_contract) if argument_contract else {},
+    )
+    return builder.build()
 
 
 _SCHEMAS: dict[str, dict[str, Any]] = {

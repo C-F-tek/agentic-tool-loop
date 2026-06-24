@@ -10,23 +10,44 @@ import time
 from collections import OrderedDict
 from typing import Any
 
-from repo_mcp_common import (
-    ToolSpec,
-    health_payload,
-    integer_prop,
-    object_schema,
-    safe_int,
-    self_test,
-    serve,
-    string_prop,
-)
-from repo_probe_profiles import (
-    PROFILE_ORIENTATION_SELECTOR,
-    PROFILE_ORIENTATION_SHADOW_EVALUATOR,
-    PROFILE_ORIENTATION_SHADOW_HELPERS,
-    repo_probe_profiles,
-    repo_probe_run,
-)
+try:
+    from services.codex_bridge.repo_mcp_common import (
+        ToolSpec,
+        health_payload,
+        integer_prop,
+        object_schema,
+        safe_int,
+        self_test,
+        serve,
+        string_prop,
+    )
+except ImportError:
+    from repo_mcp_common import (
+        ToolSpec,
+        health_payload,
+        integer_prop,
+        object_schema,
+        safe_int,
+        self_test,
+        serve,
+        string_prop,
+    )
+try:
+    from services.codex_bridge.repo_probe_profiles import (
+        PROFILE_ORIENTATION_SELECTOR,
+        PROFILE_ORIENTATION_SHADOW_EVALUATOR,
+        PROFILE_ORIENTATION_SHADOW_HELPERS,
+        repo_probe_profiles,
+        repo_probe_run,
+    )
+except ImportError:
+    from repo_probe_profiles import (
+        PROFILE_ORIENTATION_SELECTOR,
+        PROFILE_ORIENTATION_SHADOW_EVALUATOR,
+        PROFILE_ORIENTATION_SHADOW_HELPERS,
+        repo_probe_profiles,
+        repo_probe_run,
+    )
 
 SERVER_NAME = "aicarmine-repo-validate-mcp"
 SERVER_VERSION = "1.1.0"
