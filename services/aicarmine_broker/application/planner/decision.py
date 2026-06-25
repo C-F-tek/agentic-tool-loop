@@ -577,20 +577,6 @@ def _raw_planner_text_has_valid_embedded_json_with_prose(text: str) -> bool:
     return False
 
 
-def _normalize_terminal_planner_decision(
-    decision: dict[str, Any]
-) -> dict[str, Any]:
-    """Normalize terminal planner decision."""
-    from ...import_refs import _resolve_lazy
-
-    # Import dependencies via registry
-    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
-    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
-    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
-
-    return decision
-
-
 def vulkan_repair_invalid_planner_decision(
     *,
     goal: str,
@@ -706,7 +692,7 @@ def controller_guard_result_for_validation(
 ) -> dict[str, Any]:
     """Build a controller_guard result from validation."""
     violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
-    contract = validation.get("evidence_contract") if isinstance(validation.get("evidence_contract"), dict) else {}
+    # NOTE: evidence_contract was read for potential error reporting but not used here
     required_continuation = (
         validation.get("required_prompt_context_continuation")
         if isinstance(validation.get("required_prompt_context_continuation"), dict)

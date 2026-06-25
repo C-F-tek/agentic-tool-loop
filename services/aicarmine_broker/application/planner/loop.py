@@ -31,6 +31,8 @@ from ..tool_surface.required_tool_call import (
 from .guard_evaluator import GuardEvaluator
 from .loop_controller import PlannerLoopController
 from .evidence_contract_manager import EvidenceContractManager
+from ...tool_dispatch import dispatch_tool
+from ...tool_contract import normalize_tool_name, sanitize_tool_args
 
 
 def evaluate_initial_orientation_shadow(
@@ -446,8 +448,7 @@ def evaluate_initial_orientation_shadow(
     unknown_ids = selector_result.get("unknown_candidate_ids", [])
     duplicate_ids = selector_result.get("duplicate_candidate_ids", [])
     duplicate_input_ids = selector_result.get("duplicate_input_candidate_ids", [])
-    ok_val = selector_result.get("ok")
-    status_val = selector_result.get("status", "")
+    # NOTE: ok_val and status_val were extracted but not used; selector_ok/status computed below
     confidence_raw = selector_result.get("confidence")
     if isinstance(confidence_raw, bool):
         confidence = None
@@ -744,7 +745,7 @@ def run_agentic_planner_job(
     _write_loop_turn_memory = deps["write_loop_turn_memory"]
     agent_job_root = deps["agent_job_root"]
     append_agent_event = deps["append_agent_event"]
-    build_runtime_debug_packet = deps["build_runtime_debug_packet"]
+    # build_runtime_debug_packet is accessed via loop_controller.build_runtime_debug_packet()
     compact_tool_result_for_planner = deps["compact_tool_result_for_planner"]
     controller_guard_count = deps["controller_guard_count"]
     controller_guard_result_for_validation = deps["controller_guard_result_for_validation"]
@@ -760,13 +761,6 @@ def run_agentic_planner_job(
     write_agent_job_state = deps["write_agent_job_state"]
     write_json = deps["write_json"]
 
-    from ...import_refs import _resolve_lazy
-
-    # Import dependencies via registry
-    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
-    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
-    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
-
     state = load_agent_job_state(job_id)
     if not state:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
@@ -775,13 +769,8 @@ def run_agentic_planner_job(
     max_steps = max(1, min(int(state.get("max_steps") or AGENT_DEFAULT_MAX_STEPS), AGENT_MAX_STEPS))
     support_subturns_used = 0
     support_semantic_turns_used = 0
-    support_semantic_steps_marked: set[int] = set()
-    support_subturn_tools = frozenset({
-        "planner_scratchpad_read",
-        "planner_scratchpad_write",
-        "runtime_sqlite_memory_search",
-        "runtime_sqlite_memory_write",
-    })
+    # NOTE: support_semantic_steps_marked and support_subturn_tools were initialized but not used;
+    # support_subturn logic now handled by loop_controller
     approval_mode = str(state.get("approval_mode") or "safe_write_lab")
     original_args = dict(state.get("original_args") or {})
     public_tool_name = str(state.get("public_tool_name") or "vulkan_helper")
@@ -797,7 +786,7 @@ def run_agentic_planner_job(
     # Instantiate extracted classes (Phase 1-3 refactoring)
     # ======================================================================
     guard_evaluator = GuardEvaluator(deps, config)
-    evidence_contract_manager = EvidenceContractManager()
+    # NOTE: evidence_contract_manager was instantiated but methods accessed via loop_controller
     loop_controller = PlannerLoopController(
         job_id=job_id,
         deps=deps,
@@ -1379,7 +1368,7 @@ def run_agentic_planner_job(
         memory_claim_guard = guard_evaluator.evaluate_memory_claim_guard(
             memory_claim_text=memory_claim_text,
             decision=decision,
-            validation=validation if 'validation' in dir() else {},
+            validation={},
             history=history,
             step=step,
             job_id=job_id,
@@ -2678,8 +2667,8 @@ def run_agentic_planner_job(
                     "ok": True,
                     "guard_type": "repeated_tool_call_guard",
                     "summary": "repeated_tool_call_guard",
-                    "tool": tool,
-                    "arguments": internal_args,
+                    "_tool": tool,
+                    "_arguments": internal_args,
                 },
             }
             loop_state.append_history_row(repeat_guard_row)
