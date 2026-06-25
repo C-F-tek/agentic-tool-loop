@@ -19,7 +19,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
-from aicarmine_broker.tool_contract import normalize_tool_name
+from aicarmine_broker.tool_contract import *
 
 logger = logging.getLogger(__name__)
 

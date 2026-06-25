@@ -6,6 +6,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+# Re-export from tool_contract for backward compatibility
+from ..prompt.tool_contract import (
+    available_tools_for_user_payload,
+    hard_budget_tool_shape_examples_for_prompt,
+    tool_shape_examples_for_prompt,
+)
+
 
 StorePromptTextWindow = Callable[..., dict[str, Any]]
 
@@ -64,3 +71,7 @@ def available_tools_window_pack(
             },
         }
     return payload
+
+
+# Local alias for planner imports that expect underscore-prefixed name
+_available_tools_window_pack = available_tools_window_pack

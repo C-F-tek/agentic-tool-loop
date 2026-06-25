@@ -6,8 +6,8 @@ import html
 import json
 from typing import Any
 
-from .job_html_assets import BASE_CSS, BASE_JS, PLANNER_LAB_EXTRA_CSS, PLANNER_LAB_JS
-from .job_store import list_agent_jobs
+from .job_html_assets import *
+from .job_store import *
 
 
 def _json_pretty(value: Any) -> str:

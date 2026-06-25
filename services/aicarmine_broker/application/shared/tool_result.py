@@ -29,12 +29,12 @@ class ToolResult:
     input_keys: list[str] = field(default_factory=list)
 
     @classmethod
-    def ok_result(cls, *, tool: str = "", summary: str = "", **kwargs: Any) -> cls:
-        return cls(ok=True, tool=tool, summary=summary, **kwargs)
+    def ok_result(cls_self, *, tool: str = "", summary: str = "", **kwargs: Any):
+        return cls_self(ok=True, tool=tool, summary=summary, **kwargs)
 
     @classmethod
-    def error_result(cls, *, tool: str = "", error: str = "", details: str = "", **kwargs: Any) -> cls:
-        return cls(
+    def error_result(cls_self, *, tool: str = "", error: str = "", details: str = "", **kwargs: Any):
+        return cls_self(
             ok=False,
             tool=tool,
             summary=error,
@@ -59,7 +59,7 @@ class PromptWindow:
     window_sha256: str = ""
 
     @classmethod
-    def from_full_text(cls, text: str, *, query: str = "", max_chars: int = 3000) -> cls:
+    def from_full_text(cls_self, text: str, *, query: str = "", max_chars: int = 3000):
         """Create a PromptWindow from full text with query-based positioning."""
         import hashlib
         import re
@@ -69,7 +69,7 @@ class PromptWindow:
         sha256 = hashlib.sha256(full.encode("utf-8", errors="replace")).hexdigest()
 
         if len(full) <= budget:
-            return cls(
+            return cls_self(
                 text=full,
                 window_start=0,
                 window_end=len(full),
@@ -94,7 +94,7 @@ class PromptWindow:
         start = max(0, end - budget)
         window = full[start:end]
 
-        return cls(
+        return cls_self(
             text=window,
             window_start=start,
             window_end=end,
@@ -119,8 +119,8 @@ class DiagnosticResult:
     error_preview: str = ""
 
     @classmethod
-    def from_exception(cls, exc: Exception, *, stage: str, db_path: str) -> cls:
-        return cls(
+    def from_exception(cls_self, exc: Exception, *, stage: str, db_path: str):
+        return cls_self(
             schema_version="runtime_sqlite_memory_diagnostic.v1",
             diagnostic_only=True,
             stage=stage,

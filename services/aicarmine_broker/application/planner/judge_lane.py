@@ -9,13 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping
 
-from .lane_authority import (
-    AIFigure,
-    JudgeDecision,
-    evaluate_judge_decision,
-    get_figure_instruction,
-    get_judge_suggestions,
-)
+from .lane_authority import *
 
 logger = logging.getLogger(__name__)
 
