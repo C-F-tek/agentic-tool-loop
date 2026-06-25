@@ -4,7 +4,7 @@ import threading
 
 from .env_loader import *
 from .models import *
-from ..application.evidence.final_quality import _ALLOWED_FINAL_QUALITY_ROUTE_TOOLS as FINAL_QUALITY_ROUTE_TOOLS
+from ..application.evidence.final_quality import *
 from ..tool_registry import *
 
 __all__ = [
@@ -106,7 +106,7 @@ __all__ = [
     "VALID_INTERNAL_TOOLS_PROMPT_EXCLUDING_VULKAN",
     "WRITE_GUARDED_TOOLS",
     "CODE_PRODUCT_BUILD_STATE_KIND",
-    "FINAL_QUALITY_ROUTE_TOOLS",
+    "_ALLOWED_FINAL_QUALITY_ROUTE_TOOLS",
 ]
 
 

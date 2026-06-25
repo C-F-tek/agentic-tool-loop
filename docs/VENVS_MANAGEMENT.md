@@ -74,11 +74,11 @@ Ogni venv mantiene le proprie dipendenze. Usa il corrispondente pip executable:
 
 ```powershell
 # Installa nel venv corretto
-& venfs/labtools/Scripts/pip.exe install <package>
-& venfs/codeinterpreter/Scripts/pip.exe install <package>
-& venfs/executor/Scripts/pip.exe install <package>
-& venfs/openwebui/Scripts/pip.exe install <package>
-& venfs/openvino/Scripts/pip.exe install <package>
+& venvs/labtools/Scripts/pip.exe install <package>
+& venvs/codeinterpreter/Scripts/pip.exe install <package>
+& venvs/executor/Scripts/pip.exe install <package>
+& venvs/openwebui/Scripts/pip.exe install <package>
+& venvs/openvino/Scripts/pip.exe install <package>
 ```
 
 ### Pacchetto aicarmine-services
@@ -98,6 +98,10 @@ dependencies = [
 ```
 
 Vedi [services/pyproject.toml](../services/pyproject.toml) per la lista completa delle dipendenze.
+
+**Nota:** Il file `services/pyproject.toml` include anche le configurazioni ruff:
+- `line-length = 120`
+- `ignore = ["F405", "F811"]` per tollerare star imports e ridefinizioni da wrapper pattern
 
 ## Verifica Ambiente
 
@@ -177,13 +181,13 @@ Lo script rileva automaticamente il venv corretto esaminando l'esecutibile Pytho
 **Soluzione:** Assicurati che `aicarmine-services` sia installato nel venv corrente:
 
 ```powershell
-& venfs/labtools/Scripts/pip.exe list | Select-String "aicarmine-services"
+& venvs/labtools/Scripts/pip.exe list | Select-String "aicarmine-services"
 ```
 
 Se non presente, installalo:
 
 ```powershell
-& venfs/labtools/Scripts/pip.exe install -e ../services
+& venvs/labtools/Scripts/pip.exe install -e ../services
 ```
 
 ### Problema: Package già installato ma import fallisce
@@ -194,9 +198,20 @@ Se non presente, installalo:
 
 **Soluzione:** Esegui `.\activate-venv.ps1 -auto` prima di lanciare Python. Questo imposta `PYTHONPATH` al percorso del venv attivo.
 
+### Problema: AttributeError: module 'aicarmine_broker.config.compatibility' has no attribute 'FINAL_QUALITY_ROUTE_TOOLS'
+
+**Causa:** Il simbolo `FINAL_QUALITY_ROUTE_TOOLS` era elencato in `__all__` ma non importato dalla sorgente.
+
+**Soluzione:** La correzione è stata applicata in `services/aicarmine_broker/config/compatibility.py`:
+```python
+from ..application.evidence.final_quality import _ALLOWED_FINAL_QUALITY_ROUTE_TOOLS as FINAL_QUALITY_ROUTE_TOOLS
+```
+Se l'errore persiste, riavvia il broker process dopo aver aggiornato il file.
+
 ## Vedi Anche
 
 - [README.md](../README.md) - Sezione su venv
 - [.venvmapping.env](.venvmapping.env) - Mappatura dettagliata
 - [activate-venv.ps1](activate-venv.ps1) - Script di attivazione
 - [services/pyproject.toml](../services/pyproject.toml) - Dipendenze condivise
+- [REFACTORING_STATUS_CURRENT.md](./REFACTORING_STATUS_CURRENT.md) - Stato attuale refactoring

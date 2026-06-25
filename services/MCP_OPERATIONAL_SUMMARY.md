@@ -1,9 +1,9 @@
 # MCP Operational Summary & Complete Tool Inventory
 
-**Date:** 2026-06-25  
+**Date:** 2026-06-26  
 **Repository:** c:/Users/carmi/AI (agentic-tool-loop)  
 **Status:** Test/Debug phase — not production  
-**Last Updated:** 2026-06-25T13:45Z — Deep scan of all MCP server source files completed
+**Last Updated:** 2026-06-26T00:15Z — All known issues resolved, documents updated
 
 ---
 
@@ -11,7 +11,7 @@
 
 Extracted via `Select-String -Pattern 'tools\["[^"]+"\]' *.py` across all MCP servers in `services/codex_bridge/`.
 
-### 1.1 Complete Tool Inventory by Server (24 servers, 87 tools)
+### 1.1 Complete Tool Inventory by Server (24 servers, 87+ tools)
 
 #### agentic_loop_client (7 tools)
 | # | Tool Name |
@@ -198,7 +198,7 @@ Extracted via `Select-String -Pattern 'tools\["[^"]+"\]' *.py` across all MCP se
 | 7 | `git_list_tracked_files` |
 | 8 | `refactor_health` |
 
-#### codex_ops (7 tools)
+#### codex_ops (9 tools)
 | # | Tool Name |
 |---|-----------|
 | 1 | `aicarmine_codex_ops_health` |
@@ -210,8 +210,6 @@ Extracted via `Select-String -Pattern 'tools\["[^"]+"\]' *.py` across all MCP se
 | 7 | `aicarmine_service_state_processes` |
 | 8 | `aicarmine_service_state_logs` |
 | 9 | `aicarmine_service_state_snapshot` |
-
-**Note:** codex_ops actually has 9 tools (not 7 as previously documented). The `aicarmine_service_state_*` tools are part of codex_ops server.
 
 ### 1.2 Formatting Servers (5 servers, tools not probed — use Cline built-in names)
 
@@ -225,14 +223,15 @@ Extracted via `Select-String -Pattern 'tools\["[^"]+"\]' *.py` across all MCP se
 
 ---
 
-## 2. Known Issues
-
-All known issues have been resolved (2026-06-25).
+## 2. Known Issues — All Resolved (2026-06-26)
 
 | Issue | Status | Fix Applied |
 |-------|--------|-------------|
 | `project_memory` health failed | ✅ Fixed | `_path_is_under` → `path_is_under` (imported from repo_mcp_common) |
 | `rag` had no health tool | ✅ Fixed | Added `aicarmine_rag_health` to TOOL_SCHEMAS and handlers dict |
+| `compatibility.py` missing FINAL_QUALITY_ROUTE_TOOLS | ✅ Fixed | Added explicit import from `..application.evidence.final_quality` |
+| `planner.py` E402 scattered imports | ✅ Fixed | Moved all imports to top block, removed duplicate star imports |
+| `tool_result.py` F821 undefined cls in slots=True dataclass | ✅ Fixed | Renamed `cls` → `cls_self` in factory methods |
 
 ---
 
@@ -258,19 +257,17 @@ All shared stdio MCP helpers centralized here: `json_dumps()`, `compact_text()`,
 
 ---
 
-## 5. Completed Fixes (2026-06-25)
+## 5. Recent Fixes (2026-06-26)
 
-1. ✅ **Fixed `project_memory` health** — `_path_is_under` → `path_is_under` (imported from repo_mcp_common)
-2. ✅ **Added `aicarmine_rag_health`** — Added to TOOL_SCHEMAS and handlers dict in rag_mcp_server.py
-3. ✅ **Updated INSTRUCTIONS string** — Now mentions all 4 tools including health
+1. ✅ **Fixed `compatibility.py` FINAL_QUALITY_ROUTE_TOOLS** — Added explicit import from `..application.evidence.final_quality`
+2. ✅ **Fixed `planner.py` E402 scattered imports** — Moved all imports to top block, removed duplicate star imports
+3. ✅ **Fixed `tool_result.py` F821 undefined cls** — Renamed `cls` → `cls_self` in slots=True dataclass factory methods
+4. ✅ **Created `docs/REFACTORING_STATUS_CURRENT.md`** — Complete refactoring status document with module structure, code references, and verification results
+5. ✅ **Updated `docs/VENVS_MANAGEMENT.md`** — Fixed `venfs/` → `venvs/` typo, added FINAL_QUALITY_ROUTE_TOOLS troubleshooting section, added ruff configuration note
 
-## 6. Completed Fixes (2026-06-25)
+---
 
-1. ✅ **Fixed `project_memory` health** — `_path_is_under` → `path_is_under` (imported from repo_mcp_common)
-2. ✅ **Added `aicarmine_rag_health`** — Added to TOOL_SCHEMAS and handlers dict in rag_mcp_server.py
-3. ✅ **Updated INSTRUCTIONS string** — Now mentions all 4 tools including health
-
-## 7. Formatting Servers Status
+## 6. Formatting Servers Status
 
 All 5 formatting servers confirmed as **Cline built-in tool wrappers** (no MCP tool definitions):
 
