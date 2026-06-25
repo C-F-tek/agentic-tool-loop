@@ -237,6 +237,190 @@ class ToolSpec:
     public_3571_visible: bool = False
 
 
+# ---------------------------------------------------------------------------
+# From repo_tools.py (9 dataclasses for deterministic repo tool returns)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RepoSearchResult:
+    """Unified result shape for fd/rg/ast-grep style search tools."""
+
+    ok: bool
+    tool: str
+    path: str = "."
+    pattern: str = ""
+    extension: str = ""
+    kind: str = ""
+    lang: str = ""
+    rewrite_dry_run: bool = False
+    rewrite: str | None = None
+    limit: int = 0
+    count: int = 0
+    matches: tuple[Any, ...] = ()
+    truncated: bool = False
+    returncode: int | None = None
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+    diagnostic: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoJqResult:
+    """Result shape for jq JSON-query tools."""
+
+    ok: bool
+    tool: str = "repo_jq_query"
+    query: str = ""
+    path: str | None = None
+    returncode: int | None = None
+    stdout: str = ""
+    parsed_json: Any = None
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoTreeSitterResult:
+    """Result shape for tree-sitter AST parsing."""
+
+    ok: bool
+    tool: str = "repo_tree_sitter_parse"
+    path: str = "."
+    language: str = "python"
+    root_type: str = ""
+    has_error: bool = False
+    anchors: tuple[dict[str, Any], ...] = ()
+    anchors_total: int = 0
+    truncated: bool = False
+    artifact: str = ""
+    error: str | None = None
+    error_type: str | None = None
+    message: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoPatchResult:
+    """Result shape for unified-diff / git-apply-check validation."""
+
+    ok: bool
+    tool: str = "repo_unidiff_validate"
+    file_count: int = 0
+    files: tuple[dict[str, Any], ...] = ()
+    errors: tuple[str, ...] = ()
+    artifact: str = ""
+    error: str | None = None
+    error_type: str | None = None
+    message: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoGitApplyResult:
+    """Result shape for git apply --check dry-run."""
+
+    ok: bool
+    tool: str = "repo_git_apply_check"
+    returncode: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    patch_application_performed: bool = False
+    source_writes_performed: bool = False
+    artifact: str = ""
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoLintResult:
+    """Result shape for ruff / pyright / shellcheck linters."""
+
+    ok: bool
+    tool: str = "repo_ruff_check"
+    paths: tuple[str, ...] = ()
+    returncode: int | None = None
+    diagnostics: tuple[dict[str, Any], ...] = ()
+    diagnostics_total: int = 0
+    truncated: bool = False
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+    result: Any = None
+
+
+@dataclass(frozen=True)
+class RepoTestResult:
+    """Result shape for pytest execution."""
+
+    ok: bool
+    tool: str = "repo_pytest_run"
+    paths: tuple[str, ...] = ()
+    returncode: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoSymbolResult:
+    """Result shape for ctags symbol extraction."""
+
+    ok: bool
+    tool: str = "repo_ctags_symbols"
+    paths: tuple[str, ...] = ()
+    returncode: int | None = None
+    symbols: tuple[dict[str, Any], ...] = ()
+    symbols_total: int = 0
+    truncated: bool = False
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoSemgrepResult:
+    """Result shape for semgrep security scan."""
+
+    ok: bool
+    tool: str = "repo_semgrep_scan"
+    paths: tuple[str, ...] = ()
+    pattern: str = ""
+    config: str | None = None
+    lang: str | None = None
+    returncode: int | None = None
+    results: tuple[dict[str, Any], ...] = ()
+    results_total: int = 0
+    truncated: bool = False
+    errors: tuple[Any, ...] = ()
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class RepoBenchmarkResult:
+    """Result shape for hyperfine benchmark execution."""
+
+    ok: bool
+    tool: str = "repo_hyperfine_benchmark"
+    runs: int = 0
+    warmup: int = 0
+    commands: tuple[str, ...] = ()
+    returncode: int | None = None
+    result: Any = None
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    artifact: str = ""
+    error: str | None = None
+    needs_consent: bool = False
+    max_commands: int = 0
+    command: str | None = None
+
+
 __all__: list[str] = [
     "mapping_field_diagnostics",
     # config
@@ -256,4 +440,15 @@ __all__: list[str] = [
     "ValidationResult",
     # tool
     "ToolSpec",
+    # repo_tools
+    "RepoSearchResult",
+    "RepoJqResult",
+    "RepoTreeSitterResult",
+    "RepoPatchResult",
+    "RepoGitApplyResult",
+    "RepoLintResult",
+    "RepoTestResult",
+    "RepoSymbolResult",
+    "RepoSemgrepResult",
+    "RepoBenchmarkResult",
 ]

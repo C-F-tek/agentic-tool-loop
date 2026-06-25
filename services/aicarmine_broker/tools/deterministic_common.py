@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -70,40 +71,74 @@ def winget_package_executable(package_prefix: str, executable_name: str) -> Path
     return None
 
 
-EXE_FALLBACKS: dict[str, list[Path]] = {
-    "ctags": [
-        candidate
-        for candidate in [
-            winget_package_executable("UniversalCtags.Ctags", "ctags.exe"),
-        ]
-        if candidate is not None
-    ],
-    "shellcheck": [
-        candidate
-        for candidate in [
-            winget_package_executable("koalaman.shellcheck", "shellcheck.exe"),
-        ]
-        if candidate is not None
-    ],
-    "hyperfine": [
-        candidate
-        for candidate in [
-            winget_package_executable("sharkdp.hyperfine", "hyperfine.exe"),
-        ]
-        if candidate is not None
-    ],
-    "ruff": [active_venv_script("ruff")],
-    "pyright": [active_venv_script("pyright")],
-    "pytest": [active_venv_script("pytest")],
-    "semgrep": [active_venv_script("semgrep")],
-}
+@dataclass(frozen=True)
+class ExeFallbacks:
+    """Executable fallback registry for deterministic tools.
+
+    Replaces the EXE_FALLBACKS dict with a typed, immutable dataclass.
+    Provides OOP structure for executable resolution.
+    """
+    ctags: tuple[Path, ...] = ()
+    shellcheck: tuple[Path, ...] = ()
+    hyperfine: tuple[Path, ...] = ()
+    ruff: tuple[Path, ...] = ()
+    pyright: tuple[Path, ...] = ()
+    pytest: tuple[Path, ...] = ()
+    semgrep: tuple[Path, ...] = ()
+
+    @classmethod
+    def build(cls) -> "ExeFallbacks":
+        """Build ExeFallbacks from active venv and winget packages."""
+        return cls(
+            ctags=tuple(
+                c for c in [
+                    winget_package_executable("UniversalCtags.Ctags", "ctags.exe"),
+                ]
+                if c is not None
+            ),
+            shellcheck=tuple(
+                c for c in [
+                    winget_package_executable("koalaman.shellcheck", "shellcheck.exe"),
+                ]
+                if c is not None
+            ),
+            hyperfine=tuple(
+                c for c in [
+                    winget_package_executable("sharkdp.hyperfine", "hyperfine.exe"),
+                ]
+                if c is not None
+            ),
+            ruff=(active_venv_script("ruff"),),
+            pyright=(active_venv_script("pyright"),),
+            pytest=(active_venv_script("pytest"),),
+            semgrep=(active_venv_script("semgrep"),),
+        )
+
+    def get(self, name: str) -> tuple[Path, ...]:
+        """Get fallback paths for a tool name."""
+        normalized = str(name or "").strip().lower()
+        attr = getattr(self, normalized, ())
+        return attr if isinstance(attr, tuple) else ()
+
+
+EXE_FALLBACKS: ExeFallbacks | None = None
+
+
+def _get_exe_fallbacks() -> ExeFallbacks:
+    """Lazy singleton for ExeFallbacks."""
+    global EXE_FALLBACKS
+    if EXE_FALLBACKS is None:
+        EXE_FALLBACKS = ExeFallbacks.build()
+    return EXE_FALLBACKS
 
 
 def resolve_deterministic_executable(name: str) -> str | None:
     normalized = str(name or "").strip()
     if not normalized:
         return None
-    for candidate in EXE_FALLBACKS.get(normalized.lower(), []):
+    fallbacks = _get_exe_fallbacks()
+    candidates = fallbacks.get(normalized)
+    for candidate in candidates:
         if candidate and candidate.exists():
             return str(candidate)
     found = shutil.which(normalized)
