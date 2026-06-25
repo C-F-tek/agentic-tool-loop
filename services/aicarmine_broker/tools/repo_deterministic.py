@@ -11,6 +11,7 @@ from aicarmine_broker.domain.models import (
     RepoGitApplyResult,
     RepoJqResult,
     RepoLintResult,
+    RepoPatchResult,
     RepoSearchResult,
     RepoSemgrepResult,
     RepoSymbolResult,
@@ -23,7 +24,6 @@ from aicarmine_broker.tools.deterministic_common import (
     TOOL_RESULT_ITEMS_LIMIT as _TOOL_RESULT_ITEMS_LIMIT,
     bounded_int_arg as _bounded_int_arg,
     deterministic_input_error as _deterministic_input_error,
-    deterministic_tool_missing as _deterministic_tool_missing,
     parse_json_output as _parse_json_output,
     repo_existing_path as _repo_existing_path,
     repo_existing_paths as _repo_existing_paths,
@@ -157,7 +157,8 @@ def repo_rg_search(args: dict[str, Any], root: Path) -> RepoSearchResult:
         stderr_tail=result["stderr_tail"],
     )
     if not ok_value:
-        payload = payload.__class__(**payload.__dict__, error="ripgrep_failed", diagnostic=result.get("stderr_tail") or result.get("error") or "")
+        diag_val = result.get("stderr_tail") or result.get("error") or ""
+        payload = payload.__class__(**payload.__dict__, error="ripgrep_failed", diagnostic=diag_val)
         if result.get("timed_out"):
             payload = payload.__class__(**payload.__dict__, error="timeout")
     artifact = _write_tool_artifact(root, "repo_rg_search", payload.__dict__)
@@ -257,7 +258,12 @@ def repo_ast_grep_search(args: dict[str, Any], root: Path) -> RepoSearchResult:
 
 def repo_ast_grep_dry_run(args: dict[str, Any], root: Path) -> RepoSearchResult:
     payload = repo_ast_grep_search(args, root)
-    payload = payload.__class__(**payload.__dict__, tool="repo_ast_grep_dry_run", dry_run=True, source_writes_performed=False, patch_application_performed=False)
+    extra = payload.__dict__
+    extra["tool"] = "repo_ast_grep_dry_run"
+    extra["dry_run"] = True
+    extra["source_writes_performed"] = False
+    extra["patch_application_performed"] = False
+    payload = payload.__class__(**extra)
     artifact = _write_tool_artifact(root, "repo_ast_grep_dry_run", payload.__dict__)
     payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
     return payload
@@ -270,10 +276,21 @@ def repo_tree_sitter_parse(args: dict[str, Any], root: Path) -> RepoTreeSitterRe
         Language = tree_sitter.Language
         Parser = tree_sitter.Parser
     except Exception as exc:
-        return RepoTreeSitterResult(ok=False, tool="repo_tree_sitter_parse", error="tree_sitter_dependency_missing", error_type=type(exc).__name__, message=str(exc))
+        return RepoTreeSitterResult(
+            ok=False,
+            tool="repo_tree_sitter_parse",
+            error="tree_sitter_dependency_missing",
+            error_type=type(exc).__name__,
+            message=str(exc),
+        )
     language = str(args.get("language") or args.get("lang") or "python").strip().lower()
     if language != "python":
-        return RepoTreeSitterResult(ok=False, tool="repo_tree_sitter_parse", error="unsupported_tree_sitter_language", language=language)
+        return RepoTreeSitterResult(
+            ok=False,
+            tool="repo_tree_sitter_parse",
+            error="unsupported_tree_sitter_language",
+            language=language,
+        )
     try:
         rel, full = _repo_existing_path(args.get("path"))
     except Exception as exc:
@@ -326,7 +343,13 @@ def repo_unidiff_validate(args: dict[str, Any], root: Path) -> RepoPatchResult:
     try:
         from unidiff import PatchSet
     except Exception as exc:
-        return RepoPatchResult(ok=False, tool="repo_unidiff_validate", error="unidiff_dependency_missing", error_type=type(exc).__name__, message=str(exc))
+        return RepoPatchResult(
+            ok=False,
+            tool="repo_unidiff_validate",
+            error="unidiff_dependency_missing",
+            error_type=type(exc).__name__,
+            message=str(exc),
+        )
     diff_text = args.get("unified_diff") or args.get("diff")
     if not isinstance(diff_text, str) or not diff_text.strip():
         return RepoPatchResult(ok=False, tool="repo_unidiff_validate", error="missing_unified_diff")
@@ -608,7 +631,12 @@ def repo_hyperfine_benchmark(
     exe = _resolve_deterministic_executable("hyperfine")
     if not exe:
         return RepoBenchmarkResult(ok=False, tool="repo_hyperfine_benchmark", error="missing_hyperfine")
-    commands = [str(cmd).strip() for cmd in args.get("commands", []) if str(cmd).strip()] if isinstance(args.get("commands"), list) else []
+    cmds_raw = args.get("commands", [])
+    commands = (
+        [str(cmd).strip() for cmd in cmds_raw if str(cmd).strip()]
+        if isinstance(cmds_raw, list)
+        else []
+    )
     if not commands:
         return RepoBenchmarkResult(ok=False, tool="repo_hyperfine_benchmark", error="missing_commands")
     if len(commands) > 4:
