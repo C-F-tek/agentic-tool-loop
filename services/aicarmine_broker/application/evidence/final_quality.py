@@ -490,58 +490,6 @@ def _known_repo_dirs(paths: set[str]) -> set[str]:
     return dirs
 
 
-def _route_token_is_prose_or_metric(value: Any) -> bool:
-    token = str(value or "").strip()
-    if not token:
-        return True
-    lowered = token.lower()
-    if lowered in {
-        "ridondanze/rischi",
-        "docs/config",
-        "planner/final-quality",
-        "planner/controller rejection paths",
-    }:
-        return True
-    if any(sep in lowered for sep in (":\\", "://")):
-        return True
-    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
-    if "/" in lowered and compact.isdigit():
-        return True
-    if " " in token and not any(
-        lowered.endswith(suffix)
-        for suffix in (".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt")
-    ):
-        return True
-    return False
-
-
-def _search_query_is_concrete(value: Any) -> bool:
-    text = str(value or "").strip()
-    if not text or len(text) > 260:
-        return False
-    lowered = text.lower()
-    if lowered in {
-        "docs/config",
-        "ridondanze/rischi",
-        "8/2",
-        "8/8",
-        "9/9",
-        "planner/controller rejection paths",
-    }:
-        return False
-    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
-    if "/" in lowered and compact.isdigit():
-        return False
-    useful_tokens = [
-        token
-        for token in lowered.replace(",", " ").replace(";", " ").split()
-        if len(token) >= 3 and "/" not in token and any(ch.isalpha() for ch in token)
-    ]
-    if "/" in lowered and len(useful_tokens) < 2:
-        return False
-    return bool(useful_tokens)
-
-
 def _record_invalid_required_next_tool_call(
     diagnostics: dict[str, Any] | None,
     *,
