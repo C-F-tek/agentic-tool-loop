@@ -4,7 +4,7 @@ import threading
 
 from .env_loader import *
 from .models import *
-from ..application.evidence.final_quality import *
+from ..application.evidence.final_quality import _ALLOWED_FINAL_QUALITY_ROUTE_TOOLS as FINAL_QUALITY_ROUTE_TOOLS
 from ..tool_registry import *
 
 __all__ = [
