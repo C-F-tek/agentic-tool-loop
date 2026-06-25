@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .application.tool_surface.dispatcher import DispatchRequest, build_default_dispatcher
+from .dispatcher import DispatchRequest, build_default_dispatcher
 
 
 def dispatch_tool(

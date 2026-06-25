@@ -31,7 +31,7 @@ from ..tool_surface.required_tool_call import (
 from .guard_evaluator import GuardEvaluator
 from .loop_controller import PlannerLoopController
 from .evidence_contract_manager import EvidenceContractManager
-from ...tool_dispatch import dispatch_tool
+from ..tool_surface.tool_dispatch import dispatch_tool
 from ...tool_contract import normalize_tool_name, sanitize_tool_args
 
 

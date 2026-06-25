@@ -70,7 +70,7 @@ from .job_store import (
     write_agent_job_state,
     write_json,
 )
-from .memory_tools import (
+from .application.shared.memory_tools import (
     planner_composed_answer,
     planner_memory_surface,
     planner_prompt_context_store_window,
@@ -78,7 +78,7 @@ from .memory_tools import (
 )
 from .code_edit_proposal_contract import validate_unified_diff_text
 from .planner_intrinsic_context import build_planner_intrinsic_context
-from .repo_tools import safe_rel_path
+from .infrastructure.repo_tools import safe_rel_path
 from .planner_core.json_io import (
     _parse_strict_json_object,
     parse_strict_json_object_diagnostics,

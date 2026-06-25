@@ -53,7 +53,7 @@ def _memory_db(root: Path) -> Path:
 
 
 def _db_allowed(db_path: Path, root: Path) -> bool:
-    return _path_is_under(db_path, root)
+    return path_is_under(db_path, root)
 
 
 def _connect(root: Path, *, create: bool) -> sqlite3.Connection | None:
@@ -257,7 +257,7 @@ def _source_file_resolution(root: Path, source_ref: str) -> tuple[Path | None, d
             "error_type": type(exc).__name__,
             "message_preview": _diagnostic_preview(exc, 500),
         }
-    if not _path_is_under(resolved, root):
+    if not path_is_under(resolved, root):
         return None, {
             "error": "source_file_outside_repo",
             "source_ref": source_ref,

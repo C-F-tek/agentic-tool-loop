@@ -176,7 +176,7 @@ def _agentic_tool_allowed(
 
     # repo_command has an additional safety gate beyond write-guard
     if tool == "repo_command":
-        from .repo_tools import dangerous_command  # noqa: PLC0415
+        from .infrastructure.repo_tools import dangerous_command  # noqa: PLC0415
         if mode in readonly_modes and dangerous_command(
             str(args.get("command") or "")
         ):

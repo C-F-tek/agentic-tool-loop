@@ -93,7 +93,7 @@ The skill is the detailed operational authority for MCP routing, project memory,
 
 ## Available MCP Servers 
 
-The following 20 MCP servers are configured in this workspace:
+The following 25 MCP servers are configured in this workspace:
 
 ### Core Repository Tools
 | Server | Script | Tools | Purpose |
@@ -109,6 +109,7 @@ The following 20 MCP servers are configured in this workspace:
 | `aicarmine_rag` | rag_mcp_server.py | 3 | RAG search, index management, reindexing |
 | `aicarmine_sqlite_readonly` | sqlite_readonly_mcp_server.py | 4 | Query, schema, list databases |
 | `aicarmine_project_memory` | project_memory_mcp_server.py | 7 | Search, get, upsert, mark_stale, supersede |
+| `aicarmine_index_bridge` | index_bridge_mcp_server.py | 5 | Cross-reference RAG + Symbol Index, unified search, persistent memory |
 
 ### Job & Artifact Tools
 | Server | Script | Tools | Purpose |
@@ -120,11 +121,10 @@ The following 20 MCP servers are configured in this workspace:
 ### Operations & Discovery Tools
 | Server | Script | Tools | Purpose |
 |--------|--------|-------|---------|
-| `aicarmine_codex_ops` | ops_mcp_server.py | 7 | MCP inventory probe, service state snapshot |
+| `aicarmine_codex_ops` | ops_mcp_server.py | 9 | MCP inventory probe, service state snapshot, ports, processes, logs |
 | `aicarmine_repo_symbol_index` | repo_symbol_index_mcp_server.py | 4 | Symbol indexing, query, summary |
 | `aicarmine_test_discovery` | test_discovery_mcp_server.py | 5 | Discover patterns, find uncovered, generate scaffolds |
 | `aicarmine_code_dep_graph` | code_dep_graph_mcp_server.py | 7 | Build dep graph, find chains, detect cycles, callers, dependents, breakage risk |
-| `aicarmine_index_bridge` | index_bridge_mcp_server.py | 5 | Cross-reference RAG + Symbol Index, unified search, persistent memory |
 
 ### Refactoring Tools
 | Server | Script | Tools | Purpose |
@@ -138,7 +138,18 @@ The following 20 MCP servers are configured in this workspace:
 | `aicarmine_agentic_loop_client` | agentic_loop_client_mcp_server.py | 7 | Agentic loop client with port 3579 |
 | `aicarmine_ollama_subagent` | ollama_subagent_mcp_server.py | 4 | Ollama subagent with GPU (port 11435) |
 
+### Formatting & Linting Tools
+| Server | Script | Tools | Purpose |
+|--------|--------|-------|---------|
+| `aicarmine_prettier` | prettier_mcp_server.py | ? | Prettier JS/CSS/MD formatter |
+| `aicarmine_biome` | biome_mcp_server.py | ? | Biome JS/TS linter/formatter |
+| `aicarmine_ruff` | ruff_mcp_server.py | ? | Ruff Python linter |
+| `aicarmine_eslint` | eslint_mcp_server.py | ? | ESLint JS linter |
+| `aicarmine_black` | black_mcp_server.py | ? | Black Python formatter |
+
 The static allowlist is maintained in `services/codex_bridge/ops_mcp_server.py` (`LOCAL_MCP_SERVERS`).
+
+**Full inventory:** See `services/MCP_OPERATIONAL_SUMMARY.md` for complete tool lists, health status, and known issues.
 
 ## Refactoring MCP Skill
 

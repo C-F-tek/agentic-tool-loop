@@ -109,6 +109,10 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 }
             )
 
+    # Build structured result using ToolResult dataclass
+    success_count = sum(1 for item in items if isinstance(item, dict) and item.get("ok") is True)
+    failed_count = sum(1 for item in items if isinstance(item, dict) and item.get("ok") is False)
+
     if not paths:
         payload = {
             "ok": False,
@@ -119,8 +123,6 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "input_keys": sorted(str(k) for k in args.keys()),
         }
     else:
-        success_count = sum(1 for item in items if isinstance(item, dict) and item.get("ok") is True)
-        failed_count = sum(1 for item in items if isinstance(item, dict) and item.get("ok") is False)
         payload = {
             "ok": success_count > 0,
             "tool": "repo_read",
@@ -132,5 +134,6 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "all_ok": bool(items) and success_count == len(items),
             "items": items,
         }
+
     write_json(root / "tool-results" / f"{now()}-repo_read.json", payload)
     return payload

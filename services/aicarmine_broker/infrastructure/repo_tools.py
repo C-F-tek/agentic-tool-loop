@@ -12,17 +12,18 @@ Do not add new tool behavior here.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from .config import (
+from ..config import (
     COMMAND_TIMEOUT_SECONDS,
     LAB_REPO,
     MAX_TOOL_RESULT_CHARS,
 )
-from .infrastructure.result_compaction import compact as _compact
-from .infrastructure.filesystem_repo import safe_rel_path
-from .tools.command_safety import dangerous_command
-from .tools.repo_deterministic import (
+from ..infrastructure.result_compaction import compact as _compact
+from ..infrastructure.filesystem_repo import safe_rel_path
+from ..tools.command_safety import dangerous_command
+from ..tools.repo_deterministic import (
     repo_ast_grep_dry_run,
     repo_ast_grep_search,
     repo_ctags_symbols,
@@ -39,18 +40,17 @@ from .tools.repo_deterministic import (
     repo_tree_sitter_parse,
     repo_unidiff_validate,
 )
-from .tools.powershell_runner import run_ps as _tool_run_ps
-from .tools.repo_code_product import repo_propose_code_edit
-from .tools.repo_command import repo_command
-from .tools.repo_list_files import repo_list_files
-from .tools.repo_patch import repo_apply_patch, repo_write_file
-from .tools.repo_read import repo_read
-from .tools.repo_search import repo_search
-from .tools.repo_semantic_search import repo_semantic_search
-from .tools.repo_status import detect_stack, repo_capabilities, repo_status
-from .tools.repo_tree import repo_tree
-from .tools.repo_validate import repo_validate
-from .tools.terminal import (
+from ..tools.powershell_runner import run_ps as _tool_run_ps
+from ..tools.repo_code_product import repo_propose_code_edit
+from ..tools.repo_command import repo_command
+from ..tools.repo_list_files import repo_list_files
+from ..tools.repo_patch import repo_apply_patch, repo_write_file
+from ..tools.repo_read import repo_read
+from ..tools.repo_search import repo_search
+from ..tools.repo_semantic_search import repo_semantic_search
+from ..tools.repo_tree import repo_tree
+from ..tools.repo_validate import repo_validate
+from ..tools.terminal import (
     normalize_terminal_path,
     terminal_environment_contract,
     terminal_list_files,
@@ -118,7 +118,24 @@ def compact(value: Any, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool: deterministic external adapters
+# Tool: deterministic external adapters (wrappers)
 # ---------------------------------------------------------------------------
+
+
+def repo_status(args: dict[str, Any] | None = None, root: Path | None = None) -> dict[str, Any]:
+    from ..tools.repo_status import repo_status as _repo_status
+    root = root or LAB_REPO
+    return _repo_status(args or {}, root)
+
+
+def detect_stack(*args: Any, **kwargs: Any):
+    from ..tools.repo_status import detect_stack as _detect_stack
+    return _detect_stack(*args, **kwargs)
+
+
+def repo_capabilities(*args: Any, **kwargs: Any):
+    from ..tools.repo_status import repo_capabilities as _repo_capabilities
+    return _repo_capabilities(*args, **kwargs)
+
 
 # Implementations live in aicarmine_broker.tools.repo_deterministic.

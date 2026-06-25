@@ -4,9 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .config import MAX_TOOL_RESULT_CHARS, V6_MARKER
-from .repo_tools import compact
-from .application.job.response_values import strip_narrative_duplicates_from_context
+from ...config import MAX_TOOL_RESULT_CHARS, V6_MARKER
+from ...infrastructure.result_compaction import compact
+from ..job.response_values import strip_narrative_duplicates_from_context
 
 
 def summary_from_result(result: dict[str, Any]) -> str:

@@ -724,6 +724,29 @@ def _handle_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     return tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
 
 
+def _handle_health_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    db = _db_path()
+    repo = _repo_root(arguments)
+    inspect_result = _db_inspect(db)
+    rag_metadata = _safe_rag_metadata(repo, db, inspect_result)
+    return tool_content(
+        {
+            "ok": bool(inspect_result.get("ok")),
+            "tool": "aicarmine_rag_health",
+            "server": SERVER_NAME,
+            "version": SERVER_VERSION,
+            "db": str(db),
+            "repo_root": str(repo),
+            "rag_metadata": rag_metadata,
+            "current_commit": rag_metadata.get("current_commit", ""),
+            "indexed_commit": rag_metadata.get("indexed_commit", ""),
+            "stale": rag_metadata.get("stale", False),
+            "reranker_ready": _reranker_ready(),
+            "tools_available": ["aicarmine_rag_context", "aicarmine_rag_index_status", "aicarmine_rag_reindex"],
+        }
+    )
+
+
 def _handle_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     return tool_content(_index_status(arguments))
 
@@ -734,6 +757,18 @@ def _handle_reindex_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOL_SCHEMAS = [
+    {
+        "name": "aicarmine_rag_health",
+        "description": "Report RAG MCP health, DB status, index freshness, and reranker readiness.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "db": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
     {
         "name": "aicarmine_rag_context",
         "description": "Search the Codex RAG SQLite/FTS5 index and optionally rerank candidates with the local BGE reranker.",
@@ -824,6 +859,7 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
             name = str(params.get("name") or "")
             arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
             handlers = {
+                "aicarmine_rag_health": _handle_health_tool,
                 "aicarmine_rag_context": _handle_context_tool,
                 "aicarmine_rag_index_status": _handle_status_tool,
                 "aicarmine_rag_reindex": _handle_reindex_tool,

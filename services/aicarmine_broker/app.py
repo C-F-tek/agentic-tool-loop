@@ -53,7 +53,7 @@ from .config import (
     ollama_options,
 )
 from .agent_entry import agent
-from .job_html import (
+from .application.shared.job_html import (
     agent_job_events_view_html,
     agent_job_events_section_html,
     agent_job_final_json_view_html,
@@ -77,7 +77,7 @@ from .application.public_payload.lab import (
     parse_planner_lab_compose_response,
 )
 from .planner_core.json_io import post_json
-from .tool_dispatch import dispatch_tool
+from .application.tool_surface.tool_dispatch import dispatch_tool
 from .tool_registry import capability_map
 
 

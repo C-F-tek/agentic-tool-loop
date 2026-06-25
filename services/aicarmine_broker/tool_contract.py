@@ -10,7 +10,7 @@ import json
 import re
 from typing import Any
 
-from .repo_tools import compact
+from .infrastructure.repo_tools import compact
 from .tool_registry import TOOL_ALIASES, TOOLS_SCHEMA
 
 

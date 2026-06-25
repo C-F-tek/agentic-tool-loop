@@ -174,7 +174,7 @@ from ...application.planner.status import (
     planner_done_token,
     summarize_history_artifacts,
 )
-from ...memory_tools import (
+from ..shared.memory_tools import (
     planner_memory_surface,
 )
 from ...job_store import (
@@ -184,7 +184,7 @@ from ...job_store import (
 )
 from ...planner_intrinsic_context import build_planner_intrinsic_context
 from ..evidence.builder import planner_evidence_contract
-from ...repo_tools import safe_rel_path
+from ...infrastructure.repo_tools import safe_rel_path
 from ...code_edit_proposal_contract import validate_unified_diff_text
 from ...application.evidence.audit_guidance import role_guidance_for_goal
 from ...application.runtime_debug import build_runtime_debug_packet as build_runtime_debug_packet

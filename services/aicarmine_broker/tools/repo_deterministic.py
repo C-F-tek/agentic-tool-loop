@@ -24,6 +24,7 @@ from aicarmine_broker.tools.deterministic_common import (
     TOOL_RESULT_ITEMS_LIMIT as _TOOL_RESULT_ITEMS_LIMIT,
     bounded_int_arg as _bounded_int_arg,
     deterministic_input_error as _deterministic_input_error,
+    deterministic_tool_missing as _deterministic_tool_missing,
     parse_json_output as _parse_json_output,
     repo_existing_path as _repo_existing_path,
     repo_existing_paths as _repo_existing_paths,
@@ -32,6 +33,14 @@ from aicarmine_broker.tools.deterministic_common import (
     tool_ok_returncode as _tool_ok_returncode,
     write_tool_artifact as _write_tool_artifact,
 )
+
+
+def _with_artifact(payload: Any, root: Path, func_name: str) -> Any:
+    """Return a new frozen dataclass instance with artifact field set."""
+    d = dict(payload.__dict__)
+    d.pop("artifact", None)
+    artifact_path = _write_tool_artifact(root, func_name, d)
+    return payload.__class__(**d, artifact=str(artifact_path))
 
 
 def repo_fd_files(args: dict[str, Any], root: Path) -> RepoSearchResult:
@@ -85,9 +94,7 @@ def repo_fd_files(args: dict[str, Any], root: Path) -> RepoSearchResult:
         returncode=result["returncode"],
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_fd_files", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_fd_files")
 
 
 def repo_rg_search(args: dict[str, Any], root: Path) -> RepoSearchResult:
@@ -158,12 +165,10 @@ def repo_rg_search(args: dict[str, Any], root: Path) -> RepoSearchResult:
     )
     if not ok_value:
         diag_val = result.get("stderr_tail") or result.get("error") or ""
-        payload = payload.__class__(**payload.__dict__, error="ripgrep_failed", diagnostic=diag_val)
+        payload = RepoSearchResult(**payload.__dict__, error="ripgrep_failed", diagnostic=diag_val)
         if result.get("timed_out"):
-            payload = payload.__class__(**payload.__dict__, error="timeout")
-    artifact = _write_tool_artifact(root, "repo_rg_search", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+            payload = RepoSearchResult(**payload.__dict__, error="timeout")
+    return _with_artifact(payload, root, "repo_rg_search")
 
 
 def repo_jq_query(args: dict[str, Any], root: Path) -> RepoJqResult:
@@ -203,9 +208,7 @@ def repo_jq_query(args: dict[str, Any], root: Path) -> RepoJqResult:
         parsed_json=parsed,
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_jq_query", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_jq_query")
 
 
 def repo_ast_grep_search(args: dict[str, Any], root: Path) -> RepoSearchResult:
@@ -251,22 +254,18 @@ def repo_ast_grep_search(args: dict[str, Any], root: Path) -> RepoSearchResult:
         returncode=result["returncode"],
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_ast_grep_search", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_ast_grep_search")
 
 
 def repo_ast_grep_dry_run(args: dict[str, Any], root: Path) -> RepoSearchResult:
     payload = repo_ast_grep_search(args, root)
-    extra = payload.__dict__
+    extra = dict(payload.__dict__)
     extra["tool"] = "repo_ast_grep_dry_run"
     extra["dry_run"] = True
     extra["source_writes_performed"] = False
     extra["patch_application_performed"] = False
-    payload = payload.__class__(**extra)
-    artifact = _write_tool_artifact(root, "repo_ast_grep_dry_run", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    payload = RepoSearchResult(**extra)
+    return _with_artifact(payload, root, "repo_ast_grep_dry_run")
 
 
 def repo_tree_sitter_parse(args: dict[str, Any], root: Path) -> RepoTreeSitterResult:
@@ -334,9 +333,7 @@ def repo_tree_sitter_parse(args: dict[str, Any], root: Path) -> RepoTreeSitterRe
         anchors_total=len(anchors),
         truncated=len(anchors) > _TOOL_RESULT_ITEMS_LIMIT,
     )
-    artifact = _write_tool_artifact(root, "repo_tree_sitter_parse", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_tree_sitter_parse")
 
 
 def repo_unidiff_validate(args: dict[str, Any], root: Path) -> RepoPatchResult:
@@ -380,9 +377,7 @@ def repo_unidiff_validate(args: dict[str, Any], root: Path) -> RepoPatchResult:
         files=tuple(files),
         errors=tuple(errors),
     )
-    artifact = _write_tool_artifact(root, "repo_unidiff_validate", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_unidiff_validate")
 
 
 def repo_git_apply_check(args: dict[str, Any], root: Path) -> RepoGitApplyResult:
@@ -418,9 +413,7 @@ def repo_git_apply_check(args: dict[str, Any], root: Path) -> RepoGitApplyResult
         patch_application_performed=False,
         source_writes_performed=False,
     )
-    artifact = _write_tool_artifact(root, "repo_git_apply_check", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_git_apply_check")
 
 
 def repo_ruff_check(args: dict[str, Any], root: Path) -> RepoLintResult:
@@ -448,9 +441,7 @@ def repo_ruff_check(args: dict[str, Any], root: Path) -> RepoLintResult:
         truncated=len(diagnostics) > _TOOL_RESULT_ITEMS_LIMIT,
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_ruff_check", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_ruff_check")
 
 
 def repo_pyright_check(args: dict[str, Any], root: Path) -> RepoLintResult:
@@ -474,9 +465,7 @@ def repo_pyright_check(args: dict[str, Any], root: Path) -> RepoLintResult:
         result=parsed,
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_pyright_check", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_pyright_check")
 
 
 def repo_pytest_run(args: dict[str, Any], root: Path) -> RepoTestResult:
@@ -505,9 +494,7 @@ def repo_pytest_run(args: dict[str, Any], root: Path) -> RepoTestResult:
         stdout_tail=result["stdout_tail"],
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_pytest_run", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_pytest_run")
 
 
 def repo_shellcheck(args: dict[str, Any], root: Path) -> RepoLintResult:
@@ -535,9 +522,7 @@ def repo_shellcheck(args: dict[str, Any], root: Path) -> RepoLintResult:
         diagnostics=tuple(comments if isinstance(comments, list) else []),
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_shellcheck", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_shellcheck")
 
 
 def repo_ctags_symbols(args: dict[str, Any], root: Path) -> RepoSymbolResult:
@@ -575,9 +560,7 @@ def repo_ctags_symbols(args: dict[str, Any], root: Path) -> RepoSymbolResult:
         truncated=len(symbols) > limit,
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_ctags_symbols", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_ctags_symbols")
 
 
 def repo_semgrep_scan(args: dict[str, Any], root: Path) -> RepoSemgrepResult:
@@ -617,9 +600,7 @@ def repo_semgrep_scan(args: dict[str, Any], root: Path) -> RepoSemgrepResult:
         errors=tuple(parsed.get("errors") if isinstance(parsed, dict) else []),
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_semgrep_scan", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_semgrep_scan")
 
 
 def repo_hyperfine_benchmark(
@@ -681,6 +662,4 @@ def repo_hyperfine_benchmark(
         stdout_tail=result["stdout_tail"],
         stderr_tail=result["stderr_tail"],
     )
-    artifact = _write_tool_artifact(root, "repo_hyperfine_benchmark", payload.__dict__)
-    payload = payload.__class__(**payload.__dict__, artifact=str(artifact))
-    return payload
+    return _with_artifact(payload, root, "repo_hyperfine_benchmark")

@@ -14,8 +14,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .config import VALID_INTERNAL_TOOLS
-from .repo_tools import compact, repo_read, repo_search, repo_status
+from ...config import VALID_INTERNAL_TOOLS
+from ...infrastructure.repo_tools import compact, repo_read, repo_search, repo_status
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ def review_docs(task: str, root: Path) -> list[dict[str, Any]]:
         return []
     docs = []
     for rel in ("problems.md", "AGENTS.md", "README.md", "CONTEXT_INDEX.md"):
-        from .repo_tools import LAB_REPO  
+        from ...infrastructure.repo_tools import LAB_REPO
         if (LAB_REPO / rel).exists():
             docs.append(repo_read({"path": rel, "max_chars": 12000}, root))
     return docs
@@ -396,7 +396,7 @@ def helper_summary(
 
 
 def vulkan_helper(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    from .job_store import write_json, now  
+    from ...job_store import write_json, now  
 
     args = dict(args or {})
     public_tool = str(

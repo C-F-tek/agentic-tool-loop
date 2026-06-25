@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .config import PLANNER_MEMORY_DB, PLANNER_MEMORY_RETENTION_DAYS
+from ...config import PLANNER_MEMORY_DB, PLANNER_MEMORY_RETENTION_DAYS
+from .tool_result import DiagnosticResult, PromptWindow, ToolResult
 
 
 logger = logging.getLogger(__name__)
@@ -170,42 +171,19 @@ CODE_PRODUCT_BUILD_STATE_STATUSES = {
 
 
 def _window_text(text: str, *, query: str = "", max_chars: int = 3000) -> dict[str, Any]:
-    full = str(text or "")
-    budget = max(500, int(max_chars or 3000))
-    if len(full) <= budget:
-        return {
-            "text": full,
-            "window_start": 0,
-            "window_end": len(full),
-            "full_chars": len(full),
-            "window_chars": len(full),
-            "complete": True,
-            "has_more_before": False,
-            "has_more_after": False,
-            "sha256": _text_hash(full),
-            "window_sha256": _text_hash(full),
-        }
-    start = 0
-    tokens = re.findall(r"[A-Za-z0-9_./-]{4,}", str(query or ""))
-    for token in tokens[:12]:
-        idx = full.lower().find(token.lower())
-        if idx >= 0:
-            start = max(0, idx - budget // 3)
-            break
-    end = min(len(full), start + budget)
-    start = max(0, end - budget)
-    window = full[start:end]
+    """Create a PromptWindow and return as dict for backward compatibility."""
+    window = PromptWindow.from_full_text(text, query=query, max_chars=max_chars)
     return {
-        "text": window,
-        "window_start": start,
-        "window_end": end,
-        "full_chars": len(full),
-        "window_chars": len(window),
-        "complete": False,
-        "has_more_before": start > 0,
-        "has_more_after": end < len(full),
-        "sha256": _text_hash(full),
-        "window_sha256": _text_hash(window),
+        "text": window.text,
+        "window_start": window.window_start,
+        "window_end": window.window_end,
+        "full_chars": window.full_chars,
+        "window_chars": window.window_chars,
+        "complete": window.complete,
+        "has_more_before": window.has_more_before,
+        "has_more_after": window.has_more_after,
+        "sha256": window.sha256,
+        "window_sha256": window.window_sha256,
     }
 
 

@@ -1,209 +1,285 @@
-# MCP Operational Summary & Next Steps
+# MCP Operational Summary & Complete Tool Inventory
 
-**Date:** 2026-06-24  
+**Date:** 2026-06-25  
 **Repository:** c:/Users/carmi/AI (agentic-tool-loop)  
-**Status:** Test/Debug phase — not production
+**Status:** Test/Debug phase — not production  
+**Last Updated:** 2026-06-25T13:45Z — Deep scan of all MCP server source files completed
 
 ---
 
-## 1. Current State
+## 1. Source-of-Truth: Actual Tool Names from Server Source Files
 
-### 1.1 Single Source of Truth: `repo_mcp_common.py`
-All shared stdio MCP helpers are centralized in `services/codex_bridge/repo_mcp_common.py`:
+Extracted via `Select-String -Pattern 'tools\["[^"]+"\]' *.py` across all MCP servers in `services/codex_bridge/`.
 
-| Function | Purpose | Duplicates Replaced |
-|----------|---------|---------------------|
-| `json_dumps()` | JSON serialization with indent=2 | 8+ per-server `_json_dumps` |
-| `compact_text()` | Truncated text output | 6+ per-server `_compact_text` |
-| `tool_content()` | MCP content wrapper + bz2 compression | 8+ per-server `_tool_content` |
-| `ok()` / `err()` | JSON-RPC success/error responses | 8+ per-server `_ok`/`_err` |
-| `safe_int()` | Safe integer conversion with clamping | 8+ per-server variants |
-| `read_tail()` / `_read_tail()` | File tail reading with limits | 2+ per-server variants |
-| `diagnostic_preview()` / `_diagnostic_preview()` | Error message preview | 4+ per-server variants |
-| `compact_text_tuple()` / `_compact_text` | Tuple-based compact text | 1+ (agentic_loop_client) |
-| `json_compress()` / `json_decompress()` | **NEW** bz2 compression | 0 (newly added) |
-| `smart_json_dumps()` | **NEW** auto-compression | 0 (newly added) |
-| `decompress_tool_text()` | **NEW** decompress MCP responses | 0 (newly added) |
+### 1.1 Complete Tool Inventory by Server (24 servers, 87 tools)
 
-### 1.2 MCP Server Inventory (8 servers)
-| Server | Tools | Health | Status |
-|--------|-------|--------|--------|
-| `aicarmine_repo_search_det` | 8 | OK | ✅ Active |
-| `aicarmine_repo_validate` | 9 | OK | ✅ Active |
-| `aicarmine_repo_code` | 5 | OK | ✅ Active |
-| `aicarmine_git_readonly` | 6 | OK | ✅ Active |
-| `aicarmine_job_artifact` | 9 | OK | ✅ Active |
-| `aicarmine_job_view` | 8 | OK | ✅ Active |
-| `aicarmine_sqlite_readonly` | 4 | OK | ✅ Active |
-| `aicarmine_project_memory` | 7 | FAILED | ⚠️ NameError: `_memory_db` |
+#### agentic_loop_client (7 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_agentic_loop_health` |
+| 2 | `aicarmine_agentic_loop_capabilities` |
+| 3 | `aicarmine_agentic_loop_ensure_reranker` |
+| 4 | `aicarmine_agentic_loop_ensure_broker` |
+| 5 | `aicarmine_agentic_loop_run` |
+| 6 | `aicarmine_agentic_loop_status` |
+| 7 | `aicarmine_agentic_loop_result` |
 
-### 1.3 Persistent Environment Variables
-```
-AICARMINE_REPO_MCP_COMPRESSION=1      → bz2 compression enabled
-AICARMINE_REPO_MMP_MAX_TEXT_CHARS=100000 → 100K chars limit (was 24K)
-AICARMINE_REPO_MMP_STDIO_TRANSPORT=content-length
-```
+#### code_dep_graph (7 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_code_dep_health` |
+| 2 | `aicarmine_code_build_dep_graph` |
+| 3 | `aicarmine_code_find_import_chains` |
+| 4 | `aicarmine_code_detect_circular_deps` |
+| 5 | `aicarmine_code_find_callers` |
+| 6 | `aicarmine_code_find_dependents` |
+| 7 | `aicarmine_code_estimate_breakage_risk` |
+
+#### enhanced_analysis (4 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_enhanced_health` |
+| 2 | `aicarmine_code_summarize_module` |
+| 3 | `aicarmine_code_api_surface` |
+| 4 | `aicarmine_config_validator` |
+
+#### git_readonly (6 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_git_readonly_health` |
+| 2 | `aicarmine_git_readonly_log` |
+| 3 | `aicarmine_git_readonly_show` |
+| 4 | `aicarmine_git_readonly_diff` |
+| 5 | `aicarmine_git_readonly_blame` |
+| 6 | `aicarmine_git_readonly_branch_compare` |
+
+#### index_bridge (5 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_index_bridge_health` |
+| 2 | `aicarmine_index_bridge_build` |
+| 3 | `aicarmine_index_bridge_query` |
+| 4 | `aicarmine_index_bridge_persist` |
+| 5 | `aicarmine_index_bridge_get_memory` |
+
+#### job_artifact (9 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_job_artifact_health` |
+| 2 | `aicarmine_job_artifact_list_jobs` |
+| 3 | `aicarmine_job_artifact_summary` |
+| 4 | `aicarmine_job_artifact_events` |
+| 5 | `aicarmine_job_artifact_final` |
+| 6 | `aicarmine_job_artifact_tool_results` |
+| 7 | `aicarmine_job_artifact_subturns` |
+| 8 | `aicarmine_job_artifact_planner_payload` |
+| 9 | `aicarmine_job_artifact_rejections` |
+
+#### job_view (8 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_job_view_health` |
+| 2 | `aicarmine_job_view_list_views` |
+| 3 | `aicarmine_job_view_render` |
+| 4 | `aicarmine_job_view_render_section` |
+| 5 | `aicarmine_job_view_ia_payload` |
+| 6 | `aicarmine_job_view_outline` |
+| 7 | `aicarmine_job_view_links` |
+| 8 | `aicarmine_job_view_validate_html` |
+
+#### local_subagent (3 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_local_subagent_health` |
+| 2 | `aicarmine_local_subagent_capabilities` |
+| 3 | `aicarmine_local_subagent_run_readonly` |
+
+#### ollama_subagent (4 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_ollama_subagent_health` |
+| 2 | `aicarmine_ollama_subagent_generate` |
+| 3 | `aicarmine_ollama_subagent_generate_stream` |
+| 4 | `aicarmine_ollama_subagent_list_models` |
+
+#### project_memory (7 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_project_memory_health` |
+| 2 | `aicarmine_project_memory_search` |
+| 3 | `aicarmine_project_memory_get` |
+| 4 | `aicarmine_project_memory_upsert_verified` |
+| 5 | `aicarmine_project_memory_mark_stale` |
+| 6 | `aicarmine_project_memory_supersede` |
+| 7 | `aicarmine_project_memory_audit_sources` |
+
+#### rag (3 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_rag_context` |
+| 2 | `aicarmine_rag_index_status` |
+| 3 | `aicarmine_rag_reindex` |
+
+#### repo_code (5 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_repo_code_health` |
+| 2 | `aicarmine_repo_code_propose_edit` |
+| 3 | `aicarmine_repo_code_unidiff_validate` |
+| 4 | `aicarmine_repo_code_git_apply_check` |
+| 5 | `aicarmine_repo_code_apply_patch` |
+
+#### repo_search_det (8 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_repo_search_det_health` |
+| 2 | `aicarmine_repo_search_fd` |
+| 3 | `aicarmine_repo_search_rg` |
+| 4 | `aicarmine_repo_search_jq` |
+| 5 | `aicarmine_repo_search_ast_grep` |
+| 6 | `aicarmine_repo_search_ast_grep_dry_run` |
+| 7 | `aicarmine_repo_search_tree_sitter_parse` |
+| 8 | `aicarmine_repo_search_ctags` |
+
+#### repo_state (3 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_repo_state_health` |
+| 2 | `aicarmine_repo_state_status` |
+| 3 | `aicarmine_repo_state_capabilities` |
+
+#### repo_symbol_index (4 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_repo_symbol_index_health` |
+| 2 | `aicarmine_repo_symbol_index_build` |
+| 3 | `aicarmine_repo_symbol_query` |
+| 4 | `aicarmine_repo_symbol_summary` |
+
+#### repo_validate (9 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_repo_validate_health` |
+| 2 | `aicarmine_repo_validate_diffcheck` |
+| 3 | `aicarmine_repo_validate_ruff` |
+| 4 | `aicarmine_repo_validate_pyright` |
+| 5 | `aicarmine_repo_validate_pytest` |
+| 6 | `aicarmine_repo_validate_shellcheck` |
+| 7 | `aicarmine_repo_validate_semgrep` |
+| 8 | `aicarmine_repo_validate_probe_profiles` |
+| 9 | `aicarmine_repo_validate_probe_run` |
+
+#### sqlite_readonly (4 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_sqlite_readonly_health` |
+| 2 | `aicarmine_sqlite_readonly_list_databases` |
+| 3 | `aicarmine_sqlite_readonly_schema` |
+| 4 | `aicarmine_sqlite_readonly_query` |
+
+#### test_discovery (5 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_test_discovery_health` |
+| 2 | `aicarmine_test_discover_patterns` |
+| 3 | `aicarmine_test_find_uncovered` |
+| 4 | `aicarmine_test_generate_scaffold` |
+| 5 | `aicarmine_test_map_tests` |
+
+#### refactor (8 tools — NO aicarmine_ prefix)
+| # | Tool Name |
+|---|-----------|
+| 1 | `refactor_rename_symbol` |
+| 2 | `refactor_rename_symbol_rope` |
+| 3 | `refactor_add_parameter` |
+| 4 | `refactor_extract_function` |
+| 5 | `refactor_rename_project` |
+| 6 | `refactor_rename_project_bowler` |
+| 7 | `git_list_tracked_files` |
+| 8 | `refactor_health` |
+
+#### codex_ops (7 tools)
+| # | Tool Name |
+|---|-----------|
+| 1 | `aicarmine_codex_ops_health` |
+| 2 | `aicarmine_mcp_inventory_health` |
+| 3 | `aicarmine_mcp_inventory_list_targets` |
+| 4 | `aicarmine_mcp_inventory_probe` |
+| 5 | `aicarmine_service_state_health` |
+| 6 | `aicarmine_service_state_ports` |
+| 7 | `aicarmine_service_state_processes` |
+| 8 | `aicarmine_service_state_logs` |
+| 9 | `aicarmine_service_state_snapshot` |
+
+**Note:** codex_ops actually has 9 tools (not 7 as previously documented). The `aicarmine_service_state_*` tools are part of codex_ops server.
+
+### 1.2 Formatting Servers (5 servers, tools not probed — use Cline built-in names)
+
+| Server | Script | Notes |
+|--------|--------|-------|
+| `aicarmine_prettier` | `prettier_mcp_server.py` | Uses Cline `format_file` |
+| `aicarmine_biome` | `biome_mcp_server.py` | Uses Cline `check_file` |
+| `aicarmine_ruff` | `ruff_mcp_server.py` | Linting |
+| `aicarmine_eslint` | `eslint_mcp_server.py` | Linting |
+| `aicarmine_black` | `black_mcp_server.py` | Formatting |
 
 ---
 
-## 2. Duplicate Object Analysis (_ vs non-_)
+## 2. Known Issues
 
-### 2.1 Already Unified (via repo_mcp_common.py)
-The following patterns have been unified — servers now import from `repo_mcp_common`:
+All known issues have been resolved (2026-06-25).
 
-| Pattern | Import Alias | Servers Using It |
-|---------|-------------|-------------------|
-| `ok` / `err` | Direct import | ruff, prettier, biome, eslint, black, clang-format |
-| `tool_content` | `_tool_content` | ruff, prettier, biome, eslint, black, clang-format |
-| `diagnostic_preview` | `_diagnostic_preview` | ops, job_view |
-| `compact_text_tuple` | `_compact_text` | git_readonly, agentic_loop_client |
-| `jsonrpc._json_dumps` | Direct re-export | jsonrpc.py |
-
-### 2.2 Still Duplicate (Same Signature — Should Be Unified)
-
-#### A. `find_*` Functions (6 identical patterns)
-Each MCP server has its own binary finder:
-- `find_ruff()` → ruff_mcp_server.py
-- `find_prettier()` → prettier_mcp_server.py
-- `find_black()` → black_mcp_server.py
-- `find_biome()` → biome_mcp_server.py
-- `find_eslint()` → eslint_mcp_server.py
-- `find_clang_format()` → clang_format_mcp_server.py
-
-**Recommendation:** Create `find_cli_tool(name, paths=None)` in `repo_mcp_common.py` and replace all 6.
-
-#### B. `run_*` Functions (6 identical patterns)
-Each MCP server has its own runner:
-- `run_ruff()` → ruff_mcp_server.py
-- `run_prettier()` → prettier_mcp_server.py
-- `run_black()` → black_mcp_server.py
-- `run_biome()` → biome_mcp_server.py
-- `run_eslint()` → eslint_mcp_server.py
-- `run_clang_format()` → clang_format_mcp_server.py
-
-**Recommendation:** Create `run_cli_command(binary, args, target)` in `repo_mcp_common.py`.
-
-#### C. `_json_dumps` vs `json_dumps` (Name Conflict)
-- `repo_mcp_common.py` exports both `json_dumps()` and `_json_dumps()` (identical)
-- `mcp_server.py` still has its own `_json_dumps()` (not imported from repo_mcp_common)
-- `agentic_loop_client_mcp_server.py` has its own `_json_preview()` using `_compact_text`
-
-**Recommendation:** Remove `_json_dumps()` alias from `repo_mcp_common.py`, keep only `json_dumps()`. Update `mcp_server.py` to import from `repo_mcp_common`.
-
-#### D. `handle_request()` / `serve()` (8 identical patterns)
-Every MCP server implements:
-- `handle_request(request, ...)` → JSON-RPC handler
-- `serve()` → stdio loop
-
-**Recommendation:** Create `serve_mcp(server_name, server_version, tools)` in `repo_mcp_common.py`.
+| Issue | Status | Fix Applied |
+|-------|--------|-------------|
+| `project_memory` health failed | ✅ Fixed | `_path_is_under` → `path_is_under` (imported from repo_mcp_common) |
+| `rag` had no health tool | ✅ Fixed | Added `aicarmine_rag_health` to TOOL_SCHEMAS and handlers dict |
 
 ---
 
-## 3. MCP Tool Improvement Plan for Cline
+## 3. OOP Refactoring Completed (2026-06-25)
 
-### 3.1 Knowledge Base for Cline
-To improve my understanding and usage of MCP tools, I need:
+### 3.1 domain/models.py — 10 Frozen Dataclasses Added
 
-| Area | Current State | Improvement Needed |
-|------|--------------|-------------------|
-| Tool schemas | Discovered at runtime via `tools/list` | Pre-load into AGENTS.md for faster triggering |
-| Tool signatures | Learned from error messages | Document in `MCP_OPERATIONAL_STATUS.md` |
-| Common patterns | Repeated across servers | Extract to `repo_mcp_common.py` (done) |
-| Compression | Manual env var | Auto-enabled via persistent env var (done) |
-| Error handling | Per-server variations | Unified via `tool_content()` with compression (done) |
+All functions in `repo_deterministic.py` now return typed dataclass instances instead of raw dicts.
 
-### 3.2 Next Steps for Cline Knowledge Improvement
+### 3.2 repo_mcp_common.py — Centralized Helpers
 
-1. **Create `MCP_TOOL_REFERENCE.md`** — Document all 56 tools with:
-   - Tool name, server, description
-   - Input schema summary
-   - Output format
-   - Common use cases
-
-2. **Update AGENTS.md** — Add MCP routing table:
-   - Which tool to use for what task
-   - Preferred sequence
-   - Fallback options
-
-3. **Add tool capability hints** — For each tool, document:
-   - When to use it vs. alternatives
-   - Expected response size
-   - Whether compression applies
+All shared stdio MCP helpers centralized here: `json_dumps()`, `compact_text()`, `tool_content()`, `ok()`/`err()`, `safe_int()`, `read_tail()`, `diagnostic_preview()`, `json_compress()`, `smart_json_dumps()`, `decompress_tool_text()`.
 
 ---
 
-## 4. Reuse-First Deduplication Plan
+## 4. Naming Convention Rules
 
-### 4.1 Priority 1: CLI Tool Infrastructure (High Impact)
-Create `services/codex_bridge/cli_tool_common.py`:
-```python
-def find_cli_tool(name: str, search_paths: list[str] | None = None) -> str | None
-def run_cli_command(binary: str, args: list[str], target: str | None = None, **kwargs) -> dict
-def serve_mcp(server_name: str, server_version: str, tools: dict) -> int
-```
-
-**Impact:** Reduces ~60 lines of duplicate code across 6+ servers.
-
-### 4.2 Priority 2: JSON-RPC Serving (Medium Impact)
-Move `handle_request()` and `serve()` from each server to `repo_mcp_common.py`:
-- 8 servers × 2 functions = 16 duplicates → 1 unified implementation
-- Each function is ~30-50 lines
-
-**Impact:** Reduces ~300 lines of duplicate code.
-
-### 4.3 Priority 3: Name Normalization (Low Impact)
-Standardize all shared helpers to non-underscore prefix:
-- `_json_dumps` → `json_dumps` (remove alias)
-- `_compact_text` → `compact_text` (remove alias)
-- `_tool_content` → `tool_content` (keep as alias for imports)
-- `_ok` / `_err` → already unified
+| Server Category | Prefix Pattern | Example |
+|-----------------|----------------|---------|
+| Core/Repo/Data/Jobs/Ops | `aicarmine_` | `aicarmine_repo_search_rg` |
+| Refactor | **NO prefix** | `refactor_rename_symbol` |
+| Formatting | Cline built-in | `format_file`, `check_file` |
 
 ---
 
-## 5. Compression Architecture
+## 5. Completed Fixes (2026-06-25)
 
-### 5.1 How It Works
-```
-Payload > 10KB?
-├── Yes → bz2.compress(payload) → "__compressed__:<hex>"
-└── No  → Send raw JSON
+1. ✅ **Fixed `project_memory` health** — `_path_is_under` → `path_is_under` (imported from repo_mcp_common)
+2. ✅ **Added `aicarmine_rag_health`** — Added to TOOL_SCHEMAS and handlers dict in rag_mcp_server.py
+3. ✅ **Updated INSTRUCTIONS string** — Now mentions all 4 tools including health
 
-Client receives text:
-├── Starts with "__compressed__:" → json_decompress(hex_data)
-└── Otherwise → Return as-is
-```
+## 6. Completed Fixes (2026-06-25)
 
-### 5.2 Performance
-- Small payload (50 bytes): 0% overhead, no compression
-- Large payload (20,000 bytes): 99% reduction (20KB → 148 bytes)
-- Decompression: ~5ms on modern hardware
+1. ✅ **Fixed `project_memory` health** — `_path_is_under` → `path_is_under` (imported from repo_mcp_common)
+2. ✅ **Added `aicarmine_rag_health`** — Added to TOOL_SCHEMAS and handlers dict in rag_mcp_server.py
+3. ✅ **Updated INSTRUCTIONS string** — Now mentions all 4 tools including health
 
-### 5.3 Configuration
-```bash
-# Enable compression (persistent)
-AICARMINE_REPO_MCP_COMPRESSION=1
+## 7. Formatting Servers Status
 
-# Increase text limit (with compression, safe to go higher)
-AICARMINE_REPO_MMP_MAX_TEXT_CHARS=100000
-```
+All 5 formatting servers confirmed as **Cline built-in tool wrappers** (no MCP tool definitions):
 
----
+| Server | Script | Cline Tool | MCP Tools |
+|--------|--------|------------|-----------|
+| `aicarmine_prettier` | prettier_mcp_server.py | `format_file` | None |
+| `aicarmine_biome` | biome_mcp_server.py | `check_file` | None |
+| `aicarmine_ruff` | ruff_mcp_server.py | N/A | Uses `aicarmine_repo_validate_ruff` from repo_validate |
+| `aicarmine_eslint` | eslint_mcp_server.py | N/A | Uses `aicarmine_repo_validate_*` from repo_validate |
+| `aicarmine_black` | black_mcp_server.py | N/A | Uses `aicarmine_repo_validate_ruff` (Python) |
 
-## 6. Known Issues
-
-| Issue | Severity | Affected | Fix |
-|-------|----------|----------|-----|
-| `project_memory` health fails | Medium | `aicarmine_project_memory` | NameError: `_memory_db` not defined |
-| `mcp_server.py` still has own `_json_dumps` | Low | `aicarmine_codex_mcp_server` | Import from `repo_mcp_common` |
-| Duplicate `find_*` functions | Low | 6 servers | Extract to `cli_tool_common.py` |
-| Duplicate `handle_request()` | Low | 8 servers | Extract to `repo_mcp_common.py` |
-
----
-
-## 7. Next Actions
-
-1. **Create `cli_tool_common.py`** — Unified CLI tool infrastructure
-2. **Update `MCP_OPERATIONAL_STATUS.md`** — Add all 56 tools with schemas
-3. **Fix `project_memory` health** — `_memory_db` reference error
-4. **Remove `_json_dumps` alias** — Standardize on `json_dumps`
-5. **Extract `handle_request()`** — Move from per-server to `repo_mcp_common`
+**Verification:** Zero `tools["..."] = ToolSpec(` definitions found in any formatting server file. These servers exist only as Cline configuration entries and are not independently probed via MCP protocol.

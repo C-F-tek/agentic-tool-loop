@@ -269,6 +269,9 @@ function Get-AICarmineMcpRoutingHint {
         if ($normalized -match '\b(?:symbol index|definition|signature|callable)\b') {
             $scores.code_analysis += 40
         }
+        if ($normalized -match '\b(?:enhanced analysis|model overview|api surface|config validator|module summary)\b') {
+            $scores.code_analysis += 50
+        }
 
         if ($normalized -match '\b(?:sqlite|query|schema|database|table|column)\b') {
             $scores.data_query += 80
@@ -322,11 +325,13 @@ function Get-AICarmineMcpRoutingHint {
             Add-AICarmineTool -Name 'aicarmine_repo_validate_probe_run'
         }
 
-        foreach ($className in $classes) {
+        # Copy classes to a separate array for safe modification during enumeration
+        $classSnapshot = @($classes.ToArray())
+
+        foreach ($className in $classSnapshot) {
             switch ($className) {
                 'repository_refactor' {
-                    [void]$classes.Remove('repository_refactor')
-                    # Insert at position 0 (highest priority)
+                    # Insert at position 0 (highest priority) — build new list without modifying original
                     $newClasses = [System.Collections.Generic.List[string]]::new()
                     [void]$newClasses.Add('repository_refactor')
                     foreach ($c in $classes) {
@@ -347,6 +352,7 @@ function Get-AICarmineMcpRoutingHint {
                     if ($normalized -match '\bpyright\b') { Add-AICarmineTool -Name 'aicarmine_repo_validate_pyright' }
                     if ($normalized -match '\bpytest\b') { Add-AICarmineTool -Name 'aicarmine_repo_validate_pytest' }
                     if ($normalized -match '\bsemgrep\b') { Add-AICarmineTool -Name 'aicarmine_repo_validate_semgrep' }
+                    if ($normalized -match '\bshellcheck\b') { Add-AICarmineTool -Name 'aicarmine_repo_validate_shellcheck' }
                     Add-AICarmineTool -Name 'aicarmine_repo_validate_health'
                 }
                 'repository_patch' {
@@ -362,25 +368,31 @@ function Get-AICarmineMcpRoutingHint {
                 }
 
                 'code_format' {
-                    if ($normalized -match '\b(?:prettier|javascript|typescript|json|html|css)\b') { Add-AICarmineTool -Name 'format_file' }
+                    if ($normalized -match '\b(?:prettier|javascript|typescript|json|html|css|markdown)\b') { Add-AICarmineTool -Name 'format_file' }
                     if ($normalized -match '\b(?:black|python format)\b') { Add-AICarmineTool -Name 'format_file' }
                     if ($normalized -match '\b(?:clang-format|c\+\+|cpp)\b') { Add-AICarmineTool -Name 'format' }
                     if ($normalized -match '\b(?:biome|lint)\b') { Add-AICarmineTool -Name 'check_file' }
                 }
 
                 'code_analysis' {
+                    Add-AICarmineTool -Name 'aicarmine_enhanced_health'
+                    if ($normalized -match '\b(?:summarize|overview|module)\b') { Add-AICarmineTool -Name 'aicarmine_code_summarize_module' }
+                    if ($normalized -match '\b(?:api surface|export|public interface)\b') { Add-AICarmineTool -Name 'aicarmine_code_api_surface' }
+                    if ($normalized -match '\b(?:config validator|pyproject|\.env|\.json)\b') { Add-AICarmineTool -Name 'aicarmine_config_validator' }
                     Add-AICarmineTool -Name 'aicarmine_code_dep_graph_health'
-                    if ($normalized -match '\b(?:dep graph|dependency)\b') { Add-AICarmineTool -Name 'code_build_dep_graph' }
-                    if ($normalized -match '\b(?:callers?|dependents?)\b') { Add-AICarmineTool -Name 'code_find_callers' }
-                    if ($normalized -match '\b(?:circular|cycle)\b') { Add-AICarmineTool -Name 'code_detect_circular_deps' }
+                    if ($normalized -match '\b(?:dep graph|dependency)\b') { Add-AICarmineTool -Name 'aicarmine_code_build_dep_graph' }
+                    if ($normalized -match '\b(?:callers?|dependents?)\b') { Add-AICarmineTool -Name 'aicarmine_code_find_callers' }
+                    if ($normalized -match '\b(?:circular|cycle)\b') { Add-AICarmineTool -Name 'aicarmine_code_detect_circular_deps' }
+                    if ($normalized -match '\b(?:breakage|risk)\b') { Add-AICarmineTool -Name 'aicarmine_code_estimate_breakage_risk' }
+                    if ($normalized -match '\b(?:import chain|chain)\b') { Add-AICarmineTool -Name 'aicarmine_code_find_import_chains' }
                     Add-AICarmineTool -Name 'aicarmine_test_discovery_health'
-                    if ($normalized -match '\b(?:uncovered|coverage)\b') { Add-AICarmineTool -Name 'test_find_uncovered' }
+                    if ($normalized -match '\b(?:uncovered|coverage)\b') { Add-AICarmineTool -Name 'aicarmine_test_find_uncovered' }
+                    if ($normalized -match '\b(?:scaffold|generate)\b') { Add-AICarmineTool -Name 'aicarmine_test_generate_scaffold' }
+                    if ($normalized -match '\b(?:test map|pattern)\b') { Add-AICarmineTool -Name 'aicarmine_test_map_tests' }
                     Add-AICarmineTool -Name 'aicarmine_repo_symbol_index_health'
-                    if ($normalized -match '\b(?:symbol|definition)\b') { Add-AICarmineTool -Name 'repo_symbol_query' }
+                    if ($normalized -match '\b(?:symbol|definition)\b') { Add-AICarmineTool -Name 'aicarmine_repo_symbol_query' }
                     if ($normalized -match '\b(?:summarize|overview|api surface|config validator|module overview)\b') {
-                        Add-AICarmineTool -Name 'aicarmine_code_summarize_module'
-                        Add-AICarmineTool -Name 'aicarmine_code_api_surface'
-                        Add-AICarmineTool -Name 'aicarmine_config_validator'
+                        Add-AICarmineTool -Name 'aicarmine_repo_symbol_summary'
                     }
                     if ($normalized -match '\b(?:generate|completion|llm|gpu|ollama|model generation|text generation|streaming)\b') {
                         Add-AICarmineTool -Name 'aicarmine_ollama_subagent_health'
@@ -393,15 +405,20 @@ function Get-AICarmineMcpRoutingHint {
                 'data_query' {
                     Add-AICarmineTool -Name 'aicarmine_sqlite_readonly_health'
                     if ($normalized -match '\b(?:query|sql)\b') { Add-AICarmineTool -Name 'aicarmine_sqlite_readonly_query' }
-                    Add-AICarmineTool -Name 'aicarmine_service_state_ports'
-                    Add-AICarmineTool -Name 'aicarmine_service_state_processes'
-                    Add-AICarmineTool -Name 'aicarmine_service_state_logs'
+                    Add-AICarmineTool -Name 'aicarmine_sqlite_readonly_schema'
+                    Add-AICarmineTool -Name 'aicarmine_sqlite_readonly_list_databases'
+                    Add-AICarmineTool -Name 'aicarmine_codex_ops_health'
+                    Add-AICarmineTool -Name 'aicarmine_service_state_snapshot'
                 }
 
                 'semantic_search' {
                     Add-AICarmineTool -Name 'aicarmine_rag_health'
+                    Add-AICarmineTool -Name 'aicarmine_rag_context'
+                    Add-AICarmineTool -Name 'aicarmine_rag_index_status'
+                    Add-AICarmineTool -Name 'aicarmine_rag_reindex'
                     Add-AICarmineTool -Name 'aicarmine_index_bridge_health'
                     if ($normalized -match '\b(?:search|context|retrieve)\b') { Add-AICarmineTool -Name 'aicarmine_rag_context' }
+                    if ($normalized -match '\b(?:reindex|index update)\b') { Add-AICarmineTool -Name 'aicarmine_rag_reindex' }
                     if ($normalized -match '\b(?:index bridge|cross-reference|bridge)\b') {
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_build'
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_query'
@@ -410,7 +427,7 @@ function Get-AICarmineMcpRoutingHint {
                     }
                 }
                 'repository_refactor' {
-                    Add-AICarmineTool -Name 'aicarmine_refactor_health'
+                    Add-AICarmineTool -Name 'refactor_health'
                     if ($normalized -match '\b(?:cross-file|rope|project-wide)\b') {
                         Add-AICarmineTool -Name 'refactor_rename_symbol_rope'
                     }
@@ -432,6 +449,7 @@ function Get-AICarmineMcpRoutingHint {
                     Add-AICarmineTool -Name 'aicarmine_project_memory_health'
                     Add-AICarmineTool -Name 'aicarmine_project_memory_search'
                     Add-AICarmineTool -Name 'aicarmine_project_memory_get'
+                    Add-AICarmineTool -Name 'aicarmine_project_memory_audit_sources'
                     if ($memoryWriteRequested -and -not $readOnly) {
                         if ($memoryUpsertRequested) { Add-AICarmineTool -Name 'aicarmine_project_memory_upsert_verified' }
                         if ($memorySupersedeRequested) { Add-AICarmineTool -Name 'aicarmine_project_memory_supersede' }
@@ -452,8 +470,16 @@ function Get-AICarmineMcpRoutingHint {
                     }
                 }
                 'job_diagnostics' {
-                    Add-AICarmineTool -Name 'aicarmine_job_artifact'
-                    Add-AICarmineTool -Name 'aicarmine_job_view'
+                    Add-AICarmineTool -Name 'aicarmine_job_artifact_health'
+                    Add-AICarmineTool -Name 'aicarmine_job_view_health'
+                    if ($normalized -match '\b(?:events|subturn)\b') { Add-AICarmineTool -Name 'aicarmine_job_artifact_events' }
+                    if ($normalized -match '\b(?:final|final\.json|final\.md)\b') { Add-AICarmineTool -Name 'aicarmine_job_artifact_final' }
+                    if ($normalized -match '\b(?:tool result|tool-results)\b') { Add-AICarmineTool -Name 'aicarmine_job_artifact_tool_results' }
+                    if ($normalized -match '\b(?:planner|prompt)\b') { Add-AICarmineTool -Name 'aicarmine_job_artifact_planner_payload' }
+                    if ($normalized -match '\b(?:rejection|reject)\b') { Add-AICarmineTool -Name 'aicarmine_job_artifact_rejections' }
+                    if ($normalized -match '\b(?:summary|overview)\b') { Add-AICarmineTool -Name 'aicarmine_job_artifact_summary' }
+                    Add-AICarmineTool -Name 'aicarmine_job_view_render'
+                    Add-AICarmineTool -Name 'aicarmine_job_view_outline'
                 }
                 'repository_search' {
                     Add-AICarmineTool -Name 'aicarmine_repo_search_det_health'
@@ -466,6 +492,7 @@ function Get-AICarmineMcpRoutingHint {
                     if ($normalized -match '\b(?:ctags|symbol|simbolo|definition|definizione)\b') {
                         Add-AICarmineTool -Name 'aicarmine_repo_search_ctags'
                     }
+                    if ($normalized -match '\b(?:jq|json query)\b') { Add-AICarmineTool -Name 'aicarmine_repo_search_jq' }
                 }
             }
         }
@@ -530,11 +557,25 @@ function Get-AICarmineMcpRoutingHint {
         return [string]$hint
     }
     catch {
-        return ''
-    }
-    finally {
-        $parsedInput = $null
-        $promptText = $null
-        $normalized = $null
+        # Diagnostic logging — returns error hint so Cline immediately knows what broke
+        $errorMsg = $_.Exception.Message -replace '[\r\n]+', ' '
+        if ($errorMsg.Length -gt 200) {
+            $errorMsg = $errorMsg.Substring(0, 200)
+        }
+        $diagLines = @(
+            'AICARMINE ROUTING HINT',
+            '',
+            'WARNING: MCP routing hook failed — investigate immediately',
+            '',
+            'Error:',
+            "- {0}" -f $errorMsg,
+            '',
+            'Action:',
+            '- Check JSON parsing: ensure RawInput is valid JSON object',
+            '- Check PowerShell version: requires 5.1+ (Core 7.x recommended)',
+            '- Review AGENTS.md for tool naming conventions',
+            '- If persistent, run: Import-Module ./aicarmine_cline_mcp_router.ps1; Get-Help Get-AICarmineMcpRoutingHint'
+        )
+        return [string]::Join([Environment]::NewLine, $diagLines)
     }
 }

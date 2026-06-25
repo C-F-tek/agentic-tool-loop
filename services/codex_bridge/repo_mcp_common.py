@@ -431,6 +431,22 @@ def result_is_error(result: Any) -> bool:
     return bool(isinstance(result, dict) and (result.get("is_error") or result.get("ok") is False))
 
 
+def _diagnostic_context() -> dict[str, Any]:
+    """Return diagnostic context for error reporting."""
+    root = selected_repo_root()
+    git = git_info(root)
+    return {
+        "repo_root": str(root),
+        "root_source": selected_repo_root_source(root),
+        "cwd": str(Path.cwd()),
+        "git_root_ok": git.get("git_root_ok"),
+        "branch": git.get("branch"),
+        "commit": git.get("commit"),
+        "python_executable": sys.executable,
+        "python_version": sys.version.split("\n")[0],
+    }
+
+
 def call_tool(tools: dict[str, ToolSpec], name: str, arguments: Any) -> dict[str, Any]:
     spec = tools.get(name)
     if spec is None:
@@ -443,17 +459,17 @@ def call_tool(tools: dict[str, ToolSpec], name: str, arguments: Any) -> dict[str
         result = spec.handler(arguments, root)
         return tool_content(result, is_error=result_is_error(result))
     except Exception as exc:
-        return tool_content(
-            {
-                "ok": False,
-                "error": "tool_call_failed",
-                "tool": name,
-                "error_type": type(exc).__name__,
-                "message": str(exc),
-                "traceback": traceback.format_exc()[-4000:],
-            },
-            is_error=True,
-        )
+        ctx = _diagnostic_context()
+        error_payload = {
+            "ok": False,
+            "error": "tool_call_failed",
+            "tool": name,
+            "error_type": type(exc).__name__,
+            "message": str(exc)[:2000],
+            "traceback": traceback.format_exc()[-4000:],
+            "diagnostic_context": ctx,
+        }
+        return tool_content(error_payload, is_error=True)
 
 
 def handle_request(
