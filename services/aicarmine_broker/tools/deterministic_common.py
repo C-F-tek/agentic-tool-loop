@@ -196,6 +196,10 @@ def run_argv(
             "capture_output": True,
             "timeout": timeout,
         }
+        # Windows universal-ctags needs TMP set to a valid temp directory.
+        # /tmp does not exist on Windows; ctags falls back to it and crashes.
+        if os.name == "nt" and "TMP" not in os.environ:
+            common_kwargs["env"] = {**os.environ, "TMP": str(Path.cwd() / "tmp")}
         if stdin_bytes is not None:
             completed = subprocess.run(argv, input=stdin_bytes, **common_kwargs)
         else:
