@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from aicarmine_broker.application.shared.tool_result import ToolResult
 from aicarmine_broker.config import LAB_REPO, parse_bool
 from aicarmine_broker.infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from aicarmine_broker.job_store import now, write_json
@@ -106,39 +108,38 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     files = sorted(files, key=lambda x: str(x.get("path") or "").lower())
     selected = files[:limit]
-    payload = {
-        "ok": True,
-        "tool": "repo_list_files",
-        "path": rel if path not in {"", "."} else ".",
-        "suffix": suffix,
-        "core": core,
-        "limit": limit,
-        "count": len(selected),
-        "total_matches": len(files),
-        "files": selected,
-        "paths": [str(x["path"]) for x in selected],
-        "truncated": len(files) > limit,
-        "source": source,
-        "gitignore_respected": source == "git_ls_files_exclude_standard",
-        "coverage_status": "truncated" if len(files) > limit else "complete",
-        "suggested_next_actions": (
-            [
-                {
-                    "tool": "repo_semantic_search",
-                    "argument_hints": {
-                        "path": rel,
-                        "query": "derive_from_current_goal",
-                    },
-                    "reason": "file_list_truncated_use_goal_specific_query",
-                    "requires_goal_specific_query": True,
-                    "not_runnable_without_query": True,
-                }
-            ]
-            if len(files) > limit
-            else []
-        ),
-    }
+    truncated = len(files) > limit
+
+    # Build structured result using ToolResult dataclass
+    tool_result = ToolResult.ok_result(
+        tool="repo_list_files",
+        path=rel if path not in {"", "."} else ".",
+        suffix=suffix,
+        core=core,
+        limit=limit,
+        count=len(selected),
+        total_matches=len(files),
+        files=selected,
+        paths=[str(x["path"]) for x in selected],
+        truncated=truncated,
+        source=source,
+        gitignore_respected=(source == "git_ls_files_exclude_standard"),
+        coverage_status="truncated" if truncated else "complete",
+        suggested_next_actions=[
+            {
+                "tool": "repo_semantic_search",
+                "argument_hints": {
+                    "path": rel,
+                    "query": "derive_from_current_goal",
+                },
+                "reason": "file_list_truncated_use_goal_specific_query",
+                "requires_goal_specific_query": True,
+                "not_runnable_without_query": True,
+            }
+        ] if truncated else [],
+    )
     artifact = root / "tool-results" / f"{now()}-repo_list_files.json"
-    write_json(artifact, payload)
-    payload["artifact"] = str(artifact)
-    return payload
+    write_json(artifact, asdict(tool_result))
+    result_dict = asdict(tool_result)
+    result_dict["artifact"] = str(artifact)
+    return result_dict

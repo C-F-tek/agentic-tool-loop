@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-import json
-
+from aicarmine_broker.application.shared.tool_result import ToolResult
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
@@ -34,13 +35,12 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             suggested_full.relative_to(LAB_REPO)
         except Exception:
             suggested_rel = "."
-        return {
-            "ok": False,
-            "tool": "repo_search",
-            "error": "glob_pattern_is_not_text_search",
-            "query": query,
-            "hint": "Use repo_list_files with suffix instead of repo_search for glob-like file listing.",
-            "suggested_next_actions": [
+        result = ToolResult.error_result(
+            tool="repo_search",
+            error="glob_pattern_is_not_text_search",
+            hint="Use repo_list_files with suffix instead of repo_search for glob-like file listing.",
+            query=query,
+            suggested_next_actions=[
                 {
                     "tool": "repo_list_files",
                     "argument_hints": {
@@ -52,9 +52,12 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
                     "not_runnable_without_path_validation": True,
                 }
             ],
-        }
+        )
+        return asdict(result)
+
     if not query:
-        return {"ok": False, "tool": "repo_search", "error": "missing query"}
+        result = ToolResult.error_result(tool="repo_search", error="missing query")
+        return asdict(result)
 
     requested_mode = str(args.get("mode") or "rg").strip().lower()
     mode = requested_mode
@@ -96,33 +99,34 @@ def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         )
 
     classification = classify_command(command)
-    result = _run_ps(command, timeout=120)
+    ps_result = _run_ps(command, timeout=120)
     if mode in {"rg", "git_grep"}:
-        ok = result["returncode"] in (0, 1)
-        no_matches = result["returncode"] == 1
+        ok = ps_result["returncode"] in (0, 1)
+        no_matches = ps_result["returncode"] == 1
     else:
-        ok = result["returncode"] == 0
-        no_matches = ok and not result["stdout"].strip()
+        ok = ps_result["returncode"] == 0
+        no_matches = ok and not ps_result["stdout"].strip()
 
-    payload = {
-        "ok": ok,
-        "tool": "repo_search",
-        "mode": mode,
-        "requested_mode": requested_mode,
-        "mode_defaulted": mode != requested_mode,
-        "no_matches": no_matches,
-        "query": query,
-        "command": command,
-        "command_class": classification.command_class,
-        "consent_required": classification.consent_required,
-        "policy": classification.reason,
-        "returncode": result["returncode"],
-        "matches": result["stdout"].splitlines()[:max_results],
-        "stderr_tail": result["stderr_tail"],
-        "path": rel,
-        "target": target,
-    }
+    # Build structured result using ToolResult dataclass
+    tool_result = ToolResult.ok_result(
+        tool="repo_search",
+        mode=mode,
+        requested_mode=requested_mode,
+        mode_defaulted=(mode != requested_mode),
+        no_matches=no_matches,
+        query=query,
+        command=command,
+        command_class=classification.command_class,
+        consent_required=classification.consent_required,
+        policy=classification.reason,
+        returncode=ps_result["returncode"],
+        matches=ps_result["stdout"].splitlines()[:max_results],
+        stderr_tail=ps_result["stderr_tail"],
+        path=rel,
+        target=target,
+    )
     artifact = root / "tool-results" / f"{now()}-repo_search.json"
-    write_json(artifact, payload)
-    payload["artifact"] = str(artifact)
-    return payload
+    write_json(artifact, asdict(tool_result))
+    result_dict = asdict(tool_result)
+    result_dict["artifact"] = str(artifact)
+    return result_dict

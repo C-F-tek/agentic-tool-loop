@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from aicarmine_broker.application.shared.tool_result import ToolResult
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from aicarmine_broker.job_store import now, write_json
@@ -98,35 +100,33 @@ def repo_tree(args: dict[str, Any], root: Path) -> dict[str, Any]:
             entries_total = len(all_entries)
             entries = all_entries[:max_files]
 
-    payload = {
-        "ok": True,
-        "tool": "repo_tree",
-        "path": rel,
-        "count": len(entries),
-        "entries_total": entries_total,
-        "entries": entries,
-        "truncated": entries_total > len(entries),
-        "source": source,
-        "gitignore_respected": source == "git_ls_files_exclude_standard",
-        "coverage_status": "truncated" if entries_total > len(entries) else "complete",
-        "suggested_next_actions": (
-            [
-                {
-                    "tool": "repo_semantic_search",
-                    "argument_hints": {
-                        "path": rel,
-                        "query": "derive_from_current_goal",
-                    },
-                    "reason": "directory_or_file_list_truncated_use_goal_specific_query",
-                    "requires_goal_specific_query": True,
-                    "not_runnable_without_query": True,
-                }
-            ]
-            if entries_total > len(entries)
-            else []
-        ),
-    }
+    # Build structured result using ToolResult dataclass
+    truncated = entries_total > len(entries)
+    tool_result = ToolResult.ok_result(
+        tool="repo_tree",
+        path=rel,
+        count=len(entries),
+        entries_total=entries_total,
+        entries=entries,
+        truncated=truncated,
+        source=source,
+        gitignore_respected=(source == "git_ls_files_exclude_standard"),
+        coverage_status="truncated" if truncated else "complete",
+        suggested_next_actions=[
+            {
+                "tool": "repo_semantic_search",
+                "argument_hints": {
+                    "path": rel,
+                    "query": "derive_from_current_goal",
+                },
+                "reason": "directory_or_file_list_truncated_use_goal_specific_query",
+                "requires_goal_specific_query": True,
+                "not_runnable_without_query": True,
+            }
+        ] if truncated else [],
+    )
     artifact = root / "tool-results" / f"{now()}-repo_tree.json"
-    write_json(artifact, payload)
-    payload["artifact"] = str(artifact)
-    return payload
+    write_json(artifact, asdict(tool_result))
+    result_dict = asdict(tool_result)
+    result_dict["artifact"] = str(artifact)
+    return result_dict

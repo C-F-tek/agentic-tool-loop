@@ -14,17 +14,22 @@ from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.command_safety import classify_command, dangerous_command
 
 
+from dataclasses import asdict
+
+from aicarmine_broker.application.shared.tool_result import ToolResult
+
+
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 def _terminal_input_error(tool: str, exc: Exception) -> dict[str, Any]:
     """Helper locale per errori di input senza dipendenze circolari."""
-    return {
-        "ok": False,
-        "tool": tool,
-        "error": str(exc),
-        "error_type": type(exc).__name__,
-    }
+    result = ToolResult.error_result(
+        tool=tool,
+        error=str(exc),
+        error_type=type(exc).__name__,
+    )
+    return asdict(result)
 
 
 def _bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:
@@ -273,22 +278,26 @@ def terminal_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
             break
 
     items.sort(key=lambda x: (x.get("kind") != "dir", str(x.get("name") or "").lower()))
-    payload = {
-        "ok": True,
-        "tool": "terminal_list_files",
-        "input_directory": str(directory_arg or ""),
-        "resolved_directory": str(directory),
-        "path_normalized": path_details["path_normalized"],
-        "normalization_reason": path_details["normalization_reason"],
-        "count": len(items),
-        "limit": limit,
-        "truncated": len(items) >= limit,
-        "items": items,
-        "items_preview": items[:80],
-        "terminal_environment_contract": terminal_environment_contract(),
-    }
-    write_json(root / "tool-results" / f"{now()}-terminal_list_files.json", payload)
-    return payload
+
+    # Build structured result using ToolResult dataclass
+    tool_result = ToolResult.ok_result(
+        tool="terminal_list_files",
+        input_directory=str(directory_arg or ""),
+        resolved_directory=str(directory),
+        path_normalized=path_details["path_normalized"],
+        normalization_reason=path_details["normalization_reason"],
+        count=len(items),
+        limit=limit,
+        truncated=len(items) >= limit,
+        items=items,
+        items_preview=items[:80],
+        terminal_environment_contract=terminal_environment_contract(),
+    )
+    artifact_path = root / "tool-results" / f"{now()}-terminal_list_files.json"
+    write_json(artifact_path, asdict(tool_result))
+    result_dict = asdict(tool_result)
+    result_dict["artifact"] = str(artifact_path)
+    return result_dict
 
 
 def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -360,32 +369,35 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
         if len(matches) >= limit:
             break
 
-    payload = {
-        "ok": True,
-        "tool": "terminal_search_files",
-        "query": query,
-        "input_directory": str(directory_arg or ""),
-        "resolved_directory": str(directory),
-        "path_normalized": path_details["path_normalized"],
-        "normalization_reason": path_details["normalization_reason"],
-        "count": len(matches),
-        "limit": limit,
-        "truncated": len(matches) >= limit,
-        "search_complete": unreadable_files == 0 and len(matches) < limit,
-        "scanned_files": scanned_files,
-        "filename_matches": filename_matches,
-        "content_read_attempts": content_read_attempts,
-        "content_read_ok": content_read_ok,
-        "unreadable_files": unreadable_files,
-        "decode_skipped": decode_skipped,
-        "skipped_errors_preview": skipped_errors_preview,
-        "matches": matches,
-        "matches_preview": matches[:80],
-        "terminal_environment_contract": terminal_environment_contract(),
-    }
-    payload["search_quality"] = assess_search_quality(payload)
-    write_json(root / "tool-results" / f"{now()}-terminal_search_files.json", payload)
-    return payload
+    # Build structured result using ToolResult dataclass
+    tool_result = ToolResult.ok_result(
+        tool="terminal_search_files",
+        query=query,
+        input_directory=str(directory_arg or ""),
+        resolved_directory=str(directory),
+        path_normalized=path_details["path_normalized"],
+        normalization_reason=path_details["normalization_reason"],
+        count=len(matches),
+        limit=limit,
+        truncated=len(matches) >= limit,
+        search_complete=(unreadable_files == 0 and len(matches) < limit),
+        scanned_files=scanned_files,
+        filename_matches=filename_matches,
+        content_read_attempts=content_read_attempts,
+        content_read_ok=content_read_ok,
+        unreadable_files=unreadable_files,
+        decode_skipped=decode_skipped,
+        skipped_errors_preview=skipped_errors_preview,
+        matches=matches,
+        matches_preview=matches[:80],
+        terminal_environment_contract=terminal_environment_contract(),
+    )
+    result_dict = asdict(tool_result)
+    result_dict["search_quality"] = assess_search_quality(result_dict)
+    artifact_path = root / "tool-results" / f"{now()}-terminal_search_files.json"
+    write_json(artifact_path, result_dict)
+    result_dict["artifact"] = str(artifact_path)
+    return result_dict
 
 
 def terminal_run_command_wait(
@@ -453,30 +465,32 @@ def terminal_run_command_wait(
         }
 
     result = _run_powershell_body(body, cwd=cwd, timeout=timeout)
-    payload = {
-        "ok": result["returncode"] == 0,
-        "tool": "terminal_run_command_wait",
-        "command": command,
-        "powershell_body": body,
-        "resolved_cwd": str(cwd),
-        "path_normalized": cwd_details["path_normalized"],
-        "normalization_reason": cwd_details["normalization_reason"],
-        "command_class": classification.command_class,
-        "consent_required": classification.consent_required,
-        "policy": classification.reason,
-        "command_execution_policy": execution_policy,
-        "status": "done",
-        "returncode": result["returncode"],
-        "stdout_text": result["stdout"],
-        "stderr_text": result["stderr"],
-        "stdout_tail": result["stdout_tail"],
-        "stderr_tail": result["stderr_tail"],
-        "ansi_stripped": True,
-        "terminal_environment_contract": terminal_environment_contract(),
-    }
+
+    # Build structured result using ToolResult dataclass
+    tool_result = ToolResult.ok_result(
+        tool="terminal_run_command_wait",
+        command=command,
+        powershell_body=body,
+        resolved_cwd=str(cwd),
+        path_normalized=cwd_details["path_normalized"],
+        normalization_reason=cwd_details["normalization_reason"],
+        command_class=classification.command_class,
+        consent_required=classification.consent_required,
+        policy=classification.reason,
+        command_execution_policy=execution_policy,
+        status="done",
+        returncode=result["returncode"],
+        stdout_text=result["stdout"],
+        stderr_text=result["stderr"],
+        stdout_tail=result["stdout_tail"],
+        stderr_tail=result["stderr_tail"],
+        ansi_stripped=True,
+        terminal_environment_contract=terminal_environment_contract(),
+    )
+    result_dict = asdict(tool_result)
     if "repair" in locals() and isinstance(repair, dict) and repair.get("auto_repaired"):
-        payload.update(repair)
+        result_dict.update(repair)
     artifact = root / "commands" / f"terminal-command-{now()}.json"
-    write_json(artifact, payload)
-    payload["artifact"] = str(artifact)
-    return payload
+    write_json(artifact, result_dict)
+    result_dict["artifact"] = str(artifact)
+    return result_dict
