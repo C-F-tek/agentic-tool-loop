@@ -20,6 +20,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .application.job.failure_counter import get_counter, reset_counter
+
 from .config import *
 from .application.public_payload.history_ledger import *
 from .application.job.response_values import *

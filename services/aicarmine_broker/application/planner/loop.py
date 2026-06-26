@@ -23,7 +23,33 @@ from .loop_controller import *
 from .evidence_contract_manager import *
 from ..tool_surface.tool_dispatch import *
 from ...tool_contract import *
+from .error_result import build_error_result, build_success_result, propagate_error
+from .error_codes import ERROR_CODES
 
+# Batch guard builder helper for consistent error dict construction
+def _batch_guard(
+    guard_type: str,
+    summary: str,
+    *,
+    step: int = 0,
+    job_id: str = "",
+    rejected_decision: dict | None = None,
+    violations: list | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Build a controller_guard batch_guard dict with consistent structure."""
+    result = {
+        "tool": "controller_guard",
+        "ok": True,
+        "guard_type": guard_type,
+        "summary": summary,
+        "violations": violations or [],
+    }
+    if rejected_decision:
+        result["rejected_decision"] = rejected_decision
+    if extra:
+        result.update(extra)
+    return result
 
 def evaluate_initial_orientation_shadow(
     requested_mode: object,
@@ -736,8 +762,12 @@ def run_agentic_planner_job(
 
     state = load_agent_job_state(job_id)
     if not state:
-        return {"ok": False, "error": "job_not_found", "job_id": job_id}
-
+        return build_error_result(
+            error_code="LOOP_STEP_EXECUTION_FAILED",
+            summary="Job state not found for job_id",
+            step=0,
+            job_id=job_id,
+        )
     root = agent_job_root(job_id)
     max_steps = max(1, min(int(state.get("max_steps") or AGENT_DEFAULT_MAX_STEPS), AGENT_MAX_STEPS))
     support_subturns_used = 0
@@ -1393,83 +1423,91 @@ def run_agentic_planner_job(
             used_micro_batch_action_ids: set[str] = set()
             used_micro_batch_call_signatures: set[str] = set()
             if not calls:
-                batch_guard = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "native_tool_batch_invalid",
-                    "summary": "native_tool_batch_empty",
-                    "violations": ["native_tool_batch_empty"],
-                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        validation={
-                            "ok": False,
-                            "violations": ["native_tool_batch_empty"],
-                            "evidence_contract": batch_evidence_contract,
-                        },
-                    ),
-                }
+                batch_guard = _batch_guard(
+                    guard_type="native_tool_batch_invalid",
+                    summary="native_tool_batch_empty",
+                    step=step,
+                    job_id=job_id,
+                    violations=["native_tool_batch_empty"],
+                    extra={
+                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                            step_number=step,
+                            phase="CONTROLLER_GUARD",
+                            planner_decision=decision,
+                            validation={
+                                "ok": False,
+                                "violations": ["native_tool_batch_empty"],
+                                "evidence_contract": batch_evidence_contract,
+                            },
+                        ),
+                    },
+                )
             elif len(calls) > int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1):
-                batch_guard = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "native_tool_batch_too_large",
-                    "summary": "native_tool_batch_exceeds_readonly_limit",
-                    "violations": ["native_tool_batch_too_large"],
-                    "native_tool_call_count": len(calls),
-                    "native_tool_call_limit": int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1),
-                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        validation={
-                            "ok": False,
-                            "violations": ["native_tool_batch_too_large"],
-                            "evidence_contract": batch_evidence_contract,
-                        },
-                    ),
-                }
+                batch_guard = _batch_guard(
+                    guard_type="native_tool_batch_too_large",
+                    summary="native_tool_batch_exceeds_readonly_limit",
+                    step=step,
+                    job_id=job_id,
+                    violations=["native_tool_batch_too_large"],
+                    extra={
+                        "native_tool_call_count": len(calls),
+                        "native_tool_call_limit": int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1),
+                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                            step_number=step,
+                            phase="CONTROLLER_GUARD",
+                            planner_decision=decision,
+                            validation={
+                                "ok": False,
+                                "violations": ["native_tool_batch_too_large"],
+                                "evidence_contract": batch_evidence_contract,
+                            },
+                        ),
+                    },
+                )
             elif micro_batch_contract.get("allowed") is not True:
-                batch_guard = {
-                    "tool": "controller_guard",
-                    "ok": True,
-                    "guard_type": "native_tool_batch_contract",
-                    "summary": "native_tool_batch_not_allowed_by_evidence_contract",
-                    "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
-                    "micro_batch_contract": micro_batch_contract,
-                    "native_tool_call_count": len(calls),
-                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                        step_number=step,
-                        phase="CONTROLLER_GUARD",
-                        planner_decision=decision,
-                        validation={
-                            "ok": False,
-                            "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
-                            "evidence_contract": batch_evidence_contract,
-                        },
-                    ),
-                }
+                batch_guard = _batch_guard(
+                    guard_type="native_tool_batch_contract",
+                    summary="native_tool_batch_not_allowed_by_evidence_contract",
+                    step=step,
+                    job_id=job_id,
+                    violations=["native_tool_batch_not_allowed_by_evidence_contract"],
+                    extra={
+                        "micro_batch_contract": micro_batch_contract,
+                        "native_tool_call_count": len(calls),
+                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                            step_number=step,
+                            phase="CONTROLLER_GUARD",
+                            planner_decision=decision,
+                            validation={
+                                "ok": False,
+                                "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
+                                "evidence_contract": batch_evidence_contract,
+                            },
+                        ),
+                    },
+                )
             else:
                 for call in calls:
                     if not isinstance(call, dict):
-                        batch_guard = {
-                            "tool": "controller_guard",
-                            "ok": True,
-                            "guard_type": "native_tool_batch_invalid",
-                            "summary": "native_tool_batch_call_invalid",
-                            "violations": ["native_tool_batch_call_invalid"],
-                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                step_number=step,
-                                phase="CONTROLLER_GUARD",
-                                planner_decision=decision,
-                                validation={
-                                    "ok": False,
-                                    "violations": ["native_tool_batch_call_invalid"],
-                                    "evidence_contract": batch_evidence_contract,
-                                },
-                            ),
-                        }
+                        batch_guard = _batch_guard(
+                            guard_type="native_tool_batch_invalid",
+                            summary="native_tool_batch_call_invalid",
+                            step=step,
+                            job_id=job_id,
+                            violations=["native_tool_batch_call_invalid"],
+                            extra={
+                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                                    step_number=step,
+                                    phase="CONTROLLER_GUARD",
+                                    planner_decision=decision,
+                                    validation={
+                                        "ok": False,
+                                        "violations": ["native_tool_batch_call_invalid"],
+                                        "evidence_contract": batch_evidence_contract,
+                                    },
+                                ),
+                            },
+                        )
                         break
                     call_decision = {
                         "action": "tool",
@@ -1494,24 +1532,26 @@ def run_agentic_planner_job(
                         internal_args,
                     )
                     if call_signature in used_micro_batch_call_signatures:
-                        batch_guard = {
-                            "tool": "controller_guard",
-                            "ok": True,
-                            "guard_type": "native_tool_batch_duplicate_call",
-                            "summary": "native_tool_batch_duplicate_call",
-                            "violations": ["native_tool_batch_duplicate_call"],
-                            "rejected_decision": call_decision,
-                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                step_number=step,
-                                phase="CONTROLLER_GUARD",
-                                planner_decision=call_decision,
-                                validation={
-                                    "ok": False,
-                                    "violations": ["native_tool_batch_duplicate_call"],
-                                    "evidence_contract": batch_evidence_contract,
-                                },
-                            ),
-                        }
+                        batch_guard = _batch_guard(
+                            guard_type="native_tool_batch_duplicate_call",
+                            summary="native_tool_batch_duplicate_call",
+                            step=step,
+                            job_id=job_id,
+                            rejected_decision=call_decision,
+                            violations=["native_tool_batch_duplicate_call"],
+                            extra={
+                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                                    step_number=step,
+                                    phase="CONTROLLER_GUARD",
+                                    planner_decision=call_decision,
+                                    validation={
+                                        "ok": False,
+                                        "violations": ["native_tool_batch_duplicate_call"],
+                                        "evidence_contract": batch_evidence_contract,
+                                    },
+                                ),
+                            },
+                        )
                         break
                     used_micro_batch_call_signatures.add(call_signature)
                     matched_action = loop_controller.match_micro_batch_action(
@@ -1520,25 +1560,27 @@ def run_agentic_planner_job(
                         internal_args=internal_args,
                     )
                     if not matched_action:
-                        batch_guard = {
-                            "tool": "controller_guard",
-                            "ok": True,
-                            "guard_type": "native_tool_batch_contract",
-                            "summary": "native_tool_batch_call_not_in_micro_batch_contract",
-                            "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
-                            "rejected_decision": call_decision,
-                            "micro_batch_contract": micro_batch_contract,
-                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                step_number=step,
-                                phase="CONTROLLER_GUARD",
-                                planner_decision=call_decision,
-                                validation={
-                                    "ok": False,
-                                    "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
-                                    "evidence_contract": batch_evidence_contract,
-                                },
-                            ),
-                        }
+                        batch_guard = _batch_guard(
+                            guard_type="native_tool_batch_contract",
+                            summary="native_tool_batch_call_not_in_micro_batch_contract",
+                            step=step,
+                            job_id=job_id,
+                            rejected_decision=call_decision,
+                            violations=["native_tool_batch_call_not_in_micro_batch_contract"],
+                            extra={
+                                "micro_batch_contract": micro_batch_contract,
+                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                                    step_number=step,
+                                    phase="CONTROLLER_GUARD",
+                                    planner_decision=call_decision,
+                                    validation={
+                                        "ok": False,
+                                        "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
+                                        "evidence_contract": batch_evidence_contract,
+                                    },
+                                ),
+                            },
+                        )
                         break
                     if call_decision["tool"] == "planner_scratchpad_read":
                         matched_args = (
@@ -1553,48 +1595,52 @@ def run_agentic_planner_job(
                         }
                     action_id = str(matched_action.get("action_id") or "").strip()
                     if not action_id or action_id in used_micro_batch_action_ids:
-                        batch_guard = {
-                            "tool": "controller_guard",
-                            "ok": True,
-                            "guard_type": "native_tool_batch_contract",
-                            "summary": "native_tool_batch_duplicate_or_missing_action_id",
-                            "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
-                            "rejected_decision": call_decision,
-                            "micro_batch_action_id": action_id,
-                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                step_number=step,
-                                phase="CONTROLLER_GUARD",
-                                planner_decision=call_decision,
-                                validation={
-                                    "ok": False,
-                                    "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
-                                    "evidence_contract": batch_evidence_contract,
-                                },
-                            ),
-                        }
+                        batch_guard = _batch_guard(
+                            guard_type="native_tool_batch_contract",
+                            summary="native_tool_batch_duplicate_or_missing_action_id",
+                            step=step,
+                            job_id=job_id,
+                            rejected_decision=call_decision,
+                            violations=["native_tool_batch_duplicate_or_missing_action_id"],
+                            extra={
+                                "micro_batch_action_id": action_id,
+                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                                    step_number=step,
+                                    phase="CONTROLLER_GUARD",
+                                    planner_decision=call_decision,
+                                    validation={
+                                        "ok": False,
+                                        "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
+                                        "evidence_contract": batch_evidence_contract,
+                                    },
+                                ),
+                            },
+                        )
                         break
                     used_micro_batch_action_ids.add(action_id)
                     call_decision["micro_batch_action_id"] = action_id
                     call_decision["micro_batch_contract_schema"] = micro_batch_contract.get("schema")
                     if not _tool_cache_key(call_decision["tool"], internal_args):
-                        batch_guard = {
-                            "tool": "controller_guard",
-                            "ok": True,
-                            "guard_type": "native_tool_batch_non_readonly",
-                            "summary": "native_tool_batch_requires_readonly_tools_only",
-                            "violations": ["native_tool_batch_non_readonly"],
-                            "rejected_decision": call_decision,
-                            "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                step_number=step,
-                                phase="CONTROLLER_GUARD",
-                                planner_decision=call_decision,
-                                validation={
-                                    "ok": False,
-                                    "violations": ["native_tool_batch_non_readonly"],
-                                    "evidence_contract": batch_evidence_contract,
-                                },
-                            ),
-                        }
+                        batch_guard = _batch_guard(
+                            guard_type="native_tool_batch_non_readonly",
+                            summary="native_tool_batch_requires_readonly_tools_only",
+                            step=step,
+                            job_id=job_id,
+                            rejected_decision=call_decision,
+                            violations=["native_tool_batch_non_readonly"],
+                            extra={
+                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
+                                    step_number=step,
+                                    phase="CONTROLLER_GUARD",
+                                    planner_decision=call_decision,
+                                    validation={
+                                        "ok": False,
+                                        "violations": ["native_tool_batch_non_readonly"],
+                                        "evidence_contract": batch_evidence_contract,
+                                    },
+                                ),
+                            },
+                        )
                         break
                     validation_i = validate_planner_decision_against_evidence(
                         str(state.get("goal") or ""), call_decision, history
