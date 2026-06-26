@@ -483,6 +483,8 @@ Extensive utility library for context management, memory, RAG, and agent operati
 
 ## Documentation Quick Reference
 
+### Refactoring & Technical Guides
+
 | Document | Description |
 |----------|-------------|
 | `PYTHON_REFACTORING_GUIDE.md` | Comprehensive refactoring guide with anti-patterns and case studies |
@@ -493,6 +495,54 @@ Extensive utility library for context management, memory, RAG, and agent operati
 | `runtime_env_contract.md` | Runtime environment contract |
 | `START_HERE_RUNTIME.md` | Getting started with runtime |
 | `VENVS_MANAGEMENT.md` | Virtual environment management |
+
+### Module README Files (New — Complete Surface Documentation)
+
+#### Broker Module (`services/aicarmine_broker/`)
+
+| Document | Location |
+|----------|----------|
+| Broker Overview | [README](../services/aicarmine_broker/README.md) |
+| Config | [README](../services/aicarmine_broker/config/README.md) |
+| Tools | [README](../services/aicarmine_broker/tools/README.md) |
+| Infrastructure | [README](../services/aicarmine_broker/infrastructure/README.md) |
+| Application Layer | [README](../services/aicarmine_broker/application/README.md) |
+| Domain | [README](../services/aicarmine_broker/domain/README.md) |
+| Contracts | [README](../services/aicarmine_broker/contracts/README.md) |
+| Planner Modules | [README](../services/aicarmine_broker/application/planner/modules/README.md) |
+| Planner Validator | [README](../services/aicarmine_broker/application/planner/validator/README.md) |
+| Public Payload Lab | [README](../services/aicarmine_broker/application/public_payload/lab/README.md) |
+| Planner Core | [README](../services/aicarmine_broker/planner_core/README.md) |
+
+#### Application Sub-Modules
+
+| Document | Location |
+|----------|----------|
+| Evidence | [README](../services/aicarmine_broker/application/evidence/README.md) |
+| Tool Surface | [README](../services/aicarmine_broker/application/tool_surface/README.md) |
+| Prompt | [README](../services/aicarmine_broker/application/prompt/README.md) |
+| Controller | [README](../services/aicarmine_broker/application/controller/README.md) |
+| Code Product | [README](../services/aicarmine_broker/application/code_product/README.md) |
+| Job | [README](../services/aicarmine_broker/application/job/README.md) |
+| Memory | [README](../services/aicarmine_broker/application/memory/README.md) |
+| NPU Phi | [README](../services/aicarmine_broker/application/npu_phi/README.md) |
+| Replay | [README](../services/aicarmine_broker/application/replay/README.md) |
+| Runtime Debug | [README](../services/aicarmine_broker/application/runtime_debug/README.md) |
+| Search | [README](../services/aicarmine_broker/application/search/README.md) |
+| Command | [README](../services/aicarmine_broker/application/command/README.md) |
+
+#### Other Services
+
+| Document | Location |
+|----------|----------|
+| Vulkan Bridge | [README](../services/vulkan_bridge/README.md) |
+| Codex Bridge | [README](../services/codex_bridge/README.md) |
+| Launch Scripts | [README](../services/launch/README.md) |
+| Model Export | [README](../services/model_export/README.md) |
+| NPU Phi Service | [README](../services/npu_phi_service/README.md) |
+| Tests | [README](../services/tests/README.md) |
+| Codex Ollama Applied | [README](../codex_ollama_bridge_applied/README.md) |
+| Codex Ollama Bridge | [README](../codex_ollama_bridge_applied/codex_ollama_bridge/README.md) |
 
 ---
 
