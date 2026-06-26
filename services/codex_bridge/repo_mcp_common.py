@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time as _time_module
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -108,6 +109,128 @@ def decompress_tool_text(text: str) -> str:
         except Exception:
             return text  # Return original if decompression fails
     return text
+
+
+# ---------------------------------------------------------------------------
+# Enhanced compression with metadata headers
+# ---------------------------------------------------------------------------
+
+def build_response_metadata(
+    server_name: str,
+    tool_name: str,
+    compressed: bool = False,
+    original_size: int = 0,
+    compressed_size: int = 0,
+    chunk_index: int = 0,
+    total_chunks: int = 1,
+    next_offset: int | None = None,
+    has_more: bool = False,
+) -> dict[str, Any]:
+    """Build metadata dict for response."""
+    return {
+        "server": server_name,
+        "tool": tool_name,
+        "timestamp": _time_module.strftime("%Y-%m-%dT%H:%M:%S%z", _time_module.gmtime()),
+        "elapsed_ms": 0.0,
+        "compressed": compressed,
+        "original_size_bytes": original_size,
+        "compressed_size_bytes": compressed_size,
+        "compression_ratio": round(original_size / max(compressed_size, 1), 2),
+        "chunk_index": chunk_index,
+        "total_chunks": total_chunks,
+        "next_offset": next_offset,
+        "has_more": has_more,
+    }
+
+
+def compress_response(
+    data: Any,
+    *,
+    server_name: str = "unknown",
+    tool_name: str = "unknown",
+    use_compression: bool | None = None,
+    offset: int = 0,
+    limit: int = MAX_TEXT,
+) -> dict[str, Any]:
+    """Build a compressed JSON response with metadata headers."""
+    if use_compression is None:
+        use_compression = COMPRESSION_ENABLED
+    if isinstance(data, dict) and "data" in data:
+        payload = data.get("data", {})
+        if isinstance(payload, list) and (offset > 0 or limit < len(payload)):
+            truncated = payload[offset:offset + limit]
+            has_more = (offset + limit) < len(payload)
+            data["data"] = truncated
+            data["pagination"] = {"offset": offset, "limit": limit, "total": len(payload), "has_more": has_more}
+    raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+    original_size = len(raw.encode("utf-8"))
+    compressed_hex = None
+    if use_compression and original_size > 10000:
+        compressed_hex = json_compress(data)
+        compressed_size = len(compressed_hex)
+        is_compressed = True
+    else:
+        compressed_size = original_size
+        is_compressed = False
+    response_metadata = build_response_metadata(
+        server_name=server_name, tool_name=tool_name, compressed=is_compressed,
+        original_size=original_size, compressed_size=compressed_size,
+    )
+    return {
+        "ok": True,
+        "data": data if not is_compressed else f"__compressed__:{compressed_hex}",
+        "metadata": response_metadata,
+    }
+
+
+def mcp_tool_result(
+    data: Any,
+    *,
+    server_name: str = "unknown",
+    tool_name: str = "unknown",
+    is_error: bool = False,
+    use_compression: bool | None = None,
+) -> dict[str, Any]:
+    """Wrap data in MCP tool content format with optional compression."""
+    if use_compression is None:
+        use_compression = COMPRESSION_ENABLED
+    raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+    original_size = len(raw.encode("utf-8"))
+    text = raw
+    compressed_hex = None
+    if use_compression and original_size > 10000:
+        compressed_hex = json_compress(data)
+        text = f"__compressed__:{compressed_hex}"
+    response_metadata = build_response_metadata(
+        server_name=server_name, tool_name=tool_name,
+        compressed=(compressed_hex is not None),
+        original_size=original_size, compressed_size=len(text.encode("utf-8")),
+    )
+    content = [{"type": "text", "text": text}]
+    if response_metadata.get("compressed"):
+        content.append({"type": "text", "text": json.dumps(response_metadata, ensure_ascii=False, indent=2)})
+    return {"content": content, "isError": is_error}
+
+
+def mcp_error_result(
+    message: str,
+    *,
+    code: int = -1,
+    server_name: str = "unknown",
+    tool_name: str = "unknown",
+    data: Any = None,
+) -> dict[str, Any]:
+    """Build a standardized MCP error result."""
+    error = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    response_metadata = build_response_metadata(
+        server_name=server_name, tool_name=tool_name,
+        compressed=False, original_size=len(message.encode("utf-8")),
+        compressed_size=len(message.encode("utf-8")),
+    )
+    error["metadata"] = response_metadata
+    return {"ok": False, "error": error}
 
 
 def ok(msg_id: Any, result: Any) -> dict[str, Any]:
@@ -898,7 +1021,6 @@ def path_is_under(path: Path, parent: Path) -> bool:
 def diagnostic_preview(value: Any, limit: int = 500) -> str:
     """Public alias for _diagnostic_preview."""
     return _diagnostic_preview(value, limit)
-    return schema
 
 
 def object_prop() -> dict[str, Any]:
