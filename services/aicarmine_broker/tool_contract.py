@@ -39,7 +39,7 @@ def parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if isinstance(raw_args, str):
         try:
             decoded = json.loads(raw_args) if raw_args.strip() else {}
-        except Exception:
+        except (ValueError, TypeError):
             decoded = {}
         raw_args = decoded
     return (name, dict(raw_args or {}) if isinstance(raw_args, dict) else {})
@@ -183,8 +183,8 @@ def _paths_from_items(value: object) -> list[str]:
 def _preview(value: Any, *, limit: int = 300) -> str:
     try:
         return str(value)[:limit]
-    except Exception as exc:
-        return f"<unstringifiable:{type(exc).__name__}>"
+    except (TypeError, ValueError, AttributeError):
+        return f"<unstringifiable:{type(value).__name__}>"
 
 
 def _diagnostic(

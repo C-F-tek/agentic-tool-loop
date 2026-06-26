@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from git import _exc
+
 
 EDIT_KIND_STRUCTURED = "structured_edit"
 EDIT_KIND_UNIFIED_DIFF = "unified_diff"
@@ -65,7 +67,7 @@ def target_path_errors(repo_root: Path, target_file: str) -> list[str]:
         root_resolved = repo_root.resolve()
         if root_resolved not in resolved.parents and resolved != root_resolved:
             errors.append("target_file_outside_repo")
-    except Exception:
+    except (ValueError, OSError, RuntimeError):
         errors.append("target_file_resolution_failed")
     return errors
 
@@ -161,7 +163,7 @@ def validate_unified_diff_text(
     if require_unidiff:
         try:
             from unidiff import PatchSet  # type: ignore
-        except Exception:
+        except (ImportError, ModuleNotFoundError):
             errors.append("unidiff_dependency_missing")
         else:
             try:
@@ -204,7 +206,7 @@ def tree_sitter_parse_evidence(repo_root: Path, target_file: str, language: str)
     try:
         from tree_sitter import Language, Parser  # type: ignore
         import tree_sitter_python  # type: ignore
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         return evidence, ["tree_sitter_dependency_missing"]
     try:
         parser_language = Language(tree_sitter_python.language())
@@ -243,8 +245,8 @@ def python_ast_anchor_evidence(repo_root: Path, target_file: str, ast_anchor: st
     try:
         text = (repo_root / rel).read_text(encoding="utf-8")
         tree = ast.parse(text)
-    except Exception as exc:
-        return evidence, [f"ast_anchor_parse_failed:{type(exc).__name__}"]
+    except (OSError, IOError, SyntaxError, Exception):
+        return evidence, [f"ast_anchor_parse_failed:{type(_exc).__name__}"]
     matches: list[dict[str, Any]] = []
     for node in ast.walk(tree):
         name = getattr(node, "name", None)
@@ -279,8 +281,8 @@ def ast_grep_evidence(repo_root: Path, target_file: str, pattern: str) -> tuple[
             capture_output=True,
             timeout=20,
         )
-    except Exception as exc:
-        return evidence, [f"ast_grep_failed:{type(exc).__name__}"]
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError, Exception):
+        return evidence, [f"ast_grep_failed:{type(_exc).__name__}"]
     evidence.update(
         {
             "command": cmd,
@@ -328,8 +330,8 @@ def build_code_edit_proposal(
         if target_path.is_file():
             try:
                 original_text = target_path.read_text(encoding="utf-8-sig", errors="replace")
-            except Exception as exc:
-                errors.append(f"target_file_read_failed:{type(exc).__name__}")
+            except (OSError, IOError):
+                errors.append(f"target_file_read_failed:{type(_exc).__name__}")
             else:
                 occurrences = original_text.count(old_text)
                 if occurrences < 1:

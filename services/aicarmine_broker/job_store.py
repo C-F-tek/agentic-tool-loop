@@ -200,7 +200,7 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
     write_json(agent_job_state_path(job_id), state)
     try:
         _job_sqlite_store().upsert_job_state(state, root)
-    except Exception as exc:
+    except (sqlite3.IntegrityError, sqlite3.OperationalError, sqlite3.DatabaseError) as exc:
         warning = _sqlite_warning(exc)
         _log_sqlite_warning(job_id, "job_state_upsert", warning, exc)
         state["_persistence_warning"] = warning
@@ -209,6 +209,20 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
             job_id,
             "sqlite_write_failed",
             "Filesystem job state was written but SQLite index update failed.",
+            warning,
+            step=None,
+        )
+    except Exception as exc:
+        # Broad catch for unexpected errors (e.g., permission denied, disk full)
+        warning = _sqlite_warning(exc)
+        warning["unexpected_error_type"] = type(exc).__name__
+        _log_sqlite_warning(job_id, "job_state_upsert_unexpected", warning, exc)
+        state["_persistence_warning"] = warning
+        write_json(agent_job_state_path(job_id), state)
+        append_agent_event_filesystem_only(
+            job_id,
+            "sqlite_write_failed_unexpected",
+            f"Unexpected SQLite error ({type(exc).__name__}): job state persisted to filesystem only.",
             warning,
             step=None,
         )

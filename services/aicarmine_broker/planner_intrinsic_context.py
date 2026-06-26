@@ -226,12 +226,12 @@ def _rerank_order_from_response(response: Any, item_count: int) -> list[tuple[in
             raw_index = item.get("index", item.get("document_index", item.get("id", fallback_index)))
             try:
                 index = int(raw_index)
-            except Exception:
+            except (ValueError, TypeError):
                 index = fallback_index
             score = item.get("relevance_score", item.get("score", item.get("logit", item.get("rerank_score", 0.0))))
             try:
                 score_float = float(score)
-            except Exception:
+            except (ValueError, TypeError, OverflowError):
                 score_float = 0.0
             if 0 <= index < item_count:
                 order.append((index, score_float))
@@ -241,7 +241,7 @@ def _rerank_order_from_response(response: Any, item_count: int) -> list[tuple[in
         for index, score in enumerate(scores[:item_count]):
             try:
                 order.append((index, float(score)))
-            except Exception:
+            except (ValueError, TypeError, OverflowError):
                 order.append((index, 0.0))
     return order
 
