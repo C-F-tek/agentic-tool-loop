@@ -479,8 +479,9 @@ def _optional_context_for_prompt(
 def _planner_token_generation_reserve(num_ctx: int | None = None) -> int:
     try:
         ctx = int(num_ctx if num_ctx is not None else AGENTIC_PLANNER_NUM_CTX)
-    except Exception:
+    except (ValueError, TypeError):
         ctx = 0
+        # Log or emit diagnostic here if needed
     if ctx <= 0:
         return 0
     return max(512, min(32768, ctx // 16))
@@ -574,7 +575,7 @@ def _read_json_file(path: str) -> dict[str, Any]:
         return {}
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except Exception:
+    except (ValueError, TypeError, OSError, IOError):
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -612,7 +613,7 @@ def _repo_read_file_content_from_repo(item: dict[str, Any], known_prefix: str = 
             }
         )
         return text, meta
-    except Exception as exc:
+    except (OSError, IOError, PermissionError) as exc:
         meta.update({"error": "repo_file_rehydrate_failed", "error_type": type(exc).__name__})
         return "", meta
 
@@ -3633,7 +3634,7 @@ def judge_blocked_job(
                     or diagnostics.get("error")
                     or "terminal_judge_invalid_json"
                 )
-    except Exception as exc:
+    except (OSError, IOError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
         provider_error = f"{type(exc).__name__}: {exc}"
 
     judge_report = _sanitize_terminal_judge_provider_report(
