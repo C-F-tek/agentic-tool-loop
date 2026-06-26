@@ -2545,7 +2545,6 @@ def run_agentic_planner_job(
                 loop_state.append_history_row(row)
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
-                continue
                 loop_state.append_history_row(row)
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
