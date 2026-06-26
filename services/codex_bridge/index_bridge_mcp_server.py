@@ -229,7 +229,14 @@ class IndexBridgeManager:
                 (f"%{query}%", limit)
             )
 
-        results = [dict(row) for row in cursor.fetchall()]
+        rows = cursor.fetchall()
+        if rows and hasattr(rows[0], 'keys'):
+            # sqlite3.Row object - use keys() method
+            results = [dict(zip(row.keys(), row)) for row in rows]
+        else:
+            # Raw tuple rows - use column names from cursor.description
+            col_names = [desc[0] for desc in cursor.description] if cursor.description else []
+            results = [dict(zip(col_names, row)) for row in rows]
         conn.close()
 
         return {

@@ -7,16 +7,13 @@ Refactored to use extracted classes:
 """
 
 from __future__ import annotations
-
 import itertools
 import traceback
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Mapping
-
 from ..controller.rag_preseed import *
 from ...config import *
-
 from .state import *
 from ..shared.evidence_contract_summary import *
 from ..tool_surface.batch_contract import *
@@ -30,7 +27,6 @@ from ...tool_contract import *
 
 
 def evaluate_initial_orientation_shadow(
-    *,
     requested_mode: object,
     root_result: object,
     goal: object,
@@ -47,12 +43,10 @@ def evaluate_initial_orientation_shadow(
     selection_metrics_fn: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
     """Initial orientation shadow evaluator - pure function without wiring.
-
     Evaluates a single root orientation using injected dependencies only.
     Does not know job_id, state/history, execute tools directly, persist artifact,
     emit events, or modify legacy flow. Not called by runtime yet.
     """
-
     def bounded_text(value: object, limit: int = 32) -> str:
         """Convert value to string safely, strip, truncate."""
         text = ""
@@ -66,7 +60,7 @@ def evaluate_initial_orientation_shadow(
             except Exception:
                 pass
         return text
-
+    
     def bounded_ids(raw_ids: object, allowed_ids: set[str] | None = None, limit: int = 13) -> list[str]:
         """Sanitize IDs: must be list of strings, strip, ignore empty/oversized, dedupe first occurrence, limit count."""
         if not isinstance(raw_ids, list):
@@ -120,7 +114,6 @@ def evaluate_initial_orientation_shadow(
     effective_mode_raw = effective_mode_fn(requested_mode)
     effective_mode = "shadow" if effective_mode_raw == "shadow" else "legacy"
     requested_mode_bounded = bounded_text(requested_mode, 32)
-
     if effective_mode != "shadow":
         return {
             "schema": "orientation_shadow_evaluation.v1",
@@ -158,7 +151,6 @@ def evaluate_initial_orientation_shadow(
                 "error": "",
             },
         }
-
     # STAGE 2 — ROOT RESULT GATE
     if not isinstance(root_result, dict) or root_result.get("ok") is not True:
         return {
@@ -197,7 +189,6 @@ def evaluate_initial_orientation_shadow(
                 "error": "",
             },
         }
-
     # STAGE 3 — CANDIDATE POOL
     try:
         raw_pool = candidate_pool_fn(deepcopy(root_result))
@@ -240,7 +231,6 @@ def evaluate_initial_orientation_shadow(
                 "error": error_text,
             },
         }
-
     valid_candidates_list = valid_candidates(raw_pool)
     candidate_count = len(valid_candidates_list)
     allowed_candidate_ids = {
@@ -251,7 +241,6 @@ def evaluate_initial_orientation_shadow(
         [c["candidate_id"] for c in valid_candidates_list],
         limit=32,
     )
-
     if not valid_candidates_list:
         return {
             "schema": "orientation_shadow_evaluation.v1",
@@ -289,7 +278,6 @@ def evaluate_initial_orientation_shadow(
                 "error": "",
             },
         }
-
     # STAGE 4 — LEGACY SELECTED IDS
     try:
         legacy_result = legacy_selected_ids_fn(
@@ -342,7 +330,6 @@ def evaluate_initial_orientation_shadow(
         allowed_ids=allowed_candidate_ids,
         limit=13,
     )
-
     # STAGE 5 — SELECTOR
     try:
         goal_bounded = str(goal)[:4000] if isinstance(goal, str) else str(goal)[:4000]
@@ -391,7 +378,6 @@ def evaluate_initial_orientation_shadow(
                 "error": error_text,
             },
         }
-
     # STAGE 6 — SELECTOR RESULT VALIDATION
     if not isinstance(selector_result, dict):
         return {
@@ -430,7 +416,6 @@ def evaluate_initial_orientation_shadow(
                 "error": "selector returned non-dict",
             },
         }
-
     selector_ok = selector_result.get("ok") is True
     selector_status = bounded_text(selector_result.get("status"), 64).lower()
     selector_ready = selector_ok and selector_status == "ready"
@@ -456,7 +441,6 @@ def evaluate_initial_orientation_shadow(
         allowed_ids=allowed_candidate_ids,
         limit=13,
     )
-
     if not selector_ready:
         if selector_status == "unavailable":
             reason_selector = bounded_text(rationale_bounded or "selector_unavailable", 160)
@@ -533,7 +517,6 @@ def evaluate_initial_orientation_shadow(
                 "error": error_bounded,
             },
         }
-
     # STAGE 7 — SELECTION METRICS
     try:
         metrics_result = selection_metrics_fn(
@@ -579,7 +562,6 @@ def evaluate_initial_orientation_shadow(
                 "error": error_bounded,
             },
         }
-
     if not isinstance(metrics_result, dict):
         return {
             "schema": "orientation_shadow_evaluation.v1",
@@ -617,7 +599,6 @@ def evaluate_initial_orientation_shadow(
                 "error": "selection metrics returned non-dict",
             },
         }
-
     overlap = metrics_result.get("selection_overlap", [])
     overlap_bounded = bounded_ids(overlap, allowed_ids=allowed_candidate_ids, limit=13)
     overlap_count = len(overlap_bounded)
@@ -644,7 +625,6 @@ def evaluate_initial_orientation_shadow(
         if isinstance(would_change_raw, bool)
         else not exact_match
     )
-
     # SUCCESS RESULT
     return {
         "schema": "orientation_shadow_evaluation.v1",

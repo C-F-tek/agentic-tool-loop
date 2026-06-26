@@ -1608,7 +1608,7 @@ def _controller_memory_target_key(goal: str, contract: dict[str, Any] | None = N
 def _planner_prompt_budget_value(default: int = 24000) -> int:
     try:
         return int(AGENTIC_PLANNER_PROMPT_CHAR_BUDGET or default)
-    except Exception:
+    except (ValueError, TypeError):
         return int(default)
 
 
@@ -3609,7 +3609,7 @@ def judge_blocked_job(
             },
             step=step,
         )
-    except Exception:
+    except (OSError, IOError, TimeoutError, ValueError):
         pass
 
     provider_error = ""
@@ -3675,7 +3675,7 @@ def judge_blocked_job(
             _terminal_judge_markdown(judge_report),
             encoding="utf-8",
         )
-    except Exception as exc:
+    except (OSError, IOError) as exc:
         judge_report["persistence_ok"] = False
         judge_report["persistence_error_type"] = type(exc).__name__
         judge_report["persistence_error"] = str(exc)[:1000]
@@ -3687,7 +3687,7 @@ def judge_blocked_job(
                 judge_report,
                 step=step,
             )
-        except Exception:
+        except (OSError, IOError):
             pass
         return result
 
@@ -3704,7 +3704,7 @@ def judge_blocked_job(
             step=step,
         )
         judge_report["event_emit_ok"] = True
-    except Exception as exc:
+    except (OSError, IOError, TimeoutError) as exc:
         judge_report["event_emit_ok"] = False
         judge_report["event_emit_error_type"] = type(exc).__name__
         judge_report["event_emit_error"] = str(exc)[:1000]
@@ -3716,7 +3716,7 @@ def judge_blocked_job(
                 judge_report,
                 step=step,
             )
-        except Exception:
+        except (OSError, IOError):
             pass
 
     return result

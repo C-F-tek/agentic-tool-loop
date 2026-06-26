@@ -73,7 +73,7 @@ def terminal_preferred_cwd() -> Path:
             path = Path(str(item)).expanduser().resolve(strict=False)
             if path.exists() and path.is_dir():
                 return path
-        except Exception:
+        except (OSError, ValueError, TypeError):
             continue
     return _terminal_user_home()
 
@@ -241,7 +241,7 @@ def terminal_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     directory = path_details["resolved_path_obj"]
     try:
         limit = _bounded_int_arg(args, ("limit", "max_files"), default=200, minimum=1, maximum=2000)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
         return _terminal_input_error("terminal_list_files", exc)
     recurse = parse_bool(args.get("recurse", args.get("recursive", False)), False)
     pattern = str(args.get("pattern") or args.get("glob") or "*").strip() or "*"
@@ -272,7 +272,7 @@ def terminal_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
                     "modified": stat.st_mtime,
                 }
             )
-        except Exception:
+        except (OSError, PermissionError):
             continue
         if len(items) >= limit:
             break
@@ -308,7 +308,7 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     directory = path_details["resolved_path_obj"]
     try:
         limit = _bounded_int_arg(args, ("limit", "max_results"), default=200, minimum=1, maximum=2000)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
         return _terminal_input_error("terminal_search_files", exc)
     content = parse_bool(args.get("content", False), False)
 
@@ -360,7 +360,7 @@ def terminal_search_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
                     unreadable_files += 1
                     if len(skipped_errors_preview) < 10:
                         skipped_errors_preview.append({"path": str(fp), "error_type": type(exc).__name__, "error": str(exc)[:500]})
-                except Exception as exc:
+                except (OSError, IOError, PermissionError):
                     unreadable_files += 1
                     if len(skipped_errors_preview) < 10:
                         skipped_errors_preview.append({"path": str(fp), "error_type": type(exc).__name__, "error": str(exc)[:500]})
@@ -420,7 +420,7 @@ def terminal_run_command_wait(
 
     try:
         timeout = _bounded_int_arg(args, ("timeout_seconds", "timeout"), default=COMMAND_TIMEOUT_SECONDS, minimum=1, maximum=3600)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
         return _terminal_input_error("terminal_run_command_wait", exc)
     cwd_details = normalize_terminal_path_details(args.get("cwd") or args.get("directory") or args.get("path"), base=terminal_preferred_cwd())
     cwd = cwd_details["resolved_path_obj"]
