@@ -1271,3 +1271,11 @@ def repo_analysis_final_answer_too_shallow(
     contract: dict[str, Any],
 ) -> bool:
     return not repo_analysis_final_answer_quality(final_answer, contract).get("ok")
+
+
+__all__ = [
+    "repo_analysis_final_answer_model_quality",
+    "repo_analysis_final_answer_quality",
+    "repo_analysis_final_answer_too_shallow",
+    "_ALLOWED_FINAL_QUALITY_ROUTE_TOOLS",
+]

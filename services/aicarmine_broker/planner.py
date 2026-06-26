@@ -19,9 +19,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from aicarmine_broker.application.evidence import user_scope_claims
+from aicarmine_broker.application.evidence.repo_history import extract_key_lines, file_memory_from_history, rank_core_candidates, repo_list_evidence
+from aicarmine_broker.application.evidence.repo_path_policy import dynamic_read_candidate_paths, path_under_scope
+from aicarmine_broker.application.evidence.scope_conflict_resolution import target_scope_conflict_resolved
 from aicarmine_broker.application.planner.planner_repair import *
 from aicarmine_broker.application.planner.planner_replan_specialist import *
 from aicarmine_broker.application.planner.planner_replan_specialist import *
+from aicarmine_broker.application.planner.planner_replan_specialist import _specialist_route_audit
+from aicarmine_broker.application.planner.planner_replan_specialist import _FINAL_QUALITY_ROUTE_TOOLS
 from aicarmine_broker.application.planner.validation_rejections import *
 from aicarmine_broker.application.prompt.budget import *
 from aicarmine_broker.application.prompt.history_contract import *
@@ -31,10 +37,13 @@ from aicarmine_broker.application.prompt.values import *
 from aicarmine_broker.application.tool_surface.manifest_builder import *
 from aicarmine_broker.application.tool_surface.result_digest import *
 from aicarmine_broker.application.tool_surface.turn_surface_policy import *
+from .application.evidence.final_quality import repo_analysis_final_answer_model_quality_request, sanitize_repo_analysis_final_model_quality
+from .application.planner.decision_normalizer import _native_tool_calls_decision
 from .config import *
 from .job_store import *
 from .application.shared.memory_tools import *
 from .code_edit_proposal_contract import *
+from .planner_core.json_io import _parse_strict_json_object
 from .planner_intrinsic_context import *
 from .infrastructure.repo_tools import *
 from .planner_core.json_io import *
@@ -3094,15 +3103,18 @@ def terminal_context_alias() -> dict[str, Any]:
 
 
 def planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return planner_decision_rows(history)
+    from .application.public_payload.terminal_context_rows import planner_decision_rows as _inner
+    return _inner(history)
 
 
 def validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return validation_rejection_rows(history)
+    from .application.public_payload.terminal_context_rows import validation_rejection_rows as _inner
+    return _inner(history)
 
 
 def executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return executed_tool_rows(history)
+    from .application.public_payload.terminal_context_rows import executed_tool_rows as _inner
+    return _inner(history)
 
 
 def repo_read_content_views(
