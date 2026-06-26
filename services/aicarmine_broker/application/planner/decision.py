@@ -50,8 +50,26 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from .error_result import build_error_result, build_success_result, propagate_error
+from .error_codes import ERROR_CODES, classify_error as _classify_error
 
-from aicarmine_broker.planner import _agentic_v2_decision_paths, _agentic_v2_read_has_window, _agentic_v2_successful_read_paths, _any_argument_group_present, _apply_unverified_old_text_replan_contract, _argument_value_present, _canonical_invalid_code_product_decision_signature, _code_product_low_signal_target, _native_required_tool_decision_has_transport_provenance, _old_text_verified_by_repo_read, _path_exists_repo_relative, _planner_scratchpad_read_selector_present, _repo_analysis_goal, _repo_read_selector_present, _successful_window_signatures
+from aicarmine_broker.planner import( 
+    _agentic_v2_decision_paths, 
+    _agentic_v2_read_has_window, 
+    _agentic_v2_successful_read_paths, 
+    _any_argument_group_present, 
+    _apply_unverified_old_text_replan_contract, 
+    _argument_value_present, 
+    _canonical_invalid_code_product_decision_signature, 
+    _code_product_low_signal_target, 
+    _native_required_tool_decision_has_transport_provenance, 
+    _old_text_verified_by_repo_read, 
+    _path_exists_repo_relative, 
+    _planner_scratchpad_read_selector_present, 
+    _repo_analysis_goal, 
+    _repo_read_selector_present, 
+    _successful_window_signatures
+)
 
 from codex_ollama_bridge_applied.aicarmine_vulkan_tool_broker import OLLAMA_TASK_MODEL, OLLAMA_TASK_URL
 
@@ -368,12 +386,12 @@ def validate_planner_decision_against_evidence(
     _config.update(config)
     
     # TODO: Full validation logic would go here
-    # For now, this is a stub that preserves the existing signature
-    return {
-        "ok": True,
-        "violations": [],
-        "evidence_contract": planner_evidence_contract(goal, history),
-    }
+    return build_success_result(
+        context={
+            "violations": [],
+            "evidence_contract": planner_evidence_contract(goal, history),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -717,4 +735,16 @@ def controller_guard_result_for_validation(
     }
     if required_continuation:
         guard["required_next_tool_call"] = required_continuation
-    return guard
+    return {
+        **build_error_result(
+            error_code="VALIDATION_VIOLATION_DETECTED",
+            summary=guard["summary"],
+            step=step,
+            job_id=job_id,
+            context={"violations": violations, "guard_type": "planner_decision_validation"},
+        ),
+        "tool": "controller_guard",
+        "ok": True,
+        "kind": "validator_feedback",
+        "source": "validator",
+    }
