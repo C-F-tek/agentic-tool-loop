@@ -24,7 +24,6 @@ class DeterministicToolInputError(ValueError):
     def __init__(
         self,
         error: str,
-        *,
         argument: str | None = None,
         value: Any = None,
         path: str | None = None,
@@ -169,7 +168,6 @@ def deterministic_input_error(tool: str, exc: Exception) -> dict[str, Any]:
 def bounded_int_arg(
     args: dict[str, Any],
     names: str | tuple[str, ...],
-    *,
     default: int,
     minimum: int,
     maximum: int,
@@ -208,7 +206,6 @@ def subprocess_text(value: Any) -> str:
 
 def run_argv(
     argv: list[str],
-    *,
     cwd: Path | None = None,
     timeout: int = COMMAND_TIMEOUT_SECONDS,
     stdin: str | None = None,
