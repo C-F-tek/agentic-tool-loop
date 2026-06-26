@@ -1,0 +1,264 @@
+# Application Layer — Application Modules
+
+> **Purpose**: The application layer contains all business logic for the AI agent loop: planner decisions, evidence building, prompt construction, tool surface management, payload formatting, shared utilities, job lifecycle, controller logic, code product state, memory conflict detection, NPU phi integration, replay functionality, runtime debug, search quality, and command execution policy.
+
+---
+
+## Module Structure
+
+```
+application/
+├── planner/        — Planner decision building, loop control, validation
+├── evidence/       — Evidence building & classification
+├── prompt/         — Prompt construction & management
+├── tool_surface/   — Tool dispatch & result handling
+├── public_payload/ — OpenWebUI payload formatting
+├── shared/         — Shared utilities
+├── job/            — Job lifecycle management
+├── controller/     — Controller lane logic
+├── code_product/   — Code product state management
+├── memory/         — Memory conflict detection
+├── npu_phi/        — NPU phi service integration
+├── replay/         — Loop replay functionality
+├── runtime_debug/  — Runtime debug packet management
+├── search/         — Search quality metrics
+└── command/        — Command execution policy
+```
+
+---
+
+## 1. Planner (`planner/`)
+
+Core planner logic: decision building, loop control, validation, lane routing.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `agentic_v2.py` | Agentic v2 decision paths | `_TOOL_PATH_KEYS` flat decision table |
+| `decision.py` | Decision building (720 lines) | Decision construction logic |
+| `evidence_contract_builder.py` | Evidence contract construction | Lazy imports, single import block |
+| `loop.py` | Agentic loop orchestration | Loop control flow |
+| `planner_loop.py` | Run agentic planner job | Main loop execution function |
+| `planner_prompt.py` | Prompt construction | Builds system/user prompts |
+| `validator.py` | Validator orchestration | Main validator coordinator |
+
+### Sub-modules
+
+| Path | Purpose |
+|------|---------|
+| `modules/replan_specialist.py` | Replan specialist logic |
+| `validator/` | Validator sub-package |
+
+---
+
+## 2. Evidence (`evidence/`)
+
+Evidence building and classification for agent decision-making.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `builder.py` | Evidence builder orchestration | Main evidence builder |
+| `core_discovery.py` | Core discovery candidates | Candidate selection |
+| `execution_digest.py` | Execution evidence digest | Digests execution results |
+| `final_quality.py` | Final quality validation | Quality gate checks |
+| `initial_orientation.py` | Initial orientation surface | Orientation discovery |
+| `repo_history.py` | Repository history tracking | Git history analysis |
+
+---
+
+## 3. Prompt (`prompt/`)
+
+Prompt construction, context windows, history management, budget tracking.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `available_tools.py` | Available tools listing | Lists available tools |
+| `budget.py` | Budget management | Context budget tracking |
+| `context_windows.py` | Context window management | Window size management |
+| `evidence_contract.py` | Evidence contract building | Builds evidence contracts |
+| `history_messages.py` | History message formatting | Formats history messages |
+| `intrinsic_context.py` | Intrinsic context building | Builds intrinsic context |
+
+---
+
+## 4. Tool Surface (`tool_surface/`)
+
+Tool dispatch, manifest building, result compaction, turn surface policy.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `dispatcher.py` | Tool dispatch | Dispatches tool calls |
+| `manifest_builder.py` | Manifest building | Builds tool manifests |
+| `result_compaction.py` | Result compaction | Compacts results |
+| `turn_surface_policy.py` | Turn surface policy | Policy for turn surfaces |
+
+---
+
+## 5. Public Payload (`public_payload/`)
+
+Payload formatting for OpenWebUI, terminal results, evidence materialization.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `evidence_materializer.py` | Evidence materialization | Materializes evidence payloads |
+| `final_state_result.py` | Final state result formatting | Formats final results |
+| `terminal_result.py` | Terminal result formatting | Formats terminal results |
+| `tool_context.py` | Tool context formatting | Flat decision table, lookup dispatch |
+
+---
+
+## 6. Shared (`shared/`)
+
+Shared utilities: JSON handling, history queries, memory tools, path tokens, diagnostics.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `clean_values.py` | Value cleaning | Cleans string values |
+| `diagnostics.py` | Diagnostics utilities | Diagnostic helpers |
+| `history_queries.py` | History query utilities | Query history data |
+| `job_html.py` | HTML job page generation | Generates HTML pages |
+| `json_node.py` | JSON node handling | JSON tree navigation |
+| `memory_tools.py` | Memory tool integration | Memory MCP integration |
+| `tool_result.py` | Tool result formatting | `ToolResult`, `PromptWindow` dataclasses |
+
+---
+
+## 7. Job (`job/`)
+
+Job lifecycle management: action routing, status/response, terminal output.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `action_router.py` | Action routing to lifecycle states | `_ACTION_ROUTE_MAP` lookup dispatch |
+| `lifecycle.py` | Job lifecycle states | State definitions |
+| `status_response.py` | Status response formatting | Formats status responses |
+| `terminal_response.py` | Terminal response formatting | Formats terminal responses |
+
+---
+
+## 8. Controller (`controller/`)
+
+Controller lane logic: guards, memory persistence, orientation routing, preseed plans.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `guards.py` | Controller guard validation | Validates controller guards |
+| `memory.py` | Memory lesson persistence | Persists memory lessons |
+| `orientation_lane.py` | Orientation lane routing | Routes to orientation |
+| `preseed.py` | Preseed plan generation | Generates preseed plans |
+
+---
+
+## 9. Code Product (`code_product/`)
+
+Code product state management: history tracking, public outputs, working set requirements.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `history.py` | Code product history tracking | Tracks code changes |
+| `public_outputs.py` | Public output formatting | Formats public outputs |
+| `state.py` | Code product state machine | State machine for code products |
+
+---
+
+## 10. Memory (`memory/`)
+
+Memory conflict detection and resolution.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `conflict_detector.py` | Memory conflict detection | Detects conflicts |
+
+---
+
+## 11. NPU Phi (`npu_phi/`)
+
+NPU phi service integration for GPU acceleration.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `client.py` | NPU phi client | Client for NPU service |
+| `policy.py` | NPU phi policy | Policy configuration |
+
+---
+
+## 12. Replay (`replay/`)
+
+Loop replay functionality for debugging and testing.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `loop_replay.py` | Loop replay logic | Replays agent loops |
+
+---
+
+## 13. Runtime Debug (`runtime_debug/`)
+
+Runtime debug packet management.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `debug_packet.py` | Debug packet management | Manages debug packets |
+
+---
+
+## 14. Search (`search/`)
+
+Search quality metrics and evaluation.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `search_quality.py` | Search quality metrics | Quality scoring |
+
+---
+
+## 15. Command (`command/`)
+
+Command execution policy and control.
+
+### Key Files
+
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `execution_policy.py` | Execution policy | Command execution rules |
+
+---
+
+## Documentation Index
+
+| Document | Location |
+|----------|----------|
+| [Complete Services Index](../../docs/SERVICES_INDEX.md) | Full file-by-file documentation |
+| [Python Refactoring Guide](../../docs/PYTHON_REFACTORING_GUIDE.md) | Anti-patterns and case studies |
+| [Refactoring Status](../../docs/REFACTORING_STATUS_CURRENT.md) | Current refactoring state |
+
+---
+
+*Generated from analysis of the C:\Users\carmi\AI workspace.*

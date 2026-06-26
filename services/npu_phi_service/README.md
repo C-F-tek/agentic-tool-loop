@@ -1,6 +1,6 @@
-# Model Export — Model Export Utilities
+# NPU Phi Service — NPU Phi Service
 
-> **Purpose**: Utilities for exporting Ollama models and managing model artifacts.
+> **Purpose**: NPU phi service for GPU acceleration via phi computation. PowerShell-based service launcher.
 
 ---
 
@@ -8,7 +8,7 @@
 
 | File | Purpose | Key Types/Functions |
 |------|---------|----------------------|
-| `export_model.py` | Model export | Exports Ollama models |
+| `npu-phi-service.ps1` | NPU phi service launcher | Starts NPU phi service |
 
 ---
 

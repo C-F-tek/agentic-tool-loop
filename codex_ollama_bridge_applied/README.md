@@ -1,70 +1,82 @@
-# codex_ollama_bridge_applied
+# Codex Ollama Bridge Applied — Full Integration
 
-`codex_ollama_bridge_applied/` contains applied bridge scripts and copied
-tool/runtime material used by the local Codex/Ollama/OpenWebUI integration.
+> **Purpose**: Applied changes for Codex + Ollama integration. This directory contains the production-ready implementation combining Codex MCP server with Ollama GPU acceleration.
 
-## Initial Reading Index
+---
 
-Start from these documents before changing runtime behavior:
+## Structure
 
-- [AGENTS.md](../AGENTS.md)
-  - Workspace operating rules and non-negotiable runtime contract notes.
-- [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](../services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
-  - Core validator/controller contract for the agentic loop.
-- [services/END_TO_END_AGENTIC_FLOW.md](../services/END_TO_END_AGENTIC_FLOW.md)
-  - End-to-end flow between OpenWebUI, 3571, 3572, planner, tools, and final payload.
-- [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](../services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
-  - Service-level technical map and module references.
-- [services/MODULE_TECHNICAL_DESCRIPTIONS.md](../services/MODULE_TECHNICAL_DESCRIPTIONS.md)
-  - File-by-file technical descriptions for the `services/` tree.
-- [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](../services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
-  - Operational limit for Codex when inspecting large OpenWebUI payloads.
-- [services/aicarmine_broker/MODULE_REFERENCE.md](../services/aicarmine_broker/MODULE_REFERENCE.md)
-  - Broker module reference.
-- [services/vulkan_bridge/MODULE_REFERENCE.md](../services/vulkan_bridge/MODULE_REFERENCE.md)
-  - Public bridge module reference.
-- [services/codex_bridge/MODULE_REFERENCE.md](../services/codex_bridge/MODULE_REFERENCE.md)
-  - Codex bridge module reference.
-- [services/codex_bridge/MCP_GUIDE.md](../services/codex_bridge/MCP_GUIDE.md)
-  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
-    and debug playbooks.
-- [services/launch/MODULE_REFERENCE.md](../services/launch/MODULE_REFERENCE.md)
-  - Launch-script module reference.
-- [services/model_export/MODULE_REFERENCE.md](../services/model_export/MODULE_REFERENCE.md)
-  - Model export module reference.
+```
+codex_ollama_bridge_applied/
+├── README.md                    ← You are here
+├── aicarmine_vulkan_bridge_server.py   ← Vulkan bridge server
+├── aicarmine_vulkan_tool_broker.py     ← Vulkan tool broker
+├── export_model.py                      ← Model export utility
+├── codex_ollama_bridge/                 ← Core bridge implementation
+│   ├── aicarmine_codex_mcp_server.py    ← MCP server
+│   └── aicarmine_codex_ollama_responses_bridge.py  ← Response bridge
+├── useful_tools/                          ← Utility library
+│   ├── chunks/                           ← Code/evidence chunking
+│   ├── context/                          ← Agent context management
+│   └── memory/                           ← Agent memory operations
+└── ...                                    ← PowerShell scripts, configs
+```
 
-Core code entry points:
+---
 
-- [services/vulkan_bridge/app.py](../services/vulkan_bridge/app.py)
-  - Public OpenWebUI wrapper surface.
-- [services/vulkan_bridge/agentic_v9.py](../services/vulkan_bridge/agentic_v9.py)
-  - Agentic bridge integration surface.
-- [services/aicarmine_broker/app.py](../services/aicarmine_broker/app.py)
-  - Internal broker application.
-- [services/aicarmine_broker/planner.py](../services/aicarmine_broker/planner.py)
-  - Planner/controller facade and high-risk loop entry; owner packages live under services/aicarmine_broker/application/.
-- [services/aicarmine_broker/repo_tools.py](../services/aicarmine_broker/repo_tools.py)
-  - Compatibility facade for repo/tool helpers; concrete implementations live under services/aicarmine_broker/tools/.
-- [services/aicarmine_broker/tool_registry.py](../services/aicarmine_broker/tool_registry.py)
-  - Internal tool registry.
-- [services/aicarmine_broker/tool_dispatch.py](../services/aicarmine_broker/tool_dispatch.py)
-  - Compatibility facade for the explicit registry dispatcher in services/aicarmine_broker/application/tool_surface/dispatcher.py.
-- [services/aicarmine_broker/job_store.py](../services/aicarmine_broker/job_store.py)
-  - Job state and artifact persistence.
-- [services/aicarmine_broker/public_wrapper.py](../services/aicarmine_broker/public_wrapper.py)
-  - Public result packaging support.
-- [services/aicarmine_broker/planner_intrinsic_context.py](../services/aicarmine_broker/planner_intrinsic_context.py)
-  - Intrinsic planner context builder.
-- [services/aicarmine_broker/code_edit_proposal_contract.py](../services/aicarmine_broker/code_edit_proposal_contract.py)
-  - Report-only code edit proposal contract.
-- [services/aicarmine_broker/memory_tools.py](../services/aicarmine_broker/memory_tools.py)
-  - Runtime memory tool support.
+## Core Files
 
-## Current Folder Structure
+| File | Purpose | Key Types |
+|------|---------|-----------|
+| `aicarmine_vulkan_bridge_server.py` | Vulkan bridge server | Server implementation |
+| `aicarmine_vulkan_tool_broker.py` | Vulkan tool broker | Tool broker logic |
+| `export_model.py` | Model export | Exports Ollama models |
 
-- [codex_ollama_bridge/](codex_ollama_bridge/)
-  - Applied Codex/Ollama bridge package and documentation.
-- [useful_tools/](useful_tools/)
-  - Copied useful tool/context/memory material.
-- PowerShell and Python scripts in this directory
-  - Applied launch, bridge, diagnostics and synchronization helpers.
+---
+
+## Codex Bridge (`codex_ollama_bridge/`)
+
+| File | Purpose |
+|------|---------|
+| `aicarmine_codex_mcp_server.py` | MCP server for Codex integration |
+| `aicarmine_codex_ollama_responses_bridge.py` | Bridges responses between Codex and Ollama |
+
+---
+
+## Useful Tools (`useful_tools/`)
+
+### Chunks (`chunks/`)
+
+| Directory | Purpose |
+|-----------|---------|
+| `code_chunks/` | Code chunking utilities |
+| `evidence_chunks/` | Evidence chunking utilities |
+| `proposal_chunks/` | Proposal chunking utilities |
+
+### Context (`context/`)
+
+| Directory | Purpose |
+|-----------|---------|
+| `agent_context/` | Agent context management |
+| `context_pack/` | Context pack operations |
+| `file_refs/` | File reference management |
+
+### Memory (`memory/`)
+
+| Directory | Purpose |
+|-----------|---------|
+| `agent_memory/` | Agent memory operations |
+| `agent_memory/review/` | Memory review CLI |
+
+---
+
+## Documentation Index
+
+| Document | Location |
+|----------|----------|
+| [Complete Services Index](../docs/SERVICES_INDEX.md) | Full file-by-file documentation |
+| [Python Refactoring Guide](../docs/PYTHON_REFACTORING_GUIDE.md) | Anti-patterns and case studies |
+
+---
+
+*Generated from analysis of the C:\Users\carmi\AI workspace.*
