@@ -43,8 +43,44 @@ def _agentic_v2_goal_scope(goal: str, contract: dict[str, Any] | None = None) ->
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Flat decision table — replaces triangular if/elif chain
+# ---------------------------------------------------------------------------
+
+# Maps each tool to the argument keys that may contain file/directory paths.
+# This is a single source of truth — no nested conditionals.
+_TOOL_PATH_KEYS: dict[str, tuple[str, ...]] = {
+    # Search/list tools — path + optional multi-path
+    "repo_list_files": ("path", "paths"),
+    "repo_tree": ("path", "paths"),
+    "repo_search": ("path", "paths"),
+    "repo_fd_files": ("path", "paths"),
+    "repo_rg_search": ("path", "paths"),
+    "repo_ast_grep_search": ("path", "paths"),
+    "repo_ast_grep_dry_run": ("path", "paths"),
+    "repo_tree_sitter_parse": ("path", "paths"),
+    "repo_ctags_symbols": ("path", "paths"),
+    "repo_semgrep_scan": ("path", "paths"),
+    "repo_shellcheck": ("path", "paths"),
+    "repo_validate": ("path", "paths"),
+    "repo_ruff_check": ("path", "paths"),
+    "repo_pyright_check": ("path", "paths"),
+    "repo_pytest_run": ("path", "paths"),
+    "repo_jq_query": ("path", "paths"),
+    # Read tools — path + multi-path + file/item variants
+    "repo_read": ("path", "paths", "file", "files", "item", "items"),
+    # Write/edit tools — path variants
+    "repo_write_file": ("path", "paths", "target_file", "target_path"),
+    "repo_apply_patch": ("path", "paths", "target_file", "target_path"),
+    "repo_propose_code_edit": ("path", "paths", "target_file", "target_path"),
+}
+
+
 def _agentic_v2_decision_paths(tool: str, args: dict[str, Any]) -> list[str]:
-    """Extract file/directory paths from a tool call's arguments."""
+    """Extract file/directory paths from a tool call's arguments.
+
+    Uses a flat decision table instead of triangular if/elif chains.
+    """
     args = args if isinstance(args, dict) else {}
     paths: list[str] = []
 
@@ -64,27 +100,14 @@ def _agentic_v2_decision_paths(tool: str, args: dict[str, Any]) -> list[str]:
         if p and p not in paths:
             paths.append(p)
 
-    if tool in {
-        "repo_list_files", "repo_tree", "repo_search", "repo_fd_files",
-        "repo_rg_search", "repo_ast_grep_search", "repo_ast_grep_dry_run",
-        "repo_tree_sitter_parse", "repo_ctags_symbols", "repo_semgrep_scan",
-        "repo_shellcheck", "repo_validate", "repo_ruff_check",
-        "repo_pyright_check", "repo_pytest_run", "repo_jq_query",
-    }:
-        add(args.get("path") or ".")
-        add(args.get("paths"))
-    elif tool == "repo_read":
-        add(args.get("path"))
-        add(args.get("paths"))
-        add(args.get("file"))
-        add(args.get("files"))
-        add(args.get("item"))
-        add(args.get("items"))
-    elif tool in {"repo_write_file", "repo_apply_patch", "repo_propose_code_edit"}:
-        add(args.get("path"))
-        add(args.get("paths"))
-        add(args.get("target_file"))
-        add(args.get("target_path"))
+    # Flat lookup — O(1) instead of O(n) nested conditionals
+    keys = _TOOL_PATH_KEYS.get(tool)
+    if keys:
+        for key in keys:
+            add(args.get(key))
+        # Default: use "." when only "path" exists but is empty
+        if keys == ("path", "paths") and args.get("path") in (None, ""):
+            add(".")
     return paths
 
 

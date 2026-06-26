@@ -1,632 +1,270 @@
-# Agentic Tool Loop
+# Agentic Tool Loop Runtime
 
-Repository for the local OpenWebUI agentic tool loop runtime.
+Local agentic tool loop for OpenWebUI with validator-only controller gate, model-assisted guidance lanes, and inline evidence transport.
 
-This project contains the service code, contracts, launch scripts, model
-templates, and documentation needed to run the local tool bridge and broker.
-Machine-local data, generated artifacts, model binaries, virtual environments,
-OpenWebUI data, and job outputs are intentionally excluded from Git.
+**Repository:** `agentic-tool-loop`  
+**Branch:** main  
+**Last verified:** 2026-06-26
 
-## Current Verified Runtime Highlights
+---
 
-As of 2026-06-15, the core loop has four distinct model-assisted lanes around
-the validator-only controller:
+## Architecture Overview
 
-- controller preplanner RAG query planning runs before the first planner turn;
-  malformed JSON is repaired by the same planner model and backend timeout is a
-  typed non-blocking fallback to deterministic preseed only;
-- final-quality judge runs for repository and semantic-audit final candidates;
-  malformed judge JSON is repaired before the validator decides accept/reject
-  or `continue_required`;
-- planner replan specialist runs after selected validator rejections and can
-  repair malformed specialist JSON before returning the next required route;
-- Vulkan/GPU0 repair remains only an explicit repair lane for malformed planner
-  emissions or invalid non-code-product tool proposals. It must not mask
-  code-product contract failures.
+This project implements a controlled multi-step agentic loop that bridges OpenWebUI to an internal broker running a planner/validator loop over local Ollama instances. The system is split into three runtime surfaces:
 
-The 11434 stream transport now guards both phases: waiting for HTTP response
-headers and reading stream frames. If headers never arrive, the job records a
-typed planner stream timeout instead of silently leaving an empty step stream.
+| Surface | Port | Role |
+|---------|------|------|
+| **3571** — Public bridge | 3571 | OpenWebUI-facing wrapper. Exposes only `vulkan_helper`. Forwards work to 3572, shapes terminal payloads for the external model. |
+| **3572** — Internal broker | 3572 | Agentic loop owner. Creates jobs, stores state/events, builds planner prompts, validates model decisions, dispatches tools, writes final artifacts. |
+| **11434 / 11435** — Ollama endpoints | 11434 / 11435 | Planner (main) and repair/task (GPU0/Vulkan) model endpoints respectively. |
 
-Public OpenWebUI payloads are pointer-first and inline-evidence-first:
-`tool_context_for_30b.artifacts[*].artifact` is the canonical complete payload
-location, while `priority_evidence_for_30b` and `payload_index_for_30b` are
-bounded navigation/index surfaces rather than duplicate large content stores.
+---
 
-## Initial Reading Index
+## Canonical Runtime Chain
 
-Start from these documents before changing runtime behavior:
-
-1. [AGENTS.md](AGENTS.md)
-   - Workspace operating rules and non-negotiable runtime contract notes.
-2. [docs/START_HERE_RUNTIME.md](docs/START_HERE_RUNTIME.md)
-   - Guided first-read map for runtime roles, debug paths and source-of-truth
-     rules.
-3. [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
-   - Core validator/controller contract for the agentic loop.
-4. [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
-   - End-to-end flow between OpenWebUI, 3571, 3572, planner, tools, and final
-     payload.
-5. [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
-   - Service-level technical map and module references.
-6. [docs/runtime_env_contract.md](docs/runtime_env_contract.md)
-   - Runtime process/env contract, including active repo roots such as
-     `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `AICARMINE_VULKAN_WORKSPACE`,
-     `AICARMINE_AGENT_JOB_ROOT`, `OPEN_TERMINAL_CWD` and
-     `AICARMINE_OPEN_TERMINAL_WORKDIR`.
-7. [docs/launcher_contract.md](docs/launcher_contract.md)
-   - Launcher responsibilities for venvs, ports, process order and shared
-     repository working-directory variables.
-8. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
-   - File-by-file technical descriptions for the `services/` tree.
-9. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
-   - Operational limit for Codex when inspecting large OpenWebUI payloads.
-10. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
-   - Broker module reference.
-11. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
-   - Public bridge module reference.
-12. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
-   - Codex bridge module reference.
-13. [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md)
-   - Codex MCP server/tool map, client JSON compatibility, confirmation gates
-     and debug playbooks.
-14. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
-   - Launch-script module reference.
-15. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
-   - Model export module reference.
-
-Core code entry points:
-
-- [services/vulkan_bridge/app.py](services/vulkan_bridge/app.py)
-  - Public OpenWebUI wrapper surface.
-- [services/vulkan_bridge/agentic_v9.py](services/vulkan_bridge/agentic_v9.py)
-  - Agentic bridge integration surface.
-- [services/aicarmine_broker/app.py](services/aicarmine_broker/app.py)
-  - Internal broker application.
-- [services/aicarmine_broker/planner.py](services/aicarmine_broker/planner.py)
-  - Planner/controller facade and high-risk loop entry; owner packages live under services/aicarmine_broker/application/.
-- [services/aicarmine_broker/repo_tools.py](services/aicarmine_broker/repo_tools.py)
-  - Compatibility facade for repo/tool helpers; concrete implementations live under services/aicarmine_broker/tools/.
-- [services/aicarmine_broker/tool_registry.py](services/aicarmine_broker/tool_registry.py)
-  - Internal tool registry.
-- [services/aicarmine_broker/tool_dispatch.py](services/aicarmine_broker/tool_dispatch.py)
-  - Compatibility facade for the explicit registry dispatcher in services/aicarmine_broker/application/tool_surface/dispatcher.py.
-- [services/aicarmine_broker/job_store.py](services/aicarmine_broker/job_store.py)
-  - Job state and artifact persistence.
-- [services/aicarmine_broker/public_wrapper.py](services/aicarmine_broker/public_wrapper.py)
-  - Public result packaging support.
-- [services/aicarmine_broker/planner_intrinsic_context.py](services/aicarmine_broker/planner_intrinsic_context.py)
-  - Intrinsic planner context builder.
-- [services/aicarmine_broker/code_edit_proposal_contract.py](services/aicarmine_broker/code_edit_proposal_contract.py)
-  - Report-only code edit proposal contract.
-- [services/aicarmine_broker/memory_tools.py](services/aicarmine_broker/memory_tools.py)
-  - Runtime memory tool support.
-
-Supporting runtime surfaces:
-
-- [services/launch/](services/launch/)
-  - PowerShell helpers for service startup and environment setup.
-- [services/codex_bridge/](services/codex_bridge/)
-  - Codex/Ollama bridge helpers. MCP operator details live in
-    [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md).
-- [services/model_export/](services/model_export/)
-  - Model export helpers.
-- [modelfiles/](modelfiles/)
-  - Ollama model templates.
-- [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
-  - Applied bridge/tool material used by the local integration.
-
-
-## Flow Map Index
-
-- [Root runtime flow](flow.svg)
-- [services flow](services/flow.svg)
-- [3572 broker flow](services/aicarmine_broker/flow.svg)
-- [3571 bridge flow](services/vulkan_bridge/flow.svg)
-- [launcher flow](services/launch/flow.svg)
-- [Codex bridge flow](services/codex_bridge/flow.svg)
-- [model export flow](services/model_export/flow.svg)
-- [applied bridge flow](codex_ollama_bridge_applied/flow.svg)
-- [useful tools flow](codex_ollama_bridge_applied/useful_tools/flow.svg)
-- [applied context flow](codex_ollama_bridge_applied/useful_tools/context/flow.svg)
-- [applied memory flow](codex_ollama_bridge_applied/useful_tools/memory/flow.svg)
-
-## Folder README Index
-
-Core runtime folders:
-
-- [services](services/README.md)
-- [services/aicarmine_broker](services/aicarmine_broker/README.md)
-- [services/aicarmine_broker/planner_core](services/aicarmine_broker/planner_core/README.md)
-- [services/vulkan_bridge](services/vulkan_bridge/README.md)
-- [services/codex_bridge](services/codex_bridge/README.md)
-- [services/launch](services/launch/README.md)
-- [services/model_export](services/model_export/README.md)
-- [modelfiles](modelfiles/README.md)
-
-Applied bridge folders:
-
-- [codex_ollama_bridge_applied](codex_ollama_bridge_applied/README.md)
-- [codex_ollama_bridge_applied/codex_ollama_bridge](codex_ollama_bridge_applied/codex_ollama_bridge/README.md)
-- [codex_ollama_bridge_applied/useful_tools](codex_ollama_bridge_applied/useful_tools/README.md)
-
-Applied context folders:
-
-- [useful_tools/chunks](codex_ollama_bridge_applied/useful_tools/chunks/README.md)
-- [useful_tools/chunks/code_chunks](codex_ollama_bridge_applied/useful_tools/chunks/code_chunks/README.md)
-- [useful_tools/chunks/evidence_chunks](codex_ollama_bridge_applied/useful_tools/chunks/evidence_chunks/README.md)
-- [useful_tools/chunks/proposal_chunks](codex_ollama_bridge_applied/useful_tools/chunks/proposal_chunks/README.md)
-- [useful_tools/context](codex_ollama_bridge_applied/useful_tools/context/README.md)
-- [useful_tools/context/agent_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/README.md)
-- [useful_tools/context/agent_context/agnostic_tool_inventory](codex_ollama_bridge_applied/useful_tools/context/agent_context/agnostic_tool_inventory/README.md)
-- [useful_tools/context/agent_context/ai_context_pack](codex_ollama_bridge_applied/useful_tools/context/agent_context/ai_context_pack/README.md)
-- [useful_tools/context/agent_context/ensure_required_files](codex_ollama_bridge_applied/useful_tools/context/agent_context/ensure_required_files/README.md)
-- [useful_tools/context/agent_context/full_context_golden_proposals](codex_ollama_bridge_applied/useful_tools/context/agent_context/full_context_golden_proposals/README.md)
-- [useful_tools/context/agent_context/local_ai_enrichment_plan](codex_ollama_bridge_applied/useful_tools/context/agent_context/local_ai_enrichment_plan/README.md)
-- [useful_tools/context/agent_context/memory_inventory](codex_ollama_bridge_applied/useful_tools/context/agent_context/memory_inventory/README.md)
-- [useful_tools/context/agent_context/merge_candidates](codex_ollama_bridge_applied/useful_tools/context/agent_context/merge_candidates/README.md)
-- [useful_tools/context/agent_context/music_intermediates](codex_ollama_bridge_applied/useful_tools/context/agent_context/music_intermediates/README.md)
-- [useful_tools/context/agent_context/rag_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/rag_context/README.md)
-- [useful_tools/context/agent_context/semantic_evidence_chunks](codex_ollama_bridge_applied/useful_tools/context/agent_context/semantic_evidence_chunks/README.md)
-- [useful_tools/context/agent_context/semantic_evidence_chunks/select_code_chunks](codex_ollama_bridge_applied/useful_tools/context/agent_context/semantic_evidence_chunks/select_code_chunks/README.md)
-- [useful_tools/context/agent_context/shared_toolbox_bundle](codex_ollama_bridge_applied/useful_tools/context/agent_context/shared_toolbox_bundle/README.md)
-- [useful_tools/context/agent_context/state_packet](codex_ollama_bridge_applied/useful_tools/context/agent_context/state_packet/README.md)
-- [useful_tools/context/agent_context/transient_request_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/transient_request_context/README.md)
-- [useful_tools/context/context_pack](codex_ollama_bridge_applied/useful_tools/context/context_pack/README.md)
-- [useful_tools/context/context_reload](codex_ollama_bridge_applied/useful_tools/context/context_reload/README.md)
-- [useful_tools/context/file_refs](codex_ollama_bridge_applied/useful_tools/context/file_refs/README.md)
-- [useful_tools/context/heap_context_memory_reload](codex_ollama_bridge_applied/useful_tools/context/heap_context_memory_reload/README.md)
-- [useful_tools/context/heap_context_memory_reload/reconcile_report](codex_ollama_bridge_applied/useful_tools/context/heap_context_memory_reload/reconcile_report/README.md)
-
-Applied memory and pointer folders:
-
-- [useful_tools/memory](codex_ollama_bridge_applied/useful_tools/memory/README.md)
-- [useful_tools/memory/agent_memory](codex_ollama_bridge_applied/useful_tools/memory/agent_memory/README.md)
-- [useful_tools/memory/agent_memory/review](codex_ollama_bridge_applied/useful_tools/memory/agent_memory/review/README.md)
-- [useful_tools/memory/fts5](codex_ollama_bridge_applied/useful_tools/memory/fts5/README.md)
-- [useful_tools/memory/persistent](codex_ollama_bridge_applied/useful_tools/memory/persistent/README.md)
-- [useful_tools/memory/pointers](codex_ollama_bridge_applied/useful_tools/memory/pointers/README.md)
-- [useful_tools/memory/sqlite](codex_ollama_bridge_applied/useful_tools/memory/sqlite/README.md)
-- [useful_tools/memory/volatile](codex_ollama_bridge_applied/useful_tools/memory/volatile/README.md)
-- [useful_tools/pointers](codex_ollama_bridge_applied/useful_tools/pointers/README.md)
-- [useful_tools/pointers/graph](codex_ollama_bridge_applied/useful_tools/pointers/graph/README.md)
-- [useful_tools/pointers/resume](codex_ollama_bridge_applied/useful_tools/pointers/resume/README.md)
-- [useful_tools/pointers/revision_context](codex_ollama_bridge_applied/useful_tools/pointers/revision_context/README.md)
-
-Local-only descriptor folders:
-
-- [cache](cache/README.md)
-- [code-interpreter-workdir](code-interpreter-workdir/README.md)
-- [executor-runs](executor-runs/README.md)
-- [knowledge-bad-md](knowledge-bad-md/README.md)
-- [knowledge-code-packs](knowledge-code-packs/README.md)
-- [knowledge-md](knowledge-md/README.md)
-- [knowledge-md-parts](knowledge-md-parts/README.md)
-- [knowledge-small-md](knowledge-small-md/README.md)
-- [knowledge-sync](knowledge-sync/README.md)
-- [knowledge-tiny-md](knowledge-tiny-md/README.md)
-- [knowledge-upload-batches](knowledge-upload-batches/README.md)
-- [lab-patches](lab-patches/README.md)
-- [lab-worktrees](lab-worktrees/README.md)
-- [logs](logs/README.md)
-- [models-cpu](models-cpu/README.md)
-- [models-ovms-rerank](models-ovms-rerank/README.md)
-- [models-task](models-task/README.md)
-- [openwebui-data](openwebui-data/README.md)
-- [services/openwebui-data](services/openwebui-data/README.md)
-- [ovms-runtime](ovms-runtime/README.md)
-- [payloads](payloads/README.md)
-- [qwen-agent](qwen-agent/README.md)
-- [qwen-agent-workspace](qwen-agent-workspace/README.md)
-- [qwen-context](qwen-context/README.md)
-- [state](state/README.md)
-- [venvs](venvs/README.md)
-
-Local-only descriptor directories:
-
-- [lab-worktrees](lab-worktrees/README.md)
-- [openwebui-data](openwebui-data/README.md)
-- [services/openwebui-data](services/openwebui-data/README.md)
-- [qwen-agent-workspace](qwen-agent-workspace/README.md)
-- [qwen-agent](qwen-agent/README.md)
-- [qwen-context](qwen-context/README.md)
-- [code-interpreter-workdir](code-interpreter-workdir/README.md)
-- [executor-runs](executor-runs/README.md)
-- [payloads](payloads/README.md)
-- [logs](logs/README.md)
-- [cache](cache/README.md)
-- [state](state/README.md)
-- [venvs](venvs/README.md)
-- [lab-patches](lab-patches/README.md)
-- [knowledge-bad-md](knowledge-bad-md/README.md)
-- [knowledge-code-packs](knowledge-code-packs/README.md)
-- [knowledge-md](knowledge-md/README.md)
-- [knowledge-md-parts](knowledge-md-parts/README.md)
-- [knowledge-small-md](knowledge-small-md/README.md)
-- [knowledge-sync](knowledge-sync/README.md)
-- [knowledge-tiny-md](knowledge-tiny-md/README.md)
-- [knowledge-upload-batches](knowledge-upload-batches/README.md)
-- [models-cpu](models-cpu/README.md)
-- [models-ovms-rerank](models-ovms-rerank/README.md)
-- [models-task](models-task/README.md)
-- [ovms-runtime](ovms-runtime/README.md)
-
-## Agentic Tool Runtime
-
-This repository implements a local agentic tool loop for OpenWebUI. The public
-model does not call every internal tool directly. It calls one public bridge
-tool, and the internal broker runs the controlled multi-step loop.
-
-Canonical runtime chain:
-
-```text
+```
 OpenWebUI / external 30B
-  -> 3571 public bridge /vulkan_helper
-  -> 3572 internal broker /vulkan/agent
-  -> 11434 planner Ollama turn
-  -> 3572 validator-only controller
-      -> valid tool call: internal tool dispatch
-      -> invalid planner output: controller guard or typed rejection
-      -> dirty JSON when applicable: optional 11435 repair/task pass
-      -> valid final: terminal job result
-  -> 3571 terminal wrapper
-  -> OpenWebUI content + inline tool_context_for_30b
+  -> 3571 vulkan_helper (public bridge)
+  -> 3572 /vulkan/agent (internal broker)
+  -> 3572 creates job + starts agent_job_worker
+  -> 3572 requests controller_preplanner_rag_query_plan from 11434
+     -> malformed JSON: 11434 repairs it
+     -> unavailable/timeout: controller records typed gap, continues with deterministic preseed only
+  -> 11434 planner turn (main model)
+     -> 3572 builds measured prompt pack (required_working_set + optional_context)
+     -> if prompt > compaction threshold: store large sections in job-local SQLite, inject recursive windows
+     -> 3572 validates planner decision against evidence contract
+     -> if final candidate for repo/semantic audit: call 11434 final-quality judge
+        -> malformed judge JSON: repair/re-evaluate
+        -> apply judge route through validator contract
+     -> if validator rejection needs specialist guidance: call 11434 replan specialist
+        -> malformed specialist JSON: repair
+        -> store specialist route in controller guard/evidence contract
+     -> if invalid planner decision and repair applies: call 11435 repair/normalize
+        -> validate repaired decision
+     -> if valid tool decision: dispatch_tool(tool, args)
+     -> if valid final decision: finalize_agentic_job(completed)
+     -> if terminal block/max/fail: finalize_agentic_job(non-completed terminal)
+  -> 3572 returns compact terminal job response to 3571
+  -> 3571 rehydrates terminal/final JSON when referenced
+  -> 3571 sanitizes local pointers + builds tool_context_for_30b
+  -> OpenWebUI receives payload_index_for_30b + priority_evidence_for_30b + pretty JSON tool_context_for_30b
 ```
 
-Visual runtime map: [flow.svg](flow.svg).
+---
 
-### Public Surface
+## Component Details
 
-`3571` is the OpenWebUI-facing service. Its public tool surface is
-`vulkan_helper`. It forwards work to the internal broker and shapes terminal
-responses for OpenWebUI.
+### 3571 — Public Bridge (`services/vulkan_bridge/`)
 
-The public response must remain model-usable without local filesystem access:
+- **Entry point:** `services/vulkan_bridge/app.py`
+- **Public tool surface:** `vulkan_helper` only (via `OPENWEBUI_VISIBLE_TOOL_ALIASES`)
+- **Forwarding:** `_handle_helper()` posts normalized agent payload to `AGENT_URL` (default `http://127.0.0.1:3572/vulkan/agent`)
+- **Terminal wrapper:** `_agentic_v9_build_openwebui_response()` returns stable public shape for all terminal states (completed, blocked, max_steps, failed, cancelled)
 
-- `content` contains the compact final answer or terminal message.
-- `payload_index_for_30b` is the first navigation surface for concrete payload
-  locations.
-- `priority_evidence_for_30b` indexes important complete evidence when present.
-- `openwebui_usage` tells the external model how to read the indexed payload.
-- `tool_context_for_30b` is a pretty-printed JSON string containing successful
-  internal tool results inline.
+**Key invariants:**
+- OpenWebUI cannot open local paths (`C:\Users\...`, `reads/*.json`, `tool-results/*.json`, SQLite document IDs). Those are internal only.
+- Public payload must not require local filesystem access. Real content is transported inline through `tool_context_for_30b.artifacts[*].artifact`.
+- `priority_evidence_for_30b` is pointer-first and bounded: metadata, hashes, item locations, small summaries — never duplicate large content.
+- Non-ok terminal jobs keep the same public shape as ok jobs; only status/warning metadata inside `openwebui_usage` and `payload_index_for_30b` changes.
 
-OpenWebUI cannot open local paths such as `C:\Users\...`, `reads/*.json`,
-`tool-results/*.json` or SQLite document IDs. Those can exist internally only
-as audit/storage surfaces. If a successful tool result is needed by OpenWebUI,
-3571 must expand the real payload inline.
+### 3572 — Internal Broker (`services/aicarmine_broker/`)
 
-`final_path`, `reads/*.json`, `tool-results/*.json` and job-local SQLite may be
-used by 3571/3572 only as internal rehydration sources. They are not public
-content. A public result can mention local paths only as operator diagnostics,
-never as a location OpenWebUI must open.
+- **Entry point:** `services/aicarmine_broker/app.py` → `agent_entry.agent()` → `agent_job_worker()` → `run_agentic_planner_job()`
+- **Planner orchestrator:** `services/aicarmine_broker/planner.py` (3871 lines, compatibility entrypoint)
+- **Job persistence:** `services/aicarmine_broker/job_store.py` (filesystem primary, SQLite secondary)
+- **Tool registry:** `services/aicarmine_broker/tool_registry.py` (frozen dataclass pattern)
+- **Tool dispatch:** `services/aicarmine_broker/application/tool_surface/dispatcher.py`
 
-### Planner Context Vs Public Payload
+**Key invariants:**
+- The planner decides; the controller validates. The controller does not replace planner reasoning with hidden hard-coded tool sequences or hidden auto-final behavior.
+- `done_reason` from Ollama closes a model turn — it does not complete the job by itself. A job reaches `completed` only after the planner emits a valid final decision and the 3572 validator accepts it.
+- Filesystem job state (`job.json`, `events.ndjson`) is the operational source of truth. SQLite is a secondary dashboard/index cache.
 
-There are two separate evidence transports and they must not be confused:
+### 11434 — Main Planner Endpoint
 
-- Planner turn context: the 11434 planner may receive prior tool calls and tool
-  results through native Ollama `messages`. This context is budgeted and
-  windowed for the next internal planner decision only. `skipped_history_items`
-  is a planner-loop risk because it can make the planner decide with incomplete
-  working history.
-- Public terminal payload: the 3571/OpenWebUI result is reconstructed from the
-  3572 job `history` plus raw `tool-results/*.json` artifacts. It must not be
-  derived from the budgeted native `messages` transport.
+- **URL:** `http://127.0.0.1:11434/api/chat` (from `PLANNER_URL`)
+- **Model:** Read from planner env variables or defaults in `services/aicarmine_broker/config/models.py`
+- **Payload:** `history`, `turn_memory`, `evidence_contract`, tool schemas, response protocol instructions
+- **Transport:** Stream with dual guards — response-header wait and stream-read timeout recording
 
-Native tool-call history in `messages` is therefore not the authoritative
-record for OpenWebUI. The authoritative record is the persistent JSON history
-written by 3572 for every executed internal tool. On terminal states, 3571 must
-return all successful tool artifacts that OpenWebUI needs inline in
-`tool_context_for_30b.artifacts[*].artifact`, including complete
-`repo_propose_code_edit` diffs or structured operations. A loop that proposes
-diffs for many files must preserve every successful diff in persistent history
-so the final 3571 payload can be reconstructed without relying on omitted
-planner messages.
+**Model-assisted guidance lanes (all pass through validator before execution):**
+1. **Preplanner RAG query plan** — Before first planner turn: classifies goal semantically, proposes RAG query paths. Malformed JSON repaired by same planner model. Timeout → deterministic preseed only.
+2. **Final-quality judge** — For repo/semantic-audit final candidates: accepts, rejects, or returns `continue_required` with `required_next_tool_call`.
+3. **Planner replan specialist** — After selected validator rejections: translates rejection into `required_next_progress` and `required_next_tool_call`.
 
-### Internal Broker
+### 11435 — Repair/Task Endpoint (GPU0/Vulkan)
 
-`3572` owns the agentic loop. It creates jobs, stores state and events, builds
-planner prompts, validates model decisions, dispatches tools, writes final
-artifacts, and exposes job dashboards.
+- **URL:** `http://127.0.0.1:11435/api/chat` (from `OLLAMA_TASK_URL`)
+- **Purpose:** Selector/repair/normalization paths for malformed planner emissions or invalid non-code-product proposals
+- **Boundary:** Does NOT decide job completion. Semantic code-product contract failures (missing rationale, missing complete diff, target not read) remain validator guard feedback — not routed to 11435 repair.
 
-The central rule is:
+---
 
-```text
-the planner decides; the controller validates; the controller does not replace
-planner reasoning with hidden hard-coded tool sequences or hidden auto-final
-behavior.
+## Validator-Only Gate
+
+Every planner decision is checked by `validate_planner_decision_against_evidence()` before dispatch.
+
+**Main checks:**
+- Non-existent paths in `repo_read`, `repo_apply_patch`, `repo_write_file`
+- `repo_read` on invented basenames not from prior evidence
+- `repo_list_files` with `limit` below user request
+- `repo_list_files` or `repo_read` outside requested scope
+- Repeated identical tool call with same arguments without progress
+- `final` before reading truly required files
+- `repo_read ok=True` with zero real content
+
+**Controller guard response:** When a decision is invalid, the controller inserts a `controller_guard` event with violations, evidence contract, and rejected decision — then calls the planner again. It does not execute an alternative tool sequence.
+
+---
+
+## Model-Assisted Guidance Lanes
+
+| Lane | Endpoint | Purpose | Repair on malformed JSON |
+|------|----------|---------|-------------------------|
+| **Preplanner** | 11434 | Classify goal semantically, propose RAG query paths | Same planner model repairs |
+| **Final-quality judge** | 11434 | Evaluate final candidates for repo/semantic audit | Same planner model repairs |
+| **Planner replan specialist** | 11434 | Translate validator rejection into next required progress | Same planner model repairs |
+| **Repair/normalize** | 11435 | Fix malformed planner emissions or invalid tool proposals | GPU0/Vulkan task model |
+
+**Rule:** All guidance lanes produce input to the validator/controller guard — they never auto-dispatch tool calls. A new valid planner output is always required (except for an already-accepted final).
+
+---
+
+## Code Product Lane
+
+For goals requesting diff, unified diff, concrete refactoring, patch proposal, or code product:
+
+**Contract:**
+- Target must be read with `repo_read` before proposal
+- Planner must call `repo_propose_code_edit` (report-only, no source writes)
+- Valid payload requires: `kind=code_edit_proposal`, `target_file`, `edit_kind`, `rationale`, `validation_commands`, complete `unified_diff` or `structured_operations`
+- Flags: `source_writes_performed=false`, `patch_application_performed=false`, `manual_review_required=true`
+
+**Violations (typed, not routed to 11435 repair):**
+- `missing_code_product_candidate` — goal without valid `repo_propose_code_edit`
+- `code_product_payload_not_complete` — preview/summary/artifact path only
+- `invalid_code_product_candidate` — diff without markers or unparsable
+- `code_product_target_not_read` — target not read via `repo_read` first
+
+---
+
+## Prompt Pack And Compaction
+
+Before each 11434 planner call, 3572 builds a measured prompt pack:
+
+| Section | Content |
+|---------|---------|
+| **required_working_set** | Real file/diff/result windows needed for next decision. Must have real text, coordinates, full size, hash. |
+| **optional_context** | History digest, memory, RAG/chunks, intrinsic context, tool-purpose manifest, budget report |
+| **prompt_budget_report** | Real serialized prompt count and budget data |
+
+**Compaction rules:**
+- Threshold: `AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO` (default 0.5)
+- When exceeded: large sections stored in job-local SQLite, planner receives real recursive windows with `document_id`, `offset`, `has_more_before`, `has_more_after`, `sha256`
+- Compaction applies only to planner prompt — terminal `tool_context_for_30b` still transports full inline payloads
+- If prompt still over budget after compaction: typed block instead of truncated prompt
+
+---
+
+## Public OpenWebUI Payload Contract
+
+Stable shape across all terminal states:
+
+```json
+{
+  "ok": true,
+  "service": "vulkan_agent",
+  "mode": "agent_job_final_waited_compact",
+  "required_top_level_keys": ["ok","service","mode","required_top_level_keys","payload_index_for_30b","priority_evidence_for_30b","openwebui_usage","tool_context_for_30b"],
+  "payload_index_for_30b": {
+    "internal_job_status": {"completed": true, "status": "completed"},
+    "concrete_results": [{
+      "primary_location": "tool_context_for_30b.artifacts[*].artifact"
+    }]
+  },
+  "priority_evidence_for_30b": {
+    "schema": "openwebui.priority_evidence_for_30b.v1",
+    "items": [{
+      "kind": "code_edit_proposal",
+      "target_file": "...",
+      "edit_kind": "unified_diff",
+      "payload_is_complete": true,
+      "content_not_duplicated_here": true
+    }]
+  },
+  "openwebui_usage": {
+    "payload_index_field": "payload_index_for_30b",
+    "priority_evidence_field": "priority_evidence_for_30b.items",
+    "full_tool_evidence_field": "tool_context_for_30b.artifacts[*].artifact"
+  },
+  "tool_context_for_30b": "{\n  \"artifacts\": [...],\n  \"limits\": [...]\n}"
+}
 ```
 
-Ollama `done_reason` closes a model turn. It does not complete the job by
-itself. A job reaches `completed` only after the planner emits a valid final
-decision and the 3572 validator accepts it.
-
-### Planner And Repair Endpoints
-
-- `11434` is the main planner endpoint. It receives the measured planner prompt
-  pack, chooses the next action, and returns strict JSON or a native tool call.
-- In native planner mode, tool execution decisions must be Ollama native
-  `message.tool_calls`. Text JSON `action=tool` is invalid in that mode, while
-  text JSON `final` and `block` remain valid non-tool terminal decisions.
-- `11435` is the task/repair endpoint. It is support for selector, repair or
-  normalization flows. It is not the main planner and does not decide job
-  completion.
-
-Semantic contract failures, such as a missing complete diff for a code-product
-goal, are controller guard feedback for the next planner turn. They are not
-papered over by GPU/task repair.
-
-### Internal Tool Surface
-
-The planner can select internal tools only through the 3572 registry and
-dispatch layer. Important tool families include:
-
-- repository inspection: `repo_status`, `repo_tree`, `repo_search`,
-  `repo_list_files`, `repo_read`;
-- report-only code products: `repo_propose_code_edit`;
-- explicit write/apply lane: `repo_apply_patch`, `repo_write_file`;
-- validation and terminal support: `repo_validate`, `repo_command`,
-  `terminal_run_command_wait`, `terminal_search_files`, `terminal_list_files`;
-- planner-local memory: `planner_scratchpad_read`,
-  `planner_scratchpad_write`;
-- selective runtime memory: `runtime_sqlite_memory_search`,
-  `runtime_sqlite_memory_write`, `runtime_sqlite_memory_cleanup`.
-
-Write-guarded tools remain separate from analysis and report-only tools. A
-request for a concrete diff or refactor proposal does not imply source writes.
-A request to apply/edit/fix/write does.
-
-### Evidence And Finalization
-
-Finalization is evidence-gated.
-
-For repository reads, a `repo_read ok=true` is useful only when the result has
-real `content` available from the same successful tool result or its own
-rehydratable artifact. A path, count, `content_preview`, local JSON path or
-artifact pointer is not enough.
-
-Useful successful evidence by tool type:
-
-- `repo_read`: real file `content`, logical `repo_path`, line count and
-  truncation metadata.
-- `repo_tree`: real explored `entries`.
-- `repo_list_files`: real listed `paths`.
-- `repo_command` and terminal tools: `returncode`, `stdout`, `stderr` and tails
-  when produced.
-- `repo_propose_code_edit`: complete code edit proposal payload.
-
-Failed tools, validator guards, blocked states and diagnostics are job history.
-They are not successful evidence for final answers.
-
-### Code Product Lane
-
-Diff, patch proposal, unified diff, concrete refactoring and code-product goals
-use `repo_propose_code_edit`.
-
-This tool is report-only:
-
-- it must not write source files;
-- it must not apply patches;
-- it must run after the target was read with `repo_read`;
-- it must return `kind=code_edit_proposal`;
-- it must include `target_file`, `edit_kind`, `rationale`,
-  `validation_commands`, `errors`, `warnings`;
-- it must set `source_writes_performed=false`,
-  `patch_application_performed=false`,
-  `manual_review_required=true`;
-- for `edit_kind=unified_diff`, it must carry the complete `unified_diff`
-  inline;
-- for `edit_kind=structured_edit`, it must carry complete
-  `structured_operations`;
-- for `edit_kind=no_op`, it must carry an explicit rationale and no patch
-  content.
-
-Preview fields, summaries and local artifact paths do not satisfy the
-code-product contract. While a valid code proposal is missing,
-`final_allowed=false` for code-product goals.
-
-### Prompt Pack, Memory And RAG
-
-Before each 11434 planner call, 3572 builds a measured prompt pack. It separates:
-
-- `required_working_set`: real file, diff or result windows needed for the next
-  decision;
-- `optional_context`: intrinsic context, history digest, memory, RAG/chunks,
-  failure patterns and tool-purpose context;
-- `prompt_budget_report`: the real serialized prompt count and budget data.
-
-Memory, RAG and chunks are an internal pre-turn substrate. They are not public
-OpenWebUI tools and are not automatically planner-selectable tool surfaces.
-
-When prompt size crosses the configured compaction threshold, large sections are
-stored in job-local SQLite and exposed to the planner as real recursive windows
-with text, offsets, full size, hash and `has_more_after`. The planner can then
-consume the next window through `planner_scratchpad_read` with
-`kind=prompt_context_window`.
-
-This compaction applies to the planner prompt sent to 11434. It must not degrade
-the terminal `tool_context_for_30b` sent to OpenWebUI: successful tool payloads
-still need to be reconstructed inline.
-
-### Persistence, Safety And Diagnostics
-
-The runtime uses filesystem job files as the operational source of truth.
-SQLite is a secondary index/cache for dashboards and lookup. If SQLite write or
-event indexing fails, the filesystem state/event remains authoritative and the
-job records a typed persistence warning instead of silently disappearing from
-the dashboard.
-
-Command execution is classified before running:
-
-- `readonly` and allowed `validation` commands can run under the configured
-  command policy;
-- `write`, `destructive` and `unknown` commands require explicit consent or are
-  blocked with a typed `command_requires_consent` payload;
-- Unix-like shell auto-repair is limited to read-only commands and records the
-  original/repaired command.
-
-`runtime_sqlite_memory_cleanup apply=true` is write-guarded and requires user
-consent. Planner memory surfaces distinguish feature availability from query
-success through `memory_feature_available`, `memory_query_ok` and
-`memory_records_available`.
-
-### IA Live Control View
-
-3572 also exposes an operator-only read-only dashboard:
-
-- `/jobs/{job_id}/ia-view`
-- `/jobs/{job_id}/ia-view.json`
-
-This view is not part of the 3571 public surface and is not a planner tool. It
-shows what the planner saw and what the controller fed back: prompt payload,
-required working set, intrinsic context, evidence contract, compact tool result,
-raw rehydrated tool result, validator guard and terminal `tool_context_for_30b`.
+**`tool_context_for_30b`** is a pretty-printed JSON string containing real successful tool payloads inline. Local paths, SQLite document IDs, and artifact pointers are never substitutes for visible content.
 
-It exists to make payload transport violations visible, especially preview-only,
-metadata-only or artifact-path-only regressions.
+---
 
-## Top-Level Tree
+## Internal Tool Surface
 
-- [AGENTS.md](AGENTS.md)
-- [README.md](README.md)
-- [flow.svg](flow.svg)
-- [.gitignore](.gitignore)
-- [services/](services/)
-- [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
-- [modelfiles/](modelfiles/)
-- [lab-worktrees/](lab-worktrees/)
-- [openwebui-data/](openwebui-data/)
-- [qwen-agent-workspace/](qwen-agent-workspace/)
-- [qwen-agent/](qwen-agent/)
-- [qwen-context/](qwen-context/)
-- [code-interpreter-workdir/](code-interpreter-workdir/)
-- [executor-runs/](executor-runs/)
-- [payloads/](payloads/)
-- [logs/](logs/)
-- [cache/](cache/)
-- [state/](state/)
-- [knowledge-bad-md/](knowledge-bad-md/)
-- [knowledge-code-packs/](knowledge-code-packs/)
-- [knowledge-md/](knowledge-md/)
-- [knowledge-md-parts/](knowledge-md-parts/)
-- [knowledge-small-md/](knowledge-small-md/)
-- [knowledge-sync/](knowledge-sync/)
-- [knowledge-tiny-md/](knowledge-tiny-md/)
-- [knowledge-upload-batches/](knowledge-upload-batches/)
-- [models-cpu/](models-cpu/)
-- [models-ovms-rerank/](models-ovms-rerank/)
-- [models-task/](models-task/)
-- [ovms-runtime/](ovms-runtime/)
-- [lab-patches/](lab-patches/)
-- [venvs/](venvs/)
+Planner selects tools through the 3572 registry only. Key families:
 
-## Source And Runtime Code
+| Family | Tools | Scope |
+|--------|-------|-------|
+| **Repository inspection** | `repo_status`, `repo_tree`, `repo_search`, `repo_list_files`, `repo_read` | Read-only analysis |
+| **Code product (report-only)** | `repo_propose_code_edit` | Diff/refactoring proposals — no source writes |
+| **Write/apply (guarded)** | `repo_apply_patch`, `repo_write_file` | Explicit consent required |
+| **Validation** | `repo_validate`, `repo_ruff_check`, `repo_pyright_check`, `repo_shellcheck`, `repo_semgrep_scan` | Deterministic adapters |
+| **Terminal** | `terminal_run_command_wait`, `terminal_search_files`, `terminal_list_files` | Command execution |
+| **Planner memory** | `planner_scratchpad_read`, `planner_scratchpad_write` | Scratchpad storage |
+| **Runtime memory** | `runtime_sqlite_memory_search`, `runtime_sqlite_memory_write`, `runtime_sqlite_memory_cleanup` | Selective follow-up only |
 
-### [services/](services/)
+**Write-guarded tools:** `repo_apply_patch`, `repo_write_file`, `repo_command`, `terminal_run_command_wait`, `runtime_sqlite_memory_cleanup` — require explicit consent.
 
-Main service surface for the agentic loop.
+---
 
-Important submodules:
+## MCP Server Inventory
 
-- [services/vulkan_bridge/](services/vulkan_bridge/): public OpenWebUI-facing bridge surface, including
-  the `vulkan_helper` wrapper flow.
-- [services/aicarmine_broker/](services/aicarmine_broker/): internal broker and planner loop, job store,
-  tool registry, repo tools, memory tools, planner contracts, and code-product
-  proposal support.
-- [services/codex_bridge/](services/codex_bridge/): Codex/Ollama bridge helpers.
-- [services/model_export/](services/model_export/): local model export helpers.
-- [services/launch/](services/launch/): PowerShell runtime launch helpers.
+The workspace includes 24+ MCP servers for external tool access:
 
-Important documentation:
+| Category | Servers | Tools | Purpose |
+|----------|---------|-------|---------|
+| **Core repository** | `repo_state`, `repo_search_det`, `repo_validate`, `repo_code` | 25 | Health, search, validate, propose/edit |
+| **Data & query** | `rag`, `sqlite_readonly`, `project_memory`, `index_bridge` | 19 | RAG search, SQLite queries, memory management |
+| **Job & artifacts** | `job_artifact`, `job_view`, `git_readonly` | 23 | Events, final state, tool results, Git history |
+| **Operations** | `codex_ops`, `repo_symbol_index`, `test_discovery`, `code_dep_graph` | 29 | MCP inventory, symbols, tests, dependency analysis |
+| **Refactoring** | `refactor` | 8 | libcst/rope/bowler-based code transformations |
+| **Agent clients** | `local_subagent`, `agentic_loop_client`, `ollama_subagent` | 10 | Subagent execution, GPU Ollama access |
+| **Formatting/linting** | `prettier`, `biome`, `ruff`, `eslint`, `black` | — | Cline built-in wrappers |
 
-- [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
-- [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
-- [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
-- [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
-- [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
+See `AGENTS.md` section "Available MCP Servers" and `services/MCP_OPERATIONAL_SUMMARY.md` for complete tool lists.
 
-### [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
+---
 
-Applied bridge scripts and copied tool/runtime material used as part of the
-local Codex/Ollama/OpenWebUI integration.
+## Active Repository Root
 
-### [modelfiles/](modelfiles/)
+The active repository for planner repo tools is `AICARMINE_LAB_REPO`. A job can analyze a lab worktree (e.g., `C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab`) even when the Codex thread cwd differs.
 
-Ollama Modelfile templates and model configuration examples. Actual model
-binaries are not committed.
+**Contract invariants:**
+- All repo tools resolve paths against `AICARMINE_LAB_REPO`
+- `candidate_next_actions` and `validator_admissible_repo_read_paths` derived from same root
+- Open Terminal cwd expected to mirror `AICARMINE_LAB_REPO` via `OPEN_TERMINAL_CWD` / `AICARMINE_OPEN_TERMINAL_WORKDIR`
 
-## External Or Local-Only Work Areas
+---
 
-These directories are represented by committed `README.md` descriptors only.
-Their runtime contents are ignored by `.gitignore`.
+## IA Live Control View
 
-### [lab-worktrees/](lab-worktrees/)
+3572 exposes an operator-only read-only dashboard:
 
-Local controlled worktrees used by the agentic tool loop and OpenTerminal.
-The worktree code itself is external and already versioned elsewhere.
+- **HTML:** `GET /jobs/{job_id}/ia-view`
+- **JSON:** `GET /jobs/{job_id}/ia-view.json`
 
-### [openwebui-data/](openwebui-data/) and [services/openwebui-data/](services/openwebui-data/)
+Shows what the planner saw per turn: prompt payload, required working set, intrinsic context, evidence contract, compact tool result, raw rehydrated tool result, validator guard, and terminal `tool_context_for_30b`. Audits payload transport violations (preview-only, metadata-only, artifact-path-only regressions).
 
-Local OpenWebUI data directories. They may contain chats, uploads, runtime
-databases, caches, and generated state. Those contents are not source.
+---
 
-### [qwen-agent-workspace/](qwen-agent-workspace/)
-
-Local job workspace for broker runs, tool results, planner streams, and final
-artifacts.
-
-### [qwen-agent/](qwen-agent/) and [qwen-context/](qwen-context/)
-
-Local Qwen context, reports, patches, and runtime state.
-
-### [code-interpreter-workdir/](code-interpreter-workdir/)
-
-Scratch workspace for code-interpreter style executions.
-
-### [executor-runs/](executor-runs/), [payloads/](payloads/), [logs/](logs/), [cache/](cache/), [state/](state/)
-
-Runtime outputs, diagnostic captures, logs, caches, and local state.
-
-### `knowledge-*/`
-
-Generated knowledge packs, Markdown splits, upload batches, and synchronized
-knowledge mirrors. Curated documentation should live in normal source docs
-instead.
-
-Preserved descriptors:
-
-- [knowledge-bad-md](knowledge-bad-md/README.md)
-- [knowledge-code-packs](knowledge-code-packs/README.md)
-- [knowledge-md](knowledge-md/README.md)
-- [knowledge-md-parts](knowledge-md-parts/README.md)
-- [knowledge-small-md](knowledge-small-md/README.md)
-- [knowledge-sync](knowledge-sync/README.md)
-- [knowledge-tiny-md](knowledge-tiny-md/README.md)
-- [knowledge-upload-batches](knowledge-upload-batches/README.md)
-
-### `models-*/`, [npu-models/](npu-models/) and [ovms-runtime/](ovms-runtime/)
-
-Local model stores and OpenVINO Model Server runtime files. Model binaries and
-runtime state are not committed.
-
-Preserved descriptors:
-
-- [models-cpu](models-cpu/README.md)
-- [models-ovms-rerank](models-ovms-rerank/README.md)
-- [models-task](models-task/README.md)
-- [npu-models](npu-models/README.md)
-- [ovms-runtime](ovms-runtime/README.md)
-
-### [lab-patches/](lab-patches/)
-
-Local patch experiments and proof artifacts.
-
-### [venvs/](venvs/)
-
-Local Python virtual environments with isolated dependencies per tool family.
-
-**Active Venvs:**
+## Virtual Environments
 
 | Name | Purpose | Primary Tools | Python Path |
 |------|---------|---------------|-------------|
@@ -636,57 +274,316 @@ Local Python virtual environments with isolated dependencies per tool family.
 | **openwebui** | UI dashboard, public API surface | `vulkan_helper`, `openwebui` | `venvs/openwebui/Scripts/python.exe` |
 | **openvino** | CPU inference, reranking | `rerank`, `embedding`, `npu` | `venvs/openvino/Scripts/python.exe` |
 
-**Activation:**
+Activation: `. .\activate-venv.ps1 -tool <tool_name>` or `. .\activate-venv.ps1 -auto`
 
-Use `activate-venv.ps1` to dynamically select the correct venv based on the tool being called:
+---
 
-```powershell
-.\activate-venv.ps1 -tool <tool_name>
-.\activate-venv.ps1 -auto    # Auto-detect from current process
+## Key Files Reference
+
+### Entry Points
+| File | Role |
+|------|------|
+| `services/vulkan_bridge/app.py` | Public OpenWebUI bridge surface |
+| `services/vulkan_bridge/agentic_v9.py` | Agentic bridge integration (13 lines) |
+| `services/aicarmine_broker/app.py` | Internal broker FastAPI entry point |
+| `services/aicarmine_broker/planner.py` | Planner/controller facade and high-risk loop entry |
+| `services/aicarmine_broker/agent_entry.py` | `/vulkan/agent` route → job worker |
+
+### Application Layer
+| File | Role |
+|------|------|
+| `application/planner/validator.py` | Validator orchestration |
+| `application/planner/loop.py` | Agentic loop orchestration |
+| `application/planner/agentic_v2.py` | Flat decision table routing |
+| `application/planner/evidence_contract_builder.py` | Evidence contract construction |
+| `application/planner/goal_classifier.py` | Goal classification |
+| `application/evidence/final_quality.py` | Final quality validation |
+| `application/code_product/state.py` | Code product state machine |
+
+### Tools Layer
+| File | Role |
+|------|------|
+| `tools/repo_read.py` | File reading |
+| `tools/repo_search.py` | Search operations |
+| `tools/repo_tree.py` | Tree operations |
+| `tools/repo_list_files.py` | File listing |
+| `tools/repo_code_product.py` | Code product operations |
+| `tools/terminal.py` | Terminal command execution |
+
+### Configuration
+| File | Role |
+|------|------|
+| `config/compatibility.py` | Legacy constants, URL defaults, tool aliases |
+| `config/models.py` | Model configuration defaults |
+| `config/env_loader.py` | Environment variable parsing |
+
+---
+
+## Diagnostic Checklist
+
+When the flow breaks, prove the failed edge:
+
+1. OpenWebUI sees only `/vulkan_helper` from `3571/openapi.json`.
+2. 3571 `/health` reports `agent_url` as `http://127.0.0.1:3572/vulkan/agent`.
+3. 3572 `/health` reports expected `planner_url`, `planner_model`, `ollama_task_url`, `ollama_task_model`.
+4. A 3572 job has events for `agentic_loop_started`, `planner_request_started`, `planner_decision`, and either `tool_result` or validator rejection.
+5. If final exists, `final.json` contains planner final data and structured context.
+6. 3571 `POST /vulkan_helper {"action":"result","job_id":"..."}` returns `payload_index_for_30b`, `priority_evidence_for_30b.items[*]`, `openwebui_usage`, and `tool_context_for_30b.artifacts[*].artifact` inline.
+
+---
+
+## Operational Stop Proof
+
+To stop runaway/stuck jobs:
+
+1. Inspect port ownership for `3571`, `3572`, `11434`, `11435`.
+2. Match each PID to command line (`aicarmine-vulkan-tool-broker.ps1`, `uvicorn --port 3571`, `ollama-task-vulkan.ps1`, `ollama.exe serve`).
+3. To stop GPU0/task repair only: stop `ollama-task-vulkan.ps1` tree and child `ollama.exe` on `11435`.
+4. To stop new bridge-launched jobs: stop `aicarmine-vulkan-tool-broker.ps1`/3571 tree. `11434` can remain alive.
+5. Verify after stop that `11435` and `3571` are absent from listening ports.
+
+---
+
+## Documentation Index
+
+### Start Here
+1. [AGENTS.md](AGENTS.md) — Workspace operating rules
+2. [docs/START_HERE_RUNTIME.md](docs/START_HERE_RUNTIME.md) — Guided first-read map
+3. [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md) — Core validator/controller contract
+4. [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md) — End-to-end flow with owner matrix
+5. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md) — File-by-file technical descriptions
+6. [docs/runtime_env_contract.md](docs/runtime_env_contract.md) — Runtime process/env contract
+7. [docs/launcher_contract.md](docs/launcher_contract.md) — Launcher responsibilities
+
+### MCP & Operations
+8. [services/MCP_OPERATIONAL_SUMMARY.md](services/MCP_OPERATIONAL_SUMMARY.md) — Complete tool inventory, health status, known issues
+9. [docs/VENVS_MANAGEMENT.md](docs/VENVS_MANAGEMENT.md) — Virtual environment management
+
+### Refactoring Documentation
+10. [docs/REFACTORING_STATUS_CURRENT.md](docs/REFACTORING_STATUS_CURRENT.md) — Refactoring status and module structure
+11. [docs/PYTHON_REFACTORING_GUIDE.md](docs/PYTHON_REFACTORING_GUIDE.md) — Python refactoring patterns and case studies
+12. [docs/REFACTORING_PROMPT_TEMPLATE.md](docs/REFACTORING_PROMPT_TEMPLATE.md) — Prompt template for refactoring tasks
+13. [docs/REFACTORING_QUICK_REFERENCE.md](docs/REFACTORING_QUICK_REFERENCE.md) — Anti-pattern detection checklist, patterns cheat sheet
+
+### Code Flow Diagrams
+- [flow.svg](flow.svg) — Root runtime flow
+- [services/flow.svg](services/flow.svg) — Services flow
+- [services/aicarmine_broker/flow.svg](services/aicarmine_broker/flow.svg) — 3572 broker flow
+- [services/vulkan_bridge/flow.svg](services/vulkan_bridge/flow.svg) — 3571 bridge flow
+
+---
+
+## Git Policy
+
+Committed: source code, scripts, contracts, documentation, directory descriptors.  
+Excluded: OpenWebUI data, agent job artifacts, virtual environments, model binaries, SQLite databases, generated knowledge stores, logs, payload captures, external lab worktree contents.
+
+Directory descriptors are committed where useful so the project tree remains understandable without importing private or generated data.
+
+### Full Project Structure - (DONT DELETE) 
+
 ```
-
-See [.venvmapping.env](.venvmapping.env) for the complete venv-to-tool mapping configuration.
-
-**Package Management:**
-
-Each venv maintains its own dependencies. Use the corresponding pip executable:
-
-```powershell
-& venvs/labtools/Scripts/pip.exe install <package>
-& venvs/codeinterpreter/Scripts/pip.exe install <package>
-& venvs/executor/Scripts/pip.exe install <package>
-& venvs/openwebui/Scripts/pip.exe install <package>
-& venvs/openvino/Scripts/pip.exe install <package>
-```
-
-The `aicarmine-services` package is installed as editable in all venvs via `pyproject.toml`:
-
-```toml
-[project]
-name = "aicarmine-services"
-version = "2026.06.01"
-dependencies = [
-    "fastapi>=0.100.0",
-    "uvicorn>=0.22.0",
-    "pydantic>=2.0.0",
-    ...
-]
-```
-
-See [services/pyproject.toml](services/pyproject.toml) for the complete dependency list.
-
-
-## Git Import Policy
-
-The repository keeps source, scripts, contracts, and documentation. It excludes:
-
-- OpenWebUI user/runtime data.
-- Agent job artifacts and planner/tool result outputs.
-- Virtual environments and dependency caches.
-- Model binaries and runtime backends.
-- SQLite databases, generated knowledge stores, logs, payload captures, and
-  temporary files.
-- External lab worktree contents.
-
-Directory descriptors are committed where useful so the project tree remains
-understandable without importing private or generated data.
+C:\Users\carmi\AI\
+├── AGENTS.md                       # Global agent instructions
+├── .clinerules/                    # Cline rules directory
+│   └── 00-aicarmine-mcp-first.md   # MCP routing rule
+├── docs/                           # Documentation
+│   ├── REFACTORING_STATUS_CURRENT.md  # ✅ Updated — this document
+│   ├── PYTHON_REFACTORING_GUIDE.md
+│   ├── REFACTORING_PROMPT_TEMPLATE.md
+│   ├── launcher_contract.md
+│   ├── runtime_env_contract.md
+│   ├── START_HERE_RUNTIME.md
+│   └── VENVS_MANAGEMENT.md
+├── services/                       # Main services directory
+│   ├── __init__.py
+│   ├── aicarmine_codex_mcp_server.py
+│   ├── aicarmine_codex_ollama_responses_bridge.py
+│   ├── aicarmine_vulkan_bridge_server.py
+│   ├── aicarmine_vulkan_tool_broker.py
+│   ├── MCP_OPERATIONAL_SUMMARY.md
+│   ├── MODULE_TECHNICAL_DESCRIPTIONS.md
+│   ├── pyproject.toml
+│   ├── README.md
+│   ├── requirements-agentic-optional.txt
+│   ├── run-agent.ps1
+│   ├── RUNTIME_SCRIPT_REFERENCE.md
+│   ├── SERVICES_MODULE_TECHNICAL_REFERENCE.md
+│   ├── set_mcp_env_vars.ps1
+│   ├── start-agent.ps1
+│   ├── sync-lab-from-main.ps1
+│   ├── watch-lab-mirror.ps1
+│   ├── aicarmine_broker/           # ✅ Broker module — refactored files here
+│   │   ├── __init__.py
+│   │   ├── app.py                  # FastAPI entry point (no changes)
+│   │   ├── planner.py              # Main orchestrator (3871 lines, no changes)
+│   │   ├── planner_loop.py         # Loop execution
+│   │   ├── job_store.py            # Job persistence
+│   │   ├── job_planner_lab.py      # Lab-specific planner
+│   │   ├── tool_contract.py        # Tool contract definitions
+│   │   ├── tool_registry.py        # Tool registry (frozen dataclass pattern)
+│   │   ├── tool_schemas.py         # Tool schema definitions
+│   │   ├── tool_selection.py       # Tool selection logic
+│   │   ├── import_refs.py          # Import registry
+│   │   ├── config/                 # Configuration
+│   │   │   ├── __init__.py
+│   │   │   ├── compatibility.py    # Legacy constants (FINAL_QUALITY_ROUTE_TOOLS)
+│   │   │   ├── env_loader.py       # Environment variable parsing
+│   │   │   └── models.py           # BrokerConfig dataclass (frozen=True)
+│   │   ├── application/            # Application layer
+│   │   │   ├── planner/            # ✅ Refactored files here
+│   │   │   │   ├── evidence_contract_builder.py  # ✅ Refactored — lazy imports
+│   │   │   │   ├── agentic_v2.py               # ✅ Refactored — flat decision table
+│   │   │   │   ├── decision.py             # Decision building (720 lines, no changes)
+│   │   │   │   ├── decision_normalizer.py  # Decision normalization
+│   │   │   │   ├── contract_validator.py   # Contract validation
+│   │   │   │   ├── planner_loop.py         # Loop execution
+│   │   │   │   ├── planner_prompt.py       # Prompt construction
+│   │   │   │   ├── planner_helpers.py      # Helper utilities
+│   │   │   │   ├── planner_cuda_rewrite.py # CUDA rewrite helpers
+│   │   │   │   ├── planner_repair.py       # Vulkan repair logic
+│   │   │   │   ├── planner_replan_specialist.py  # Replan specialist
+│   │   │   │   ├── planner_validation.py   # Planner validation
+│   │   │   │   ├── prompt_budget.py        # Budget management
+│   │   │   │   ├── vulkan_repair.py        # Vulkan repair helpers
+│   │   │   │   ├── validator.py            # Validator orchestration
+│   │   │   │   ├── validator_utils.py      # Validator utilities
+│   │   │   │   ├── loop.py                 # Agentic loop orchestration
+│   │   │   │   ├── loop_controller.py      # Loop controller
+│   │   │   │   ├── judge_lane.py           # Judge lane terminal diagnosis
+│   │   │   │   ├── final_quality_validator.py  # Final quality validation
+│   │   │   │   ├── code_product_state.py   # Code product state management
+│   │   │   │   ├── terminal_output.py      # Terminal output formatting
+│   │   │   │   ├── goal_classifier.py      # Goal classification
+│   │   │   │   └── modules/                # Planner sub-modules
+│   │   │   │       └── replan_specialist.py  # Replan specialist (duplicate)
+│   │   │   ├── evidence/             # Evidence building and classification
+│   │   │   │   ├── builder.py          # Evidence builder orchestration
+│   │   │   │   ├── core_discovery.py   # Core discovery candidate selection
+│   │   │   │   ├── execution_digest.py # Execution evidence digest
+│   │   │   │   ├── final_quality.py    # Final quality validation
+│   │   │   │   ├── goal_classifier.py  # Goal classification
+│   │   │   │   ├── goal_scope.py       # Goal scope extraction
+│   │   │   │   ├── initial_orientation.py  # Initial orientation surface
+│   │   │   │   └── repo_history.py     # Repository history tracking
+│   │   │   ├── public_payload/         # ✅ Refactored file here
+│   │   │   │   ├── tool_context.py     # ✅ Refactored — flat decision table
+│   │   │   │   ├── terminal_result.py  # Terminal result formatting
+│   │   │   │   ├── terminal_sanitizer.py  # Terminal sanitization
+│   │   │   │   ├── public_wrapper.py   # Public wrapper
+│   │   │   │   ├── evidence_materializer.py    # Evidence materialization
+│   │   │   │   ├── final_state_result.py       # Final state result formatting
+│   │   │   │   ├── history_ledger.py           # History ledger
+│   │   │   │   ├── openwebui_terminal_answer.py  # Terminal answer formatting
+│   │   │   │   ├── payload_index_resolver.py   # Payload index resolution
+│   │   │   │   ├── tool_context.py             # Tool context formatting
+│   │   │   │   └── field_names.py              # Field name constants
+│   │   │   ├── shared/                 # Shared utilities
+│   │   │   │   ├── clean_values.py     # Value cleaning
+│   │   │   │   ├── diagnostics.py      # Diagnostics utilities
+│   │   │   │   ├── evidence_contract_summary.py  # Evidence contract summary
+│   │   │   │   ├── helper.py           # Helper utilities
+│   │   │   │   ├── history_ledger.py   # History ledger
+│   │   │   │   ├── history_queries.py  # History query utilities
+│   │   │   │   ├── job_html.py         # HTML job page generation
+│   │   │   │   ├── json_node.py        # JSON node handling
+│   │   │   │   ├── memory_tools.py     # Memory tool integration
+│   │   │   │   ├── payload_metadata.py # Payload metadata
+│   │   │   │   ├── path_tokens.py      # Path token management
+│   │   │   │   └── tool_result.py      # Tool result formatting (dataclass slots fix)
+│   │   │   ├── tool_surface/           # Tool surface management
+│   │   │   │   ├── action_proof_ledger.py  # Action proof ledger
+│   │   │   │   ├── batch_contract.py       # Batch contract management
+│   │   │   │   ├── candidate_action_gate.py    # Candidate action gating
+│   │   │   │   ├── candidate_actions.py    # Candidate action selection
+│   │   │   │   ├── dispatcher.py           # Tool dispatch
+│   │   │   │   ├── manifest_builder.py     # Manifest building
+│   │   │   │   ├── result_compaction.py    # Result compaction
+│   │   │   │   ├── result_digest.py        # Result digest formatting
+│   │   │   │   ├── required_tool_call.py   # Required tool call tracking
+│   │   │   │   └── turn_surface_policy.py  # Turn surface policy
+│   │   │   ├── prompt/                 # Prompt construction and management
+│   │   │   │   ├── available_tools.py      # Available tools listing
+│   │   │   │   ├── budget.py               # Budget management
+│   │   │   │   ├── context_windows.py      # Context window management
+│   │   │   │   ├── evidence_contract.py    # Evidence contract building
+│   │   │   │   ├── evidence_contract_window.py  # Evidence contract windowing
+│   │   │   │   ├── history_contract.py     # History contract management
+│   │   │   │   ├── history_messages.py     # History message formatting
+│   │   │   │   ├── intrinsic_context.py    # Intrinsic context building
+│   │   │   │   ├── pack_builder.py         # Pack builder
+│   │   │   │   ├── text_windows.py         # Text window management
+│   │   │   │   └── values.py               # Value management
+│   │   │   ├── controller/             # Controller lane logic
+│   │   │   │   ├── guards.py           # Controller guard validation
+│   │   │   │   ├── memory.py           # Memory lesson persistence
+│   │   │   │   ├── orientation_lane.py # Orientation lane routing
+│   │   │   │   ├── preseed.py          # Preseed plan generation
+│   │   │   │   ├── rag_preseed.py      # RAG preseed queries
+│   │   │   │   └── diagnostics.py      # Runtime diagnostics
+│   │   │   ├── code_product/           # Code product state management
+│   │   │   │   ├── history.py          # Code product history tracking
+│   │   │   │   ├── public_outputs.py   # Public output formatting
+│   │   │   │   ├── required_working_set.py # Working set requirements
+│   │   │   │   └── state.py            # Code product state machine
+│   │   │   ├── job/                    # Job lifecycle management
+│   │   │   │   ├── action_router.py    # Action routing to lifecycle states
+│   │   │   │   ├── status_response.py  # Status response formatting
+│   │   │   │   └── terminal_response.py    # Terminal response formatting
+│   │   │   ├── memory/                 # Memory conflict detection
+│   │   │   ├── npu_phi/                # NPU phi service integration
+│   │   │   ├── replay/                 # Loop replay functionality
+│   │   │   └── runtime_debug/          # Runtime debug packet management
+│   │   ├── infrastructure/             # Infrastructure layer
+│   │   │   ├── command_runner.py       # Command execution
+│   │   │   ├── executable_resolver.py  # Executable resolution
+│   │   │   ├── filesystem_repo.py      # Filesystem repository access
+│   │   │   ├── job_sqlite_store.py     # SQLite job storage
+│   │   │   ├── job_store_repository.py # Job store repository
+│   │   │   ├── json_files.py           # JSON file I/O
+│   │   │   ├── ollama_planner_client.py    # Ollama planner client
+│   │   │   ├── repo_tools.py           # Repository tool integration
+│   │   │   └── result_compaction.py    # Result compaction
+│   │   ├── tools/                      # Tool implementations
+│   │   │   ├── command_safety.py       # Command safety checks
+│   │   │   ├── deterministic_common.py # Deterministic common utilities
+│   │   │   ├── git_surface.py          # Git surface operations
+│   │   │   ├── powershell_runner.py    # PowerShell runner
+│   │   │   ├── repo_code_product.py    # Code product operations
+│   │   │   ├── repo_command.py         # Repository commands
+│   │   │   ├── repo_list_files.py      # File listing
+│   │   │   ├── repo_patch.py           # Patch application
+│   │   │   ├── repo_read.py            # File reading
+│   │   │   ├── repo_search.py          # Search operations
+│   │   │   ├── repo_semantic_search.py # Semantic search
+│   │   │   ├── repo_status.py          # Status reporting
+│   │   │   ├── repo_tree.py            # Tree operations
+│   │   │   └── repo_validate.py        # Validation operations
+│   │   └── planner_core/               # Planner core utilities
+│   │       ├── json_io.py              # JSON I/O helpers
+│   │       └── cache.py                # Decision caching
+│   ├── vulkan_bridge/                  # Vulkan bridge service
+│   │   ├── __init__.py
+│   │   ├── agentic_v9.py           # ✅ Only 13 lines — already minimal (no changes)
+│   │   ├── app.py                  # Vulkan app entry point
+│   │   ├── agentic_v2.py           # Agentic v2 logic
+│   │   └── ...                       # Other vulkan files
+│   ├── codex_bridge/                 # Codex bridge services
+│   ├── launch/                       # Launch scripts
+│   ├── model_export/                 # Model export utilities
+│   ├── npu_phi_service/              # NPU phi service
+│   └── tests/                        # Test suite
+├── codex_ollama_bridge_applied/      # Applied codex bridge changes
+│   ├── AGENTS.md
+│   ├── aicarmine_vulkan_bridge_server.py
+│   ├── aicarmine_vulkan_tool_broker.py
+│   └── ...                           # Other bridge files
+├── tools/                            # Standalone tools
+│   ├── mechanical_payload_surface_cut.py
+│   ├── mechanical_runtime_prune.py
+│   └── mechanical_services_dedupe.py
+├── indexAI/                          # Index data
+├── modelfiles/                       # Ollama model files
+├── css/                              # CSS assets
+├── git-apply-check-smoke-*/          # Smoke test directories
+└── *.ps1, *.py, *.json               # Root-level scripts and configs

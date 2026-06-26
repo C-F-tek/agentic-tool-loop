@@ -364,3 +364,31 @@ CONSTRAINTS:
 5. **Validate before applying:** Always run `ruff check` or `pyright` before approving changes
 6. **One file at a time:** Refactor one file completely before moving to the next
 7. **Track progress:** Use the implementation_plan.md checklist to track completed phases
+
+---
+
+## Recent Refactoring Sessions (2026-06-26)
+
+### Session Summary: Clean Code Strategy Applied
+
+| File | Anti-Pattern | Fix Applied | Lines Changed |
+|------|-------------|-------------|----------------|
+| `evidence_contract_builder.py` | 12 nested import blocks | Lazy imports inside function body | 409 → 387 (-22) |
+| `agentic_v2.py` | Triangular if/elif chain (20+ branches) | Flat decision table `_TOOL_PATH_KEYS` | 236 → 251 (+15 clarity) |
+| `tool_context.py` | 9 elif branches for artifact classification | Lookup table `_TOOL_ARTIFACT_KINDS` | 569 → 554 (-15) |
+
+### Verification Results
+
+- **Ruff lint:** 0 errors across all refactored files
+- **Broker imports:** All working (app.py, planner.py, tool_context.py)
+- **MCP servers:** 5 servers healthy
+- **Broker startup:** Port 3579 running
+
+### Key Patterns Applied
+
+1. **Lazy imports** — Move module-level imports inside function body to avoid circular deps
+2. **Flat decision tables** — Replace triangular if/elif chains with dictionary lookups
+3. **One source of truth** — Single dict definition instead of scattered conditionals
+4. **Keep what works** — Files already well-structured were not modified unnecessarily
+
+For full details, see `docs/REFACTORING_STATUS_CURRENT.md` (full project structure) and `docs/PYTHON_REFACTORING_GUIDE.md` (Case Studies G, H, I).

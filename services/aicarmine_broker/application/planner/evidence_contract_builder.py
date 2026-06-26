@@ -3,6 +3,8 @@
 This module handles building the planner evidence contract from history and
 intrinsic context, including operational notebook construction, candidate
 action generation, and initial orientation surface extraction.
+
+All imports are lazy (inside functions) to avoid circular dependencies.
 """
 from __future__ import annotations
 
@@ -20,33 +22,13 @@ def planner_evidence_contract(
     state of the agentic loop: what has been read, what tools have been used,
     what violations have occurred, and what the next recommended actions are.
     """
+    # Lazy imports to avoid circular dependencies
     from .agentic_v2 import (
         agentic_v2_decision_paths,
         agentic_v2_enrich_evidence_contract,
         agentic_v2_goal_scope,
-    )
-    from ..tool_surface.turn_surface_policy import apply_turn_surface_policy
-    from .code_product_state import (
-        _code_product_build_state_propose_action,
-        _code_product_build_state_read_action,
-        _code_product_build_state_write_action,
-        _code_product_candidate_action,
-        _code_product_payload_rejection_count,
-    )
-    from .code_product_state import strip_duplicate_window_candidate
-    from .agentic_v2 import code_product_action_has_complete_payload
-    from .agentic_v2 import code_product_payload_violations
-    from .code_product_state import _code_product_source_window_candidate
-    from .code_product_state import _compact_validation_rejections_tail
-    from .goal_classifier import (
-        _goal_target_file,
-        goal_requested_repo_scope,
-        goal_requires_code_security_coverage,
-        goal_requests_apply,
-        goal_requests_code_product,
-        semantic_goal_classification,
-    )
-    from .agentic_v2 import (
+        code_product_action_has_complete_payload,
+        code_product_payload_violations,
         failed_code_edit_proposal_validation_row,
         file_memory_from_history,
         goal_exact_text_block,
@@ -55,11 +37,13 @@ def planner_evidence_contract(
         path_exists_repo_relative,
         paths_from_list_rows,
         paths_from_result,
+        planner_scratchpad_window_signature,
         rank_core_candidates,
         repo_analysis_goal,
         repo_code_file,
         repo_doc_or_config,
         repo_list_evidence,
+        repo_read_window_signature,
         repo_readable_evidence_file,
         repo_rel_token,
         repo_required_read_count,
@@ -68,28 +52,37 @@ def planner_evidence_contract(
         successful_code_edit_proposals,
         successful_repo_read_paths,
         failed_repo_read_paths,
-    )
-    from .agentic_v2 import planner_scratchpad_window_signature
-    from .agentic_v2 import repo_read_window_signature
-    from ..evidence.builder import planner_evidence_contract as _planner_evidence_contract_impl
-    from ..evidence.core_discovery import core_discovery_candidates_from_intrinsic
-    from .validation_rejections import disallowed_invalid_code_product_signatures
-    from .goal_classifier import (
-        _repo_analysis_goal,
-        low_signal_top_dir,
-    )
-    from .code_product_state import (
-        _canonical_invalid_code_product_decision_signature,
-        _invalid_decision_signature_count,
-    )
-    from .agentic_v2 import (
         meaningful_read_candidates_from_evidence,
         scoped_required_read_count,
     )
+    from .code_product_state import (
+        _code_product_build_state_propose_action,
+        _code_product_build_state_read_action,
+        _code_product_build_state_write_action,
+        _code_product_candidate_action,
+        _code_product_payload_rejection_count,
+        strip_duplicate_window_candidate,
+        _code_product_source_window_candidate,
+        _compact_validation_rejections_tail,
+        _canonical_invalid_code_product_decision_signature,
+        _invalid_decision_signature_count,
+    )
     from .goal_classifier import (
+        _goal_target_file,
+        goal_requested_repo_scope,
+        goal_requires_code_security_coverage,
+        goal_requests_apply,
+        goal_requests_code_product,
+        semantic_goal_classification,
+        _repo_analysis_goal,
+        low_signal_top_dir,
         _user_scope_claims,
         _verified_repo_read_content_rows,
     )
+    from ..tool_surface.turn_surface_policy import apply_turn_surface_policy
+    from ..evidence.builder import planner_evidence_contract as _planner_evidence_contract_impl
+    from ..evidence.core_discovery import core_discovery_candidates_from_intrinsic
+    from .validation_rejections import disallowed_invalid_code_product_signatures
 
     return _planner_evidence_contract_impl(
         goal,
@@ -157,7 +150,7 @@ def planner_evidence_contract(
         },
         config={
             "CODE_PRODUCT_BUILD_STATE_KIND": "code_product_build_state",
-            "LAB_REPO": "C:\\Users\\carmi\\AI",  # Default - will be overridden by config import
+            "LAB_REPO": "C:\\Users\\carmi\\AI",
             "REPO_CONCRETE_READ_TARGET": 20,
             "SCOPED_CONCRETE_READ_TARGET": 10,
         },

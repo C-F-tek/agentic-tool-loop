@@ -395,24 +395,30 @@ def public_tool_artifact_rows(
             if k not in {"tool", "ok"} and v not in (None, "", [], {})
         }
         artifact_payload = strip_public_artifact_paths(artifact_payload)
-        if tool == "repo_propose_code_edit":
-            artifact = {"kind": "code_edit_proposal", **artifact_payload}
-        elif tool in {"repo_unidiff_validate", "repo_git_apply_check"}:
-            artifact = {"kind": "diff_validation", **artifact_payload}
-        elif tool in {"repo_ruff_check", "repo_pyright_check", "repo_pytest_run", "repo_shellcheck", "repo_semgrep_scan"}:
-            artifact = {"kind": "validation_result", **artifact_payload}
-        elif tool in {"repo_ast_grep_search", "repo_ast_grep_dry_run", "repo_tree_sitter_parse", "repo_ctags_symbols"}:
-            artifact = {"kind": "structural_evidence", **artifact_payload}
-        elif tool in {"repo_fd_files", "repo_rg_search", "repo_jq_query"}:
-            artifact = {"kind": "deterministic_repo_evidence", **artifact_payload}
-        elif tool == "repo_tree":
-            artifact = {"kind": "repo_tree", **artifact_payload}
-        elif tool == "repo_list_files":
-            artifact = {"kind": "repo_list_files", **artifact_payload}
-        elif tool in {"repo_command", "terminal_run_command_wait"}:
-            artifact = {"kind": "command_result", **artifact_payload}
-        else:
-            artifact = {"kind": artifact_payload.get("kind") or "tool_result", **artifact_payload}
+        # Flat decision table — replaces triangular if/elif chain
+        _TOOL_ARTIFACT_KINDS = {
+            "repo_propose_code_edit": "code_edit_proposal",
+            "repo_unidiff_validate": "diff_validation",
+            "repo_git_apply_check": "diff_validation",
+            "repo_ruff_check": "validation_result",
+            "repo_pyright_check": "validation_result",
+            "repo_pytest_run": "validation_result",
+            "repo_shellcheck": "validation_result",
+            "repo_semgrep_scan": "validation_result",
+            "repo_ast_grep_search": "structural_evidence",
+            "repo_ast_grep_dry_run": "structural_evidence",
+            "repo_tree_sitter_parse": "structural_evidence",
+            "repo_ctags_symbols": "structural_evidence",
+            "repo_fd_files": "deterministic_repo_evidence",
+            "repo_rg_search": "deterministic_repo_evidence",
+            "repo_jq_query": "deterministic_repo_evidence",
+            "repo_tree": "repo_tree",
+            "repo_list_files": "repo_list_files",
+            "repo_command": "command_result",
+            "terminal_run_command_wait": "command_result",
+        }
+        kind = _TOOL_ARTIFACT_KINDS.get(tool) or artifact_payload.get("kind") or "tool_result"
+        artifact = {"kind": kind, **artifact_payload}
         rows.append(drop_empty_dict_values({**base, "artifact": artifact}))
     return rows
 

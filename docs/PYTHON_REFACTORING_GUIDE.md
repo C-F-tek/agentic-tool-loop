@@ -748,6 +748,52 @@ The dataclass automatically generates `__init__`, `__repr__`, `__eq__`, and `__h
 
 ---
 
+## Case Studies: 2026-06-26 Refactoring Session
+
+### Case Study G: Circular Dependencies from Nested Imports
+
+**Anti-pattern**: `evidence_contract_builder.py` had 12 separate import blocks scattered across module level, each importing 5-15 symbols from different sub-modules. This created circular import risk when sub-modules also imported from the parent.
+
+**Fixes applied**:
+- Consolidated all 12 import blocks into single lazy import inside `planner_evidence_contract()` function body
+- All dependencies now loaded only when function is called (lazy loading)
+- Eliminated circular import risk by deferring imports until runtime
+
+**Before**: 409 lines with 12 import blocks, circular dependency risk
+**After**: 387 lines (-22 lines), single import block, zero circular deps
+
+**File**: `services/aicarmine_broker/application/planner/evidence_contract_builder.py`
+
+### Case Study H: Triangular Code Replaced by Flat Decision Table
+
+**Anti-pattern**: `_agentic_v2_decision_paths()` had a triangular if/elif chain with 20+ tool categories, each branch checking different argument keys. Cyclomatic complexity was O(n) where n = number of tool types.
+
+**Fixes applied**:
+- Created `_TOOL_PATH_KEYS` flat decision table mapping each tool to its path argument keys
+- Converted from O(n) nested conditionals to O(1) dictionary lookup
+- Each tool maps directly to its tuple of path keys — no conditionals needed
+
+**Before**: 236 lines with triangular if/elif chain
+**After**: 251 lines (+15 for clarity), O(1) lookup, maintainable
+
+**File**: `services/aicarmine_broker/application/planner/agentic_v2.py`
+
+### Case Study I: Artifact Classification elif Chain → Lookup Table
+
+**Anti-pattern**: `public_tool_artifact_rows()` had 9 nested elif branches classifying artifacts by tool type. Each branch created a dict with different "kind" values.
+
+**Fixes applied**:
+- Created `_TOOL_ARTIFACT_KINDS` dictionary mapping 19 tools to their artifact kind strings
+- Replaced all 9 elif branches with single `_TOOL_ARTIFACT_KINDS.get(tool)` lookup
+- Eliminated code duplication and made it trivial to add new tool types
+
+**Before**: 569 lines with 9 elif branches for artifact classification
+**After**: 554 lines (-15 lines), flat lookup table, zero conditionals
+
+**File**: `services/aicarmine_broker/application/public_payload/tool_context.py`
+
+---
+
 ## 10. Conclusion
 
 ### Key Principles for Simpler Code

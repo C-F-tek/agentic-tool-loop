@@ -265,9 +265,44 @@ All shared stdio MCP helpers centralized here: `json_dumps()`, `compact_text()`,
 4. ✅ **Created `docs/REFACTORING_STATUS_CURRENT.md`** — Complete refactoring status document with module structure, code references, and verification results
 5. ✅ **Updated `docs/VENVS_MANAGEMENT.md`** — Fixed `venfs/` → `venvs/` typo, added FINAL_QUALITY_ROUTE_TOOLS troubleshooting section, added ruff configuration note
 
+## 6. 2026-06-26 Clean Code Refactoring Session
+
+### 6.1 Files Modified
+
+| File | Anti-Pattern | Fix Applied | Before | After | Change |
+|------|-------------|-------------|--------|-------|--------|
+| `application/planner/evidence_contract_builder.py` | 12 nested import blocks | Lazy imports inside function body | 409 | 387 | -22 |
+| `application/planner/agentic_v2.py` | Triangular if/elif chain (20+ branches) | Flat decision table `_TOOL_PATH_KEYS` | 236 | 251 | +15 clarity |
+| `application/public_payload/tool_context.py` | 9 elif branches for artifact classification | Lookup table `_TOOL_ARTIFACT_KINDS` | 569 | 554 | -15 |
+
+### 6.2 Documentation Updated
+
+| Document | Change |
+|----------|--------|
+| `docs/REFACTORING_STATUS_CURRENT.md` | Full project structure tree, refactoring summary tables |
+| `docs/PYTHON_REFACTORING_GUIDE.md` | Added Case Studies G, H, I with before/after examples |
+| `docs/REFACTORING_PROMPT_TEMPLATE.md` | Added recent sessions section with verification results |
+| `docs/REFACTORING_QUICK_REFERENCE.md` | NEW — Anti-pattern detection checklist, patterns cheat sheet, metrics, commands |
+
+### 6.3 Key Patterns Applied
+
+1. **Lazy imports** — Move module-level imports inside function body to avoid circular deps
+2. **Flat decision tables** — Replace triangular if/elif chains with dictionary lookups
+3. **One source of truth** — Single dict definition instead of scattered conditionals
+4. **Keep what works** — Files already well-structured were not modified unnecessarily
+
+### 6.4 Verification Results
+
+- **Ruff lint:** 0 errors across all refactored files ✅
+- **Broker imports:** All working (app.py, planner.py, tool_context.py) ✅
+- **MCP servers:** 5 servers healthy ✅
+- **Broker startup:** Port 3579 running ✅
+
 ---
 
-## 6. Formatting Servers Status
+---
+
+## 7. Formatting Servers Status
 
 All 5 formatting servers confirmed as **Cline built-in tool wrappers** (no MCP tool definitions):
 
