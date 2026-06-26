@@ -30,7 +30,6 @@ from .error_codes import ERROR_CODES
 def _batch_guard(
     guard_type: str,
     summary: str,
-    *,
     step: int = 0,
     job_id: str = "",
     rejected_decision: dict | None = None,
