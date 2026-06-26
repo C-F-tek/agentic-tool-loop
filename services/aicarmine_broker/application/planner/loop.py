@@ -1,5 +1,4 @@
 """Multi-step planner loop owner.
-
 Refactored to use extracted classes:
 - GuardEvaluator: All guard evaluation logic
 - PlannerLoopController: Main loop execution and decision handling
@@ -109,8 +108,8 @@ def evaluate_initial_orientation_shadow(
             valid.append(new_cand)
             seen_ids.add(cid_stripped)
         return valid
-
-    # STAGE 1 — EFFECTIVE MODE
+    
+# STAGE 1 — EFFECTIVE MODE
     effective_mode_raw = effective_mode_fn(requested_mode)
     effective_mode = "shadow" if effective_mode_raw == "shadow" else "legacy"
     requested_mode_bounded = bounded_text(requested_mode, 32)
@@ -151,7 +150,7 @@ def evaluate_initial_orientation_shadow(
                 "error": "",
             },
         }
-    # STAGE 2 — ROOT RESULT GATE
+# STAGE 2 — ROOT RESULT GATE
     if not isinstance(root_result, dict) or root_result.get("ok") is not True:
         return {
             "schema": "orientation_shadow_evaluation.v1",
@@ -189,7 +188,7 @@ def evaluate_initial_orientation_shadow(
                 "error": "",
             },
         }
-    # STAGE 3 — CANDIDATE POOL
+# STAGE 3 — CANDIDATE POOL
     try:
         raw_pool = candidate_pool_fn(deepcopy(root_result))
     except Exception as exc:
@@ -278,7 +277,7 @@ def evaluate_initial_orientation_shadow(
                 "error": "",
             },
         }
-    # STAGE 4 — LEGACY SELECTED IDS
+# STAGE 4 — LEGACY SELECTED IDS
     try:
         legacy_result = legacy_selected_ids_fn(
             candidates=deepcopy(valid_candidates_list),
@@ -330,7 +329,7 @@ def evaluate_initial_orientation_shadow(
         allowed_ids=allowed_candidate_ids,
         limit=13,
     )
-    # STAGE 5 — SELECTOR
+# STAGE 5 — SELECTOR
     try:
         goal_bounded = str(goal)[:4000] if isinstance(goal, str) else str(goal)[:4000]
         semantic_intent_copy = deepcopy(semantic_intent) if isinstance(semantic_intent, Mapping) else {}
@@ -378,7 +377,7 @@ def evaluate_initial_orientation_shadow(
                 "error": error_text,
             },
         }
-    # STAGE 6 — SELECTOR RESULT VALIDATION
+# STAGE 6 — SELECTOR RESULT VALIDATION
     if not isinstance(selector_result, dict):
         return {
             "schema": "orientation_shadow_evaluation.v1",
@@ -427,7 +426,7 @@ def evaluate_initial_orientation_shadow(
     unknown_ids = selector_result.get("unknown_candidate_ids", [])
     duplicate_ids = selector_result.get("duplicate_candidate_ids", [])
     duplicate_input_ids = selector_result.get("duplicate_input_candidate_ids", [])
-    # NOTE: ok_val and status_val were extracted but not used; selector_ok/status computed below
+# NOTE: ok_val and status_val were extracted but not used; selector_ok/status computed below
     confidence_raw = selector_result.get("confidence")
     if isinstance(confidence_raw, bool):
         confidence = None
@@ -517,7 +516,7 @@ def evaluate_initial_orientation_shadow(
                 "error": error_bounded,
             },
         }
-    # STAGE 7 — SELECTION METRICS
+# STAGE 7 — SELECTION METRICS
     try:
         metrics_result = selection_metrics_fn(
             legacy_selected_candidate_ids=deepcopy(legacy_selected_candidate_ids),
@@ -625,7 +624,7 @@ def evaluate_initial_orientation_shadow(
         if isinstance(would_change_raw, bool)
         else not exact_match
     )
-    # SUCCESS RESULT
+# SUCCESS RESULT
     return {
         "schema": "orientation_shadow_evaluation.v1",
         "lane_id": "orientation.initial",
@@ -927,8 +926,7 @@ def run_agentic_planner_job(
             if area_read_plan:
                 execute_controller_preseed(area_read_plan, preseed_index)
                 preseed_index += 1
-
-        # Shadow evaluator invocation after legacy flow completes
+# Shadow evaluator invocation after legacy flow completes
         if AICARMINE_ORIENTATION_LANE_MODE == "shadow":
             semantic_intent = (
                 preplanner_query_plan.get("semantic_intent")
@@ -1018,8 +1016,8 @@ def run_agentic_planner_job(
             preplanner_query_plan.get("semantic_intent_required") is True
             and preplanner_query_plan.get("ok") is not True
         ):
-            # Issue 1: Use fallback deterministico instead of blocking
-            # Use query_plan_continue_without_model() for semantic intent failures
+# Issue 1: Use fallback deterministico instead of blocking
+# Use query_plan_continue_without_model() for semantic intent failures
             preplanner_query_plan = query_plan_continue_without_model(
                 preplanner_query_plan,
                 reason=preplanner_query_plan.get("reason") or "planner_query_plan_semantic_intent_unusable_after_retry",
@@ -1027,11 +1025,10 @@ def run_agentic_planner_job(
                 planner_model=PLANNER_MODEL,
                 timeout_seconds=AGENTIC_PLANNER_STEP_TIMEOUT,
             )
-            # Issue 1.1: Propagate fallback to state and args before calling _controller_preplanner_rag_preseed_plan
+ # Issue 1.1: Propagate fallback to state and args before calling _controller_preplanner_rag_preseed_plan
             state["controller_preplanner_rag_query_plan"] = preplanner_query_plan
             preplanner_args["controller_rag_query_plan"] = preplanner_query_plan
             write_agent_job_state(state)
-            
             row = {
                 "step": 0,
                 "decision": {
@@ -1049,9 +1046,8 @@ def run_agentic_planner_job(
             loop_state.append_history_row(row)
             loop_controller.persist_turn_memory(row)
             write_agent_job_state(state)
-            # Continue with deterministic RAG preseed instead of blocking
+# Continue with deterministic RAG preseed instead of blocking
             preplanner_plan = None
-
     preplanner_plan: dict[str, Any] | None = None
     preplanner_report: dict[str, Any] = {}
     preplanner_skipped: list[dict[str, Any]] = []
@@ -1084,8 +1080,7 @@ def run_agentic_planner_job(
         step=0,
     )
     add_initial_orientation_skipped(preplanner_skipped)
-
-    # Issue 7: Fix RAG preseed success measurement - use success_count > 0 instead of just ranked_paths count
+# Issue 7: Fix RAG preseed success measurement - use success_count > 0 instead of just ranked_paths count
     ranked_preseed_success = False
     ranked_paths: list[str] = []
     if preplanner_plan:
@@ -1097,12 +1092,11 @@ def run_agentic_planner_job(
             str(path) for path in ranked_path_items
             if str(path).strip()
         ]
-        # Use success_count from preplanner_compact instead of just counting ranked_paths
+# Use success_count from preplanner_compact instead of just counting ranked_paths
         ranked_preseed_success = bool(
             preplanner_compact.get("ok")
             and int(preplanner_compact.get("success_count") or 0) > 0
         )
-
     preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)
     if preseed_plan:
         skip_generic_root_surface = (
@@ -1140,7 +1134,6 @@ def run_agentic_planner_job(
                 )
                 preseed_index += 1
                 preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
-
     for step in itertools.count(1):
         semantic_step = loop_controller.get_semantic_step(step)
         if semantic_step > max_steps:
@@ -1148,7 +1141,6 @@ def run_agentic_planner_job(
         state = load_agent_job_state(job_id) or state
         if str(state.get("status") or "") == "cancel_requested":
             return finalize_agentic_job(job_id, state, "cancelled", "Job cancelled.", {"history": history})
-
         goal_text = str(state.get("goal") or "")
         step_budget_guidance = loop_controller.build_step_budget_guidance(semantic_step)
         if step_budget_guidance:
@@ -1259,10 +1251,9 @@ def run_agentic_planner_job(
             },
         })
         write_agent_job_state(state)
-
-        # The planner must remain the decision-maker. 3572 may validate or reject
-        # the proposal, but must not synthesize hidden tool calls such as an
-        # automatic repo_read after repo_list_files.
+# The planner must remain the decision-maker. 3572 may validate or reject
+# the proposal, but must not synthesize hidden tool calls such as an
+# automatic repo_read after repo_list_files.
         planner_role_override = (
             dict(state.get("planner_role_override"))
             if isinstance(state.get("planner_role_override"), dict)
@@ -1324,21 +1315,18 @@ def run_agentic_planner_job(
             )
             state.pop("planner_role_override", None)
             write_agent_job_state(state)
-
         append_agent_event(
             job_id, "planner_decision",
             f"Decision: {decision.get('action')} {decision.get('tool', '')}",
             decision, step=step,
         )
-
         planner_memory_snapshot = (
             state.get("planner_memory_surface")
             if isinstance(state.get("planner_memory_surface"), dict)
             else {}
         )
         memory_claim_text = _decision_memory_claim_text(decision)
-
-        # Phase 2: Replace inline memory claim guard with GuardEvaluator
+# Phase 2: Replace inline memory claim guard with GuardEvaluator
         memory_claim_guard = guard_evaluator.evaluate_memory_claim_guard(
             memory_claim_text=memory_claim_text,
             decision=decision,
@@ -2121,11 +2109,10 @@ def run_agentic_planner_job(
                     }),
                 )
 
-            # Judge lane evaluation: replace cuda_rewrite guard with judge authority pattern
-            # Import judge_lane at the point of use to avoid circular imports
+# Judge lane evaluation: replace cuda_rewrite guard with judge authority pattern
+# Import judge_lane at the point of use to avoid circular imports
             from .judge_lane import execute_judge_lane, prepare_judge_context
-            
-            # Evaluate judge decision based on evidence_contract
+# Evaluate judge decision based on evidence_contract
             judge_result = execute_judge_lane(
                 str(state.get("goal") or ""),
                 history,
@@ -2133,12 +2120,11 @@ def run_agentic_planner_job(
                 deps=deps,
                 config=config,
             )
-            
-            # Handle judge decision
+# Handle judge decision
             judge_decision = judge_result.get("decision", "continue_discovery")
             
             if judge_decision == "terminal_block":
-                # Judge determined terminal block - job cannot proceed
+# Judge determined terminal block - job cannot proceed
                 guard_result = controller_guard_result_for_validation(
                     validation,
                     decision,
@@ -2190,13 +2176,11 @@ def run_agentic_planner_job(
                         ),
                     },
                 )
-            
             if judge_decision == "final_allowed":
-                # Judge approved final - allow planner to choose final
+# Judge approved final - allow planner to choose final
                 validation["evidence_contract"]["planner_may_choose_final"] = True
                 validation["evidence_contract"]["finalization_contract"]["final_allowed"] = True
                 validation["evidence_contract"]["finalization_contract"]["planner_may_choose_final"] = True
-                
                 append_agent_event(
                     job_id,
                     "judge_decision",
@@ -2204,12 +2188,10 @@ def run_agentic_planner_job(
                     judge_result,
                     step=step,
                 )
-                
-                # Continue to normal decision handling below (planner can now choose final)
+# Continue to normal decision handling below (planner can now choose final)
                 pass
-            
             elif judge_decision == "rewrite_required":
-                # Judge determined rewrite required - send to cuda_rewrite lane
+# Judge determined rewrite required - send to cuda_rewrite lane
                 guard_result = controller_guard_result_for_validation(
                     validation,
                     decision,
@@ -2221,7 +2203,6 @@ def run_agentic_planner_job(
                 guard_result["summary"] = "judge_rewrite_required"
                 guard_result["judge_rationale"] = judge_result.get("rationale", "")
                 guard_result["suggestions"] = judge_result.get("suggestions", [])
-                
                 append_agent_event(
                     job_id,
                     "judge_decision",
@@ -2229,7 +2210,6 @@ def run_agentic_planner_job(
                     judge_result,
                     step=step,
                 )
-                
                 row = {
                     "step": step,
                     "decision": {
@@ -2247,12 +2227,10 @@ def run_agentic_planner_job(
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
-            
             else:
-                # Default: CONTINUE_DISCOVERY with suggestions
+# Default: CONTINUE_DISCOVERY with suggestions
                 suggestions = judge_result.get("suggestions", [])
                 required_next_progress = judge_result.get("required_next_progress", "")
-                
                 append_agent_event(
                     job_id,
                     "judge_decision",
@@ -2260,17 +2238,14 @@ def run_agentic_planner_job(
                     judge_result,
                     step=step,
                 )
-                
-                # Inject suggestions into evidence_contract
+# Inject suggestions into evidence_contract
                 if required_next_progress:
                     validation["evidence_contract"]["required_next_progress"] = required_next_progress
                 if suggestions:
                     validation["evidence_contract"]["judge_suggestions"] = suggestions[:5]
-                
-                # Continue to normal decision handling (planner will get suggestions in prompt)
+# Continue to normal decision handling (planner will get suggestions in prompt)
                 pass
-            
-            # Detect if rewrite_target is stuck on same value (model inability)
+# Detect if rewrite_target is stuck on same value (model inability)
             previous_targets = [
                 str(row.get("tool_result", {}).get("rewrite_target") or "")
                 for row in history[-10:]
@@ -2279,9 +2254,7 @@ def run_agentic_planner_job(
             if len(set(previous_targets)) == 1 and previous_targets[0] == loop_controller.rewrite_target:
                 state["planner_stuck_on_rewrite_target"] = loop_controller.rewrite_target
                 state["planner_rewrite_stuck_count"] = loop_controller.cuda_rewrite_history_count + 1
-            
             guard_result["planner_role_scheduled"] = state["planner_role_override"]
-            
             append_agent_event(
                 job_id,
                 "planner_decision_rejected",
@@ -2305,7 +2278,6 @@ def run_agentic_planner_job(
             loop_state.append_history_row(row)
             loop_controller.persist_turn_memory(row)
             write_agent_job_state(state)
-            continue
             if "planner_native_mode_non_json_output" in validation_violations:
                 prior_native_text_guards = controller_guard_count(
                     history,
@@ -2365,8 +2337,7 @@ def run_agentic_planner_job(
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
-
-            # Phase 2: Replace inline unrecoverable_output guard with GuardEvaluator
+# Phase 2: Replace inline unrecoverable_output guard with GuardEvaluator
             unrecoverable_guard = guard_evaluator.evaluate_unrecoverable_output_guard(
                 decision=decision,
                 history=history,
@@ -2387,7 +2358,6 @@ def run_agentic_planner_job(
                         "blocked_by": decision.get("reason"),
                     }),
                 )
-
             repair_result: dict[str, Any] = {
                 "ok": False,
                 "error": "vulkan_repair_not_applicable_for_this_invalid_decision",
@@ -2509,7 +2479,7 @@ def run_agentic_planner_job(
                     validation = repaired_validation
                 else:
                     continue
-            # Phase 2: Replace inline final guard (default case) with GuardEvaluator
+# Phase 2: Replace inline final guard (default case) with GuardEvaluator
             final_guard = guard_evaluator.evaluate_final_guard(
                 decision=decision,
                 validation=validation,
@@ -2559,7 +2529,6 @@ def run_agentic_planner_job(
                             "vulkan_repair": repair_result if should_attempt_vulkan else {"attempted": False},
                         },
                     )
-
                 row = {
                     "step": step,
                     "decision": {
@@ -2581,11 +2550,9 @@ def run_agentic_planner_job(
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
-
         decision = _normalize_terminal_planner_decision(decision if isinstance(decision, dict) else {})
         action = str(decision.get("action") or "tool").strip().lower()
-
-        # --- final ---
+# --- final ---
         if action in {"final", "done", "complete", "completed"}:
             final_answer = str(
                 decision.get("final_answer") or decision.get("answer")
@@ -2597,11 +2564,10 @@ def run_agentic_planner_job(
                 job_id, state, "completed", final_answer,
                 {"history": history, "planner_decision": terminal_decision},
             )
-
-        # --- block ---
+# --- block ---
         if action in {"block", "blocked", "need_user", "needs_user"}:
-            # No fallback: do not convert planner block/no-json/timeout into a
-            # controller_guard loop. Surface the real loop result and artifacts.
+# No fallback: do not convert planner block/no-json/timeout into a
+# controller_guard loop. Surface the real loop result and artifacts.
             final_answer = str(decision.get("final_answer") or decision.get("reason") or "Job blocked.")
             return finalize_agentic_job(
                 job_id,
@@ -2610,21 +2576,18 @@ def run_agentic_planner_job(
                 final_answer,
                 {"history": history, "planner_decision": decision, "blocked_by": decision.get("reason")},
             )
-
-        # --- tool ---
+# --- tool ---
         tool = normalize_tool_name(str(decision.get("tool") or ""))
         args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
-
         if not tool or tool not in VALID_INTERNAL_TOOLS:
-            # Should be unreachable because validate_planner_decision_against_evidence()
-            # rejects invalid tools. Do not substitute repo_capabilities here: that
-            # would let 3572 replace planner reasoning with a hidden controller step.
+# Should be unreachable because validate_planner_decision_against_evidence()
+# rejects invalid tools. Do not substitute repo_capabilities here: that
+ # would let 3572 replace planner reasoning with a hidden controller step.
             return finalize_agentic_job(
                 job_id, state, "blocked_needs_attention",
                 f"Planner selected invalid tool: {tool or '<empty>'}.",
                 {"history": history, "blocked_by": "invalid_planner_tool", "planner_decision": decision},
             )
-
         internal_args = sanitize_tool_args(tool, dict(args), original_args, public_tool_name)
         is_support_subturn = loop_controller.support_subturn_decision(decision)
         if repeated_tool_call_count(history, tool, internal_args) >= 2:
@@ -2649,7 +2612,6 @@ def run_agentic_planner_job(
             loop_controller.persist_turn_memory(repeat_guard_row)
             write_agent_job_state(state)
             continue
-
         cache_key = _tool_cache_key(tool, internal_args)
         hit = _tool_cache_hit(history, tool, internal_args)
         if hit:
@@ -2665,8 +2627,7 @@ def run_agentic_planner_job(
                 },
             )
             continue
-
-        # approval gate
+# approval gate
         allowed, block_reason = _agentic_tool_allowed(tool, internal_args, approval_mode)
         if not allowed:
             append_agent_event(job_id, "tool_blocked", block_reason, {"tool": tool}, step=step)
@@ -2674,7 +2635,6 @@ def run_agentic_planner_job(
                 job_id, state, "blocked_needs_consent", block_reason,
                 {"history": history, "blocked_tool": tool},
             )
-
         state["status_message"] = f"executing {tool}"
         write_agent_job_state(state)
         tool_start_payload = {"tool": tool, "arguments": internal_args}
@@ -2683,7 +2643,6 @@ def run_agentic_planner_job(
             tool_start_payload["semantic_step"] = semantic_step
         append_agent_event(job_id, "tool_start", f"Executing {tool}",
                             tool_start_payload, step=step)
-
         result = dispatch_tool(
             tool, internal_args, root,
             allow_command=True,
@@ -2700,7 +2659,6 @@ def run_agentic_planner_job(
             compact_result["cache_key"] = cache_key
         append_agent_event(job_id, "tool_result", f"{tool} ok={bool(result.get('ok'))}",
                             compact_result, step=step)
-
         row = {
             "step": step,
             "decision": {k: v for k, v in decision.items() if k != "raw_planner_text_preview"},
@@ -2711,10 +2669,8 @@ def run_agentic_planner_job(
         loop_state.append_history_row(row, update_evidence=False)
         loop_controller.persist_turn_memory(row)
         write_agent_job_state(state)
-
-        # No controller_auto_final here: the next planner step must inspect the
-        # structured evidence and decide whether to continue, read more, or final.
-
+ # No controller_auto_final here: the next planner step must inspect the
+ # structured evidence and decide whether to continue, read more, or final.
     terminal_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
     if not loop_controller.coverage_satisfied(terminal_contract):
         missing_paths = loop_controller.missing_owner_paths(terminal_contract)
