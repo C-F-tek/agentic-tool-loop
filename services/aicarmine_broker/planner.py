@@ -18,7 +18,11 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-
+# keep it here dont delete
+from aicarmine_broker.application.planner.goal_classifier import semantic_goal_classification as _classify_goal_deliverable
+from aicarmine_broker.application.planner.evidence_contract_builder import planner_evidence_contract as _planner_evidence_contract_impl
+from aicarmine_broker.application.prompt.tool_contract import tool_shape_examples_for_prompt as _tool_shape_examples_for_prompt
+###########
 from aicarmine_broker.application.evidence import user_scope_claims
 from aicarmine_broker.application.evidence.repo_history import extract_key_lines, file_memory_from_history, rank_core_candidates, repo_list_evidence
 from aicarmine_broker.application.evidence.repo_path_policy import dynamic_read_candidate_paths, path_under_scope
@@ -44,6 +48,7 @@ from .job_store import *
 from .application.shared.memory_tools import *
 from .code_edit_proposal_contract import *
 from .planner_core.json_io import _parse_strict_json_object
+from .planner_core.cache import _repair_cache_key
 from .planner_intrinsic_context import *
 from .infrastructure.repo_tools import *
 from .planner_core.json_io import *
