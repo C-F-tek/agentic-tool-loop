@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -14,6 +15,8 @@ from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.terminal import strip_terminal_ansi
+
+logger = logging.getLogger(__name__)
 
 
 TOOL_RESULT_TEXT_LIMIT = 120_000
@@ -155,7 +158,32 @@ def deterministic_tool_missing(tool: str, executable: str) -> dict[str, Any]:
     }
 
 
+def _tool_to_error_code(tool: str) -> str:
+    """Map tool name to structured error code."""
+    normalized = str(tool or "").strip().lower().replace("repo_", "").replace("_", "").replace(" ", "")
+    for prefix in ["fd_files", "rg_search", "jq_query", "ast_grep", "tree_sitter",
+                   "git_apply_check", "ruff_check", "pyright_check", "pytest_run",
+                   "shellcheck", "ctags_symbols", "semgrep_scan", "hyperfine_benchmark"]:
+        if prefix in normalized:
+            return f"TOOL_EXEC_{prefix.upper()}"
+    return "TOOL_EXECUTION_FAILED"
+
+
 def deterministic_input_error(tool: str, exc: Exception) -> dict[str, Any]:
+    """Build error dict with structured error code logging (non-blocking)."""
+    error_code = _tool_to_error_code(tool)
+    summary = str(exc)[:500] if exc else "unknown error"
+
+    # Log structured error for monitoring - never crash on logging
+    try:
+        logger.warning(
+            "Tool execution error: code=%s tool=%s error=%s",
+            error_code, tool, summary
+        )
+    except Exception:
+        pass  # Never crash on logging
+
+    # Return compatible dict shape for existing callers
     payload: dict[str, Any] = {"ok": False, "tool": tool}
     if isinstance(exc, DeterministicToolInputError):
         payload.update(exc.payload())
