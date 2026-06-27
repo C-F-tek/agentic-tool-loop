@@ -1,25 +1,30 @@
 #!/usr/bin/env python3
-"""Wily code complexity MCP server — wraps wily CLI for MCP tool calls.
+"""Wily code complexity MCP server — wraps wily CLI + AST-based fallback.
 
 Tools:
 - wily_health: Report wily installation, cache status, revision count
-- wily_report: Show metrics for a given file
-- wily_rank: Rank files/functions by any metric
+- wily_report: Show metrics for a given file (via Wily CLI)
+- wily_rank: Rank files/functions by any metric (via Wily CLI)
 - wily_build: Build/rebuild wily cache (delta/full)
 - wily_index: Show history archive from .wily/ folder
 - wily_diff: Show metric differences between revisions
 - wily_list_metrics: List available complexity metrics
+- ast_complexity_report: Full workspace complexity report via Python AST (fallback)
+- ast_file_metrics: Metrics for a single file via Python AST
+- ast_top_functions: Top N most complex functions across workspace
 """
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
 import subprocess
 import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 from repo_mcp_common import (
     ToolSpec,
@@ -62,6 +67,224 @@ def _wily_cache_dir() -> str:
     """Return the path to the Wily cache directory."""
     home = os.environ.get("HOME", str(Path.home()))
     return os.path.join(home, ".wily")
+
+
+# ==============================================================================
+# AST-based complexity analysis (fallback when Wily cannot extract metrics)
+# ==============================================================================
+
+
+@dataclass
+class FunctionMetrics:
+    name: str
+    file_path: str
+    line: int
+    end_line: int
+    num_lines: int
+    num_params: int
+    num_nesting: int
+    num_ifs: int
+    num_for_loops: int
+    num_while_loops: int
+    num_try_blocks: int
+    num_awaits: int
+    cyclomatic_complexity: int
+    has_docstring: bool
+
+
+@dataclass
+class FileMetrics:
+    path: str
+    total_lines: int
+    class_count: int
+    function_count: int
+    top_level_functions: int
+    top_level_classes: int
+    has_main_guard: bool
+    functions: List[dict]
+
+
+def _count_cyclomatic_complexity(node: ast.AST) -> int:
+    complexity = 1
+    for child in ast.walk(node):
+        if isinstance(child, (ast.If, ast.While, ast.For)):
+            complexity += 1
+        elif isinstance(child, ast.BoolOp):
+            complexity += len(child.values) - 1
+        elif isinstance(child, ast.IfExp):
+            complexity += 1
+        elif isinstance(child, ast.ExceptHandler):
+            complexity += 1
+        elif isinstance(child, ast.With):
+            complexity += 1
+    return complexity
+
+
+class _NestingCounter(ast.NodeVisitor):
+    def __init__(self):
+        self.depth = 0
+
+    def visit_ClassDef(self, node):
+        self.depth += 1
+        self.generic_visit(node)
+        self.depth -= 1
+
+    def visit_FunctionDef(self, node):
+        self.depth += 1
+        self.generic_visit(node)
+        self.depth -= 1
+
+    def visit_AsyncFunctionDef(self, node):
+        self.depth += 1
+        self.generic_visit(node)
+        self.depth -= 1
+
+
+def _count_nesting(func_node: ast.AST) -> int:
+    counter = _NestingCounter()
+    counter.visit(func_node)
+    return counter.depth
+
+
+class _DecisionCounter(ast.NodeVisitor):
+    def __init__(self):
+        self.if_count = 0
+        self.for_count = 0
+        self.while_count = 0
+        self.try_count = 0
+        self.await_count = 0
+
+    def visit_If(self, node):
+        self.if_count += 1
+        self.generic_visit(node)
+
+    def visit_For(self, node):
+        self.for_count += 1
+        self.generic_visit(node)
+
+    def visit_While(self, node):
+        self.while_count += 1
+        self.generic_visit(node)
+
+    def visit_Try(self, node):
+        self.try_count += 1
+        self.generic_visit(node)
+
+    def visit_Await(self, node):
+        self.await_count += 1
+        self.generic_visit(node)
+
+
+def _analyze_function(func_node: ast.AST, file_path: str) -> FunctionMetrics:
+    start_line = func_node.lineno
+    end_line = func_node.end_lineno or start_line
+    num_lines = end_line - start_line + 1
+
+    params = func_node.args
+    num_params = (
+        len(params.args)
+        + len(params.posonlyargs)
+        + len(params.kwonlyargs)
+        + (1 if params.vararg else 0)
+        + (1 if params.kwarg else 0)
+    )
+
+    nesting = _count_nesting(func_node)
+    decisions = _DecisionCounter()
+    decisions.visit(func_node)
+    complexity = _count_cyclomatic_complexity(func_node)
+
+    has_docstring = (
+        isinstance(func_node.body[0], ast.Expr)
+        and isinstance(func_node.body[0].value, (ast.Constant, ast.Str))
+    ) if func_node.body else False
+
+    return FunctionMetrics(
+        name=func_node.name,
+        file_path=file_path,
+        line=start_line,
+        end_line=end_line,
+        num_lines=num_lines,
+        num_params=num_params,
+        num_nesting=nesting,
+        num_ifs=decisions.if_count,
+        num_for_loops=decisions.for_count,
+        num_while_loops=decisions.while_count,
+        num_try_blocks=decisions.try_count,
+        num_awaits=decisions.await_count,
+        cyclomatic_complexity=complexity,
+        has_docstring=has_docstring,
+    )
+
+
+def _analyze_file(file_path: str) -> FileMetrics:
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            source = f.read()
+    except Exception:
+        return None
+
+    lines = source.splitlines()
+    total_lines = len(lines)
+
+    try:
+        tree = ast.parse(source, filename=file_path)
+    except SyntaxError:
+        return None
+
+    classes = [
+        node for node in ast.iter_child_nodes(tree) if isinstance(node, ast.ClassDef)
+    ]
+    functions = [
+        node
+        for node in ast.iter_child_nodes(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+    top_level_functions = len(functions)
+    top_level_classes = len(classes)
+
+    has_main_guard = any(
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "__name__"
+        for node in ast.iter_child_nodes(tree)
+    )
+
+    func_metrics = []
+    for func_node in functions:
+        metrics = _analyze_function(func_node, file_path)
+        if metrics:
+            func_metrics.append(asdict(metrics))
+
+    return FileMetrics(
+        path=file_path,
+        total_lines=total_lines,
+        class_count=len(classes),
+        function_count=top_level_functions,
+        top_level_functions=top_level_functions,
+        top_level_classes=top_level_classes,
+        has_main_guard=has_main_guard,
+        functions=func_metrics,
+    )
+
+
+def _walk_python_files(start_dir: str, skip_dirs: list[str] | None = None) -> list[str]:
+    """Walk directory tree and collect Python files, skipping unwanted dirs."""
+    if skip_dirs is None:
+        skip_dirs = [".venv", "__pycache__", "node_modules", ".git"]
+    result = []
+    for dirpath, dirnames, filenames in os.walk(start_dir):
+        # Prune unwanted subdirs in-place
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in skip_dirs and not os.path.join(dirpath, d).startswith("..")
+        ]
+        for filename in filenames:
+            if filename.endswith(".py"):
+                result.append(os.path.join(dirpath, filename))
+    return result
 
 
 def _run_wily(args: list[str], timeout_seconds: int = 60) -> dict[str, Any]:
@@ -255,6 +478,138 @@ def wily_list_metrics(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
+# ==============================================================================
+# AST-based tools (MCP-integrated fallback)
+# ==============================================================================
+
+
+def ast_complexity_report(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Full workspace complexity report via Python AST.
+
+    Scans all Python files in the workspace root, skipping .venv, __pycache__,
+    node_modules, .git directories. Returns file metrics and top functions.
+    """
+    del args
+    workspace_root = str(root)
+    python_files = _walk_python_files(workspace_root)
+    print(f"AST scanning {len(python_files)} Python files...")
+
+    all_files = []
+    for file_path in python_files:
+        metrics = _analyze_file(file_path)
+        if metrics:
+            all_files.append(asdict(metrics))
+
+    # Sort by total lines descending
+    all_files.sort(key=lambda x: x["total_lines"], reverse=True)
+
+    # Collect all functions across files
+    all_functions = []
+    for file_metrics in all_files:
+        for func in file_metrics.get("functions", []):
+            func["file_path"] = file_metrics["path"]
+            all_functions.append(func)
+
+    # Sort functions by cyclomatic complexity descending
+    all_functions.sort(key=lambda x: x["cyclomatic_complexity"], reverse=True)
+
+    report = {
+        "generated_at": "now",
+        "root_directory": workspace_root,
+        "total_files": len(all_files),
+        "total_functions": len(all_functions),
+        "files_by_size": all_files[:50],
+        "top_functions_by_complexity": all_functions[:100],
+        "summary": {
+            "largest_file": all_files[0]["path"] if all_files else None,
+            "largest_file_lines": all_files[0]["total_lines"] if all_files else 0,
+            "highest_complexity_function": (
+                all_functions[0]["name"]
+                + " in "
+                + all_functions[0]["file_path"]
+                if all_functions
+                else None
+            ),
+            "highest_complexity_value": all_functions[0]["cyclomatic_complexity"]
+            if all_functions
+            else 0,
+        },
+    }
+
+    return {
+        "ok": True,
+        "tool": "ast_complexity_report",
+        "mcp_server": SERVER_NAME,
+        "report": report,
+    }
+
+
+def ast_file_metrics(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Metrics for a single file via Python AST.
+
+    Returns class count, function count, line count, and per-function metrics.
+    """
+    file_path = str(args.get("path", ""))
+    if not file_path:
+        return {"ok": False, "error": "missing_path", "tool": "ast_file_metrics"}
+
+    full_path = str(root / file_path) if not os.path.isabs(file_path) else file_path
+    metrics = _analyze_file(full_path)
+
+    if metrics is None:
+        return {
+            "ok": False,
+            "error": "file_not_found_or_parse_error",
+            "tool": "ast_file_metrics",
+        }
+
+    return {
+        "ok": True,
+        "tool": "ast_file_metrics",
+        "mcp_server": SERVER_NAME,
+        "file": full_path,
+        "metrics": asdict(metrics),
+    }
+
+
+def ast_top_functions(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Top N most complex functions across the workspace via Python AST.
+
+    Args:
+        limit: Number of top functions to return (default 50)
+        min_complexity: Minimum cyclomatic complexity threshold (default 1)
+    """
+    limit = int(args.get("limit", 50))
+    min_complexity = int(args.get("min_complexity", 1))
+
+    workspace_root = str(root)
+    python_files = _walk_python_files(workspace_root)
+    print(f"AST scanning {len(python_files)} Python files for top functions...")
+
+    all_functions = []
+    for file_path in python_files:
+        metrics = _analyze_file(file_path)
+        if metrics:
+            for func in metrics.functions:
+                func["file_path"] = metrics.path
+                if func["cyclomatic_complexity"] >= min_complexity:
+                    all_functions.append(func)
+
+    # Sort by cyclomatic complexity descending and limit
+    all_functions.sort(key=lambda x: x["cyclomatic_complexity"], reverse=True)
+    top = all_functions[:limit]
+
+    return {
+        "ok": True,
+        "tool": "ast_top_functions",
+        "mcp_server": SERVER_NAME,
+        "total_functions_found": len(all_functions),
+        "limit": limit,
+        "min_complexity": min_complexity,
+        "functions": top,
+    }
+
+
 def _tools() -> dict[str, ToolSpec]:
     tools: dict[str, ToolSpec] = {}
 
@@ -309,6 +664,39 @@ def _tools() -> dict[str, ToolSpec]:
         description="List available complexity metrics.",
         input_schema=object_schema(),
         handler=wily_list_metrics,
+    )
+
+    # AST-based tools (workspace-wide fallback)
+    tools["ast_complexity_report"] = ToolSpec(
+        name="ast_complexity_report",
+        description=(
+            "Full workspace complexity report via Python AST. Scans all Python files "
+            "in the workspace root, skipping .venv/__pycache__/node_modules/.git. "
+            "Returns file metrics and top functions by cyclomatic complexity."
+        ),
+        input_schema=object_schema(),
+        handler=ast_complexity_report,
+    )
+    tools["ast_file_metrics"] = ToolSpec(
+        name="ast_file_metrics",
+        description=(
+            "Metrics for a single file via Python AST. Returns class count, function "
+            "count, line count, and per-function metrics (complexity, nesting, params)."
+        ),
+        input_schema=object_schema({"path": {"type": "string"}}),
+        handler=ast_file_metrics,
+    )
+    tools["ast_top_functions"] = ToolSpec(
+        name="ast_top_functions",
+        description=(
+            "Top N most complex functions across the workspace via Python AST. "
+            "Args: limit (default 50), min_complexity (default 1)."
+        ),
+        input_schema=object_schema({
+            "limit": integer_prop(50, 1, 500),
+            "min_complexity": integer_prop(1, 1, 1000),
+        }),
+        handler=ast_top_functions,
     )
 
     return tools

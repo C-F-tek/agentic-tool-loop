@@ -458,6 +458,16 @@ function Get-AICarmineMcpRoutingHint {
                     if ($normalized -match '\b(?:diff|revision|history)\b') { Add-AICarmineTool -Name 'wily_diff' }
                     Add-AICarmineTool -Name 'wily_index'
                     Add-AICarmineTool -Name 'wily_list_metrics'
+                    # AST-based fallback tools (workspace-wide analysis)
+                    if ($normalized -match '\b(?:complexity report|top functions|code quality|ast analysis)\b') {
+                        Add-AICarmineTool -Name 'ast_complexity_report'
+                    }
+                    if ($normalized -match '\b(?:file metrics|single file|function count|class count)\b') {
+                        Add-AICarmineTool -Name 'ast_file_metrics'
+                    }
+                    if ($normalized -match '\b(?:top.*complex|most complex|complexity threshold|min_complexity)\b') {
+                        Add-AICarmineTool -Name 'ast_top_functions'
+                    }
                 }
                 'mcp_batch_proxy' {
                     Add-AICarmineTool -Name 'mcp_batch_health'
