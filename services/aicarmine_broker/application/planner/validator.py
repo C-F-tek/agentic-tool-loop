@@ -779,7 +779,6 @@ def validate_planner_decision_against_evidence(
 
     def _required_gap_paths_from_quality(
         quality: Mapping[str, Any],
-        *,
         existing_missing: list[str],
     ) -> list[str]:
         raw_missing = (

@@ -27,75 +27,75 @@ from aicarmine_broker.application.evidence import user_scope_claims
 from aicarmine_broker.application.evidence.repo_history import extract_key_lines, file_memory_from_history, rank_core_candidates, repo_list_evidence
 from aicarmine_broker.application.evidence.repo_path_policy import dynamic_read_candidate_paths, path_under_scope
 from aicarmine_broker.application.evidence.scope_conflict_resolution import target_scope_conflict_resolved
-from aicarmine_broker.application.planner.planner_repair import *  # pyright: ignore[reportWildcardImportFromLibrary]
+from aicarmine_broker.application.planner.planner_repair import *
 from aicarmine_broker.application.planner.planner_replan_specialist import (
     _specialist_route_audit,
     _FINAL_QUALITY_ROUTE_TOOLS,
 )
-from aicarmine_broker.application.planner.validation_rejections import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.prompt.budget import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.prompt.history_contract import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.prompt.intrinsic_context import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.prompt.text_windows import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.prompt.values import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.tool_surface.manifest_builder import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.tool_surface.result_digest import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from aicarmine_broker.application.tool_surface.turn_surface_policy import *  # pyright: ignore[reportWildcardImportFromLibrary]
+from aicarmine_broker.application.planner.validation_rejections import *
+from aicarmine_broker.application.prompt.budget import *
+from aicarmine_broker.application.prompt.history_contract import *
+from aicarmine_broker.application.prompt.intrinsic_context import *
+from aicarmine_broker.application.prompt.text_windows import *
+from aicarmine_broker.application.prompt.values import *
+from aicarmine_broker.application.tool_surface.manifest_builder import *
+from aicarmine_broker.application.tool_surface.result_digest import *
+from aicarmine_broker.application.tool_surface.turn_surface_policy import *
 from .application.evidence.final_quality import repo_analysis_final_answer_model_quality_request, sanitize_repo_analysis_final_model_quality
 from .application.planner.decision_normalizer import _native_tool_calls_decision
-from .config import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .job_store import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.shared.memory_tools import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .code_edit_proposal_contract import *  # pyright: ignore[reportWildcardImportFromLibrary]
+from .config import *
+from .job_store import *
+from .application.shared.memory_tools import *
+from .code_edit_proposal_contract import *
 from .planner_core.json_io import _parse_strict_json_object
 from .planner_core.cache import _repair_cache_key
-from .planner_intrinsic_context import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .infrastructure.repo_tools import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.planner.agentic_v2 import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.planner.vulkan_repair import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.prompt.available_tools import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.controller.diagnostics import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.prompt.context_windows import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.required_working_set import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.code_product.required_working_set import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.prompt.pack_builder import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.prompt.evidence_contract import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.builder import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.planner.loop import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.planner.system_prompt import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.planner.turn import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.planner.validator import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.final_state_result import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.execution_digest import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.final_quality import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.audit_guidance import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.initial_orientation import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.openwebui_terminal_answer import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.evidence_materializer import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.openwebui_tool_context import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.tool_surface.candidate_actions import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.controller.guards import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.runtime_debug import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.npu_phi import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.controller.memory import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.controller.preseed import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.controller.orientation_lane import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.controller.rag_preseed import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.core_discovery import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.code_product.state import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.code_product.public_outputs import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.code_product.history import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.goal_classifier import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.evidence.goal_scope import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.shared.history_queries import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.shared.clean_values import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.shared.evidence_contract_summary import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.shared.history_ledger import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.prompt.history_messages import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.tool_context import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.terminal_sanitizer import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .application.public_payload.terminal_result import *  # pyright: ignore[reportWildcardImportFromLibrary]
-from .infrastructure.json_files import *  # pyright: ignore[reportWildcardImportFromLibrary]
+from .planner_intrinsic_context import *
+from .infrastructure.repo_tools import *
+from .application.planner.agentic_v2 import *
+from .application.planner.vulkan_repair import *
+from .application.prompt.available_tools import *
+from .application.controller.diagnostics import *
+from .application.prompt.context_windows import *
+from .application.evidence.required_working_set import *
+from .application.code_product.required_working_set import *
+from .application.prompt.pack_builder import *
+from .application.prompt.evidence_contract import *
+from .application.evidence.builder import *
+from .application.planner.loop import *
+from .application.planner.system_prompt import *
+from .application.planner.turn import *
+from .application.planner.validator import *
+from .application.public_payload.final_state_result import *
+from .application.evidence.execution_digest import *
+from .application.evidence.final_quality import *
+from .application.evidence.audit_guidance import *
+from .application.evidence.initial_orientation import *
+from .application.public_payload.openwebui_terminal_answer import *
+from .application.public_payload.evidence_materializer import *
+from .application.public_payload.openwebui_tool_context import *
+from .application.tool_surface.candidate_actions import *
+from .application.controller.guards import *
+from .application.runtime_debug import *
+from .application.npu_phi import *
+from .application.controller.memory import *
+from .application.controller.preseed import *
+from .application.controller.orientation_lane import *
+from .application.controller.rag_preseed import *
+from .application.evidence.core_discovery import *
+from .application.code_product.state import *
+from .application.code_product.public_outputs import *
+from .application.code_product.history import *
+from .application.evidence.goal_classifier import *
+from .application.evidence.goal_scope import *
+from .application.shared.history_queries import *
+from .application.shared.clean_values import *
+from .application.shared.evidence_contract_summary import *
+from .application.shared.history_ledger import *
+from .application.prompt.history_messages import *
+from .application.public_payload.tool_context import *
+from .application.public_payload.terminal_sanitizer import *
+from .application.public_payload.terminal_result import *
+from .infrastructure.json_files import *
 
 # ---------------------------------------------------------------------------
 # Module-level constants and helpers

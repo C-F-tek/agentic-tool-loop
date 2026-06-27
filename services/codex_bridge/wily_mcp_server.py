@@ -271,19 +271,46 @@ def _analyze_file(file_path: str) -> FileMetrics:
 
 
 def _walk_python_files(start_dir: str, skip_dirs: list[str] | None = None) -> list[str]:
-    """Walk directory tree and collect Python files, skipping unwanted dirs."""
-    if skip_dirs is None:
-        skip_dirs = [".venv", "__pycache__", "node_modules", ".git"]
+    """Walk directory tree and collect Python files.
+
+    Prefers Git-based discovery (git ls-files --cached --others --exclude-standard)
+    which respects .gitignore, falling back to os.walk if the directory is not a Git repo.
+    """
+    del skip_dirs  # Use Git-based discovery like RAG index does
     result = []
+
+    # Try Git-based file discovery first (respects .gitignore)
+    try:
+        proc = subprocess.run(
+            ["git", "-C", start_dir, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            for item in proc.stdout.split("\0"):
+                rel = item.replace("\\", "/").strip("/")
+                if not rel or rel.startswith(".."):
+                    continue
+                full = os.path.join(start_dir, rel)
+                if full.endswith(".py") and os.path.isfile(full):
+                    result.append(full)
+            return result
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    # Fallback: os.walk (no .gitignore support)
+    skip_dirs = [".venv", "__pycache__", "node_modules", ".git"]
     for dirpath, dirnames, filenames in os.walk(start_dir):
-        # Prune unwanted subdirs in-place
         dirnames[:] = [
             d for d in dirnames
             if d not in skip_dirs and not os.path.join(dirpath, d).startswith("..")
         ]
         for filename in filenames:
             if filename.endswith(".py"):
-                result.append(os.path.join(dirpath, filename))
+                full = os.path.join(dirpath, filename)
+                result.append(full)
     return result
 
 
@@ -486,13 +513,30 @@ def wily_list_metrics(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def ast_complexity_report(args: dict[str, Any], root: Path) -> dict[str, Any]:
     """Full workspace complexity report via Python AST.
 
-    Scans all Python files in the workspace root, skipping .venv, __pycache__,
-    node_modules, .git directories. Returns file metrics and top functions.
+    Scans all Python files in the workspace root (respecting .gitignore), skipping
+    .venv, __pycache__, node_modules directories. Returns file metrics and top functions.
+
+    Args:
+        path: Override scan path (default: full workspace root). Use '.' for explicit workspace.
+        top_k: Max functions to return (default: 100).
+        min_complexity: Minimum cyclomatic complexity threshold (default: 1).
+        max_files: Max files to scan (default: 500). Prevents hanging on large workspaces.
     """
-    del args
-    workspace_root = str(root)
-    python_files = _walk_python_files(workspace_root)
-    print(f"AST scanning {len(python_files)} Python files...")
+    # Respect user-provided arguments instead of discarding them
+    scan_path = args.get("path")
+    if scan_path and not os.path.isabs(scan_path):
+        scan_path = str(root / scan_path)
+    else:
+        scan_path = str(root)
+
+    top_k = int(args.get("top_k", 100))
+    min_complexity = int(args.get("min_complexity", 1))
+    max_files = int(args.get("max_files", 500))
+
+    python_files = _walk_python_files(scan_path)
+    num_files = len(python_files)
+    if num_files > max_files:
+        python_files = python_files[:max_files]
 
     all_files = []
     for file_path in python_files:
@@ -503,23 +547,26 @@ def ast_complexity_report(args: dict[str, Any], root: Path) -> dict[str, Any]:
     # Sort by total lines descending
     all_files.sort(key=lambda x: x["total_lines"], reverse=True)
 
-    # Collect all functions across files
+    # Collect all functions across files, filtered by min_complexity
     all_functions = []
     for file_metrics in all_files:
         for func in file_metrics.get("functions", []):
             func["file_path"] = file_metrics["path"]
-            all_functions.append(func)
+            if func["cyclomatic_complexity"] >= min_complexity:
+                all_functions.append(func)
 
-    # Sort functions by cyclomatic complexity descending
+    # Sort functions by cyclomatic complexity descending and limit
     all_functions.sort(key=lambda x: x["cyclomatic_complexity"], reverse=True)
+    top_functions = all_functions[:top_k]
 
     report = {
         "generated_at": "now",
-        "root_directory": workspace_root,
-        "total_files": len(all_files),
+        "root_directory": scan_path,
+        "total_files_scanned": num_files,
+        "total_files_with_metrics": len(all_files),
         "total_functions": len(all_functions),
         "files_by_size": all_files[:50],
-        "top_functions_by_complexity": all_functions[:100],
+        "top_functions_by_complexity": top_functions,
         "summary": {
             "largest_file": all_files[0]["path"] if all_files else None,
             "largest_file_lines": all_files[0]["total_lines"] if all_files else 0,
@@ -575,16 +622,26 @@ def ast_file_metrics(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def ast_top_functions(args: dict[str, Any], root: Path) -> dict[str, Any]:
     """Top N most complex functions across the workspace via Python AST.
 
+    Scans full workspace root (respecting .gitignore), skipping .venv, __pycache__,
+    node_modules directories.
+
     Args:
-        limit: Number of top functions to return (default 50)
-        min_complexity: Minimum cyclomatic complexity threshold (default 1)
+        path: Override scan path (default: full workspace root). Use '.' for explicit workspace.
+        limit: Number of top functions to return (default 50).
+        min_complexity: Minimum cyclomatic complexity threshold (default 1).
     """
+    # Respect user-provided arguments instead of discarding them
+    scan_path = args.get("path")
+    if scan_path and not os.path.isabs(scan_path):
+        scan_path = str(root / scan_path)
+    else:
+        scan_path = str(root)
+
     limit = int(args.get("limit", 50))
     min_complexity = int(args.get("min_complexity", 1))
 
-    workspace_root = str(root)
-    python_files = _walk_python_files(workspace_root)
-    print(f"AST scanning {len(python_files)} Python files for top functions...")
+    python_files = _walk_python_files(scan_path)
+    num_files = len(python_files)
 
     all_functions = []
     for file_path in python_files:
@@ -603,6 +660,7 @@ def ast_top_functions(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "ok": True,
         "tool": "ast_top_functions",
         "mcp_server": SERVER_NAME,
+        "total_files_scanned": num_files,
         "total_functions_found": len(all_functions),
         "limit": limit,
         "min_complexity": min_complexity,
