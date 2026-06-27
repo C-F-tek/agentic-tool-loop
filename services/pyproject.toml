@@ -79,6 +79,7 @@ ignore = [
     "PLC0415",   # local-import – lazy imports for circular deps / optional modules
     "F401",      # imported-but-unused – intentional re-exports handled via __all__
     "F403",      # star-import-unlikely-to-be-used – replaced by explicit __all__
+    "F405",      # undefined-from-import-star – false positives when symbols ARE exported by star imports
 ]
 
 [tool.ruff.lint.per-file-ignores]

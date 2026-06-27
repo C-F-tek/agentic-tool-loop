@@ -14,13 +14,6 @@ def _normalize_terminal_planner_decision(
     decision: dict[str, Any]
 ) -> dict[str, Any]:
     """Normalize terminal planner decision."""
-    from ...import_refs import _resolve_lazy
-
-    # Import dependencies via registry
-    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
-    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
-    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
-
     return decision
 
 
@@ -547,12 +540,7 @@ def validate_planner_decision_against_evidence(
     semantic_audit_goal = goal_requests_semantic_audit(goal)
     violations: list[str] = []
     from .validator_helpers import (
-        _answer_chunk_misuses_terminal_payload_shape,
-        _successful_answer_chunk_signatures,
         _minimum_read_coverage_contract,
-        _minimum_read_coverage_required,
-        _minimum_read_coverage_satisfied,
-        _minimum_read_coverage_missing_owner_paths,
         _final_answer_declares_missing_coverage,
         _coalesce_required_next_missing_paths,
         _stale_required_next_repo_read_paths,
@@ -563,14 +551,10 @@ def validate_planner_decision_against_evidence(
         _coalesce_required_next_tool_tool,
         _coerce_final_rewrite_latch,
         _required_gap_paths_from_quality,
-        _apply_final_quality_route,
-        _apply_duplicate_repo_read_path_recovery_contract,
-        _clear_final_terminal_block_state,
-        _escalate_final_terminal_block_state,
         _next_final_rewrite_latch,
     )
 
-    # Re-bind nested helpers to use ctx for closure variables
+    # Re-bind nested helpers to use ctx for closure variables (wrapper functions)
     def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
         return _answer_chunk_misuses_terminal_payload_shape(ctx, text)
 
