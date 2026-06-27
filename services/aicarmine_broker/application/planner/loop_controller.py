@@ -298,11 +298,11 @@ class PlannerLoopController:
         from ...import_refs import _resolve_lazy
 
         # Import dependencies via registry
-        dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+        _dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]  # noqa: F841
         normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
         sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
 
-        VALID_INTERNAL_TOOLS = self.config["VALID_INTERNAL_TOOLS"]
+        VALID_INTERNAL_TOOLS = self.config["VALID_INTERNAL_TOOLS"]  # noqa: F841
         original_args = dict(self.state.get("original_args") or {})
         public_tool_name = str(self.state.get("public_tool_name") or "vulkan_helper")
 
@@ -474,7 +474,6 @@ class PlannerLoopController:
             if not isinstance(action, dict):
                 continue
             if str(action.get("tool")) == str(tool):
-                action_args = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
                 # Simple matching: check if tool names match
                 return action
         return None

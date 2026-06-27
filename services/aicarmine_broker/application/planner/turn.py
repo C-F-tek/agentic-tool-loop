@@ -21,30 +21,27 @@ from ...tool_contract import TOOLS_SCHEMA
 from ..prompt.pack_builder import explicit_request_context_from_state
 from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
-from .turn_phases import PayloadBuilderPhase, EvidenceContractPhase, ToolSurfacePhase, RuntimeRootsPhase, DecisionExecutionPhase
+from .turn_phases import (
+    EvidenceContractPhase,
+    StepBudgetPhase,
+    _dict_from_mapping,
+)
 
 
-def _dict_from_mapping(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-    return {str(key): item for key, item in value.items()}
-
+# ==================================================================
+# Inline helpers that reference extracted phase classes
+# ==================================================================
 
 def _contract_coverage_satisfied(contract: dict[str, Any]) -> bool:
-    coverage = _dict_from_mapping(contract.get("minimum_read_coverage"))
-    if coverage:
-        return coverage.get("coverage_satisfied") is True
-    return contract.get("coverage_satisfied") is True
+    """Check coverage — delegates to EvidenceContractPhase.check_coverage."""
+    phase = EvidenceContractPhase(deps={}, config={})
+    return phase.check_coverage(contract)
 
 
 def _planner_step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str, Any]:
-    guidance = state.get("planner_step_budget_guidance")
-    if not isinstance(guidance, dict):
-        return {}
-    mode = str(guidance.get("mode") or "").strip()
-    if mode not in {"prepare_terminal_decision", "force_terminal_decision"}:
-        return {}
-    return _dict_from_mapping(guidance)
+    """Extract step budget guidance — delegates to StepBudgetPhase.get_step_budget_guidance."""
+    phase = StepBudgetPhase(deps={})
+    return phase.get_step_budget_guidance(state)
 
 
 def _planner_role_override_from_state(state: dict[str, Any]) -> dict[str, Any]:

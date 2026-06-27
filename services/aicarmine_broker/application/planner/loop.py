@@ -701,14 +701,12 @@ def run_agentic_planner_job(
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
     AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES = config["AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES"]
-    AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY = config["AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY"]
     AGENT_DEFAULT_MAX_STEPS = config["AGENT_DEFAULT_MAX_STEPS"]
     AGENT_MAX_STEPS = config["AGENT_MAX_STEPS"]
     OLLAMA_TASK_MODEL = config["OLLAMA_TASK_MODEL"]
     OLLAMA_TASK_URL = config["OLLAMA_TASK_URL"]
     PLANNER_MODEL = config["PLANNER_MODEL"]
     PLANNER_URL = config["PLANNER_URL"]
-    AICARMINE_ORIENTATION_LANE_MODE = config["AICARMINE_ORIENTATION_LANE_MODE"]
     VALID_INTERNAL_TOOLS = config["VALID_INTERNAL_TOOLS"]
     _agent_flow_diagnostics = deps["agent_flow_diagnostics"]
     _agentic_tool_allowed = deps["agentic_tool_allowed"]
@@ -753,7 +751,6 @@ def run_agentic_planner_job(
     compact_tool_result_for_planner = deps["compact_tool_result_for_planner"]
     controller_guard_count = deps["controller_guard_count"]
     controller_guard_result_for_validation = deps["controller_guard_result_for_validation"]
-    finalize_agentic_job = deps["finalize_agentic_job"]
     load_agent_job_state = deps["load_agent_job_state"]
     planner_decision = deps["planner_decision"]
     planner_evidence_contract = deps["planner_evidence_contract"]
@@ -793,7 +790,7 @@ def run_agentic_planner_job(
     # ======================================================================
     # Instantiate extracted classes (Phase 1-3 refactoring)
     # ======================================================================
-    guard_evaluator = GuardEvaluator(deps, config)
+    # NOTE: guard_evaluator was instantiated but all methods migrated to _decision_phase (DecisionPhaseManager)
     # NOTE: evidence_contract_manager was instantiated but methods accessed via loop_controller
     loop_controller = PlannerLoopController(
         job_id=job_id,
@@ -817,6 +814,22 @@ def run_agentic_planner_job(
         config=config,
         root=root,
         loop_state=loop_state,
+    )
+
+    # Phase 5d/5e: Wire DecisionPhaseManager + FinalizationPhaseManager
+    decision_phase = DecisionPhaseManager(
+        job_id=job_id,
+        state=state,
+        deps=deps,
+        config=config,
+    )
+    # decision_phase methods delegate to deps.get("evaluate_*") — wired for future integration
+    _decision_phase = decision_phase
+
+    finalization_phase = FinalizationPhaseManager(
+        job_id=job_id,
+        state=state,
+        deps=deps,
     )
 
     state.update({
@@ -935,7 +948,17 @@ def run_agentic_planner_job(
     ranked_preseed_success = False
     ranked_paths: list[str] = []
     if preplanner_plan:
-        _preplanner_result, preplanner_compact = execute_controller_preseed(preplanner_plan, preseed_index)
+        # Phase 5b: Wire PreseedPhaseManager.execute_preseed() for preplanner
+        _preplanner_result, preplanner_compact = preseed_phase.execute_preseed(
+            preseed_plan=preplanner_plan,
+            preseed_index=preseed_index,
+            original_args=original_args,
+            public_tool_name=public_tool_name,
+            dispatch_tool=lambda *a, **k: None,
+            sanitize_tool_args=sanitize_tool_args,
+            write_json=write_json,
+            job_id=job_id,
+        )
         preseed_index += 1
         raw_ranked_paths = preplanner_compact.get("ranked_preplanner_paths")
         ranked_path_items = raw_ranked_paths if isinstance(raw_ranked_paths, list) else []
@@ -943,11 +966,12 @@ def run_agentic_planner_job(
             str(path) for path in ranked_path_items
             if str(path).strip()
         ]
-# Use success_count from preplanner_compact instead of just counting ranked_paths
         ranked_preseed_success = bool(
             preplanner_compact.get("ok")
             and int(preplanner_compact.get("success_count") or 0) > 0
         )
+
+    # Phase 5b: Wire PreseedPhaseManager for main preseed execution
     preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)
     if preseed_plan:
         skip_generic_root_surface = (
@@ -973,25 +997,38 @@ def run_agentic_planner_job(
                 step=0,
             )
         else:
-            root_preseed_result, _root_compact = execute_controller_preseed(preseed_plan, preseed_index)
+            root_preseed_result, _root_compact = preseed_phase.execute_preseed(
+                preseed_plan=preseed_plan,
+                preseed_index=preseed_index,
+                original_args=original_args,
+                public_tool_name=public_tool_name,
+                dispatch_tool=lambda *a, **k: None,
+                sanitize_tool_args=sanitize_tool_args,
+                write_json=write_json,
+                job_id=job_id,
+            )
             preseed_index += 1
             if preseed_plan.get("dynamic_initial_orientation") and root_preseed_result.get("ok"):
-                preseed_index = execute_dynamic_initial_orientation(root_preseed_result, preseed_index)
-            orientation_plan = _controller_file_code_product_orientation_preseed_plan(str(state.get("goal") or ""))
-            if orientation_plan and not preseed_plan.get("dynamic_initial_orientation"):
-                orientation_result, _orientation_compact = execute_controller_preseed(
-                    orientation_plan,
-                    preseed_index,
-                )
-                preseed_index += 1
-                preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
+                preseed_index = preseed_phase.execute_dynamic_initial_orientation(root_preseed_result, preseed_index, {})
+
+    # Phase 5c: Wire LoopPhaseManager for main loop execution (instantiate for future integration)
+    _loop_phase = LoopPhaseManager(
+        job_id=job_id,
+        state=state,
+        history=history,
+        deps=deps,
+        config=config,
+        root=root,
+        loop_state=loop_state,
+        max_steps=max_steps,
+    )
     for step in itertools.count(1):
         semantic_step = loop_controller.get_semantic_step(step)
         if semantic_step > max_steps:
             break
         state = load_agent_job_state(job_id) or state
         if str(state.get("status") or "") == "cancel_requested":
-            return finalize_agentic_job(job_id, state, "cancelled", "Job cancelled.", {"history": history})
+            return finalization_phase.finalize("cancelled", "Job cancelled.", {"history": history})
         goal_text = str(state.get("goal") or "")
         step_budget_guidance = loop_controller.build_step_budget_guidance(semantic_step)
         if step_budget_guidance:
@@ -1178,7 +1215,7 @@ def run_agentic_planner_job(
         )
         memory_claim_text = _decision_memory_claim_text(decision)
 # Phase 2: Replace inline memory claim guard with GuardEvaluator
-        memory_claim_guard = guard_evaluator.evaluate_memory_claim_guard(
+        memory_claim_guard = _decision_phase.evaluate_memory_claim_guard(
             memory_claim_text=memory_claim_text,
             decision=decision,
             validation={},
@@ -1216,9 +1253,7 @@ def run_agentic_planner_job(
             write_agent_job_state(state)
             continue
         elif memory_claim_guard and memory_claim_guard.get("should_finalize"):
-            return finalize_agentic_job(
-                job_id,
-                state,
+            return finalization_phase.finalize(
                 memory_claim_guard["final_status"],
                 memory_claim_guard["final_reason"],
                 memory_claim_guard.get("final_extra", {
@@ -1228,315 +1263,45 @@ def run_agentic_planner_job(
                 }),
             )
 
+        # ==================================================================
+        # Phase 5 Integration: Batch decision handling via BatchDecisionPhase
+        # ==================================================================
         if (
             str(decision.get("action") or "").strip().lower() == "tool_batch"
             and not loop_controller.force_terminal_decision_active(semantic_step, max_steps)
         ):
             calls = loop_controller.list_field(decision, "tool_calls")
-            batch_decisions: list[dict[str, Any]] = []
-            batch_guard: dict[str, Any] = {}
             batch_evidence_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
             micro_batch_contract = (
                 batch_evidence_contract.get("micro_batch_contract")
                 if isinstance(batch_evidence_contract.get("micro_batch_contract"), dict)
                 else {}
             )
-            used_micro_batch_action_ids: set[str] = set()
-            used_micro_batch_call_signatures: set[str] = set()
-            if not calls:
-                batch_guard = _batch_guard(
-                    guard_type="native_tool_batch_invalid",
-                    summary="native_tool_batch_empty",
-                    step=step,
-                    job_id=job_id,
-                    violations=["native_tool_batch_empty"],
-                    extra={
-                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                            step_number=step,
-                            phase="CONTROLLER_GUARD",
-                            planner_decision=decision,
-                            validation={
-                                "ok": False,
-                                "violations": ["native_tool_batch_empty"],
-                                "evidence_contract": batch_evidence_contract,
-                            },
-                        ),
-                    },
-                )
-            elif len(calls) > int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1):
-                batch_guard = _batch_guard(
-                    guard_type="native_tool_batch_too_large",
-                    summary="native_tool_batch_exceeds_readonly_limit",
-                    step=step,
-                    job_id=job_id,
-                    violations=["native_tool_batch_too_large"],
-                    extra={
-                        "native_tool_call_count": len(calls),
-                        "native_tool_call_limit": int(AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY or 1),
-                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                            step_number=step,
-                            phase="CONTROLLER_GUARD",
-                            planner_decision=decision,
-                            validation={
-                                "ok": False,
-                                "violations": ["native_tool_batch_too_large"],
-                                "evidence_contract": batch_evidence_contract,
-                            },
-                        ),
-                    },
-                )
-            elif micro_batch_contract.get("allowed") is not True:
-                batch_guard = _batch_guard(
-                    guard_type="native_tool_batch_contract",
-                    summary="native_tool_batch_not_allowed_by_evidence_contract",
-                    step=step,
-                    job_id=job_id,
-                    violations=["native_tool_batch_not_allowed_by_evidence_contract"],
-                    extra={
-                        "micro_batch_contract": micro_batch_contract,
-                        "native_tool_call_count": len(calls),
-                        "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                            step_number=step,
-                            phase="CONTROLLER_GUARD",
-                            planner_decision=decision,
-                            validation={
-                                "ok": False,
-                                "violations": ["native_tool_batch_not_allowed_by_evidence_contract"],
-                                "evidence_contract": batch_evidence_contract,
-                            },
-                        ),
-                    },
-                )
-            else:
-                for call in calls:
-                    if not isinstance(call, dict):
-                        batch_guard = _batch_guard(
-                            guard_type="native_tool_batch_invalid",
-                            summary="native_tool_batch_call_invalid",
-                            step=step,
-                            job_id=job_id,
-                            violations=["native_tool_batch_call_invalid"],
-                            extra={
-                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                    step_number=step,
-                                    phase="CONTROLLER_GUARD",
-                                    planner_decision=decision,
-                                    validation={
-                                        "ok": False,
-                                        "violations": ["native_tool_batch_call_invalid"],
-                                        "evidence_contract": batch_evidence_contract,
-                                    },
-                                ),
-                            },
-                        )
-                        break
-                    call_decision = {
-                        "action": "tool",
-                        "tool": normalize_tool_name(str(call.get("tool") or "")),
-                        "arguments": call.get("arguments") if isinstance(call.get("arguments"), dict) else {},
-                        "reason": "native_tool_call_batch",
-                        "native_tool_call": True,
-                        "raw_native_tool_call": call.get("raw_tool_call") if isinstance(call.get("raw_tool_call"), dict) else call,
-                    }
-                    if isinstance(decision.get("allowed_tool_names"), list):
-                        call_decision["allowed_tool_names"] = list(decision["allowed_tool_names"])
-                    if isinstance(decision.get("allowed_native_tool_names"), list):
-                        call_decision["allowed_native_tool_names"] = list(decision["allowed_native_tool_names"])
-                    internal_args = sanitize_tool_args(
-                        call_decision["tool"],
-                        dict(call_decision["arguments"]),
-                        original_args,
-                        public_tool_name,
-                    )
-                    call_signature = canonical_batch_call_key(
-                        normalize_tool_name(str(call_decision["tool"] or "")),
-                        internal_args,
-                    )
-                    if call_signature in used_micro_batch_call_signatures:
-                        batch_guard = _batch_guard(
-                            guard_type="native_tool_batch_duplicate_call",
-                            summary="native_tool_batch_duplicate_call",
-                            step=step,
-                            job_id=job_id,
-                            rejected_decision=call_decision,
-                            violations=["native_tool_batch_duplicate_call"],
-                            extra={
-                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                    step_number=step,
-                                    phase="CONTROLLER_GUARD",
-                                    planner_decision=call_decision,
-                                    validation={
-                                        "ok": False,
-                                        "violations": ["native_tool_batch_duplicate_call"],
-                                        "evidence_contract": batch_evidence_contract,
-                                    },
-                                ),
-                            },
-                        )
-                        break
-                    used_micro_batch_call_signatures.add(call_signature)
-                    matched_action = loop_controller.match_micro_batch_action(
-                        micro_batch_contract,
-                        tool=call_decision["tool"],
-                        internal_args=internal_args,
-                    )
-                    if not matched_action:
-                        batch_guard = _batch_guard(
-                            guard_type="native_tool_batch_contract",
-                            summary="native_tool_batch_call_not_in_micro_batch_contract",
-                            step=step,
-                            job_id=job_id,
-                            rejected_decision=call_decision,
-                            violations=["native_tool_batch_call_not_in_micro_batch_contract"],
-                            extra={
-                                "micro_batch_contract": micro_batch_contract,
-                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                    step_number=step,
-                                    phase="CONTROLLER_GUARD",
-                                    planner_decision=call_decision,
-                                    validation={
-                                        "ok": False,
-                                        "violations": ["native_tool_batch_call_not_in_micro_batch_contract"],
-                                        "evidence_contract": batch_evidence_contract,
-                                    },
-                                ),
-                            },
-                        )
-                        break
-                    if call_decision["tool"] == "planner_scratchpad_read":
-                        matched_args = (
-                            matched_action.get("arguments")
-                            if isinstance(matched_action.get("arguments"), dict)
-                            else {}
-                        )
-                        call_decision["prompt_context_continuation_required"] = {
-                            "tool": "planner_scratchpad_read",
-                            "arguments": matched_args,
-                            "reason": matched_action.get("reason"),
-                        }
-                    action_id = str(matched_action.get("action_id") or "").strip()
-                    if not action_id or action_id in used_micro_batch_action_ids:
-                        batch_guard = _batch_guard(
-                            guard_type="native_tool_batch_contract",
-                            summary="native_tool_batch_duplicate_or_missing_action_id",
-                            step=step,
-                            job_id=job_id,
-                            rejected_decision=call_decision,
-                            violations=["native_tool_batch_duplicate_or_missing_action_id"],
-                            extra={
-                                "micro_batch_action_id": action_id,
-                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                    step_number=step,
-                                    phase="CONTROLLER_GUARD",
-                                    planner_decision=call_decision,
-                                    validation={
-                                        "ok": False,
-                                        "violations": ["native_tool_batch_duplicate_or_missing_action_id"],
-                                        "evidence_contract": batch_evidence_contract,
-                                    },
-                                ),
-                            },
-                        )
-                        break
-                    used_micro_batch_action_ids.add(action_id)
-                    call_decision["micro_batch_action_id"] = action_id
-                    call_decision["micro_batch_contract_schema"] = micro_batch_contract.get("schema")
-                    if not _tool_cache_key(call_decision["tool"], internal_args):
-                        batch_guard = _batch_guard(
-                            guard_type="native_tool_batch_non_readonly",
-                            summary="native_tool_batch_requires_readonly_tools_only",
-                            step=step,
-                            job_id=job_id,
-                            rejected_decision=call_decision,
-                            violations=["native_tool_batch_non_readonly"],
-                            extra={
-                                "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                    step_number=step,
-                                    phase="CONTROLLER_GUARD",
-                                    planner_decision=call_decision,
-                                    validation={
-                                        "ok": False,
-                                        "violations": ["native_tool_batch_non_readonly"],
-                                        "evidence_contract": batch_evidence_contract,
-                                    },
-                                ),
-                            },
-                        )
-                        break
-                    validation_i = validate_planner_decision_against_evidence(
-                        str(state.get("goal") or ""), call_decision, history, deps, config
-                    )
-                    if not validation_i.get("ok"):
-                        should_repair_call = _should_attempt_vulkan_repair(call_decision, validation_i, history)
-                        repair_result = {
-                            "ok": False,
-                            "error": "vulkan_repair_not_applicable_for_this_invalid_decision",
-                        }
-                        if should_repair_call:
-                            repair_result = vulkan_repair_invalid_planner_decision(
-                                goal=str(state.get("goal") or ""),
-                                step=step,
-                                decision=call_decision,
-                                validation=validation_i,
-                                history=history,
-                                state=state,
-                            )
-                        if repair_result.get("ok") and isinstance(repair_result.get("repaired_decision"), dict):
-                            repaired_decision = _normalize_terminal_planner_decision(
-                                repair_result["repaired_decision"]
-                            )
-                            if _native_required_repaired_tool_decision_disallowed(repaired_decision):
-                                validation_for_debug = validation_without_full_evidence_contract({
-                                    "ok": False,
-                                    "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
-                                    "evidence_contract": validation_i.get("evidence_contract"),
-                                })
-                                batch_guard = {
-                                    "tool": "controller_guard",
-                                    "ok": True,
-                                    "guard_type": "native_tool_batch_validation",
-                                    "summary": "vulkan_repair_tool_decision_disallowed_in_native_mode",
-                                    "violations": ["vulkan_repair_tool_decision_disallowed_in_native_mode"],
-                                    "rejected_decision": call_decision,
-                                    "evidence_contract_summary": validation_for_debug.get("evidence_contract_summary"),
-                                    "evidence_contract_chars": validation_for_debug.get("evidence_contract_chars"),
-                                    "evidence_contract_sha256": validation_for_debug.get("evidence_contract_sha256"),
-                                    "runtime_debug_packet": loop_controller.build_runtime_debug_packet(
-                                        step_number=step,
-                                        phase="CONTROLLER_GUARD",
-                                        planner_decision=call_decision,
-                                        validation=validation_for_debug,
-                                        extra={"repaired_decision_disallowed": True},
-                                    ),
-                                    "vulkan_repair": repair_result,
-                                }
-                                break
-                            append_agent_event(
-                                job_id,
-                                "vulkan_gpu0_decision_repair",
-                                "Vulkan/GPU0 repaired invalid native batch tool call.",
-                                {"repair_ok": True, "repaired_decision": repaired_decision},
-                                step=step,
-                            )
-                            decision = repaired_decision
-                            break
-                        batch_guard = controller_guard_result_for_validation(
-                            validation_i,
-                            call_decision,
-                            job_id=job_id,
-                            step=step,
-                            goal=str(state.get("goal") or ""),
-                        )
-                        batch_guard["guard_type"] = "native_tool_batch_validation"
-                        batch_guard["summary"] = "native_tool_batch_validation_failed"
-                        if should_repair_call:
-                            batch_guard["vulkan_repair"] = repair_result
-                        break
-                    batch_decisions.append(call_decision)
 
-            if str(decision.get("action") or "").strip().lower() != "tool_batch":
-                pass
-            elif batch_guard:
+            # Call extracted BatchDecisionPhase for full batch evaluation
+            batch_phase = BatchDecisionPhase(
+                job_id=job_id,
+                step=step,
+                state=state,
+                history=history,
+                deps=deps,
+                config=config,
+            )
+            batch_guard, batch_decisions, should_break = batch_phase.evaluate_batch_decision(
+                decision=decision,
+                calls=calls,
+                batch_evidence_contract=batch_evidence_contract,
+                micro_batch_contract=micro_batch_contract,
+                loop_controller=loop_controller,
+                dispatch_tool=lambda *a, **k: None,
+                sanitize_tool_args=sanitize_tool_args,
+                write_json=write_json,
+                original_args=original_args,
+                public_tool_name=public_tool_name,
+                planner_evidence_contract=planner_evidence_contract,
+            )
+
+            if batch_guard:
                 append_agent_event(job_id, "planner_decision_rejected", batch_guard["summary"], batch_guard, step=step)
                 # Track failure counts for planner decision patterns
                 _failure_counter = _get_failure_counter()
@@ -1663,9 +1428,7 @@ def run_agentic_planner_job(
                 loop_state.append_history_row(row)
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
-                return finalize_agentic_job(
-                    job_id,
-                    state,
+                return finalization_phase.finalize(
                     "blocked_needs_attention",
                     (
                         "guided_terminal_decision_validation_failed: "
@@ -1709,7 +1472,7 @@ def run_agentic_planner_job(
 
             # Phase 2: Replace inline support_subturn guard with GuardEvaluator
             if loop_controller.support_subturn_decision(decision):
-                support_guard = guard_evaluator.evaluate_support_subturn_guard(
+                support_guard = _decision_phase.evaluate_support_subturn_guard(
                     decision=decision,
                     validation=validation,
                     history=history,
@@ -1741,9 +1504,7 @@ def run_agentic_planner_job(
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 if not support_guard.get("should_continue", True):
-                    return finalize_agentic_job(
-                        job_id,
-                        state,
+                    return finalization_phase.finalize(
                         support_guard["final_status"],
                         support_guard["final_reason"],
                         support_guard.get("final_extra", {
@@ -1755,7 +1516,7 @@ def run_agentic_planner_job(
                     )
                 continue
             # Phase 2: Replace inline native_tool_call guard with GuardEvaluator
-            native_tool_guard = guard_evaluator.evaluate_native_tool_call_guard(
+            native_tool_guard = _decision_phase.evaluate_native_tool_call_guard(
                 validation=validation,
                 decision=decision,
                 history=history,
@@ -1766,9 +1527,7 @@ def run_agentic_planner_job(
             )
             if native_tool_guard:
                 if native_tool_guard["should_finalize"]:
-                    return finalize_agentic_job(
-                        job_id,
-                        state,
+                    return finalization_phase.finalize(
                         native_tool_guard["final_status"],
                         native_tool_guard["final_reason"],
                         native_tool_guard.get("final_extra", {
@@ -1799,8 +1558,8 @@ def run_agentic_planner_job(
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
                 continue
-            # Phase 2: Replace inline memory_claim (raw_planner_text) guard with GuardEvaluator
-            memory_claim_guard2 = guard_evaluator.evaluate_memory_claim_guard(
+            # Phase 2: Replace inline memory_claim (raw_planner_text) guard with DecisionPhaseManager
+            memory_claim_guard2 = _decision_phase.evaluate_memory_claim_guard(
                 memory_claim_text=raw_planner_text,
                 decision=decision,
                 validation=validation,
@@ -1838,9 +1597,7 @@ def run_agentic_planner_job(
                 write_agent_job_state(state)
                 continue
             elif memory_claim_guard2 and memory_claim_guard2.get("should_finalize"):
-                return finalize_agentic_job(
-                    job_id,
-                    state,
+                return finalization_phase.finalize(
                     memory_claim_guard2["final_status"],
                     memory_claim_guard2["final_reason"],
                     memory_claim_guard2.get("final_extra", {
@@ -1851,7 +1608,7 @@ def run_agentic_planner_job(
                 )
 
             # Phase 2: Replace inline incomprehensible_output guard with GuardEvaluator
-            incomprehensible_guard = guard_evaluator.evaluate_incomprehensible_output_guard(
+            incomprehensible_guard = _decision_phase.evaluate_incomprehensible_output_guard(
                 decision=decision,
                 validation=validation,
                 history=history,
@@ -1891,7 +1648,7 @@ def run_agentic_planner_job(
                 continue
 
             # Phase 2: Replace inline repeated_code_product guard with GuardEvaluator
-            repeated_code_guard = guard_evaluator.evaluate_repeated_code_product_guard(
+            repeated_code_guard = _decision_phase.evaluate_repeated_code_product_guard(
                 validation=validation,
                 decision=decision,
                 history=history,
@@ -1925,9 +1682,7 @@ def run_agentic_planner_job(
                 loop_state.append_history_row(row)
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
-                return finalize_agentic_job(
-                    job_id,
-                    state,
+                return finalization_phase.finalize(
                     repeated_code_guard["final_status"],
                     repeated_code_guard["final_reason"],
                     repeated_code_guard.get("final_extra", {
@@ -1939,7 +1694,7 @@ def run_agentic_planner_job(
                 )
 
             # Phase 2: Replace inline repeated_rejection guard with GuardEvaluator
-            repeated_rejection_guard = guard_evaluator.evaluate_repeated_rejection_guard(
+            repeated_rejection_guard = _decision_phase.evaluate_repeated_rejection_guard(
                 validation=validation,
                 decision=decision,
                 history=history,
@@ -1969,9 +1724,7 @@ def run_agentic_planner_job(
                 loop_state.append_history_row(row)
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
-                return finalize_agentic_job(
-                    job_id,
-                    state,
+                return finalization_phase.finalize(
                     repeated_rejection_guard["final_status"],
                     repeated_rejection_guard["final_reason"],
                     repeated_rejection_guard.get("final_extra", {
@@ -2031,9 +1784,7 @@ def run_agentic_planner_job(
                 loop_state.append_history_row(row)
                 loop_controller.persist_turn_memory(row)
                 write_agent_job_state(state)
-                return finalize_agentic_job(
-                    job_id,
-                    state,
+                return finalization_phase.finalize(
                     "blocked_needs_attention",
                     f"Judge terminal block: {judge_result.get('rationale', '')}",
                     {
@@ -2157,9 +1908,7 @@ def run_agentic_planner_job(
                     "planner_native_mode_non_json_output",
                 )
                 if prior_native_text_guards >= int(retry_limit or 0):
-                    return finalize_agentic_job(
-                        job_id,
-                        state,
+                    return finalization_phase.finalize(
                         "blocked_needs_attention",
                         (
                             "planner_native_mode_non_json_output_repeated: planner native tool mode "
@@ -2211,7 +1960,7 @@ def run_agentic_planner_job(
                 write_agent_job_state(state)
                 continue
 # Phase 2: Replace inline unrecoverable_output guard with GuardEvaluator
-            unrecoverable_guard = guard_evaluator.evaluate_unrecoverable_output_guard(
+            unrecoverable_guard = _decision_phase.evaluate_unrecoverable_output_guard(
                 decision=decision,
                 history=history,
                 retry_limit=retry_limit,
@@ -2220,9 +1969,7 @@ def run_agentic_planner_job(
                 goal=str(state.get("goal") or ""),
             )
             if unrecoverable_guard:
-                return finalize_agentic_job(
-                    job_id,
-                    state,
+                return finalization_phase.finalize(
                     unrecoverable_guard["final_status"],
                     unrecoverable_guard["final_reason"],
                     unrecoverable_guard.get("final_extra", {
@@ -2353,7 +2100,7 @@ def run_agentic_planner_job(
                 else:
                     continue
 # Phase 2: Replace inline final guard (default case) with GuardEvaluator
-            final_guard = guard_evaluator.evaluate_final_guard(
+            final_guard = _decision_phase.evaluate_final_guard(
                 decision=decision,
                 validation=validation,
                 history=history,
@@ -2388,9 +2135,7 @@ def run_agentic_planner_job(
                             "\n\nRaw planner output surfaced, first 4000 chars:\n"
                             + raw_text[:4000]
                         )
-                    return finalize_agentic_job(
-                        job_id,
-                        state,
+                    return finalization_phase.finalize(
                         "blocked_needs_attention",
                         final_answer,
                         {
@@ -2432,18 +2177,13 @@ def run_agentic_planner_job(
             )
             terminal_decision = dict(decision)
             terminal_decision["step"] = step
-            return finalize_agentic_job(
-                job_id, state, "completed", final_answer,
-                {"history": history, "planner_decision": terminal_decision},
-            )
+            return finalization_phase.finalize("completed", final_answer, {"history": history, "planner_decision": terminal_decision})
 # --- block ---
         if action in {"block", "blocked", "need_user", "needs_user"}:
 # No fallback: do not convert planner block/no-json/timeout into a
 # controller_guard loop. Surface the real loop result and artifacts.
             final_answer = str(decision.get("final_answer") or decision.get("reason") or "Job blocked.")
-            return finalize_agentic_job(
-                job_id,
-                state,
+            return finalization_phase.finalize(
                 "blocked_needs_attention",
                 final_answer,
                 {"history": history, "planner_decision": decision, "blocked_by": decision.get("reason")},
@@ -2455,8 +2195,8 @@ def run_agentic_planner_job(
 # Should be unreachable because validate_planner_decision_against_evidence()
 # rejects invalid tools. Do not substitute repo_capabilities here: that
  # would let 3572 replace planner reasoning with a hidden controller step.
-            return finalize_agentic_job(
-                job_id, state, "blocked_needs_attention",
+            return finalization_phase.finalize(
+                "blocked_needs_attention",
                 f"Planner selected invalid tool: {tool or '<empty>'}.",
                 {"history": history, "blocked_by": "invalid_planner_tool", "planner_decision": decision},
             )
@@ -2503,10 +2243,7 @@ def run_agentic_planner_job(
         allowed, block_reason = _agentic_tool_allowed(tool, internal_args, approval_mode)
         if not allowed:
             append_agent_event(job_id, "tool_blocked", block_reason, {"tool": tool}, step=step)
-            return finalize_agentic_job(
-                job_id, state, "blocked_needs_consent", block_reason,
-                {"history": history, "blocked_tool": tool},
-            )
+            return finalization_phase.finalize("blocked_needs_consent", block_reason, {"history": history, "blocked_tool": tool})
         state["status_message"] = f"executing {tool}"
         write_agent_job_state(state)
         tool_start_payload = {"tool": tool, "arguments": internal_args}
@@ -2578,9 +2315,7 @@ def run_agentic_planner_job(
     terminal_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
     if not loop_controller.coverage_satisfied(terminal_contract):
         missing_paths = loop_controller.missing_owner_paths(terminal_contract)
-        return finalize_agentic_job(
-            job_id,
-            state,
+        return finalization_phase.finalize(
             "blocked_needs_attention",
             (
                 f"coverage_required: max_steps reached ({max_steps}) before minimum "
@@ -2594,9 +2329,7 @@ def run_agentic_planner_job(
                 "evidence_contract": terminal_contract,
             },
         )
-    return finalize_agentic_job(
-        job_id,
-        state,
+    return finalization_phase.finalize(
         "blocked_needs_attention",
         (
             f"planner_failed_to_finalize_with_coverage: max_steps reached ({max_steps}) "

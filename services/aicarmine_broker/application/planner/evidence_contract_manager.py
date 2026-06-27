@@ -1,471 +1,557 @@
-"""Evidence contract manager - centralized contract mutation logic.
+"""Evidence contract mutation manager and shadow evaluation phase.
 
-This module extracts all evidence contract mutations from across 10+ files
-into a single, testable class. The contract is the central data structure
-that flows through the entire planner loop and controls decision behavior.
-
-Design:
-- Pure functions where possible (no state mutation)
-- All mutations go through this class
-- Event emission handled by caller
-- State persistence handled by caller
-- Only business logic lives in this class
+Extracted from run_agentic_planner_job inline logic for:
+- ContractMutationPhase: handles persist_turn_memory, write_agent_job_state, history row appends
+- ShadowEvaluationPhase: handles evaluate_initial_orientation_shadow (~500 lines)
 """
 
 from __future__ import annotations
 
-import logging
-from typing import Any, Mapping
-
-logger = logging.getLogger(__name__)
+from copy import deepcopy
+from typing import Any, Callable, Mapping
 
 
-class EvidenceContractManager:
-    """Manages evidence contract mutations across the planner system.
+class ContractMutationPhase:
+    """Manages contract mutation wiring after guard evaluations.
 
-    This class centralizes all contract mutations that were previously
-    scattered across 10+ files including:
-    - builder.py (coverage calculation)
-    - validator.py (cuda_rewrite, final_quality)
-    - turn_surface_policy.py (surface policy)
-    - candidate_actions.py (candidate gating)
-    - history.py (history overlay)
-    - loop.py (guard feedback)
-    - final_quality.py (quality evaluation)
-    - required_progress.py (progress extraction)
-    - context_windows.py (context building)
-    - history_messages.py (message building)
+    Extracted from inline patterns in loop.py that handle:
+    - append_history_row
+    - persist_turn_memory
+    - write_agent_job_state
+    - finalize_agentic_job returns
     """
 
-    # Contract keys that are commonly mutated
-    CONTRACT_KEYS = (
-        "planner_cuda_rewrite_required",
-        "final_rewrite_latch",
-        "planner_may_choose_final",
-        "planner_may_choose_block",
-        "required_next_progress",
-        "required_next_tool_call",
-        "coverage_satisfied",
-        "missing_owner_paths",
-        "covered_owner_paths",
-        "candidate_owner_paths",
-        "minimum_read_coverage",
-        "finalization_contract",
-        "candidate_next_actions",
-    )
-
-    def __init__(self) -> None:
-        """Initialize with no dependencies (pure functions)."""
-        pass
-
-    # ==================================================================
-    # CUDA Rewrite Contract Mutations
-    # ==================================================================
-
-    def set_cuda_rewrite_required(
+    def __init__(
         self,
-        contract: dict[str, Any],
-        required: bool,
-        latch: str = "",
-    ) -> dict[str, Any]:
-        """Set planner_cuda_rewrite_required and optional final_rewrite_latch.
+        job_id: str,
+        state: dict,
+        history: list,
+        deps: dict,
+        config: dict,
+        root: Any,
+        loop_state: Any,
+        loop_controller: Any,
+        finalize_fn: Callable,
+    ) -> None:
+        self.job_id = job_id
+        self.state = state
+        self.history = history
+        self.deps = deps
+        self.config = config
+        self.root = root
+        self.loop_state = loop_state
+        self.loop_controller = loop_controller
+        self._finalize_agentic_job = finalize_fn
 
-        Args:
-            contract: The evidence contract dict.
-            required: Whether cuda_rewrite is required.
-            latch: Optional latch value (rewrite_required, terminal_block_required).
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["planner_cuda_rewrite_required"] = required
-
-        if latch:
-            contract["final_rewrite_latch"] = latch
-
-        if required:
-            final_contract = self._get_or_create_final_contract(contract)
-            final_contract["final_allowed"] = False
-            final_contract["planner_may_choose_final"] = False
-            final_contract["reason"] = "planner_cuda_rewrite_required"
-            contract["finalization_contract"] = final_contract
-            contract["planner_may_choose_final"] = False
-
-        return contract
-
-    def clear_cuda_rewrite_required(self, contract: dict[str, Any]) -> dict[str, Any]:
-        """Clear planner_cuda_rewrite_required flag.
-
-        Args:
-            contract: The evidence contract dict.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["planner_cuda_rewrite_required"] = False
-        return contract
-
-    # ==================================================================
-    # Final Rewrite Latch Mutations
-    # ==================================================================
-
-    def set_final_rewrite_latch(
+    def persist_guard_result(
         self,
-        contract: dict[str, Any],
-        latch: str,
-        reason: str = "",
-    ) -> dict[str, Any]:
-        """Set final_rewrite_latch and update finalization_contract.
+        step: int,
+        guard_summary: str,
+        guard_result: dict,
+        decision: dict,
+        should_finalize: bool = False,
+        final_status: str = "",
+        final_reason: str = "",
+        final_extra: dict | None = None,
+        support_subturn: bool = False,
+    ) -> dict | None:
+        """Persist a guard result to history and optionally finalize.
 
-        Args:
-            contract: The evidence contract dict.
-            latch: Latch value (rewrite_required, terminal_block_required, inactive).
-            reason: Optional reason for the latch.
-
-        Returns:
-            Modified contract dict.
+        Returns the finalize result if should_finalize is True, otherwise None.
         """
-        contract = dict(contract)
-        contract["final_rewrite_latch"] = latch
-
-        final_contract = self._get_or_create_final_contract(contract)
-        final_contract["final_allowed"] = False
-        final_contract["planner_may_choose_final"] = False
-
-        if reason:
-            final_contract["reason"] = reason
-        elif latch == "terminal_block_required":
-            final_contract["planner_may_choose_block"] = True
-            final_contract["reason"] = "final_rewrite_latch_terminal_block_required"
-        else:
-            final_contract["reason"] = "final_rewrite_latch_active"
-
-        contract["finalization_contract"] = final_contract
-        return contract
-
-    def clear_final_rewrite_latch(self, contract: dict[str, Any]) -> dict[str, Any]:
-        """Clear final_rewrite_latch.
-
-        Args:
-            contract: The evidence contract dict.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["final_rewrite_latch"] = "inactive"
-        return contract
-
-    # ==================================================================
-    # Coverage Contract Mutations
-    # ==================================================================
-
-    def set_coverage_satisfied(
-        self,
-        contract: dict[str, Any],
-        satisfied: bool,
-        missing_paths: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Set coverage_satisfied and update related fields.
-
-        Args:
-            contract: The evidence contract dict.
-            satisfied: Whether coverage is satisfied.
-            missing_paths: Optional list of missing owner paths.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-
-        # Update minimum_read_coverage
-        coverage = contract.get("minimum_read_coverage")
-        if isinstance(coverage, dict):
-            coverage["coverage_satisfied"] = satisfied
-            if missing_paths is not None:
-                coverage["missing_owner_paths"] = missing_paths[:120]
-        else:
-            coverage = {
-                "required": True,
-                "coverage_satisfied": satisfied,
-                "missing_owner_paths": missing_paths[:120] if missing_paths else [],
-            }
-            contract["minimum_read_coverage"] = coverage
-
-        contract["coverage_satisfied"] = satisfied
-
-        # Update finalization_contract
-        final_contract = self._get_or_create_final_contract(contract)
-        final_contract["coverage_satisfied"] = satisfied
-
-        if not satisfied:
-            final_contract["final_allowed"] = False
-            final_contract["planner_may_choose_final"] = False
-            final_contract["reason"] = (
-                "coverage_required: minimum_read_coverage.coverage_satisfied=false"
-            )
-            if missing_paths:
-                final_contract["missing_owner_paths"] = missing_paths[:120]
-
-        contract["finalization_contract"] = final_contract
-        return contract
-
-    def set_missing_owner_paths(
-        self,
-        contract: dict[str, Any],
-        paths: list[str],
-    ) -> dict[str, Any]:
-        """Set missing_owner_paths in coverage and finalization_contract.
-
-        Args:
-            contract: The evidence contract dict.
-            paths: List of missing owner paths.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        coverage = contract.get("minimum_read_coverage")
-        if isinstance(coverage, dict):
-            coverage["missing_owner_paths"] = paths[:120]
-            contract["minimum_read_coverage"] = coverage
-
-        final_contract = self._get_or_create_final_contract(contract)
-        final_contract["missing_owner_paths"] = paths[:120]
-        return contract
-
-    # ==================================================================
-    # Final Decision Permission Mutations
-    # ==================================================================
-
-    def set_planner_may_choose_final(
-        self,
-        contract: dict[str, Any],
-        allowed: bool,
-        reason: str = "",
-    ) -> dict[str, Any]:
-        """Set planner_may_choose_final and update finalization_contract.
-
-        Args:
-            contract: The evidence contract dict.
-            allowed: Whether planner may choose final.
-            reason: Optional reason for the permission.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["planner_may_choose_final"] = allowed
-
-        final_contract = self._get_or_create_final_contract(contract)
-        final_contract["final_allowed"] = allowed
-        final_contract["planner_may_choose_final"] = allowed
-
-        if reason:
-            final_contract["reason"] = reason
-
-        contract["finalization_contract"] = final_contract
-        return contract
-
-    def set_planner_may_choose_block(
-        self,
-        contract: dict[str, Any],
-        allowed: bool,
-        reason: str = "",
-    ) -> dict[str, Any]:
-        """Set planner_may_choose_block.
-
-        Args:
-            contract: The evidence contract dict.
-            allowed: Whether planner may choose block.
-            reason: Optional reason.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["planner_may_choose_block"] = allowed
-
-        final_contract = self._get_or_create_final_contract(contract)
-        final_contract["planner_may_choose_block"] = allowed
-
-        if reason:
-            final_contract["reason"] = reason
-
-        contract["finalization_contract"] = final_contract
-        return contract
-
-    # ==================================================================
-    # Required Next Progress/Tool Call Mutations
-    # ==================================================================
-
-    def set_required_next_progress(
-        self,
-        contract: dict[str, Any],
-        progress: str,
-    ) -> dict[str, Any]:
-        """Set required_next_progress in contract.
-
-        Args:
-            contract: The evidence contract dict.
-            progress: Progress instruction text.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["required_next_progress"] = progress[:4000]
-        return contract
-
-    def set_required_next_tool_call(
-        self,
-        contract: dict[str, Any],
-        tool: str,
-        arguments: dict[str, Any],
-        reason: str = "",
-    ) -> dict[str, Any]:
-        """Set required_next_tool_call and update related fields.
-
-        Args:
-            contract: The evidence contract dict.
-            tool: Tool name.
-            arguments: Tool arguments.
-            reason: Reason for the required call.
-
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["required_next_tool_call"] = {
-            "tool": tool,
-            "arguments": arguments,
-            "reason": reason[:900],
+        row = {
+            "step": step,
+            "decision": {
+                "action": "continue_required",
+                "reason": guard_summary,
+                "rejected_decision": guard_result.get("rejected_decision", decision),
+            },
+            "tool_result": guard_result,
         }
-        contract["planner_may_choose_final"] = False
+        if support_subturn:
+            self.loop_controller.mark_support_subturn(row, semantic_step=step)
+        self.loop_state.append_history_row(row)
+        self.loop_controller.persist_turn_memory(row)
+        write_fn = self.deps.get("write_agent_job_state")
+        if write_fn and isinstance(self.state, dict):
+            try:
+                write_fn(self.state, {})
+            except Exception:
+                pass
 
-        final_contract = self._get_or_create_final_contract(contract)
-        final_contract["final_allowed"] = False
-        final_contract["planner_may_choose_final"] = False
-        final_contract["reason"] = reason[:200] if reason else "required_next_tool_call_pending"
-        contract["finalization_contract"] = final_contract
+        if should_finalize:
+            return self._finalize_agentic_job(
+                self.job_id,
+                self.state,
+                final_status,
+                final_reason,
+                final_extra or {
+                    "history": self.history,
+                    "blocked_by": guard_result.get("guard_type", "unknown_guard"),
+                    "planner_decision": decision,
+                },
+            )
+        return None
 
-        return contract
-
-    def clear_required_next_tool_call(
+    def finalize_blocked(
         self,
-        contract: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Clear required_next_tool_call from contract.
+        status: str,
+        reason: str,
+        decision: dict,
+        validation: dict,
+        extra: dict | None = None,
+    ) -> dict:
+        """Finalize with blocked_needs_attention status."""
+        return self._finalize_agentic_job(
+            self.job_id,
+            self.state,
+            status,
+            reason,
+            {
+                "history": self.history,
+                "blocked_by": reason.replace(": ", "_"),
+                "planner_decision": decision,
+                "validation": validation,
+                **(extra or {}),
+            },
+        )
 
-        Args:
-            contract: The evidence contract dict.
 
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract.pop("required_next_tool_call", None)
-        return contract
+class ShadowEvaluationPhase:
+    """Manages initial orientation shadow evaluation.
 
-    # ==================================================================
-    # Candidate Actions Mutations
-    # ==================================================================
+    Extracted from evaluate_initial_orientation_shadow (~500 lines) in loop.py.
+    Pure function without wiring — does not know job_id, state/history,
+    execute tools directly, persist artifact, emit events, or modify legacy flow.
+    """
 
-    def set_candidate_next_actions(
+    def __init__(
         self,
-        contract: dict[str, Any],
-        actions: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        """Set candidate_next_actions in contract.
+        requested_mode: Any,
+        root_result: Any,
+        goal: Any,
+        semantic_intent: Any,
+        doc_plan: Any,
+        area_plans: Any,
+        candidate_pool_fn: Callable[[dict], list[dict]],
+        selector_fn: Callable[..., dict],
+        effective_mode_fn: Callable[[Any], str],
+        legacy_selected_ids_fn: Callable[..., list[str]],
+        selection_metrics_fn: Callable[..., dict],
+    ) -> None:
+        self.requested_mode = requested_mode
+        self.root_result = root_result
+        self.goal = goal
+        self.semantic_intent = semantic_intent
+        self.doc_plan = doc_plan
+        self.area_plans = area_plans
+        self.candidate_pool_fn = candidate_pool_fn
+        self.selector_fn = selector_fn
+        self.effective_mode_fn = effective_mode_fn
+        self.legacy_selected_ids_fn = legacy_selected_ids_fn
+        self.selection_metrics_fn = selection_metrics_fn
 
-        Args:
-            contract: The evidence contract dict.
-            actions: List of candidate action dicts.
+    def evaluate(self) -> dict:
+        """Run the full shadow evaluation pipeline."""
+        # STAGE 1 — EFFECTIVE MODE
+        effective_mode_raw = self.effective_mode_fn(self.requested_mode)
+        effective_mode = "shadow" if effective_mode_raw == "shadow" else "legacy"
+        requested_mode_bounded = self._bounded_text(self.requested_mode, 32)
 
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        contract["candidate_next_actions"] = actions[:15]
-        return contract
+        if effective_mode != "shadow":
+            return self._build_skipped_result(
+                requested_mode_bounded, effective_mode, "mode_not_shadow"
+            )
 
-    def append_candidate_next_action(
-        self,
-        contract: dict[str, Any],
-        action: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Append a candidate action to existing list.
+        # STAGE 2 — ROOT RESULT GATE
+        if not isinstance(self.root_result, dict) or self.root_result.get("ok") is not True:
+            return self._build_skipped_result(
+                requested_mode_bounded, "shadow", "root_result_not_ok"
+            )
 
-        Args:
-            contract: The evidence contract dict.
-            action: Action dict to append.
+        # STAGE 3 — CANDIDATE POOL
+        try:
+            raw_pool = self.candidate_pool_fn(deepcopy(self.root_result))
+        except Exception as exc:
+            return self._build_unavailable_result(
+                requested_mode_bounded, "candidate_pool_exception",
+                type(exc).__name__, str(exc)[:500],
+            )
 
-        Returns:
-            Modified contract dict.
-        """
-        contract = dict(contract)
-        existing = contract.get("candidate_next_actions", [])
-        if not isinstance(existing, list):
-            existing = []
-        existing.append(action)
-        contract["candidate_next_actions"] = existing[:15]
-        return contract
+        valid_candidates_list = self._valid_candidates(raw_pool)
+        candidate_count = len(valid_candidates_list)
+        allowed_candidate_ids = {
+            c["candidate_id"] for c in valid_candidates_list
+        }
+        candidate_ids = self._bounded_ids(
+            [c["candidate_id"] for c in valid_candidates_list],
+            limit=32,
+        )
 
-    # ==================================================================
-    # Helper Methods
-    # ==================================================================
+        if not valid_candidates_list:
+            return self._build_skipped_result(
+                requested_mode_bounded, "shadow", "no_candidates"
+            )
 
-    def _get_or_create_final_contract(
-        self,
-        contract: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Get or create finalization_contract dict.
+        # STAGE 4 — LEGACY SELECTED IDS
+        try:
+            legacy_result = self.legacy_selected_ids_fn(
+                candidates=deepcopy(valid_candidates_list),
+                doc_plan=deepcopy(self.doc_plan),
+                area_plans=deepcopy(self.area_plans),
+            )
+        except Exception as exc:
+            return self._build_unavailable_result(
+                requested_mode_bounded, "legacy_selection_exception",
+                type(exc).__name__, str(exc)[:500],
+                candidate_count, candidate_ids, [],
+            )
 
-        Args:
-            contract: The evidence contract dict.
+        legacy_selected_candidate_ids = self._bounded_ids(
+            legacy_result,
+            allowed_ids=allowed_candidate_ids,
+            limit=13,
+        )
 
-        Returns:
-            Finalization contract dict (new or existing).
-        """
-        final = contract.get("finalization_contract")
-        if not isinstance(final, dict):
-            final = {}
-            contract["finalization_contract"] = final
-        return final
+        # STAGE 5 — SELECTOR
+        try:
+            goal_bounded = str(self.goal)[:4000] if isinstance(self.goal, str) else str(self.goal)[:4000]
+            semantic_intent_copy = deepcopy(self.semantic_intent) if isinstance(self.semantic_intent, Mapping) else {}
+            selector_result = self.selector_fn(
+                goal=goal_bounded,
+                semantic_intent=semantic_intent_copy,
+                candidates=deepcopy(valid_candidates_list),
+            )
+        except Exception as exc:
+            return self._build_unavailable_result(
+                requested_mode_bounded, "selector_exception",
+                type(exc).__name__, str(exc)[:500],
+                candidate_count, candidate_ids, legacy_selected_candidate_ids,
+            )
 
-    def get_contract_summary(
-        self,
-        contract: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Get a summary of key contract fields.
+        # STAGE 6 — SELECTOR RESULT VALIDATION
+        if not isinstance(selector_result, dict):
+            return self._build_invalid_result(
+                requested_mode_bounded, "selector_result_not_dict",
+                candidate_count, candidate_ids, legacy_selected_candidate_ids,
+            )
 
-        Args:
-            contract: The evidence contract dict.
-
-        Returns:
-            Summary dict with key contract state.
-        """
-        coverage = contract.get("minimum_read_coverage")
-        if isinstance(coverage, dict):
-            coverage_satisfied = coverage.get("coverage_satisfied")
-            missing_paths = coverage.get("missing_owner_paths", [])
+        selector_ok = selector_result.get("ok") is True
+        selector_status = self._bounded_text(selector_result.get("status"), 64).lower()
+        selector_ready = selector_ok and selector_status == "ready"
+        rationale_bounded = self._bounded_text(selector_result.get("rationale"), 1000)
+        confidence_raw = selector_result.get("confidence")
+        if isinstance(confidence_raw, bool):
+            confidence = None
+        elif isinstance(confidence_raw, (int, float)) and 0 <= confidence_raw <= 1:
+            confidence = confidence_raw
         else:
-            coverage_satisfied = contract.get("coverage_satisfied")
-            missing_paths = contract.get("missing_owner_paths", [])
+            confidence = None
 
-        final = contract.get("finalization_contract", {})
-        if not isinstance(final, dict):
-            final = {}
+        selected_ids_raw = selector_result.get("selected_candidate_ids", [])
+        model_selected_candidate_ids = self._bounded_ids(
+            selected_ids_raw,
+            allowed_ids=allowed_candidate_ids,
+            limit=13,
+        )
+
+        # STAGE 7 — PROCESS SELECTOR RESULT
+        if not selector_ready:
+            return self._build_selector_unavailable_result(
+                requested_mode_bounded, selector_result,
+                candidate_count, candidate_ids, legacy_selected_candidate_ids,
+            )
+
+        # STAGE 8 — COMPUTE METRICS
+        selection_overlap = list(set(legacy_selected_candidate_ids) & set(model_selected_candidate_ids))
+        metrics = {
+            "legacy_count": len(legacy_selected_candidate_ids),
+            "model_count": len(model_selected_candidate_ids),
+            "selection_overlap": selection_overlap,
+            "selection_overlap_count": len(selection_overlap),
+            "top1_match": model_selected_candidate_ids[0] == legacy_selected_candidate_ids[0] if (
+                model_selected_candidate_ids and legacy_selected_candidate_ids
+            ) else False,
+            "exact_match": model_selected_candidate_ids == legacy_selected_candidate_ids,
+            "would_change_selection": model_selected_candidate_ids != legacy_selected_candidate_ids,
+        }
 
         return {
-            "planner_may_choose_final": bool(contract.get("planner_may_choose_final")),
-            "planner_may_choose_block": bool(contract.get("planner_may_choose_block")),
-            "coverage_satisfied": coverage_satisfied,
-            "missing_owner_paths_count": len(missing_paths) if isinstance(missing_paths, list) else 0,
-            "final_allowed": bool(final.get("final_allowed")),
-            "final_rewrite_latch": str(final.get("final_rewrite_latch") or "inactive"),
-            "required_next_progress": str(contract.get("required_next_progress") or "")[:200],
-            "candidate_actions_count": len(contract.get("candidate_next_actions") or []),
+            "schema": "orientation_shadow_evaluation.v1",
+            "lane_id": "orientation.initial",
+            "requested_mode": requested_mode_bounded,
+            "effective_mode": "shadow",
+            "diagnostic_only": True,
+            "legacy_authoritative": True,
+            "status": "ready",
+            "selector_called": True,
+            "fallback_used": False,
+            "candidate_count": candidate_count,
+            "candidate_ids": candidate_ids,
+            "legacy_selected_candidate_ids": legacy_selected_candidate_ids,
+            "model_selected_candidate_ids": model_selected_candidate_ids,
+            "selection_metrics": metrics,
+            "model_summary": {
+                "ok": selector_ok,
+                "status": selector_status,
+                "rationale": rationale_bounded,
+                "confidence": confidence,
+                "unknown_candidate_ids": self._bounded_ids(selector_result.get("unknown_candidate_ids", [])),
+                "duplicate_candidate_ids": self._bounded_ids(selector_result.get("duplicate_candidate_ids", [])),
+                "duplicate_input_candidate_ids": self._bounded_ids(selector_result.get("duplicate_input_candidate_ids", [])),
+                "error_type": "",
+                "error": "",
+            },
         }
+
+    # --- Internal helpers ---
+
+    @staticmethod
+    def _bounded_text(value: Any, limit: int = 32) -> str:
+        """Convert value to string safely, strip, truncate."""
+        text = ""
+        if isinstance(value, str):
+            text = value.strip()[:limit]
+        elif value is None:
+            pass
+        else:
+            try:
+                text = str(value).strip()[:limit]
+            except Exception:
+                pass
+        return text
+
+    @staticmethod
+    def _bounded_ids(raw_ids: Any, allowed_ids: set | None = None, limit: int = 13) -> list:
+        """Sanitize IDs: must be list of strings, strip, ignore empty/oversized, dedupe."""
+        if not isinstance(raw_ids, list):
+            return []
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in raw_ids:
+            if not isinstance(item, str):
+                continue
+            id_str = item.strip()
+            if not id_str or len(id_str) > 500:
+                continue
+            if allowed_ids is not None and id_str not in allowed_ids:
+                continue
+            if id_str in seen:
+                continue
+            if len(result) >= limit:
+                break
+            seen.add(id_str)
+            result.append(id_str)
+        return result
+
+    @staticmethod
+    def _valid_candidates(pool: Any) -> list:
+        """Build private valid candidate list from raw pool."""
+        if not isinstance(pool, list):
+            return []
+        valid: list[dict] = []
+        seen_ids: set[str] = set()
+        for cand in pool:
+            if not isinstance(cand, dict):
+                continue
+            cid = cand.get("candidate_id", "")
+            if not isinstance(cid, str):
+                continue
+            cid_stripped = cid.strip()
+            if not cid_stripped or len(cid_stripped) > 500:
+                continue
+            if cid_stripped in seen_ids:
+                continue
+            new_cand = dict(cand)
+            new_cand["candidate_id"] = cid_stripped
+            valid.append(new_cand)
+            seen_ids.add(cid_stripped)
+        return valid
+
+    def _build_skipped_result(
+        self, requested_mode: str, effective_mode: str, reason: str
+    ) -> dict:
+        """Build a skipped shadow evaluation result."""
+        return {
+            "schema": "orientation_shadow_evaluation.v1",
+            "lane_id": "orientation.initial",
+            "requested_mode": requested_mode,
+            "effective_mode": effective_mode,
+            "diagnostic_only": True,
+            "legacy_authoritative": True,
+            "status": "skipped",
+            "reason": reason,
+            "selector_called": False,
+            "fallback_used": False,
+            "candidate_count": 0,
+            "candidate_ids": [],
+            "legacy_selected_candidate_ids": [],
+            "model_selected_candidate_ids": [],
+            "selection_metrics": {
+                "legacy_count": 0,
+                "model_count": 0,
+                "selection_overlap": [],
+                "selection_overlap_count": 0,
+                "top1_match": False,
+                "exact_match": True,
+                "would_change_selection": False,
+            },
+            "model_summary": {
+                "ok": False,
+                "status": "",
+                "rationale": "",
+                "confidence": None,
+                "unknown_candidate_ids": [],
+                "duplicate_candidate_ids": [],
+                "duplicate_input_candidate_ids": [],
+                "error_type": "",
+                "error": "",
+            },
+        }
+
+    def _build_unavailable_result(
+        self,
+        requested_mode: str,
+        reason: str,
+        error_type: str,
+        error: str,
+        candidate_count: int = 0,
+        candidate_ids: list | None = None,
+        legacy_selected_candidate_ids: list | None = None,
+    ) -> dict:
+        """Build an unavailable shadow evaluation result."""
+        return {
+            "schema": "orientation_shadow_evaluation.v1",
+            "lane_id": "orientation.initial",
+            "requested_mode": requested_mode,
+            "effective_mode": "shadow",
+            "diagnostic_only": True,
+            "legacy_authoritative": True,
+            "status": "unavailable",
+            "reason": reason,
+            "selector_called": False if candidate_count == 0 else True,
+            "fallback_used": True,
+            "candidate_count": candidate_count,
+            "candidate_ids": candidate_ids or [],
+            "legacy_selected_candidate_ids": legacy_selected_candidate_ids or [],
+            "model_selected_candidate_ids": [],
+            "selection_metrics": {
+                "legacy_count": len(legacy_selected_candidate_ids) if legacy_selected_candidate_ids else 0,
+                "model_count": 0,
+                "selection_overlap": [],
+                "selection_overlap_count": 0,
+                "top1_match": False,
+                "exact_match": True,
+                "would_change_selection": False,
+            },
+            "model_summary": {
+                "ok": False,
+                "status": "",
+                "rationale": "",
+                "confidence": None,
+                "unknown_candidate_ids": [],
+                "duplicate_candidate_ids": [],
+                "duplicate_input_candidate_ids": [],
+                "error_type": error_type,
+                "error": error,
+            },
+        }
+
+    def _build_invalid_result(
+        self,
+        requested_mode: str,
+        reason: str,
+        candidate_count: int,
+        candidate_ids: list,
+        legacy_selected_candidate_ids: list,
+    ) -> dict:
+        """Build an invalid shadow evaluation result."""
+        return {
+            "schema": "orientation_shadow_evaluation.v1",
+            "lane_id": "orientation.initial",
+            "requested_mode": requested_mode,
+            "effective_mode": "shadow",
+            "diagnostic_only": True,
+            "legacy_authoritative": True,
+            "status": "invalid",
+            "reason": reason,
+            "selector_called": True,
+            "fallback_used": True,
+            "candidate_count": candidate_count,
+            "candidate_ids": candidate_ids,
+            "legacy_selected_candidate_ids": legacy_selected_candidate_ids,
+            "model_selected_candidate_ids": [],
+            "selection_metrics": {
+                "legacy_count": len(legacy_selected_candidate_ids),
+                "model_count": 0,
+                "selection_overlap": [],
+                "selection_overlap_count": 0,
+                "top1_match": False,
+                "exact_match": True,
+                "would_change_selection": False,
+            },
+            "model_summary": {
+                "ok": False,
+                "status": "",
+                "rationale": "",
+                "confidence": None,
+                "unknown_candidate_ids": [],
+                "duplicate_candidate_ids": [],
+                "duplicate_input_candidate_ids": [],
+                "error_type": "TypeError",
+                "error": "selector returned non-dict",
+            },
+        }
+
+    def _build_selector_unavailable_result(
+        self,
+        requested_mode: str,
+        selector_result: dict,
+        candidate_count: int,
+        candidate_ids: list,
+        legacy_selected_candidate_ids: list,
+    ) -> dict:
+        """Build a selector-unavailable shadow evaluation result."""
+        rationale_bounded = self._bounded_text(selector_result.get("rationale"), 160)
+        return {
+            "schema": "orientation_shadow_evaluation.v1",
+            "lane_id": "orientation.initial",
+            "requested_mode": requested_mode,
+            "effective_mode": "shadow",
+            "diagnostic_only": True,
+            "legacy_authoritative": True,
+            "status": "unavailable",
+            "reason": rationale_bounded or "selector_unavailable",
+            "selector_called": True,
+            "fallback_used": True,
+            "candidate_count": candidate_count,
+            "candidate_ids": candidate_ids,
+            "legacy_selected_candidate_ids": legacy_selected_candidate_ids,
+            "model_selected_candidate_ids": [],
+            "selection_metrics": {
+                "legacy_count": len(legacy_selected_candidate_ids),
+                "model_count": 0,
+                "selection_overlap": [],
+                "selection_overlap_count": 0,
+                "top1_match": False,
+                "exact_match": True,
+                "would_change_selection": False,
+            },
+            "model_summary": {
+                "ok": False,
+                "status": "",
+                "rationale": "",
+                "confidence": None,
+                "unknown_candidate_ids": [],
+                "duplicate_candidate_ids": [],
+                "duplicate_input_candidate_ids": [],
+                "error_type": "",
+                "error": "",
+            },
+        }
+
+
+__all__ = [
+    "ContractMutationPhase",
+    "ShadowEvaluationPhase",
+]
