@@ -1,0 +1,494 @@
+{
+  "mcpServers": {
+    "aicarmine_rag": {
+      "autoApprove": [
+        "aicarmine_rag_context",
+        "aicarmine_rag_index_status",
+        "aicarmine_rag_health",
+        "aicarmine_rag_reindex"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\rag_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_RAG_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_RAG_DB": "C:\\Users\\carmi\\AI\\state\\codex_rag\\code_rag.sqlite3",
+        "AICARMINE_RAG_RERANK_URL": "http://127.0.0.1:3550/v3/rerank",
+        "AICARMINE_RAG_RERANK_READY_URL": "http://127.0.0.1:3550/v2/models/BAAI%2Fbge-reranker-v2-m3/ready",
+        "AICARMINE_RAG_RERANK_MODEL": "BAAI/bge-reranker-v2-m3",
+        "AICARMINE_RAG_RERANK_CANDIDATE_LIMIT": "8",
+        "AICARMINE_RAG_RERANK_DOC_CHARS": "1800",
+        "AICARMINE_RAG_RERANK_TIMEOUT_SECONDS": "90",
+        "AICARMINE_RAG_MAX_TOTAL_CHARS": "80000",
+        "AICARMINE_RAG_MCP_DEBUG": "1"
+      }
+    },
+    "aicarmine_repo_state": {
+      "autoApprove": [
+        "aicarmine_repo_state_status",
+        "aicarmine_repo_state_capabilities",
+        "aicarmine_repo_state_health",
+        "repo_command",
+        "aicarmine_repo_command"
+      ],
+      "disabled": false,
+      "timeout": 300,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\repo_state_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_repo_validate": {
+      "autoApprove": [
+        "aicarmine_repo_validate_probe_profiles",
+        "aicarmine_repo_validate_diffcheck",
+        "aicarmine_repo_validate_ruff",
+        "aicarmine_repo_validate_pyright",
+        "aicarmine_repo_validate_pytest",
+        "aicarmine_repo_validate_shellcheck",
+        "aicarmine_repo_validate_semgrep",
+        "aicarmine_repo_validate_health",
+        "aicarmine_repo_validate_probe_run"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\repo_validate_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_repo_search_det": {
+      "autoApprove": [
+        "aicarmine_repo_search_det_health",
+        "aicarmine_repo_search_fd",
+        "aicarmine_repo_search_jq",
+        "aicarmine_repo_search_ast_grep",
+        "aicarmine_repo_search_ast_grep_dry_run",
+        "aicarmine_repo_search_tree_sitter_parse",
+        "aicarmine_repo_search_ctags",
+        "aicarmine_repo_search_rg",
+        "aicarmine_repo_search_det"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\repo_search_det_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_repo_code": {
+      "autoApprove": [
+        "aicarmine_repo_code_health",
+        "aicarmine_repo_code_unidiff_validate",
+        "aicarmine_repo_code_git_apply_check",
+        "aicarmine_repo_code_propose_edit",
+        "aicarmine_repo_code_apply_patch"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\repo_code_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_codex_ops": {
+      "autoApprove": [
+        "aicarmine_codex_ops_health",
+        "aicarmine_mcp_smoke_health",
+        "aicarmine_mcp_smoke_list_targets",
+        "aicarmine_service_state_health",
+        "aicarmine_mcp_inventory_health",
+        "aicarmine_mcp_inventory_probe",
+        "aicarmine_service_state_ports",
+        "aicarmine_service_state_processes",
+        "aicarmine_service_state_logs",
+        "aicarmine_service_state_snapshot",
+        "aicarmine_mcp_inventory_list_targets"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\ops_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_job_view": {
+      "autoApprove": [
+        "aicarmine_job_view_health",
+        "aicarmine_job_view_list_views",
+        "aicarmine_job_view_render",
+        "aicarmine_job_view_render_section",
+        "aicarmine_job_view_ia_payload",
+        "aicarmine_job_view_outline",
+        "aicarmine_job_view_links",
+        "aicarmine_job_view_validate_html"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\job_view_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_job_artifact": {
+      "autoApprove": [
+        "aicarmine_job_artifact_health",
+        "aicarmine_job_artifact_list_jobs",
+        "aicarmine_job_artifact_summary",
+        "aicarmine_job_artifact_events",
+        "aicarmine_job_artifact_final",
+        "aicarmine_job_artifact_tool_results",
+        "aicarmine_job_artifact_planner_payload",
+        "aicarmine_job_artifact_rejections",
+        "aicarmine_job_artifact_subturns"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\job_artifact_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_git_readonly": {
+      "autoApprove": [
+        "aicarmine_git_readonly_health",
+        "aicarmine_git_readonly_log",
+        "aicarmine_git_readonly_show",
+        "aicarmine_git_readonly_diff",
+        "aicarmine_git_readonly_blame",
+        "aicarmine_git_readonly_branch_compare"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\git_readonly_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_sqlite_readonly": {
+      "autoApprove": [
+        "aicarmine_sqlite_readonly_health",
+        "aicarmine_sqlite_readonly_list_databases",
+        "aicarmine_sqlite_readonly_schema",
+        "aicarmine_sqlite_readonly_query"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\sqlite_readonly_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_project_memory": {
+      "autoApprove": [
+        "aicarmine_project_memory_health",
+        "aicarmine_project_memory_search",
+        "aicarmine_project_memory_get",
+        "aicarmine_project_memory_audit_sources",
+        "aicarmine_project_memory_supersede",
+        "aicarmine_project_memory_upsert_verified",
+        "aicarmine_project_memory_mark_stale"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\project_memory_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_code_dep_graph": {
+      "autoApprove": [
+        "aicarmine_code_dep_health",
+        "aicarmine_code_build_dep_graph",
+        "aicarmine_code_find_import_chains",
+        "aicarmine_code_detect_circular_deps",
+        "aicarmine_code_find_callers",
+        "aicarmine_code_find_dependents",
+        "aicarmine_code_estimate_breakage_risk"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\code_dep_graph_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_repo_symbol_index": {
+      "autoApprove": [
+        "aicarmine_repo_symbol_index_build",
+        "aicarmine_repo_symbol_query",
+        "aicarmine_repo_symbol_summary",
+        "aicarmine_repo_symbol_index_health"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\repo_symbol_index_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_test_discovery": {
+      "autoApprove": [
+        "aicarmine_test_discover_patterns",
+        "aicarmine_test_find_uncovered",
+        "aicarmine_test_generate_scaffold",
+        "aicarmine_test_map_tests",
+        "aicarmine_test_discovery_health"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\test_discovery_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_ollama_subagent": {
+      "autoApprove": [
+        "aicarmine_ollama_subagent_generate",
+        "aicarmine_ollama_subagent_generate_stream",
+        "aicarmine_ollama_subagent_list_models",
+        "aicarmine_ollama_subagent_health"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\ollama_subagent_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000",
+        "OLLAMA_SUBAGENT_URL": "http://127.0.0.1:11435",
+        "OLLAMA_SUBAGENT_MODEL": "qwen3-task-8k:latest"
+      }
+    },
+    "aicarmine_local_subagent": {
+      "autoApprove": [
+        "aicarmine_local_subagent_capabilities",
+        "aicarmine_local_subagent_run_readonly"
+      ],
+      "disabled": true,
+      "timeout": 600,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\local_subagent_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    },
+    "aicarmine_index_bridge": {
+      "autoApprove": [
+        "aicarmine_index_bridge_health",
+        "aicarmine_index_bridge_query",
+        "aicarmine_index_bridge_persist",
+        "aicarmine_index_bridge_get_memory",
+        "aicarmine_index_bridge_build"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\index_bridge_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000",
+        "AICARMINE_RAG_DB": "C:\\Users\\carmi\\AI\\state\\codex_rag\\code_rag.sqlite3"
+      }
+    },
+    "aicarmine_mcp_batch_proxy": {
+      "autoApprove": [
+        "mcp_batch_health",
+        "mcp_batch_list_servers",
+        "mcp_batch_execute"
+      ],
+      "disabled": false,
+      "timeout": 120,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\mcp_batch_proxy_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000",
+        "AICARMINE_MCP_COMPRESSION": "1",
+        "AICARMINE_MCP_COMPRESS_THRESHOLD": "10000"
+      }
+    },
+    "aicarmine_wily": {
+      "autoApprove": [
+        "wily_health",
+        "wily_report",
+        "wily_rank",
+        "wily_build",
+        "wily_index",
+        "wily_diff",
+        "wily_list_metrics",
+        "ast_complexity_report",
+        "ast_file_metrics",
+        "ast_top_functions"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\wily_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
+    }
+  }
+}
