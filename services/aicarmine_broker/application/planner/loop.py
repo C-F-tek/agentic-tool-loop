@@ -1643,7 +1643,7 @@ def run_agentic_planner_job(
                         )
                         break
                     validation_i = validate_planner_decision_against_evidence(
-                        str(state.get("goal") or ""), call_decision, history
+                        str(state.get("goal") or ""), call_decision, history, deps, config
                     )
                     if not validation_i.get("ok"):
                         should_repair_call = _should_attempt_vulkan_repair(call_decision, validation_i, history)
@@ -1759,7 +1759,7 @@ def run_agentic_planner_job(
                 continue
 
         validation = validate_planner_decision_against_evidence(
-            str(state.get("goal") or ""), decision, history
+            str(state.get("goal") or ""), decision, history, deps, config
         )
         if not validation.get("ok"):
 
@@ -2457,7 +2457,7 @@ def run_agentic_planner_job(
                     }
                 else:
                     repaired_validation = validate_planner_decision_against_evidence(
-                        str(state.get("goal") or ""), repaired_decision, history
+                        str(state.get("goal") or ""), repaired_decision, history, deps, config
                     )
                 append_agent_event(
                     job_id,

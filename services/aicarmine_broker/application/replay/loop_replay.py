@@ -298,7 +298,7 @@ def _default_evidence_builder(goal: str, history: list[dict[str, Any]]) -> dict[
 def _default_validator(goal: str, decision: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
     from ... import planner  # Late import: CLI-only default path.
 
-    return planner.validate_planner_decision_against_evidence(goal, decision, history)
+    return planner.validate_planner_decision_against_evidence(goal, decision, history, None, None)
 
 
 def _history_tool_result(row: dict[str, Any]) -> dict[str, Any]:
