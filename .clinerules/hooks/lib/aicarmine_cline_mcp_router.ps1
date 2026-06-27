@@ -174,6 +174,7 @@ function Get-AICarmineMcpRoutingHint {
             code_analysis = 0
             data_query = 0
             semantic_search = 0
+            code_complexity = 0
             mcp_batch_proxy = 0
         }
 
@@ -288,6 +289,17 @@ function Get-AICarmineMcpRoutingHint {
             $scores.semantic_search += 60
         }
 
+        # Code complexity (Wily) scoring — detect code quality/complexity analysis requests
+        if ($normalized -match '\b(?:wily|code complexity|cyclomatic|halstead|maintainability|raw lines)\b') {
+            $scores.code_complexity += 100
+        }
+        if ($normalized -match '\b(?:complexity report|rank files|code quality|code smell|high cyclomatic)\b') {
+            $scores.code_complexity += 80
+        }
+        if ($normalized -match '\b(?:code metric|metric rank|function complexity|file metrics)\b') {
+            $scores.code_complexity += 60
+        }
+
         # Batch proxy scoring — detect parallel MCP operations or batch execution requests
         if ($normalized -match '\b(?:batch|parallel|multiple.*tool|multi.*server|concurrent.*mcp|batch.*execute|batch.*health)\b') {
             $scores.mcp_batch_proxy += 100
@@ -312,7 +324,8 @@ function Get-AICarmineMcpRoutingHint {
             git_readonly = 9
             job_diagnostics = 10
             semantic_search = 11
-            mcp_batch_proxy = 12
+            code_complexity = 12
+            mcp_batch_proxy = 13
         }
         $rankedClasses = @(
             $scores.GetEnumerator() |
@@ -436,6 +449,15 @@ function Get-AICarmineMcpRoutingHint {
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_persist'
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_get_memory'
                     }
+                }
+                'code_complexity' {
+                    Add-AICarmineTool -Name 'wily_health'
+                    if ($normalized -match '\b(?:report|file metrics)\b') { Add-AICarmineTool -Name 'wily_report' }
+                    if ($normalized -match '\b(?:rank|ranking|high complexity)\b') { Add-AICarmineTool -Name 'wily_rank' }
+                    if ($normalized -match '\b(?:build|reindex|cache rebuild)\b') { Add-AICarmineTool -Name 'wily_build' }
+                    if ($normalized -match '\b(?:diff|revision|history)\b') { Add-AICarmineTool -Name 'wily_diff' }
+                    Add-AICarmineTool -Name 'wily_index'
+                    Add-AICarmineTool -Name 'wily_list_metrics'
                 }
                 'mcp_batch_proxy' {
                     Add-AICarmineTool -Name 'mcp_batch_health'

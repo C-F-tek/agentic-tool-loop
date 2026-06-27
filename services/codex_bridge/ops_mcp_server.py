@@ -126,6 +126,10 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
         "index_bridge_mcp_server.py",
         "aicarmine_index_bridge_health",
     ),
+    "aicarmine_wily": LocalMcpServer(
+        "wily_mcp_server.py",
+        "wily_health",
+    ),
     "aicarmine_mcp_batch_proxy": LocalMcpServer(
         "mcp_batch_proxy_server.py",
         None,  # Self-contained health via mcp_batch_health tool
