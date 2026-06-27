@@ -1,96 +1,209 @@
-# Implementation Plan
+# Implementation Plan — Phase Manager Extraction
 
 ## Overview
 
-Add structured error codes to critical planner decision paths so that every rejection, repair attempt, and validation failure returns a consistent dict with `error_code`, `summary`, and diagnostic fields instead of plain strings or ad-hoc dicts. This enables reliable monitoring, alerting, and automated decision routing based on error classification.
+Complete the refactoring of `loop.py` (CC=233, 2613 lines) and `turn.py` (CC=180, 1289 lines) by extracting inline helper functions into phase manager classes that already exist but have stub methods. The validator.py refactoring (CC=434→50) is complete and serves as the template pattern.
 
-The current system already uses structured dicts for validation results (`validate_planner_decision_against_evidence` returns `{"ok": bool, "violations": list, "evidence_contract": dict}`), but many helper functions and guard evaluators return plain strings, simple booleans, or inconsistent dict shapes. The plan standardizes all error-returning paths to use the error code schema defined in `error_handling_audit.py`.
+Phase manager classes are created at:
+- `services/aicarmine_broker/application/planner/loop_phases.py` — PreseedPhaseManager, LoopPhaseManager, DecisionPhaseManager, FinalizationPhaseManager
+- `services/aicarmine_broker/application/planner/turn_phases.py` — PayloadBuilderPhase, EvidenceContractPhase, ToolSurfacePhase, RuntimeRootsPhase, DecisionExecutionPhase
+
+PreseedPhaseManager.execute_preseed() is already populated with full inline logic. All other methods are stubs awaiting extraction.
 
 ## Types
 
-### Error Result Dict Schema
-All error-returning functions must return a consistent dict:
-```python
-{
-    "ok": False,  # True for success, False for error
-    "error_code": "PLANNER_DECISION_BLOCKED",  # Constant from error_handling_audit.py
-    "summary": "Human-readable summary of the error",
-    "diagnostic": {
-        "error_type": "ValidationError",  # Optional exception type
-        "error": "Detailed error message (truncated to 1000 chars)",
-        "step": 5,  # Current step number
-        "job_id": "abc123",  # Current job ID
-        "context": {...}  # Additional context specific to this error
-    },
-    "retry_allowed": True,  # Whether retry is possible
-    "fallback_action": None,  # Optional fallback action dict
-}
-```
+### Existing Phase Manager Classes (no changes needed)
 
-### Error Code Registry
-Extend `error_handling_audit.py` with a complete registry:
-- `ERROR_CODES`: Dict mapping code strings to metadata (severity, retry_allowed, category)
-- `classify_error(code)`: Returns metadata for a given error code
-- `is_retryable(code)`: Returns whether the error allows retry
+```python
+# loop_phases.py
+class PreseedPhaseManager:
+    def __init__(self, job_id, state, history, deps, config, root, loop_state) -> None
+    def execute_preseed(self, preseed_plan, preseed_index, original_args, public_tool_name, dispatch_tool, sanitize_tool_args, write_json, job_id) -> tuple[dict, dict]  # ✅ POPULATED
+    def execute_dynamic_initial_orientation(self, root_result, preseed_index, preplanner_query_plan) -> int  # ⏳ needs logic
+
+class LoopPhaseManager:
+    def __init__(self, job_id, state, history, deps, config, root, loop_state, max_steps) -> None
+    def build_step_budget_guidance(self, semantic_step) -> dict  # ⏳ needs logic
+    def execute_turn(self, step, goal_text) -> dict  # ⏳ needs logic
+
+class DecisionPhaseManager:
+    def __init__(self, job_id, state, deps, config) -> None
+    def evaluate_decision(self, decision, history, contract) -> dict  # ⏳ needs logic
+
+class FinalizationPhaseManager:
+    def __init__(self, job_id, state, deps) -> None
+    def finalize(self, status, message, extra) -> dict  # ⏳ stub only
+
+# turn_phases.py
+class PayloadBuilderPhase:
+    def __init__(self, job_id, state, step, deps, config) -> None
+    def build_native_payload(self, tool_names, history, evidence_contract, intrinsic_context, last_tool_result) -> tuple  # ✅ POPULATED
+
+class EvidenceContractPhase:
+    def __init__(self, deps, config) -> None
+    def build_contract(self, goal, history, intrinsic_context) -> dict  # ⏳ needs logic
+
+class ToolSurfacePhase:
+    def __init__(self, deps) -> None
+    def determine_turn_tool_names(self, goal, evidence_contract, intrinsic_context, prompt_context_continuation_required, known_tool_names) -> list  # ⏳ needs logic
+
+class RuntimeRootsPhase:
+    def __init__(self) -> None
+    def validate_runtime_roots(self, runtime_roots, base_tool_names, native_tool_names) -> dict  # ⏳ POPULATED
+
+class DecisionExecutionPhase:
+    def __init__(self, deps) -> None
+    def execute_decision(self, raw_decision, history) -> dict  # ⏳ stub only
+```
 
 ## Files
 
-### New Files
-- `services/aicarmine_broker/application/planner/error_codes.py` - Error code registry and classification utilities
-- `services/aicarmine_broker/application/planner/error_result.py` - Standardized error result builder functions
+### Files to Modify (not create)
 
-### Modified Files
-- `services/aicarmine_broker/application/planner/decision.py` - Update `validate_planner_decision_against_evidence` to return structured error dicts instead of stub
-- `services/aicarmine_broker/application/planner/decision_normalizer.py` - Update normalization functions to propagate error codes
-- `services/aicarmine_broker/application/planner/planner_validation.py` - Update validation helpers to return structured errors
-- `services/aicarmine_broker/application/planner/validator.py` - Update validator functions to use structured error results
-- `services/aicarmine_broker/application/planner/loop.py` - Update error handling in `run_agentic_planner_job` to use structured error codes
-- `services/aicarmine_broker/application/planner/error_handling_audit.py` - Extend with complete error code registry
+1. **`services/aicarmine_broker/application/planner/loop_phases.py`**
+   - Populate `LoopPhaseManager.execute_turn()` with ~500 lines of inline logic from loop.py
+   - Populate `DecisionPhaseManager.evaluate_decision()` with guard evaluation logic (~800 lines across multiple guards)
+   - Populate `PreseedPhaseManager.execute_dynamic_initial_orientation()` with ~200 lines
+   - Add `LoopPhaseManager` methods for: coverage_satisfied, missing_owner_paths, support_subturn_decision, mark_support_subturn, force_terminal_decision_active, final_quality_guided_route_available, build_runtime_debug_packet, persist_turn_memory, append_cached_tool_result, get_semantic_step, enrich_validation_with_replan_specialist, match_micro_batch_action
+
+2. **`services/aicarmine_broker/application/planner/turn_phases.py`**
+   - Populate `EvidenceContractPhase.build_contract()` with evidence contract construction logic (~150 lines)
+   - Populate `ToolSurfacePhase.determine_turn_tool_names()` with tool surface determination logic (~100 lines)
+   - Populate `DecisionExecutionPhase.execute_decision()` with decision normalization logic
+
+3. **`services/aicarmine_broker/application/planner/loop.py`**
+   - Replace inline helper calls (`execute_controller_preseed()`, `execute_dynamic_initial_orientation()`) with phase manager method calls
+   - Replace inline guard evaluator calls with `DecisionPhaseManager` methods
+   - Replace inline finalization calls with `FinalizationPhaseManager.finalize()`
+   - Remove the inline helper functions after extracting to phase managers
+
+4. **`services/aicarmine_broker/application/planner/turn.py`**
+   - Replace inline payload building with `PayloadBuilderPhase` method calls
+   - Replace inline evidence contract construction with `EvidenceContractPhase` method calls
+   - Replace inline tool surface determination with `ToolSurfacePhase` method calls
+   - Remove inline helpers after extraction
 
 ## Functions
 
-### New Functions
-- `build_error_result(error_code: str, summary: str, *, step: int = 0, job_id: str = "", context: dict | None = None) -> dict` - Standardized error result builder
-- `classify_error(code: str) -> dict` - Returns error metadata from registry
-- `is_retryable(code: str) -> bool` - Checks if error allows retry
-- `propagate_error(current_result: dict, new_error_code: str) -> dict` - Chains errors while preserving original context
+### loop_phases.py — Methods to Populate
 
-### Modified Functions
-- `validate_planner_decision_against_evidence()` in `decision.py` - Replace stub with full validation logic returning structured error dicts
-- `_normalize_terminal_planner_decision()` in `decision_normalizer.py` - Add error code propagation
-- `controller_guard_result_for_validation()` in `planner_validation.py` - Return structured error dicts instead of ad-hoc dicts
-- `evaluate_memory_claim_guard()` in `guard_evaluator.py` - Use structured error results
-- `execute_judge_lane()` in `judge_lane.py` - Return structured error codes for terminal_block/rewrite_required decisions
+```python
+# PreseedPhaseManager (lines 66-76)
+def execute_dynamic_initial_orientation(self, root_result, preseed_index, preplanner_query_plan) -> int:
+    # Extract from loop.py inline helper ~line 950
+    # Logic: doc_preseed_plan, area_list_plans, execute_controller_preseed for each
+    # Returns updated preseed_index
 
-## Classes
+# LoopPhaseManager (lines 106-124)
+def build_step_budget_guidance(self, semantic_step) -> dict:
+    # Extract from loop.py inline logic ~line 1050
+    # Logic: check step budget, build guidance dict
 
-No new classes required. Existing `PlannerLoopState`, `GuardEvaluator`, `PlannerLoopController` will use the new error result functions directly.
+def execute_turn(self, step, goal_text) -> dict:
+    # Extract from loop.py main loop body ~line 1080-1300
+    # Logic: load state, build contract snapshot, build memory snapshot, build working memory
+
+def coverage_satisfied(self, contract) -> bool:
+    # Extract guard helper
+
+def missing_owner_paths(self, contract) -> list:
+    # Extract guard helper
+
+def support_subturn_decision(self, decision) -> bool:
+    # Extract guard helper
+
+def mark_support_subturn(self, row, semantic_step) -> None:
+    # Extract guard helper
+
+def force_terminal_decision_active(self, semantic_step, max_steps) -> bool:
+    # Extract guard helper
+
+def final_quality_guided_route_available(self, validation) -> bool:
+    # Extract guard helper
+
+def build_runtime_debug_packet(self, step_number, phase, planner_decision, validation, extra=None) -> dict:
+    # Extract guard helper
+
+def persist_turn_memory(self, row) -> None:
+    # Extract guard helper
+
+def append_cached_tool_result(self, step, decision, result_data) -> None:
+    # Extract guard helper
+
+def get_semantic_step(self, physical_step) -> int:
+    # Extract guard helper
+
+def enrich_validation_with_replan_specialist(self, step, decision, validation) -> dict:
+    # Extract replan specialist logic
+
+def match_micro_batch_action(self, micro_batch_contract, tool, internal_args) -> dict:
+    # Extract micro batch matching logic
+
+# DecisionPhaseManager (lines 142-149)
+def evaluate_decision(self, decision, history, contract) -> dict:
+    # Extract validate_planner_decision_against_evidence inline logic
+
+# FinalizationPhaseManager (lines 166-175)
+def finalize(self, status, message, extra) -> dict:
+    # Already delegates to deps["finalize_agentic_job"] — needs no changes
+```
+
+### turn_phases.py — Methods to Populate
+
+```python
+# EvidenceContractPhase.build_contract()
+def build_contract(self, goal, history, intrinsic_context) -> dict:
+    # Extract from turn.py inline evidence contract construction
+    # Logic: planner_evidence_contract call, apply_step_budget_guidance
+
+# ToolSurfacePhase.determine_turn_tool_names()
+def determine_turn_tool_names(self, goal, evidence_contract, intrinsic_context, prompt_context_continuation_required, known_tool_names) -> list:
+    # Extract from turn.py inline tool surface determination
+    # Logic: _tool_surface_names_for_turn, _post_final_reject_turn_tool_names
+
+# DecisionExecutionPhase.execute_decision()
+def execute_decision(self, raw_decision, history) -> dict:
+    # Extract from turn.py inline decision normalization
+    # Logic: _normalize_terminal_planner_decision
+```
 
 ## Dependencies
 
-No new package dependencies required. All changes use existing stdlib (`json`, `logging`) and existing project modules. The `error_handling_audit.py` module already provides the foundation; `error_codes.py` extends it with the full registry.
+No new external dependencies. All refactoring uses existing imports and injected deps from the calling functions.
 
 ## Testing
 
-### Test Requirements
-1. Unit tests for `build_error_result()` with various parameters
-2. Unit tests for `classify_error()` and `is_retryable()` with all defined error codes
-3. Integration tests for `validate_planner_decision_against_evidence()` returning structured errors on validation failures
-4. Regression tests confirming existing loop behavior is preserved (no functional changes to decision flow)
-5. Tests verifying error code propagation through guard evaluators
+### Verification steps (⏳ Pending)
 
-### Validation Strategy
-- Run existing pytest suite: `pytest services/aicarmine_broker/ -v`
-- Verify no regression in planner decision outcomes
-- Confirm new error codes appear in agent event logs
+1. Run ruff on all modified files after each batch
+2. Re-run `ast_top_functions` to confirm complexity reduction
+3. Verify loop.py and turn.py still import and instantiate correctly
+4. Check that phase manager methods receive correct arguments from call sites
 
 ## Implementation Order
 
-1. Create `error_codes.py` with complete error code registry
-2. Create `error_result.py` with standardized builder functions
-3. Update `error_handling_audit.py` to reference the new modules
-4. Modify `decision.py` to use structured error results in validation
-5. Update `planner_validation.py` and `validator.py` to propagate error codes
-6. Modify `loop.py` to handle structured error codes in decision flow
-7. Add tests for all new functions and integration points
-8. Run full test suite and verify no regressions
+### Batch 1: LoopPhaseManager methods (highest impact)
+
+1. Add `coverage_satisfied`, `missing_owner_paths`, `support_subturn_decision`, `mark_support_subturn`, `force_terminal_decision_active`, `final_quality_guided_route_available`, `build_runtime_debug_packet`, `persist_turn_memory`, `append_cached_tool_result`, `get_semantic_step`, `enrich_validation_with_replan_specialist`, `match_micro_batch_action` to LoopPhaseManager class
+2. Extract inline logic from loop.py for each method
+3. Update loop.py call sites to use phase manager methods instead of inline helpers
+
+### Batch 2: DecisionPhaseManager + FinalizationPhaseManager
+
+4. Populate `DecisionPhaseManager.evaluate_decision()` with guard evaluation logic
+5. Populate `FinalizationPhaseManager.finalize()` (already delegates — verify)
+6. Update loop.py to use `DecisionPhaseManager` and `FinalizationPhaseManager` methods
+
+### Batch 3: turn_phases.py population
+
+7. Populate `EvidenceContractPhase.build_contract()` with evidence contract logic
+8. Populate `ToolSurfacePhase.determine_turn_tool_names()` with tool surface logic
+9. Populate `DecisionExecutionPhase.execute_decision()` with decision normalization
+10. Update turn.py call sites
+
+### Batch 4: Cleanup and verification
+
+11. Remove inline helper functions from loop.py that are now in phase managers
+12. Remove inline helper functions from turn.py that are now in phase managers
+13. Run ruff on all files
+14. Re-run ast_top_functions to confirm complexity reduction

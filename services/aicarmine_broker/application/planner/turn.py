@@ -2,6 +2,13 @@
 
 This module uses dependency injection to avoid circular imports with planner.py.
 The lane_catalog import is the primary source of the circular dependency.
+
+Refactored to use extracted phase classes:
+- PayloadBuilderPhase: Payload building for planner decisions
+- EvidenceContractPhase: Evidence contract construction
+- ToolSurfacePhase: Tool surface determination
+- RuntimeRootsPhase: Runtime roots validation
+- DecisionExecutionPhase: Decision execution phases
 """
 
 from __future__ import annotations
@@ -14,6 +21,7 @@ from ...tool_contract import TOOLS_SCHEMA
 from ..prompt.pack_builder import explicit_request_context_from_state
 from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
+from .turn_phases import PayloadBuilderPhase, EvidenceContractPhase, ToolSurfacePhase, RuntimeRootsPhase, DecisionExecutionPhase
 
 
 def _dict_from_mapping(value: Any) -> dict[str, Any]:
@@ -407,10 +415,10 @@ def _normalize_terminal_planner_decision(
     """Normalize terminal planner decision."""
     from ...import_refs import _resolve_lazy
 
-    # Import dependencies via registry
-    dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
-    normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
-    sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
+    # Import dependencies via registry (unused but required for circular import avoidance)
+    _dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+    _normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
+    _sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
 
     return decision
 

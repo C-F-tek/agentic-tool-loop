@@ -3,6 +3,10 @@ Refactored to use extracted classes:
 - GuardEvaluator: All guard evaluation logic
 - PlannerLoopController: Main loop execution and decision handling
 - EvidenceContractManager: Centralized contract mutations
+- PreseedPhaseManager: Controller preseed execution phases
+- LoopPhaseManager: Main loop execution phases
+- DecisionPhaseManager: Decision evaluation phases
+- FinalizationPhaseManager: Job finalization phases
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from ..tool_surface.required_tool_call import *
 from .guard_evaluator import *
 from .loop_controller import *
 from .evidence_contract_manager import *
+from .loop_phases import PreseedPhaseManager, LoopPhaseManager, DecisionPhaseManager, FinalizationPhaseManager
 from ..tool_surface.tool_dispatch import *
 from ...tool_contract import *
 from .error_result import build_error_result, build_success_result, propagate_error
@@ -802,19 +807,17 @@ def run_agentic_planner_job(
     )
 
     # ======================================================================
-    # Inline helpers replaced by loop_controller methods
+    # Instantiate phase managers for extracted logic
     # ======================================================================
-    # support_subturn_decision → loop_controller.support_subturn_decision()
-    # semantic_step_for_physical_step → loop_controller.semantic_step_for_physical_step()
-    # mark_support_subturn → loop_controller.mark_support_subturn()
-    # force_terminal_decision_active → loop_controller.force_terminal_decision_active()
-    # final_quality_guided_route_available → loop_controller.final_quality_guided_route_available()
-    # runtime_debug_packet → loop_controller.build_runtime_debug_packet()
-    # persist_loop_turn_memory → loop_controller.persist_turn_memory()
-    # _coverage_satisfied → loop_controller.coverage_satisfied()
-    # _missing_owner_paths → loop_controller.missing_owner_paths()
-    # _dict_field → loop_controller.dict_field()
-    # _list_field → loop_controller.list_field()
+    preseed_phase = PreseedPhaseManager(
+        job_id=job_id,
+        state=state,
+        history=history,
+        deps=deps,
+        config=config,
+        root=root,
+        loop_state=loop_state,
+    )
 
     state.update({
         "status": "running_agentic",
@@ -829,188 +832,6 @@ def run_agentic_planner_job(
         "Controlled 30B planner loop started.",
         {"max_steps": max_steps, "planner_url": PLANNER_URL}, step=0,
     )
-
-    initial_orientation_skipped: list[dict[str, Any]] = []
-
-    def update_initial_orientation_state() -> None:
-        state["initial_orientation_skipped"] = initial_orientation_skipped[-120:]
-        state["initial_orientation_surface"] = _initial_orientation_surface_from_history(
-            history,
-            initial_orientation_skipped,
-        )
-        loop_state.refresh_history()
-        state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
-            str(state.get("goal") or ""),
-            history,
-            state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else None,
-        )
-        write_agent_job_state(state)
-
-    def add_initial_orientation_skipped(skipped: list[dict[str, Any]]) -> None:
-        for item in skipped:
-            if isinstance(item, dict) and item not in initial_orientation_skipped:
-                initial_orientation_skipped.append(item)
-        update_initial_orientation_state()
-
-    def execute_controller_preseed(preseed_plan: dict[str, Any], preseed_index: int) -> tuple[dict[str, Any], dict[str, Any]]:
-        preseed_tool = str(preseed_plan["tool"])
-        preseed_args = dict(preseed_plan["arguments"])
-        preseed_event = str(preseed_plan["event"])
-        preseed_result_event = str(preseed_plan["result_event"])
-        preseed_reason = str(preseed_plan["reason"])
-        internal_preseed_args = sanitize_tool_args(
-            preseed_tool, dict(preseed_args), original_args, public_tool_name
-        )
-        preseed_cache_key = _tool_cache_key(preseed_tool, internal_preseed_args)
-        state["status_message"] = preseed_event.replace("_", " ")
-        write_agent_job_state(state)
-        append_agent_event(
-            job_id,
-            preseed_event,
-            f"Executing deterministic {preseed_tool} preseed.",
-            {
-                "tool": preseed_tool,
-                "arguments": preseed_args,
-                "cache_key": preseed_cache_key,
-                "preseed_reason": preseed_reason,
-                "preseed_index": preseed_index,
-                "dynamic_initial_orientation": bool(preseed_plan.get("dynamic_initial_orientation")),
-            },
-            step=0,
-        )
-        try:
-            preseed_result = dispatch_tool(
-                preseed_tool,
-                internal_preseed_args,
-                root,
-                allow_command=True,
-                user_consent=str(original_args.get("user_consent") or state.get("user_consent") or ""),
-            )
-        except Exception as exc:  # pragma: no cover - defensive artifact preservation
-            preseed_result = {
-                "ok": False,
-                "tool": preseed_tool,
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-                "traceback_tail": traceback.format_exc()[-4000:],
-            }
-        tool_results_dir = root / "tool-results"
-        tool_results_dir.mkdir(parents=True, exist_ok=True)
-        suffix = str(preseed_plan["artifact_suffix"]).replace("\\", "__").replace("/", "__")
-        preseed_path = tool_results_dir / f"step-000-{preseed_index:02d}-controller_preseed_{suffix}.json"
-        write_json(preseed_path, preseed_result)
-        compact_preseed = compact_tool_result_for_planner(
-            preseed_tool, preseed_result if isinstance(preseed_result, dict) else {}
-        )
-        compact_preseed.update({
-            "artifact": str(preseed_path),
-            "controller_preseed": True,
-            "preseed_reason": preseed_reason,
-            "preseed_index": preseed_index,
-            "dynamic_initial_orientation": bool(preseed_plan.get("dynamic_initial_orientation")),
-        })
-        for metadata_key in ("preplanner_rag", "ranked_preplanner_paths"):
-            if preseed_plan.get(metadata_key) not in (None, "", [], {}):
-                compact_preseed[metadata_key] = preseed_plan[metadata_key]
-        if preseed_cache_key:
-            compact_preseed["cache_key"] = preseed_cache_key
-        append_agent_event(
-            job_id,
-            preseed_result_event,
-            f"{preseed_tool} preseed ok={bool(compact_preseed.get('ok'))}.",
-            compact_preseed,
-            step=0,
-        )
-        row = {
-            "step": 0,
-            "preseed_index": preseed_index,
-            "decision": {
-                "action": "controller_preseed",
-                "tool": preseed_tool,
-                "arguments": preseed_args,
-                "reason": preseed_reason,
-            },
-            "tool_result": compact_preseed,
-        }
-        loop_state.append_history_row(row)
-        loop_controller.persist_turn_memory(row)
-        update_initial_orientation_state()
-        return preseed_result if isinstance(preseed_result, dict) else {}, compact_preseed
-
-    def execute_dynamic_initial_orientation(root_result: dict[str, Any], preseed_index: int) -> int:
-        if not root_result.get("ok"):
-            return preseed_index
-        doc_plan, skipped = _controller_initial_doc_preseed_plan(root_result)
-        add_initial_orientation_skipped(skipped)
-        if doc_plan:
-            execute_controller_preseed(doc_plan, preseed_index)
-            preseed_index += 1
-
-        area_plans, skipped = _controller_initial_area_list_plans(root_result)
-        add_initial_orientation_skipped(skipped)
-        for area_plan in area_plans:
-            area_list_result, _area_compact = execute_controller_preseed(area_plan, preseed_index)
-            preseed_index += 1
-            area_read_plan, skipped = _controller_initial_area_read_plan(area_list_result)
-            add_initial_orientation_skipped(skipped)
-            if area_read_plan:
-                execute_controller_preseed(area_read_plan, preseed_index)
-                preseed_index += 1
-# Shadow evaluator invocation after legacy flow completes
-        if AICARMINE_ORIENTATION_LANE_MODE == "shadow":
-            semantic_intent = (
-                preplanner_query_plan.get("semantic_intent")
-                if (
-                    isinstance(preplanner_query_plan, dict)
-                    and isinstance(
-                        preplanner_query_plan.get("semantic_intent"),
-                        dict,
-                    )
-                )
-                else {}
-            )
-            try:
-                shadow_evaluation = evaluate_initial_orientation_shadow(
-                    requested_mode=AICARMINE_ORIENTATION_LANE_MODE,
-                    root_result=root_result,
-                    goal=state.get("goal"),
-                    semantic_intent=semantic_intent,
-                    doc_plan=doc_plan,
-                    area_plans=area_plans,
-                    candidate_pool_fn=(
-                        _controller_initial_orientation_candidate_pool
-                    ),
-                    selector_fn=_controller_orientation_model_select,
-                    effective_mode_fn=_orientation_shadow_effective_mode,
-                    legacy_selected_ids_fn=(
-                        _orientation_legacy_selected_candidate_ids
-                    ),
-                    selection_metrics_fn=(
-                        _orientation_shadow_selection_metrics
-                    ),
-                )
-            except Exception:
-                shadow_evaluation = None
-            if isinstance(shadow_evaluation, dict):
-                shadow_event_payload = deepcopy(shadow_evaluation)
-                shadow_event_payload["preseed_index_after_legacy"] = int(
-                    preseed_index
-                )
-                try:
-                    append_agent_event(
-                        job_id,
-                        "orientation_shadow_evaluated",
-                        (
-                            "Initial orientation shadow evaluation completed "
-                            f"with status={shadow_evaluation.get('status')}."
-                        ),
-                        shadow_event_payload,
-                        step=0,
-                    )
-                except Exception:
-                    pass
-
-        return preseed_index
 
     preseed_index = 1
     preplanner_args = dict(original_args)

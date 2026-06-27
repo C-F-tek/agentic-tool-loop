@@ -18,6 +18,10 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+@workspace
+*.txt
+*.old
+*.OLD
 
 # Secrets and local environment
 secrets/
@@ -30,6 +34,7 @@ secrets/
 *.pfx
 *.dpapi
 # test*
+services/aicarmine_broker/planner/planner
 
 # OpenWebUI local installation/data. Keep only local descriptors.
 openwebui-data/**

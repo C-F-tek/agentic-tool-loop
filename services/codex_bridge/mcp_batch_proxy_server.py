@@ -223,7 +223,7 @@ def _mcp_batch_health_handler(args: Dict[str, Any], root: Path) -> Dict[str, Any
 
 def _mcp_batch_list_servers_handler(args: Dict[str, Any], root: Path) -> Dict[str, Any]:
     """List available MCP servers and their tools."""
-    from repo_mcp_common import _parse_mcp_messages, _frame
+    from ops_mcp_server import _parse_mcp_messages, _frame
     
     servers_info = []
     
