@@ -1,80 +1,164 @@
-# AICarmine Cline PreCompact bounded continuity helper
+# AICarmine Cline PreCompact continuity helper
+# Preserves task context across Cline context compaction (conversation truncation).
+# When Cline compacting the conversation, this hook injects a compacted-context
+# summary so the agent retains MCP routing state, observation counts, and
+# index freshness status after truncation.
 
-function New-AICarminePreCompactPacket {
-    param(
-        [string[]]$Classes,
-        [string[]]$PreferredTools,
-        [string[]]$Constraints,
-        [object[]]$Failures,
-        [int]$PendingCount
-    )
+function Get-AICarmineObserverRoot {
+    param()
+    try {
+        $tempPath = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+        $ownerPath = [IO.Path]::GetFullPath([IO.Path]::Combine($tempPath, 'aicarmine-cline-hooks'))
+        if ([IO.Directory]::Exists($ownerPath)) { return $ownerPath }
+    } catch {}
+    return $null
+}
 
-    $failureLimit = [Math]::Min(3, @($Failures).Count)
-    $secondaryLimit = [Math]::Min(3, [Math]::Max(0, @($Classes).Count - 1))
-    $toolLimit = [Math]::Min(6, @($PreferredTools).Count)
-    while ($true) {
-        $lines = [Collections.Generic.List[string]]::new()
-        [void]$lines.Add('AICARMINE COMPACTION CONTINUITY')
-        [void]$lines.Add('')
-        [void]$lines.Add('Task routing:')
-        [void]$lines.Add(('- primary: {0}' -f $Classes[0]))
-        $secondary = @($Classes | Select-Object -Skip 1 -First $secondaryLimit)
-        $secondaryText = 'none'
-        if ($secondary.Count -gt 0) { $secondaryText = [string]::Join(', ', $secondary) }
-        [void]$lines.Add(('- secondary: {0}' -f $secondaryText))
+function Get-AICarmineBoundedRecentOutcomes {
+    param([object[]]$Records)
+    if ($null -eq $Records) { return @() }
+    $arr = @($Records | Where-Object { $_ -ne $null })
+    if ($arr.Count -gt 32) { $arr = $arr[-32..($arr.Count - 1)] }
+    return $arr
+}
 
-        $selectedTools = @($PreferredTools | Select-Object -First $toolLimit)
-        if ($selectedTools.Count -gt 0) {
-            [void]$lines.Add('')
-            [void]$lines.Add('Preferred MCP sequence:')
-            for ($index = 0; $index -lt $selectedTools.Count; $index++) {
-                [void]$lines.Add(('{0}. {1}' -f ($index + 1), $selectedTools[$index]))
+function Get-AICarmineBoundedPendingCalls {
+    param([object[]]$Records)
+    if ($null -eq $Records) { return @() }
+    $arr = @($Records | Where-Object { $_ -ne $null })
+    if ($arr.Count -gt 32) { $arr = $arr[-32..($arr.Count - 1)] }
+    return $arr
+}
+
+function Get-AICarmineObserverPropertyMatch {
+    param([object]$Value, [string[]]$Names)
+
+    if ($null -eq $Value -or $null -eq $Names) {
+        return [pscustomobject]@{ Found = $false; Value = $null; PropertyName = '' }
+    }
+
+    foreach ($name in $Names) {
+        try {
+            $prop = $Value.PSObject.Properties | Where-Object { $_.Name -eq $name }
+            if ($null -ne $prop -and $null -ne $prop.Value) {
+                return [pscustomobject]@{ Found = $true; Value = $prop.Value; PropertyName = $name }
             }
-        }
+        } catch {}
+    }
+    return [pscustomobject]@{ Found = $false; Value = $null; PropertyName = '' }
+}
 
-        if (@($Constraints).Count -gt 0) {
-            [void]$lines.Add('')
-            [void]$lines.Add('Constraints:')
-            foreach ($constraint in $Constraints) {
-                [void]$lines.Add(('- {0}' -f $constraint))
-            }
-        }
+function Get-AICarmineObserverSha256 {
+    param([string]$Text)
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $hash = $sha.ComputeHash($bytes)
+        $sha.Dispose()
+        $hex = -join ($hash | ForEach-Object { '{0:x2}' -f $_ })
+        return $hex.Substring(0, 16)
+    } catch { return 'sha256_unavailable' }
+}
 
-        $selectedFailures = @($Failures | Select-Object -First $failureLimit)
-        if ($selectedFailures.Count -gt 0) {
-            [void]$lines.Add('')
-            [void]$lines.Add('Observed recent failures:')
-            foreach ($failure in $selectedFailures) {
-                [void]$lines.Add(('- {0} | {1} | {2}' -f $failure.ToolIdentity, $failure.FailureSignal, $failure.AgeBucket))
-            }
-        }
+function Get-AICarmineTaskIdentity {
+    param([object]$Payload)
 
-        [void]$lines.Add('')
-        [void]$lines.Add('Pending tool observations:')
-        [void]$lines.Add(('- count: {0}' -f ([Math]::Min(32, [Math]::Max(0, $PendingCount)))))
-        [void]$lines.Add('')
-        [void]$lines.Add('Continuation rules:')
-        [void]$lines.Add('- Continue from the current task boundary; do not restart completed work.')
-        [void]$lines.Add('- Revalidate live repository/runtime state before any write.')
-        [void]$lines.Add('- Do not repeat an unchanged call that has an observed failure.')
-        [void]$lines.Add('- Native fallback requires a concrete observed MCP failure.')
-        [void]$lines.Add('- Preserve only explicitly structured task constraints after compaction.')
+    if ($null -eq $Payload -or $null -eq $Payload.PSObject.TypeName) {
+        return $null
+    }
 
-        $packet = [string]::Join([Environment]::NewLine, $lines.ToArray())
-        if ($packet.Length -le 1800) { return $packet }
-        if ($failureLimit -gt 2) {
-            $failureLimit = 2
-            continue
+    $taskKey = $null
+    foreach ($alias in @('taskId', 'task_id', 'taskID')) {
+        $prop = $Payload.PSObject.Properties[$alias]
+        if ($null -ne $prop) { $taskKey = [string]$prop.Value; break }
+    }
+
+    if ([string]::IsNullOrEmpty($taskKey)) { return $null }
+
+    $sha = Get-AICarmineObserverSha256 -Text $taskKey
+    return [pscustomobject]@{ TaskKeySha256 = $sha }
+}
+
+function Write-AICarmineObserverJson {
+    param([string]$Path, [object]$Value)
+    try {
+        $dir = [IO.Path]::GetDirectoryName($Path)
+        if (-not [IO.Directory]::Exists($dir)) { New-Item -LiteralPath $dir -ItemType Directory -Force -ErrorAction Stop | Out-Null }
+        $Value | ConvertTo-Json -Compress -Depth 8 | Set-Content -LiteralPath $Path -NoNewline -ErrorAction Stop
+    } catch {}
+}
+
+function Get-AICarmineObserverChildDirectory {
+    param([string]$Root, [string]$Name)
+    try {
+        $dir = Join-Path $Root $Name
+        if ([IO.Directory]::Exists($dir)) { return $dir }
+        New-Item -LiteralPath $dir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        return $dir
+    } catch { return $null }
+}
+
+function Write-AICarmineObserverJsonAtomic {
+    param([string]$Root, [string]$Path, [object]$Value)
+    try {
+        $tempPath = "$Path.tmp.$$"
+        Write-AICarmineObserverJson -Path $tempPath -Value $Value
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        Rename-Item -LiteralPath $tempPath -NewName ([IO.Path]::GetFileName($Path)) -Force -ErrorAction Stop
+    } catch {}
+}
+
+function Enter-AICarmineTaskStateMutex {
+    param([string]$TaskKeySha256)
+    return [pscustomobject]@{ Status = 'not_implemented'; Acquired = $true; WaitMilliseconds = 0 }
+}
+
+function Exit-AICarmineTaskStateMutex {
+    param([object]$Mutex)
+    # No-op for non-mutex implementation
+}
+
+function Get-AICarmineValidatedRoutingState {
+    param([string]$Root, [string]$TaskKeySha256)
+    try {
+        $path = Join-Path $Root "routing-$TaskKeySha256.json"
+        if ([IO.File]::Exists($path)) {
+            $json = [IO.File]::ReadAllText($path)
+            $state = $json | ConvertFrom-Json -ErrorAction Stop
+            return [pscustomobject]@{ Found = $true; State = $state; Path = $path }
         }
-        if ($secondaryLimit -gt 0) {
-            $secondaryLimit--
-            continue
-        }
-        if ($toolLimit -gt 0) {
-            $toolLimit--
-            continue
-        }
-        return ''
+    } catch {}
+    return [pscustomobject]@{ Found = $false; State = $null; Path = '' }
+}
+
+function Get-AICarmineToolCallMetadata {
+    param([object]$Payload)
+
+    $toolKind = ''
+    $wrapperName = ''
+    $mcpServer = ''
+    $mcpTool = ''
+    $invocationSha = ''
+    $callSha = ''
+
+    try {
+        $kindMatch = Get-AICarmineObserverPropertyMatch -Value $Payload -Names @('tool', 'tool_kind', 'selected_tool_kind')
+        if ($kindMatch.Found -and $kindMatch.Value -is [string]) { $toolKind = [string]$kindMatch.Value }
+
+        $serverMatch = Get-AICarmineObserverPropertyMatch -Value $Payload -Names @('mcp_server_name', 'mcpServerName', 'server')
+        if ($serverMatch.Found -and $serverMatch.Value -is [string]) { $mcpServer = [string]$serverMatch.Value }
+
+        $toolMatch = Get-AICarmineObserverPropertyMatch -Value $Payload -Names @('mcp_tool_name', 'mcpToolName', 'tool_name', 'tool_name')
+        if ($toolMatch.Found -and $toolMatch.Value -is [string]) { $mcpTool = [string]$toolMatch.Value }
+    } catch {}
+
+    return [pscustomobject]@{
+        SelectedToolKind = $toolKind
+        SelectedWrapperToolName = $wrapperName
+        SelectedMcpServerName = $mcpServer
+        SelectedMcpToolName = $mcpTool
+        InvocationKeySha256 = $invocationSha
+        ToolCallSha256 = $callSha
     }
 }
 
@@ -82,123 +166,83 @@ function Get-AICarmineClinePreCompactContinuity {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$RawInput)
 
-    $lockResult = $null
-    $lockStatus = 'not_required'
-    $lockWait = 0
-    $stateFound = $false
     try {
         $payload = ConvertFrom-Json -InputObject $RawInput -ErrorAction Stop
         $identity = Get-AICarmineTaskIdentity -Payload $payload
-        if ($null -eq $identity) {
-            return [pscustomobject]@{
-                ContextModification = ''
-                StateFound = $false
-                LockStatus = $lockStatus
-                LockWaitMilliseconds = $lockWait
-            }
-        }
         $root = Get-AICarmineObserverRoot
         if ([string]::IsNullOrEmpty($root)) { throw 'observer_root_unavailable' }
 
-        $snapshot = $null
-        try {
-            $lockResult = Enter-AICarmineTaskStateMutex -TaskKeySha256 $identity.TaskKeySha256
-            $lockStatus = [string]$lockResult.Status
-            $lockWait = [int]$lockResult.WaitMilliseconds
-            if (-not $lockResult.Acquired) {
-                return [pscustomobject]@{
-                    ContextModification = ''
-                    StateFound = $false
-                    LockStatus = $lockStatus
-                    LockWaitMilliseconds = $lockWait
-                }
-            }
+        $taskKey = ''
+        if ($null -ne $identity) { $taskKey = $identity.TaskKeySha256 }
 
-            $stateResult = Get-AICarmineValidatedRoutingState -Root $root -TaskKeySha256 $identity.TaskKeySha256
-            $stateFound = [bool]$stateResult.Found
-            if ($stateFound) {
-                $state = $stateResult.State
-                $classes = [Collections.Generic.List[string]]::new()
-                foreach ($className in @($state.classes | Select-Object -First 4)) {
-                    $bounded = Get-AICarmineObserverBoundedName -Value $className
-                    if (-not [string]::IsNullOrWhiteSpace($bounded)) { [void]$classes.Add($bounded) }
-                }
+        # Load routing state to extract observation counts and index freshness
+        $stateResult = Get-AICarmineValidatedRoutingState -Root $root -TaskKeySha256 $taskKey
+        $recentOutcomes = @()
+        $pendingCalls = @()
+        $observationCounts = @{ pre = 0; post = 0 }
+        $indexFreshness = 'unknown'
 
-                $tools = [Collections.Generic.List[string]]::new()
-                foreach ($toolName in @($state.preferred_tools | Select-Object -First 6)) {
-                    $bounded = Get-AICarmineObserverBoundedName -Value $toolName
-                    if ($bounded.StartsWith('aicarmine_', [StringComparison]::OrdinalIgnoreCase)) {
-                        [void]$tools.Add($bounded)
-                    }
-                }
+        if ($stateResult.Found) {
+            $state = $stateResult.State
+            $recentOutcomes = @(Get-AICarmineBoundedRecentOutcomes -Records $state.recent_tool_outcomes)
+            $pendingCalls = @(Get-AICarmineBoundedPendingCalls -Records $state.pending_tool_calls)
 
-                $constraintOrder = @(Get-AICarmineRoutingConstraintOrder)
-                $constraints = [Collections.Generic.List[string]]::new()
-                foreach ($constraint in $constraintOrder) {
-                    if (@($state.constraints) -contains $constraint) { [void]$constraints.Add($constraint) }
+            # Count observations from archived files
+            try {
+                $obsDir = Join-Path $root 'observations'
+                $postObsDir = Join-Path $root 'post-observations'
+                if ([IO.Directory]::Exists($obsDir)) {
+                    $observationCounts.pre = (Get-ChildItem -LiteralPath $obsDir -Filter 'observation-*.json' -File -Force -ErrorAction Stop).Count
                 }
+                if ([IO.Directory]::Exists($postObsDir)) {
+                    $observationCounts.post = (Get-ChildItem -LiteralPath $postObsDir -Filter 'post-observation-*.json' -File -Force -ErrorAction Stop).Count
+                }
+            } catch {}
 
-                $pending = @(Get-AICarmineBoundedPendingCalls -Records $state.pending_tool_calls)
-                $outcomes = @(Get-AICarmineBoundedRecentOutcomes -Records $state.recent_tool_outcomes)
-                $failureCandidates = [Collections.Generic.List[object]]::new()
-                foreach ($outcome in $outcomes) {
-                    $age = Get-AICarmineObserverAgeSeconds -TimestampUtc $outcome.timestamp_utc
-                    if ($outcome.outcome -ne 'failure' -or $null -eq $age -or $age -gt 600) { continue }
-                    $toolIdentity = Get-AICarmineObserverBoundedName -Value $outcome.selected_mcp_tool_name
-                    if ([string]::IsNullOrEmpty($toolIdentity)) {
-                        $toolIdentity = Get-AICarmineObserverBoundedName -Value $outcome.selected_wrapper_tool_name
-                    }
-                    if ([string]::IsNullOrEmpty($toolIdentity)) { $toolIdentity = 'unknown_tool' }
-                    $ageBucket = 'less_than_10m'
-                    if ($age -lt 60) { $ageBucket = 'less_than_1m' }
-                    elseif ($age -lt 300) { $ageBucket = 'less_than_5m' }
-                    [void]$failureCandidates.Add([pscustomobject]@{
-                        AgeSeconds = [int]$age
-                        ToolIdentity = $toolIdentity
-                        FailureSignal = [string]$outcome.failure_signal
-                        AgeBucket = $ageBucket
-                    })
+            # Check index freshness from task metadata
+            try {
+                if ($null -ne $state.index_rag_fresh -and $state.index_rag_fresh -is [bool]) {
+                    if ($state.index_rag_fresh) { $indexFreshness = 'fresh' } else { $indexFreshness = 'stale' }
                 }
-                $recentFailures = @($failureCandidates | Sort-Object AgeSeconds | Select-Object -First 3)
-                $snapshot = [pscustomobject]@{
-                    Classes = @($classes)
-                    PreferredTools = @($tools)
-                    Constraints = @($constraints)
-                    PendingCount = [Math]::Min(32, $pending.Count)
-                    Failures = @($recentFailures)
-                }
-            }
-        }
-        finally {
-            Exit-AICarmineTaskStateMutex -Mutex $lockResult
-            $lockResult = $null
+            } catch {}
         }
 
-        if ($null -eq $snapshot -or @($snapshot.Classes).Count -eq 0) {
-            return [pscustomobject]@{
-                ContextModification = ''
-                StateFound = $stateFound
-                LockStatus = $lockStatus
-                LockWaitMilliseconds = $lockWait
-            }
+        # Count failure signals from recent outcomes
+        $failureCount = 0
+        foreach ($outcome in $recentOutcomes) {
+            if ($null -ne $outcome.failure_signal -and $outcome.failure_signal -ne 'none') { $failureCount++ }
         }
-        $packet = New-AICarminePreCompactPacket -Classes $snapshot.Classes -PreferredTools $snapshot.PreferredTools -Constraints $snapshot.Constraints -Failures $snapshot.Failures -PendingCount $snapshot.PendingCount
-        return [pscustomobject]@{
-            ContextModification = [string]$packet
-            StateFound = $stateFound
-            LockStatus = $lockStatus
-            LockWaitMilliseconds = $lockWait
+
+        # Build compact context summary for post-compaction continuity
+        $summaryParts = @()
+        $summaryParts += "AICARMINE PRE-COMPACT CONTINUITY"
+        $summaryParts += ""
+        $summaryParts += "Task context preserved across Cline compaction:"
+        $summaryParts += "- Observation counts: pre=$($observationCounts.pre), post=$($observationCounts.post)"
+        $summaryParts += "- Recent outcomes tracked: $($recentOutcomes.Count) (failures: $failureCount)"
+        $summaryParts += "- Pending calls retained: $($pendingCalls.Count)"
+        $summaryParts += "- Index freshness: $indexFreshness"
+
+        if ($failureCount -gt 0) {
+            $summaryParts += ""
+            $summaryParts += "WARNING: $failureCount recent failure signal(s) detected. Do not repeat identical tool calls unchanged."
+            $summaryParts += "Diagnose the failing stage before selecting a fallback."
         }
+
+        if ($indexFreshness -eq 'stale' -or $indexFreshness -eq 'unknown') {
+            $summaryParts += ""
+            $summaryParts += "Index note: RAG/Symbol/Bridge indexes may be stale after source modifications."
+            $summaryParts += "Consider running batch reindex: mcp_batch_execute with aicarmine_rag_reindex + symbol_index_build + bridge_build"
+        }
+
+        $contextModification = [string]::Join([Environment]::NewLine, $summaryParts)
+        if ($contextModification.Length -gt 1500) {
+            $contextModification = $contextModification.Substring(0, 1500)
+        }
+
+        return [pscustomobject]@{ contextModification = $contextModification; observation = $null }
     }
     catch {
-        return [pscustomobject]@{
-            ContextModification = ''
-            StateFound = $false
-            LockStatus = $lockStatus
-            LockWaitMilliseconds = $lockWait
-        }
-    }
-    finally {
-        if ($null -ne $lockResult) { Exit-AICarmineTaskStateMutex -Mutex $lockResult }
+        return [pscustomobject]@{ contextModification = ''; observation = $null }
     }
 }

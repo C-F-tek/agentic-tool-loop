@@ -226,7 +226,7 @@ Planner selects tools through the 3572 registry only. Key families:
 
 ## MCP Server Inventory
 
-The workspace includes 24+ MCP servers for external tool access:
+The workspace includes 25+ MCP servers for external tool access:
 
 | Category | Servers | Tools | Purpose |
 |----------|---------|-------|---------|
@@ -234,11 +234,12 @@ The workspace includes 24+ MCP servers for external tool access:
 | **Data & query** | `rag`, `sqlite_readonly`, `project_memory`, `index_bridge` | 19 | RAG search, SQLite queries, memory management |
 | **Job & artifacts** | `job_artifact`, `job_view`, `git_readonly` | 23 | Events, final state, tool results, Git history |
 | **Operations** | `codex_ops`, `repo_symbol_index`, `test_discovery`, `code_dep_graph` | 29 | MCP inventory, symbols, tests, dependency analysis |
+| **Batch proxy** | `mcp_batch_proxy` | 3 | Health check, list servers, parallel batch execution |
 | **Refactoring** | `refactor` | 8 | libcst/rope/bowler-based code transformations |
 | **Agent clients** | `local_subagent`, `agentic_loop_client`, `ollama_subagent` | 10 | Subagent execution, GPU Ollama access |
 | **Formatting/linting** | `prettier`, `biome`, `ruff`, `eslint`, `black` | — | Cline built-in wrappers |
 
-See `AGENTS.md` section "Available MCP Servers" and `services/MCP_OPERATIONAL_SUMMARY.md` for complete tool lists.
+See `AGENTS.md` section "Available MCP Servers", `services/MCP_OPERATIONAL_SUMMARY.md`, and `services/codex_bridge/mcp_batch_proxy_server.py` for complete tool lists.
 
 ---
 

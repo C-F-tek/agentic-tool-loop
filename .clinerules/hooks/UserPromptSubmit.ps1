@@ -3,6 +3,7 @@
 
 $rawInput = ''
 $routingHint = ''
+$errorMessages = @()
 try {
     $rawInput = [Console]::In.ReadToEnd()
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_contract_probe.ps1')
@@ -14,11 +15,12 @@ try {
 }
 catch {
     # Hooks are fail-open; probe failures must not affect Cline.
+    $errorMessages += "UserPromptSubmit failed: $_"
     $routingHint = ''
 }
 
 [ordered]@{
     cancel = $false
     contextModification = $routingHint
-    errorMessage = ''
+    errorMessage = ($errorMessages -join '; ')
 } | ConvertTo-Json -Compress

@@ -3,6 +3,7 @@
 
 $rawInput = ''
 $contextModification = ''
+$errorMessages = @()
 try {
     $rawInput = [Console]::In.ReadToEnd()
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_contract_probe.ps1')
@@ -15,11 +16,12 @@ try {
     }
 }
 catch {
+    $errorMessages += "PostToolUse failed: $_"
     $contextModification = ''
 }
 
 [ordered]@{
     cancel = $false
     contextModification = $contextModification
-    errorMessage = ''
+    errorMessage = ($errorMessages -join '; ')
 } | ConvertTo-Json -Compress

@@ -174,6 +174,7 @@ function Get-AICarmineMcpRoutingHint {
             code_analysis = 0
             data_query = 0
             semantic_search = 0
+            mcp_batch_proxy = 0
         }
 
         if ($reviewedProbe) { $scores.repository_validation += 100 }
@@ -287,6 +288,15 @@ function Get-AICarmineMcpRoutingHint {
             $scores.semantic_search += 60
         }
 
+        # Batch proxy scoring — detect parallel MCP operations or batch execution requests
+        if ($normalized -match '\b(?:batch|parallel|multiple.*tool|multi.*server|concurrent.*mcp|batch.*execute|batch.*health)\b') {
+            $scores.mcp_batch_proxy += 100
+        }
+        if ($normalized -match '\b(?:list.*server|list.*tool|inventory|probe.*server)\b' -and
+            $normalized -match '\b(?:search|health|status|check)\b') {
+            $scores.mcp_batch_proxy += 60
+        }
+
         $classes = [System.Collections.Generic.List[string]]::new()
         $tools = [System.Collections.Generic.List[string]]::new()
         $tieOrder = @{
@@ -302,12 +312,13 @@ function Get-AICarmineMcpRoutingHint {
             git_readonly = 9
             job_diagnostics = 10
             semantic_search = 11
+            mcp_batch_proxy = 12
         }
         $rankedClasses = @(
             $scores.GetEnumerator() |
                 Where-Object { [int]$_.Value -ge 20 } |
                 Sort-Object -Property @{ Expression = { -[int]$_.Value } }, @{ Expression = { $tieOrder[[string]$_.Key] } } |
-                Select-Object -First 7
+                Select-Object -First 8
         )
         foreach ($entry in $rankedClasses) {
             [void]$classes.Add([string]$entry.Key)
@@ -426,6 +437,11 @@ function Get-AICarmineMcpRoutingHint {
                         Add-AICarmineTool -Name 'aicarmine_index_bridge_get_memory'
                     }
                 }
+                'mcp_batch_proxy' {
+                    Add-AICarmineTool -Name 'mcp_batch_health'
+                    Add-AICarmineTool -Name 'mcp_batch_list_servers'
+                    Add-AICarmineTool -Name 'mcp_batch_execute'
+                }
                 'repository_refactor' {
                     Add-AICarmineTool -Name 'refactor_health'
                     if ($normalized -match '\b(?:cross-file|rope|project-wide)\b') {
@@ -520,6 +536,11 @@ function Get-AICarmineMcpRoutingHint {
         [void]$lines.Add('- Use native fallback only after a concrete MCP failure.')
         [void]$lines.Add('- Do not repeat an unchanged failed tool call.')
         [void]$lines.Add('- Emit MCP arguments as structured data, not shell-built JSON.')
+        if ($classes.Contains('mcp_batch_proxy')) {
+            [void]$lines.Add('- Use mcp_batch_execute for parallel operations across multiple MCP servers.')
+            [void]$lines.Add('- Each operation in batch must have {server, tool, args} keys.')
+            [void]$lines.Add('- Set compress=true when response exceeds 10KB threshold.')
+        }
 
         if ($explicitExistingDiff) {
             [void]$lines.Add('- Use the already-provided unified_diff; do not regenerate it.')

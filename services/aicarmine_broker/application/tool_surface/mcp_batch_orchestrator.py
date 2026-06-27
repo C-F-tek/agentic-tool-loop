@@ -372,15 +372,105 @@ class MCPBatchOrchestrator:
                 duration_ms=duration_ms,
             )
     
-    def _call_mcp_tool(self, server: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Call an MCP tool via the use_mcp_tool pattern."""
-        # This is a placeholder — actual implementation would use subprocess/stdio
-        # to communicate with the MCP server.
-        # For now, return a structured error.
-        raise NotImplementedError(
-            f"MCP tool call not implemented: {server}:{tool}. "
-            "Use the MCPBatchOrchestrator with actual MCP server connections."
-        )
+    def _call_mcp_tool(self, server: str, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Call an MCP tool via subprocess/stdio JSON-RPC protocol.
+        
+        This implements the MCP stdio transport layer for communicating
+        with local MCP servers. Each server expects a specific Python
+        script path and JSON-RPC message format.
+        
+        Args:
+            server: MCP server identifier (e.g., 'aicarmine_repo_search_det')
+            tool_name: Tool name to call (e.g., 'repo_search_rg')
+            args: Tool arguments as a dict
+            
+        Returns:
+            dict: Tool result from the MCP server
+            
+        Raises:
+            NotImplementedError: If the MCP server is not configured
+        """
+        import subprocess
+        import json
+        
+        # Map server names to their actual Python script paths
+        SERVER_SCRIPTS = {
+            "aicarmine_rag": r"C:\Users\carmi\AI\services\codex_bridge\rag_mcp_server.py",
+            "aicarmine_repo_state": r"C:\Users\carmi\AI\services\codex_bridge\repo_state_mcp_server.py",
+            "aicarmine_repo_validate": r"C:\Users\carmi\AI\services\codex_bridge\repo_validate_mcp_server.py",
+            "aicarmine_repo_search_det": r"C:\Users\carmi\AI\services\codex_bridge\repo_search_det_mcp_server.py",
+            "aicarmine_repo_code": r"C:\Users\carmi\AI\services\codex_bridge\repo_code_mcp_server.py",
+            "aicarmine_codex_ops": r"C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py",
+            "aicarmine_job_view": r"C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py",
+            "aicarmine_job_artifact": r"C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py",
+            "aicarmine_git_readonly": r"C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py",
+            "aicarmine_sqlite_readonly": r"C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py",
+            "aicarmine_project_memory": r"C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py",
+            "aicarmine_code_dep_graph": r"C:\Users\carmi\AI\services\codex_bridge\code_dep_graph_mcp_server.py",
+            "aicarmine_repo_symbol_index": r"C:\Users\carmi\AI\services\codex_bridge\repo_symbol_index_mcp_server.py",
+            "aicarmine_test_discovery": r"C:\Users\carmi\AI\services\codex_bridge\test_discovery_mcp_server.py",
+            "aicarmine_index_bridge": r"C:\Users\carmi\AI\services\codex_bridge\index_bridge_mcp_server.py",
+        }
+        
+        script_path = SERVER_SCRIPTS.get(server)
+        if not script_path:
+            raise ValueError(f"MCP server '{server}' is not configured. Add it to SERVER_SCRIPTS.")
+        
+        # Build JSON-RPC request for MCP tools/call method
+        request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": args,
+            }
+        }
+        
+        # Execute MCP server as subprocess with content-length transport
+        try:
+            process = subprocess.Popen(
+                ["python", "-u", script_path],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=0,  # Line-buffered for JSON-RPC
+            )
+            
+            # Send JSON-RPC request with MCP content-length header
+            request_json = json.dumps(request)
+            header = f"Content-Length: {len(request_json.encode('utf-8'))}\r\n\r\n"
+            
+            process.stdin.write(header)
+            process.stdin.write(request_json)
+            process.stdin.flush()
+            
+            # Read response
+            response = process.stdout.read()
+            process.stdin.close()
+            
+            if response:
+                result = json.loads(response)
+                return result.get("result", {})
+            else:
+                stderr_output = process.stderr.read()
+                raise RuntimeError(f"MCP server returned empty response. stderr: {stderr_output[:500]}")
+                
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"MCP server script not found: {script_path}. "
+                f"Ensure the MCP server is installed and the path is correct."
+            )
+        except subprocess.TimeoutExpired:
+            process.kill()
+            raise RuntimeError(f"MCP tool call timed out: {server}:{tool_name}")
+        except json.JSONDecodeError as exc:
+            stderr_output = process.stderr.read() if process.stderr else ""
+            raise RuntimeError(
+                f"Invalid JSON response from MCP server. stderr: {stderr_output[:500]}\n"
+                f"Response: {response[:200] if 'response' in locals() else 'N/A'}"
+            ) from exc
     
     def get_stats(self) -> dict[str, Any]:
         """Get batch execution statistics."""

@@ -38,7 +38,7 @@ function Get-AICarminePostOutcomeMetadata {
     $resultValue = $resultMatch.Value
     $isError = Get-AICarminePostOutcomeField -Payload $Payload -ResultValue $resultValue -Names @('isError', 'is_error')
     $success = Get-AICarminePostOutcomeField -Payload $Payload -ResultValue $resultValue -Names @('success', 'ok')
-    $error = Get-AICarminePostOutcomeField -Payload $Payload -ResultValue $resultValue -Names @('error', 'errorMessage', 'error_message')
+    $errorField = Get-AICarminePostOutcomeField -Payload $Payload -ResultValue $resultValue -Names @('error', 'errorMessage', 'error_message')
     $status = Get-AICarminePostOutcomeField -Payload $Payload -ResultValue $resultValue -Names @('status', 'state')
 
     $outcome = 'unknown'
@@ -49,7 +49,7 @@ function Get-AICarminePostOutcomeMetadata {
     elseif ($success.Found -and $success.Value -is [bool] -and -not [bool]$success.Value) {
         $outcome = 'failure'; $failureSignal = 'success_false'
     }
-    elseif ($error.Found -and (Test-AICarminePostErrorPresent -Value $error.Value)) {
+    elseif ($errorField.Found -and (Test-AICarminePostErrorPresent -Value $errorField.Value)) {
         $outcome = 'failure'; $failureSignal = 'error_field_present'
     }
     elseif ($status.Found -and $status.Value -is [string] -and
@@ -76,10 +76,10 @@ function Get-AICarminePostOutcomeMetadata {
 
     $errorMessage = ''
     $errorObject = $null
-    if ($error.Found) {
-        if ($error.Value -is [string]) { $errorMessage = [string]$error.Value }
-        elseif ($null -ne $error.Value) {
-            $errorObject = $error.Value
+    if ($errorField.Found) {
+        if ($errorField.Value -is [string]) { $errorMessage = [string]$errorField.Value }
+        elseif ($null -ne $errorField.Value) {
+            $errorObject = $errorField.Value
             $message = Get-AICarmineObserverPropertyMatch -Value $errorObject -Names @('message', 'errorMessage', 'error_message')
             if ($message.Found -and $message.Value -is [string]) { $errorMessage = [string]$message.Value }
         }
