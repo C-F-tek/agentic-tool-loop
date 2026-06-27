@@ -25,6 +25,7 @@ from ..tool_surface.tool_dispatch import *
 from ...tool_contract import *
 from .error_result import build_error_result, build_success_result, propagate_error
 from .error_codes import ERROR_CODES
+from ..job.failure_counter import get_counter as _get_failure_counter
 
 # Batch guard builder helper for consistent error dict construction
 def _batch_guard(
@@ -1716,6 +1717,12 @@ def run_agentic_planner_job(
                 pass
             elif batch_guard:
                 append_agent_event(job_id, "planner_decision_rejected", batch_guard["summary"], batch_guard, step=step)
+                # Track failure counts for planner decision patterns
+                _failure_counter = _get_failure_counter()
+                if job_id:
+                    _gt = batch_guard.get("guard_type", "")
+                    if _gt:
+                        _failure_counter.increment(job_id, _gt)
                 row = {
                     "step": step,
                     "decision": {
@@ -2687,11 +2694,43 @@ def run_agentic_planner_job(
             tool_start_payload["semantic_step"] = semantic_step
         append_agent_event(job_id, "tool_start", f"Executing {tool}",
                             tool_start_payload, step=step)
-        result = dispatch_tool(
-            tool, internal_args, root,
-            allow_command=True,
-            user_consent=str(original_args.get("user_consent") or state.get("user_consent") or ""),
-        )
+        try:
+            result = dispatch_tool(
+                tool, internal_args, root,
+                allow_command=True,
+                user_consent=str(original_args.get("user_consent") or state.get("user_consent") or ""),
+            )
+        except Exception as exc:  # pragma: no cover - defensive artifact preservation
+            error_result = {
+                "ok": False,
+                "tool": tool,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "traceback_tail": traceback.format_exc()[-4000:],
+            }
+            append_agent_event(
+                job_id,
+                "tool_exception",
+                f"{tool} raised exception: {type(exc).__name__}: {str(exc)[:200]}",
+                error_result,
+                step=step,
+            )
+            tool_result_path = root / "tool-results" / f"step-{step:03d}-{tool}_ERROR.json"
+            write_json(tool_result_path, error_result)
+            compact_result = compact_tool_result_for_planner(tool, error_result)
+            compact_result["artifact"] = str(tool_result_path)
+            compact_result["exception"] = True
+            append_agent_event(job_id, "tool_result", f"{tool} FAILED: {type(exc).__name__}",
+                                compact_result, step=step)
+            row = {
+                "step": step,
+                "decision": {k: v for k, v in decision.items() if k != "raw_planner_text_preview"},
+                "tool_result": compact_result,
+            }
+            loop_state.append_history_row(row, update_evidence=False)
+            loop_controller.persist_turn_memory(row)
+            write_agent_job_state(state)
+            continue
         tool_result_path = root / "tool-results" / f"step-{step:03d}-{tool}.json"
         write_json(tool_result_path, result)
         compact_result = compact_tool_result_for_planner(tool, result if isinstance(result, dict) else {})
