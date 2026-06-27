@@ -134,6 +134,10 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
         "mcp_batch_proxy_server.py",
         None,  # Self-contained health via mcp_batch_health tool
     ),
+    "aicarmine_refactor": LocalMcpServer(
+        "refactor_mcp_server.py",
+        "refactor_health",
+    ),
 }
 
 

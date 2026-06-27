@@ -489,6 +489,33 @@
         "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
         "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
       }
+    },
+    "aicarmine_refactor": {
+      "autoApprove": [
+        "refactor_rename_symbol",
+        "refactor_rename_symbol_rope",
+        "refactor_add_parameter",
+        "refactor_extract_function",
+        "refactor_rename_project",
+        "refactor_rename_project_bowler",
+        "git_list_tracked_files",
+        "refactor_health"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+      "args": [
+        "-u",
+        "C:\\Users\\carmi\\AI\\services\\codex_bridge\\refactor_mcp_server.py"
+      ],
+      "cwd": "C:\\Users\\carmi\\AI",
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+        "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "C:\\Users\\carmi\\AI\\services\\useful_tools",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000"
+      }
     }
   }
 }

@@ -27,7 +27,7 @@ Before using ANY MCP tool for the first time in a task:
 | `aicarmine_code_dep_graph` | `aicarmine_code_*` | `aicarmine_code_dep_health`, `aicarmine_code_estimate_breakage_risk`, `aicarmine_code_find_callers` | `health`, `estimate_breakage_risk`, `find_callers` |
 | `aicarmine_repo_code` | `aicarmine_repo_*` | `aicarmine_repo_code_health`, `aicarmine_repo_code_propose_edit`, `aicarmine_repo_code_apply_patch` | `propose_edit`, `apply_patch`, `health` |
 | `aicarmine_wily` | `wily_*` | `wily_health`, `wily_report`, `wily_rank`, `ast_complexity_report`, `ast_file_metrics`, `ast_top_functions` | `complexity_report`, `file_metrics`, `top_functions` |
-| `aicarmine_refactor` | `refactor_*` | `refactor_rename_symbol`, `refactor_health` | `rename_symbol`, `health` |
+| `aicarmine_refactor` | `refactor_*` | `refactor_rename_symbol`, `refactor_rename_symbol_rope`, `refactor_add_parameter`, `refactor_extract_function`, `refactor_rename_project`, `refactor_rename_project_bowler`, `git_list_tracked_files`, `refactor_health` | `rename_symbol`, `health` |
 | `aicarmine_rag` | `aicarmine_rag_*` | `aicarmine_rag_health`, `aicarmine_rag_context`, `aicarmine_rag_index_status`, `aicarmine_rag_reindex` | `context`, `health`, `index_status` |
 | `aicarmine_repo_state` | `aicarmine_repo_state_*` | `aicarmine_repo_state_health`, `aicarmine_repo_state_status`, `aicarmine_repo_state_capabilities` | `status`, `capabilities`, `health` |
 | `aicarmine_git_readonly` | `aicarmine_git_*` | `aicarmine_git_readonly_health`, `aicarmine_git_readonly_diff`, `aicarmine_git_readonly_show` | `diff`, `show`, `log` |
