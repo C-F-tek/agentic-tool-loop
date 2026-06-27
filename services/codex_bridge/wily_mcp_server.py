@@ -153,9 +153,10 @@ def wily_report(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def wily_rank(args: dict[str, Any], root: Path) -> dict[str, Any]:
     """Rank files/functions by complexity metric."""
     del root
-    metric = str(args.get("metric", "cyclomatic"))
+    metric = str(args.get("metric", "cyclomatic.complexity"))
     limit = int(args.get("limit", 50))
-    result = _run_wily(["rank", "--metric", metric, "--limit", str(limit)])
+    # wily rank takes positional args: [PATH] [METRIC] and --limit flag
+    result = _run_wily(["rank", ".", metric, "--limit", str(limit)])
 
     return {
         "ok": result.get("ok"),
@@ -171,22 +172,34 @@ def wily_rank(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def wily_build(args: dict[str, Any], root: Path) -> dict[str, Any]:
     """Build/rebuild wily cache (delta or full)."""
     del root
-    mode = str(args.get("mode", "delta"))
-    result = _run_wily(["build"])
+    mode = str(args.get("mode", "full"))
+
+    # Build from services directory using filesystem archiver
+    services_dir = str(Path(__file__).resolve().parent.parent)
+    args_list = ["build", "-a", "filesystem", "-o", "cyclomatic,maintainability,raw,halstead"]
+
+    if mode == "full":
+        args_list.append("--max-revisions")
+        args_list.append("1")
+
+    # Add target files/dirs
+    args_list.append("services")
+
+    result = _run_wily(args_list)
 
     # Parse output for file count and revision count
     stdout = result.get("stdout", "")
     file_count = 0
     revision_count = 0
     for line in stdout.splitlines():
-        if "Processing" in line and "|" in line:
-            parts = line.split("|")
-            if len(parts) >= 3:
-                try:
-                    total = int(parts[-1].strip().split("/")[1] if "/" in parts[-1].strip() else "0/0")
-                    file_count = max(file_count, total)
-                except (ValueError, IndexError):
-                    pass
+        if "Found" in line and "revisions" in line:
+            try:
+                parts = line.split()
+                for i, p in enumerate(parts):
+                    if p.isdigit():
+                        revision_count = max(revision_count, int(p))
+            except (ValueError, IndexError):
+                pass
 
     return {
         "ok": result.get("ok"),
@@ -194,6 +207,7 @@ def wily_build(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "mcp_server": SERVER_NAME,
         "mode": mode,
         "file_count": file_count,
+        "revision_count": revision_count,
         "stdout": stdout[-5000:],
         "stderr": result.get("stderr", ""),
     }
