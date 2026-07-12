@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="980" height="640"/>
+  <text class="title" x="34" y="42">Model Export Flow</text>
+  <text class="subtitle" x="34" y="64">Current model export helper surface: CLI entry, config facade and lazy exporter compatibility module.</text>
+  <path class="arrow" d="M 284 170 L 370 170"/>
+  <text class="tiny" x="304" y="158">request</text>
+  <path class="arrow" d="M 600 170 L 682 170"/>
+  <text class="tiny" x="616" y="158">select exporter</text>
+  <path class="arrow" d="M 450 384 L 566 384"/>
+  <text class="tiny" x="474" y="372">write/run</text>
+  <a href="cli.py">
+    <rect class="box blue" x="64" y="118" width="220" height="104" rx="10"/>
+    <text class="label" x="80" y="145">CLI entry</text>
+    <text class="small" x="80" y="169">argparse only</text>
+    <text class="small" x="80" y="188">no heavy export logic</text>
+    <text class="small" x="80" y="207">delegates service</text>
+  </a>
+  <a href="cli.py">
+    <rect class="box green" x="370" y="118" width="230" height="104" rx="10"/>
+    <text class="label" x="386" y="145">CLI workflow</text>
+    <text class="small" x="386" y="169">parse request</text>
+    <text class="small" x="386" y="188">select export task</text>
+    <text class="small" x="386" y="207">write export result</text>
+  </a>
+  <a href="config.py">
+    <rect class="box orange" x="682" y="118" width="220" height="104" rx="10"/>
+    <text class="label" x="698" y="145">Config facade</text>
+    <text class="small" x="698" y="169">model/export settings</text>
+    <text class="small" x="698" y="188">compatibility helpers</text>
+    <text class="small" x="698" y="207">shared runtime env</text>
+  </a>
+  <a href="exporters.py">
+    <rect class="box gray" x="220" y="332" width="230" height="104" rx="10"/>
+    <text class="label" x="236" y="359">Lazy exporters</text>
+    <text class="small" x="236" y="383">historical names</text>
+    <text class="small" x="236" y="402">lazy compatibility</text>
+    <text class="small" x="236" y="421">no runtime bridge role</text>
+  </a>
+  <a href="MODULE_REFERENCE.md">
+    <rect class="box gray" x="566" y="332" width="230" height="104" rx="10"/>
+    <text class="label" x="582" y="359">Refactor target</text>
+    <text class="small" x="582" y="383">documented future split</text>
+    <text class="small" x="582" y="402">not current folder path</text>
+    <text class="small" x="582" y="421">see module reference</text>
+  </a>
+  <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
+  <a href="../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="602">Services flow</text></a>
+  <a href="MODULE_REFERENCE.md"><text class="link" x="300" y="602">Module ref</text></a>
+  <a href="README.md"><text class="link" x="414" y="602">README</text></a>
+</svg>

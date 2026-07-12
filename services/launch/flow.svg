@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="980" height="640"/>
+  <text class="title" x="34" y="42">Launcher Flow</text>
+  <text class="subtitle" x="34" y="64">Startup contract for env vars, venvs, ports, process matching and OpenWebUI registration.</text>
+  <path class="arrow" d="M 268 158 L 360 158"/>
+  <text class="tiny" x="280" y="146">env drives process</text>
+  <path class="arrow" d="M 590 158 L 676 158"/>
+  <text class="tiny" x="612" y="146">ollama checks</text>
+  <path class="arrow" d="M 268 358 L 360 358"/>
+  <text class="tiny" x="282" y="346">services before UI</text>
+  <path class="arrow" d="M 590 358 L 676 358"/>
+  <text class="tiny" x="614" y="346">register</text>
+  <a href="MODULE_REFERENCE.md">
+    <rect class="box orange" x="48" y="106" width="220" height="104" rx="10"/>
+    <text class="label" x="64" y="133">Env contract</text>
+    <text class="small" x="64" y="157">AICARMINE_LAB_REPO</text>
+    <text class="small" x="64" y="176">OPEN_TERMINAL_CWD</text>
+    <text class="small" x="64" y="195">OLLAMA runtime vars</text>
+  </a>
+  <a href="MODULE_REFERENCE.md">
+    <rect class="box green" x="360" y="106" width="230" height="104" rx="10"/>
+    <text class="label" x="376" y="133">Process contract</text>
+    <text class="small" x="376" y="157">port ownership</text>
+    <text class="small" x="376" y="176">command line matching</text>
+    <text class="small" x="376" y="195">no blind cleanup</text>
+  </a>
+  <a href="MODULE_REFERENCE.md">
+    <rect class="box gray" x="676" y="106" width="220" height="104" rx="10"/>
+    <text class="label" x="692" y="133">Ollama runtime</text>
+    <text class="small" x="692" y="157">11434 planner</text>
+    <text class="small" x="692" y="176">11435 task/repair</text>
+    <text class="small" x="692" y="195">distinct processes</text>
+  </a>
+  <a href="MODULE_REFERENCE.md">
+    <rect class="box green" x="48" y="300" width="220" height="116" rx="10"/>
+    <text class="label" x="64" y="327">Broker/bridge launch</text>
+    <text class="small" x="64" y="351">3572 labtools python</text>
+    <text class="small" x="64" y="370">3571 labtools python</text>
+    <text class="small" x="64" y="389">health checks</text>
+  </a>
+  <a href="README.md">
+    <rect class="box blue" x="360" y="300" width="230" height="116" rx="10"/>
+    <text class="label" x="376" y="327">OpenWebUI launch</text>
+    <text class="small" x="376" y="351">openwebui venv</text>
+    <text class="small" x="376" y="370">foreground UI</text>
+    <text class="small" x="376" y="389">custom tool config</text>
+  </a>
+  <a href="MODULE_REFERENCE.md">
+    <rect class="box orange" x="676" y="300" width="220" height="116" rx="10"/>
+    <text class="label" x="692" y="327">Tool registration</text>
+    <text class="small" x="692" y="351">targets 3571 OpenAPI</text>
+    <text class="small" x="692" y="370">public surface only</text>
+    <text class="small" x="692" y="389">vulkan_helper</text>
+  </a>
+  <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
+  <a href="../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="602">Services flow</text></a>
+  <a href="MODULE_REFERENCE.md"><text class="link" x="300" y="602">Module ref</text></a>
+  <a href="README.md"><text class="link" x="414" y="602">README</text></a>
+</svg>

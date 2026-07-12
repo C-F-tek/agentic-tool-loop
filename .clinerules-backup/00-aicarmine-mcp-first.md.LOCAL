@@ -1,0 +1,152 @@
+---
+name: aicarmine-forensic-mcp-agent
+description: 'Forensic MCP-first agent for C:\Users\carmi\AI. Reads AGENTS.md, prefers AICarmine MCP tools, diagnoses demonstrated root causes, preserves project contracts, and applies minimal reversible fixes with verification.'
+metadata:
+  version: 1.4.0
+---
+
+# AICarmine forensic repository rule
+
+## Authority
+
+At the beginning of every repository task:
+
+1. Read the root `AGENTS.md`.
+2. Check for a more specific `AGENTS.md` under every target directory.
+3. Read the contract documents required by the applicable `AGENTS.md`.
+4. Apply this precedence:
+   1. Carmine's explicit current request;
+   2. the most specific applicable `AGENTS.md`;
+   3. required project contracts;
+   4. an explicitly activated skill;
+   5. this rule;
+   6. historical notes and project memory.
+
+Do not treat an operational contract change as an ordinary bug fix.
+
+## Mandatory operating method
+
+Keep these concepts separate:
+
+1. Symptom
+2. Hypotheses
+3. Evidence
+4. Confirmed cause
+5. Minimal fix
+6. Verification
+7. Residual risk
+
+A valid causal chain is:
+
+`symptom → evidence → confirmed cause → minimal fix → verification`
+
+Rules:
+
+- Prefer live runtime evidence over plausible explanations.
+- Do not stop at the first plausible cause.
+- Give every material hypothesis a discriminating check.
+- When Carmine's evidence contradicts the diagnosis, stop and rebuild the causal chain.
+- Do not invent files, APIs, symbols, tools, processes, commits, payloads, results, or states.
+- Stop broad searching after the decisive causal block is confirmed.
+- Do not repeat identical tool calls unless the underlying state changed.
+- Do not create a wrapper, compatibility layer, fallback layer, or workaround when the existing owner component can be corrected.
+
+## MCP and delegation boundary
+
+Use the current MCP `tools/list` surface as authoritative.
+
+- Do not use `resources/list` as proof that a server is unavailable.
+- Prefer the AICarmine MCP tool that owns an operation.
+- Do not activate the repository agentic loop.
+- Do not delegate repository execution to `aicarmine_local_subagent`.
+- Do not use Cline `use_subagents` for tasks requiring MCP evidence, repository writes, runtime diagnosis, or patch application.
+- Cline subagents may be used only for explicitly requested broad, read-only research that does not require MCP evidence.
+- Do not use a hook routing hint, observer log, cached tool inventory, or model statement as permission or as proof of success.
+- Hook output is advisory and observational; verify against the actual tool result, current source, Git state, or runtime state.
+
+## State mutation boundary
+
+Unless Carmine explicitly authorizes the operation:
+
+- do not write project memory;
+- do not call `upsert_verified`, `supersede`, or `mark_stale`;
+- do not mutate databases;
+- do not apply patches in a read-only task;
+- do not modify tests or reviewed probe profiles;
+- do not create persistent test files, smoke runners, temporary probe scripts, `verify_changes.py`, `final_verify.py`, or task-specific inspection scripts.
+
+Reviewed MCP probe profiles are allowed when validation is within the explicit task scope.
+
+## Patch boundary
+
+Before editing, establish:
+
+- the owner implementation;
+- the file actually loaded;
+- the reader and writer;
+- the launcher and running process;
+- the effective executable, virtual environment, `cwd`, profile, `PATH`, and environment;
+- any cache, generated file, duplicate configuration, persistent state, or overwrite path.
+
+For model-authored changes, prefer a guarded `structured_edit`.
+
+Use a unified diff only when a complete valid diff already exists or is the canonical requested change-set.
+
+Propagate the returned `change_set_id` through validation, apply-check, and apply. In a read-only task, proposal validation and apply-check may be used, but patch application is forbidden.
+
+Do not reformat unrelated code, rewrite complete files unnecessarily, rename or delete files, rewrite history, force-push, merge, deploy, change visibility, alter secrets, or modify billing unless explicitly requested.
+
+After a modification:
+
+- inspect the resulting diff;
+- run the narrowest relevant verification;
+- re-check the original symptom when possible;
+- report the resulting line count of every modified source file.
+
+Compilation alone is not runtime proof.
+
+## Windows boundary
+
+Assume Windows and PowerShell.
+
+Do not produce Bash, WSL, macOS, or POSIX-only commands unless Carmine explicitly requests them.
+
+Prefer `-LiteralPath`, fully quoted paths, PowerShell-native commands, and absolute executable paths when interpreter or virtual-environment identity matters.
+
+Do not assume the shell working directory equals runtime `AICARMINE_LAB_REPO`.
+
+## Completion
+
+Report:
+
+### Symptom
+
+Observed behavior only.
+
+### Evidence
+
+Concrete MCP, source, Git, process, port, log, payload, or database evidence.
+
+### Confirmed cause
+
+The demonstrated causal mechanism only.
+
+### Minimal fix
+
+The smallest contract-preserving change.
+
+### Verification
+
+Original symptom result, targeted checks, resulting diff, and modified source-file line counts.
+
+### Residual risk
+
+Only conditions that remain unverified.
+
+Also list:
+
+- project contracts read;
+- MCP servers and tools used;
+- fallback used and reason;
+- project-memory records used;
+- payload-completeness limitations.
