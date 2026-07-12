@@ -1,0 +1,650 @@
+5b56c931 HEAD@{0}: commit: MCP Server Documentation Fully Updated ✅
+b67125bc HEAD@{1}: commit: Code Reduction: ~830 lines removed from loop.py (32% reduction)
+9acfe0a3 HEAD@{2}: commit: Completed Work ✅
+537ae317 HEAD@{3}: commit: refctoring main scripts
+568ca56b HEAD@{4}: commit: **Top Target:** `validate_planner_decision_against_evidence` in `services/aicarmine_broker/application/planner/validator.py` — CC 616, 2,122 lines total, 271 if-statements
+42f150ca HEAD@{5}: commit: VALIDATOR.PY *, MADE IA CUT THE SCRIPT
+dd298428 HEAD@{6}: commit: ignore import runtime
+7ee98103 HEAD@{7}: commit: fix cline route
+573bb073 HEAD@{8}: commit: feat: add AST complexity analysis tools to wily MCP server
+e3e47fd8 HEAD@{9}: checkout: moving from e3e47fd8140ab55cff0a40e125862c1d8eb1b54b to Local-AI-coding-work-base
+e3e47fd8 HEAD@{10}: checkout: moving from Local-AI-coding-work-base to e3e47fd8140ab55cff0a40e125862c1d8eb1b54b
+e3e47fd8 HEAD@{11}: commit: willy fix
+9668baba HEAD@{12}: checkout: moving from Local-AI-coding-work-base to Local-AI-coding-work-base
+9668baba HEAD@{13}: checkout: moving from Local-AI-coding-work-base to Local-AI-coding-work-base
+9668baba HEAD@{14}: checkout: moving from Local-AI-coding-work-base to Local-AI-coding-work-base
+9668baba HEAD@{15}: checkout: moving from Local-AI-coding-work-base to Local-AI-coding-work-base
+9668baba HEAD@{16}: checkout: moving from 9668baba4acc36f6728cd68d6e20316f81fa021b to Local-AI-coding-work-base
+9668baba HEAD@{17}: checkout: moving from e2527e2835265ba4778f548879700f92c1b1e4f8 to 9668baba4acc36f6728cd68d6e20316f81fa021b
+e2527e28 HEAD@{18}: checkout: moving from Local-AI-coding-work-base to e2527e2835265ba4778f548879700f92c1b1e4f8
+9668baba HEAD@{19}: commit: fix tool
+e2527e28 HEAD@{20}: commit: MCP tool optimization
+f00e4722 HEAD@{21}: checkout: moving from f00e47223be160f3c78a134dfa88600ec1fdc9c8 to Local-AI-coding-work-base
+f00e4722 HEAD@{22}: checkout: moving from 5cea1dd5f395ced0dd789060965c9e93cfc67e77 to f00e47223be160f3c78a134dfa88600ec1fdc9c8
+5cea1dd5 HEAD@{23}: checkout: moving from 4ca470ce039ceac2ca66277d952a2434237eb5ba to 5cea1dd5f395ced0dd789060965c9e93cfc67e77
+4ca470ce HEAD@{24}: checkout: moving from bb1e0d62a8f76bd322d7b522a90db630e9601b87 to 4ca470ce039ceac2ca66277d952a2434237eb5ba
+bb1e0d62 HEAD@{25}: checkout: moving from cd5b0cc6a5ac538dc031ce56705a5694dfdbf8cf to bb1e0d62a8f76bd322d7b522a90db630e9601b87
+cd5b0cc6 HEAD@{26}: checkout: moving from 05a4b342fc0a12a48c42b8ffe9c72307a94ab1b8 to cd5b0cc6a5ac538dc031ce56705a5694dfdbf8cf
+05a4b342 HEAD@{27}: checkout: moving from 3e68d2b90e245b0d55fdf684ac7448f413c5303d to 05a4b342fc0a12a48c42b8ffe9c72307a94ab1b8
+3e68d2b9 HEAD@{28}: checkout: moving from a84e1cdee7445a5cd6d7ce137e9a52b47b226a93 to 3e68d2b90e245b0d55fdf684ac7448f413c5303d
+a84e1cde HEAD@{29}: checkout: moving from 701bcf2303ceb3449e9480a692fc4033a1201a01 to a84e1cdee7445a5cd6d7ce137e9a52b47b226a93
+701bcf23 HEAD@{30}: checkout: moving from 759b849319e5a63892cfab561c86295d65865092 to 701bcf2303ceb3449e9480a692fc4033a1201a01
+759b8493 HEAD@{31}: checkout: moving from a257f88e85e9037b8f81ccb52630dbd4d54bb7d1 to 759b849319e5a63892cfab561c86295d65865092
+a257f88e HEAD@{32}: checkout: moving from 7baa9bbdab2e62fc684ff6fa8a577333873d2141 to a257f88e85e9037b8f81ccb52630dbd4d54bb7d1
+7baa9bbd HEAD@{33}: checkout: moving from e93a41b6bd27cc7ae05b36fada450909337ed846 to 7baa9bbdab2e62fc684ff6fa8a577333873d2141
+e93a41b6 HEAD@{34}: checkout: moving from f60dd4f617c561ebf918719d40b1610344fb5f00 to e93a41b6bd27cc7ae05b36fada450909337ed846
+f60dd4f6 HEAD@{35}: checkout: moving from 3ed5faebd028b0376c534e249ef5203dcd1d5d23 to f60dd4f617c561ebf918719d40b1610344fb5f00
+3ed5faeb HEAD@{36}: checkout: moving from 0101c62537bf04267f2342764ae6f70d409f69be to 3ed5faebd028b0376c534e249ef5203dcd1d5d23
+0101c625 HEAD@{37}: checkout: moving from fa50bf377df8b21f9e77fc59cffa674d4ede2e9a to 0101c62537bf04267f2342764ae6f70d409f69be
+fa50bf37 HEAD@{38}: checkout: moving from 6508b629830b65d69f5a19afbcc6b81d4de4598e to fa50bf377df8b21f9e77fc59cffa674d4ede2e9a
+6508b629 HEAD@{39}: checkout: moving from 016de8f152053c9ee59bac4fe233fc13ba827ea3 to 6508b629830b65d69f5a19afbcc6b81d4de4598e
+016de8f1 HEAD@{40}: checkout: moving from 1309726b0b5a5b2bd7d13143e3facbcf97f3ed8c to 016de8f152053c9ee59bac4fe233fc13ba827ea3
+1309726b HEAD@{41}: checkout: moving from e0e239096d30ba7427d55c9e19a3416cf6c58652 to 1309726b0b5a5b2bd7d13143e3facbcf97f3ed8c
+e0e23909 HEAD@{42}: checkout: moving from c328ddf36dea61981d24abff6b331069c01580e2 to e0e239096d30ba7427d55c9e19a3416cf6c58652
+c328ddf3 HEAD@{43}: checkout: moving from d650914ec03378be2b03e3960cefaf4232f4707a to c328ddf36dea61981d24abff6b331069c01580e2
+d650914e HEAD@{44}: checkout: moving from c9db1c1ce0764e72a08b4d2caea2d96dfbde1cbc to d650914ec03378be2b03e3960cefaf4232f4707a
+c9db1c1c HEAD@{45}: checkout: moving from 79f9243c540eb19eba92ae70680886abbfff2f4a to c9db1c1ce0764e72a08b4d2caea2d96dfbde1cbc
+79f9243c HEAD@{46}: checkout: moving from 13155841f3024b1ac81d4cf2944f19072a3d5e29 to 79f9243c540eb19eba92ae70680886abbfff2f4a
+13155841 HEAD@{47}: checkout: moving from d9bd2f2977d0bee936213d1b9afdb7afbbc1ee7f to 13155841f3024b1ac81d4cf2944f19072a3d5e29
+d9bd2f29 HEAD@{48}: checkout: moving from 26f07886d5bef5c466856c55d5eec442684200ef to d9bd2f2977d0bee936213d1b9afdb7afbbc1ee7f
+26f07886 HEAD@{49}: checkout: moving from 7073577ac7a46a35081029f45a7fd2b18aa3abd9 to 26f07886d5bef5c466856c55d5eec442684200ef
+7073577a HEAD@{50}: checkout: moving from 8a5ec54d41c4e199086c2f95b9296da33d2fd4b3 to 7073577ac7a46a35081029f45a7fd2b18aa3abd9
+8a5ec54d HEAD@{51}: checkout: moving from 64a549e982bf7c60cad96f756a8ddbbb2363cf82 to 8a5ec54d41c4e199086c2f95b9296da33d2fd4b3
+64a549e9 HEAD@{52}: checkout: moving from 39bb5a1e249c7c81c8fef04d91b89e829cf30428 to 64a549e982bf7c60cad96f756a8ddbbb2363cf82
+39bb5a1e HEAD@{53}: checkout: moving from b59314f956ab7a76b75b78719481980b134482c1 to 39bb5a1e249c7c81c8fef04d91b89e829cf30428
+b59314f9 HEAD@{54}: checkout: moving from 7b065ba875ac43e771f7c3b49a9b68c19598cf87 to b59314f956ab7a76b75b78719481980b134482c1
+7b065ba8 HEAD@{55}: checkout: moving from f9abb67e94bc15610282361ddff94d1716ea2a2d to 7b065ba875ac43e771f7c3b49a9b68c19598cf87
+f9abb67e HEAD@{56}: checkout: moving from abb3c277e49c71bdb6cf66e5306acd5a524117fe to f9abb67e94bc15610282361ddff94d1716ea2a2d
+abb3c277 HEAD@{57}: checkout: moving from 2a42212b2cba38872f9aed4dc8d9d7644441aabd to abb3c277e49c71bdb6cf66e5306acd5a524117fe
+2a42212b HEAD@{58}: checkout: moving from dff986d0bc57479c4ae7abccb61189ac327dcb06 to 2a42212b2cba38872f9aed4dc8d9d7644441aabd
+dff986d0 HEAD@{59}: checkout: moving from 22717f7818210e2038bfde8c7090d85bc198c3ef to dff986d0bc57479c4ae7abccb61189ac327dcb06
+22717f78 HEAD@{60}: checkout: moving from 0a4bf6bd86a9f593eb577bae01db92daf5bf7ef8 to 22717f7818210e2038bfde8c7090d85bc198c3ef
+0a4bf6bd HEAD@{61}: checkout: moving from 9af3fe08306d70a5565edd16f4ea8b02b41bb938 to 0a4bf6bd86a9f593eb577bae01db92daf5bf7ef8
+9af3fe08 HEAD@{62}: checkout: moving from 40b091d75e6a12708c74c92247699a7633a71d61 to 9af3fe08306d70a5565edd16f4ea8b02b41bb938
+40b091d7 HEAD@{63}: checkout: moving from cef2313c87f2057fb924084fec588706803d12cf to 40b091d75e6a12708c74c92247699a7633a71d61
+cef2313c HEAD@{64}: checkout: moving from 185e8aff5551a07cae5eb94bc2c6c6a8adeea93b to cef2313c87f2057fb924084fec588706803d12cf
+185e8aff HEAD@{65}: checkout: moving from Local-AI-coding-work-base to 185e8aff5551a07cae5eb94bc2c6c6a8adeea93b
+f00e4722 HEAD@{66}: commit: hook optimation
+5cea1dd5 HEAD@{67}: commit: fix morning
+4ca470ce HEAD@{68}: commit: error handle 6
+bb1e0d62 HEAD@{69}: commit: other *, remuved
+cd5b0cc6 HEAD@{70}: commit: remuverd *, from object of method inside loop
+05a4b342 HEAD@{71}: commit: ERROR HANDLE 3
+3e68d2b9 HEAD@{72}: commit: error handle 2
+a84e1cde HEAD@{73}: commit: start implmentation error handle
+701bcf23 HEAD@{74}: commit: Successfully enhanced the `old_text_not_found` error handling in `services/aicarmine_broker/tools/repo_patch.py`.
+759b8493 HEAD@{75}: commit: remuved second continue on loop.py was making crashing IA
+a257f88e HEAD@{76}: commit: continue on code loop.py that was making carshing local IA
+7baa9bbd HEAD@{77}: commit: fix *, on loop make crashing IA
+e93a41b6 HEAD@{78}: commit: planner fix
+f60dd4f6 HEAD@{79}: commit: part 2
+3ed5faeb HEAD@{80}: commit: Critical Mistake-Prone Areas in Basecode — Complete Analysis & Fixes Applied
+0101c625 HEAD@{81}: commit: MCP optimization
+fa50bf37 HEAD@{82}: commit: I've created and upgraded a comprehensive, surface-IA-friendly Markdown documentation structure covering ALL Python scripts and modules in the project.
+6508b629 HEAD@{83}: commit: docuemntation integration like mother
+016de8f1 HEAD@{84}: commit: UPDATE DOCUMENTS
+1309726b HEAD@{85}: commit: MCP tool fix
+e0e23909 HEAD@{86}: commit: | # | Document | Location | Status |
+c328ddf3 HEAD@{87}: commit: small fix
+d650914e HEAD@{88}: commit: refctoring/moving complex logic
+c9db1c1c HEAD@{89}: commit: gitignore update
+a411d5ef HEAD@{90}: checkout: moving from a411d5ef4facd1561db3653fbec3a0fa41ed10a2 to Local-AI-coding-work-base
+a411d5ef HEAD@{91}: checkout: moving from bc0aa37b3d5c4944f5f17ac188b5b7a659205c71 to a411d5ef4facd1561db3653fbec3a0fa41ed10a2
+bc0aa37b HEAD@{92}: checkout: moving from 9b7b9761aca31fdb18ca12ce909e423d1fdd661b to bc0aa37b3d5c4944f5f17ac188b5b7a659205c71
+9b7b9761 HEAD@{93}: checkout: moving from 82afa3ddd654bde48389f11ecdfc4ae08b51c70b to 9b7b9761aca31fdb18ca12ce909e423d1fdd661b
+82afa3dd HEAD@{94}: checkout: moving from 2d6b65cebd1d58f845d470fc0e9d58ab867be8c6 to 82afa3ddd654bde48389f11ecdfc4ae08b51c70b
+2d6b65ce HEAD@{95}: checkout: moving from 9f562d9ea0e0d8d230156d3e1a7743a2b0e960da to 2d6b65cebd1d58f845d470fc0e9d58ab867be8c6
+9f562d9e HEAD@{96}: checkout: moving from Local-AI-coding-work-base to 9f562d9ea0e0d8d230156d3e1a7743a2b0e960da
+a411d5ef HEAD@{97}: commit: fix
+bc0aa37b HEAD@{98}: commit: __Created structured dataclasses__ (`services/aicarmine_broker/application/shared/tool_result.py`):
+9b7b9761 HEAD@{99}: commit: OOP Refactoring — Complete Summary ✅
+82afa3dd HEAD@{100}: commit: **1. `services/aicarmine_broker/domain/models.py` — Added 10 frozen dataclasses:**
+2d6b65ce HEAD@{101}: commit: dir fix
+9f562d9e HEAD@{102}: commit: - __F811 fixed__: Removed duplicate `_normalize_terminal_planner_decision`
+79f9243c HEAD@{103}: commit: **1. `final_quality.py`** — Removed duplicate local definitions of `_route_token_is_prose_or_metric` and `_search_query_is_concrete`
+13155841 HEAD@{104}: commit: All Index Operations Complete — Full Reindex + Bridge Build ✅
+d9bd2f29 HEAD@{105}: commit: __Anti-pattern__: `_tool_schema()` manually building nested dict structures for 35+ tool definitions
+26f07886 HEAD@{106}: commit: **Anti-pattern**: Monolithic `sanitize_tool_args` (~158 LOC if/elif chain with 8 tool branches)
+7073577a HEAD@{107}: commit: add tools
+8a5ec54d HEAD@{108}: commit: OOB refctoring phase
+64a549e9 HEAD@{109}: commit: fix 9
+39bb5a1e HEAD@{110}: commit: fix MCP reuse function
+b59314f9 HEAD@{111}: commit: tool improve
+7b065ba8 HEAD@{112}: commit: f
+f9abb67e HEAD@{113}: commit: fix 7
+abb3c277 HEAD@{114}: commit: fix 6
+2a42212b HEAD@{115}: commit: MCP capabilities
+dff986d0 HEAD@{116}: commit: test
+22717f78 HEAD@{117}: commit: True Memory Project stolen by OpenAI
+0a4bf6bd HEAD@{118}: commit: utility
+9af3fe08 HEAD@{119}: commit: refactor
+40b091d7 HEAD@{120}: commit: fix
+cef2313c HEAD@{121}: commit: Refactoring
+185e8aff HEAD@{122}: commit: loop fix
+c7698c98 HEAD@{123}: commit: fix 5
+8ba6b261 HEAD@{124}: commit: fix3
+ceb6f54b HEAD@{125}: commit: fix 3
+3ae16d15 HEAD@{126}: commit: pplanner fix
+3f10b379 HEAD@{127}: commit: refactoring planner
+8a521c19 HEAD@{128}: commit (merge): Merge branch 'Local-AI-coding-work-base' of https://github.com/C-F-tek/agentic-tool-loop into Local-AI-coding-work-base
+c54eaad4 HEAD@{129}: commit: big fix
+1da7d142 HEAD@{130}: commit (amend): refactor: integrate loop_controller methods for persistence and debug packet calls (Phase 4)
+cd41d0ab HEAD@{131}: commit (amend): refactor: integrate loop_controller methods for persistence and debug packet calls (Phase 4)
+fb924464 HEAD@{132}: commit: refactor: integrate loop_controller methods for persistence and debug packet calls (Phase 4)
+4314134a HEAD@{133}: commit: refactor: replace standalone function calls with loop_controller methods (Phase 3)
+2f9c0927 HEAD@{134}: commit: refactor: integrate GuardEvaluator evaluate_final_guard (Phase 2) - all 13 guards replaced
+908d731a HEAD@{135}: commit: refactor: integrate GuardEvaluator evaluate_unrecoverable_output_guard (Phase 2)
+ed025e23 HEAD@{136}: commit: refactor: integrate GuardEvaluator evaluate_repeated_rejection_guard (Phase 2)
+5569be75 HEAD@{137}: commit: refactor: integrate GuardEvaluator evaluate_repeated_code_product_guard (Phase 2)
+d01901e1 HEAD@{138}: commit: refactor: integrate GuardEvaluator evaluate_memory_claim_guard (raw_planner_text) (Phase 2)
+ab985f66 HEAD@{139}: commit: refactor: integrate GuardEvaluator evaluate_native_tool_call_guard (Phase 2)
+e873a34e HEAD@{140}: commit: refactor: integrate GuardEvaluator for memory_claim and support_subturn guards (Phase 2)
+07932a05 HEAD@{141}: commit: refactor: replace semantic_step_for_physical_step and planner_step_budget_guidance with loop_controller methods (integration step 5)
+f9de7415 HEAD@{142}: commit: refactor: remove more inner functions from loop.py (~1000 lines) (integration step 4)
+4d17df2b HEAD@{143}: commit: refactor: remove inner function definitions from loop.py (integration step 3)
+5f50a7bd HEAD@{144}: commit: refactor: instantiate extracted classes in run_agentic_planner_job (integration step 2)
+13d5fc32 HEAD@{145}: commit: refactor: import extracted classes in loop.py (integration step 1)
+757db779 HEAD@{146}: commit: refactor: extract EvidenceContractManager class (Phase 3)
+bed8aa42 HEAD@{147}: commit: refactor: extract PlannerLoopController class from planner loop
+88a8c5cc HEAD@{148}: commit: refactor: extract GuardEvaluator class from planner loop
+d4bd1e81 HEAD@{149}: commit: pre refactoring
+94589932 HEAD@{150}: commit: shadow lane not only dignostic
+b6c78a98 HEAD@{151}: commit: final fix local AI
+9fb581ea HEAD@{152}: commit: FIX 5 36B
+02860ed9 HEAD@{153}: commit: fix 4 30b model local
+2a093e58 HEAD@{154}: commit: fix 4
+e2eca1b7 HEAD@{155}: commit: fix 3
+80429feb HEAD@{156}: commit: Local fix 3
+ed8f7da4 HEAD@{157}: commit: SECOND LOCAL WORK 2
+5092f874 HEAD@{158}: commit: SECOND LOCAL WORK
+13c1e6e8 HEAD@{159}: commit: fix last 2 job
+50cff030 HEAD@{160}: Branch: renamed refs/heads/codex/post-merge-final-quality-regression-20260616 to refs/heads/Local-AI-coding-work-base
+50cff030 HEAD@{162}: pull origin Local-AI-coding-work-base --rebase (finish): returning to refs/heads/codex/post-merge-final-quality-regression-20260616
+50cff030 HEAD@{163}: pull origin Local-AI-coding-work-base --rebase (pick):
+20b330a4 HEAD@{164}: pull origin Local-AI-coding-work-base --rebase (start): checkout 20b330a4ef79d034ea7621eb221a952122375614
+b9aedc99 HEAD@{165}: commit:
+be4b24f3 HEAD@{166}: commit: clean obsolete test
+4bb2ce86 HEAD@{167}: commit: TASK R5E2-CHECK + TASK R5E2
+2f4035a0 HEAD@{168}: commit: TASK R5E2
+a6f2c11b HEAD@{169}: commit: TASK R5E1 + TASK H4R/H5R
+b6826652 HEAD@{170}: commit: TASK H5 good
+bf3ffa35 HEAD@{171}: commit: TASK H5
+5ac8f279 HEAD@{172}: commit: TASK H4
+0b888273 HEAD@{173}: commit: R5D-GREEN-R — PATCH COMPLETE
+082550ab HEAD@{174}: commit: TASK R5D-GREEN-R
+25963b2d HEAD@{175}: commit: GREEN-CHECK read-only
+03c41922 HEAD@{176}: commit: R5D-GREEN
+44358e44 HEAD@{177}: commit: NEW DEPENDENCY: hy
+97c6a9d5 HEAD@{178}: commit: TASK R5V2-RED-R7
+a3c11834 HEAD@{179}: commit: TASK R5V2-RED-R6
+fced5f43 HEAD@{180}: commit: TASK R5V2-RED-R5
+86d9de5b HEAD@{181}: commit: TASK R5V2-RED-R4
+eab636a6 HEAD@{182}: commit: TASK R5V2-RED-R3
+3bc1f288 HEAD@{183}: commit: TASK R5V2-RED-R2
+c45e6564 HEAD@{184}: commit: TASK H3
+b7662870 HEAD@{185}: commit: TASK H2R + TASK R5V2-RED-R
+5ddc7a2d HEAD@{186}: commit: TASK H2 + TASK R5V2-RED
+c2fbf3da HEAD@{187}: commit: TASK H1R + TASK R5C-R
+cd2016cb HEAD@{188}: commit: TASK R5C — COMPLETED
+4f715beb HEAD@{189}: commit: R5B-GREEN-R — correggere i due RED residui
+f3df788a HEAD@{190}: commit: TASK R5V1-EXT-RED — estendere il contratto prima del GREEN
+9dccc08a HEAD@{191}: commit: TASK R5B-GREEN — implementare i core helper shadow
+4a89aece HEAD@{192}: commit: ISOLARE IL CASO AREA_PLANS NON-LIST
+82a8ab74 HEAD@{193}: commit: CORREGGERE ORDER E MALFORMED CASE DEL PROFILO SHADOW
+50757d0e HEAD@{194}: commit: R5V1REDR2 — RIPARARE REVIEWED PROFILE SHADOW HELPERS
+544bc91f HEAD@{195}: commit: R5V1-RED — REVIEWED PROFILE DEI CORE HELPER SHADOW
+12d8de96 HEAD@{196}: commit: RSv1 RED
+0af7f3d8 HEAD@{197}: commit: Align Cline MCP router with structured edits
+febafdd1 HEAD@{198}: commit: fIX mcp/tools for Codex/cline
+b8d205ec HEAD@{199}: commit: R4F-GREEN — patch runtime dei quattro RED
+777678c3 HEAD@{200}: commit: codex hotfix
+c1594ee4 HEAD@{201}: commit: MAGA FIX HOOK/MCP CLINE/CODEX
+10d72e8a HEAD@{202}: commit: Hooks codex and cline (not are the same hooks for now)
+45aa1837 HEAD@{203}: commit: TASK R4V-RED-R3 — CORREGGERE LA SNAPSHOT DEL CASO SIGNAL
+f94813b9 HEAD@{204}: commit: TASK R4V-RED-R2 — ripristinare il contratto RED
+5a4a3201 HEAD@{205}: commit: R4V-RED-R — CORREGGERE IL REVIEWED PROFILE SENZA TOCCARE IL RUNTIME
+5c904ff4 HEAD@{206}: commit: R4V-RED — AGGIUNGERE AL REVIEWED PROFILE LE INVARIANTI RESIDUE
+644d2d00 HEAD@{207}: commit: TASK R4S — chiusura invarianti runtime + new MCP tool
+327328c7 HEAD@{208}: commit: R4R — COMPLETARE SELECTOR ORIENTATION E PROVARE CODICE REALE
+98623af0 HEAD@{209}: commit: R4 — SELECTOR ORIENTATION CONTRATTO OLLAMA REALE
+38529d95 HEAD@{210}: commit: TASK R3 — RIPARARE DEDUP E INVARIANTI DEL CANDIDATE POOL ORIENTATION
+ddd3816f HEAD@{211}: commit: TASK R2 — APPLICARE NORMALIZZAZIONE ORIENTATION LANE MODE
+0a2ff9a0 HEAD@{212}: commit: test is kind regresion, the AI usa to modify the test code and so use it for testing someting wrong
+ef754f1f HEAD@{213}: commit: TASK R1 — INTEGRITÀ DEL CATALOGO CONTROL LANE
+768b9121 HEAD@{214}: commit: T0-T8 by cline, updte model qwen3.5:9b-coding-v5-1
+b00d83ea HEAD@{215}: commit: FIX after diff MD
+deca5500 HEAD@{216}: commit: Fix MCP Fist MD
+3f4d94dc HEAD@{217}: commit: MCP fist documentation agent
+fd4dab33 HEAD@{218}: commit: planner: restore GPU1 role lanes and provider terminal judge
+a2e5c527 HEAD@{219}: commit: implementation plan after last job
+e4c2c616 HEAD@{220}: commit: planner: consume satisfied rewrite routes and align tool surface
+49b3d974 HEAD@{221}: commit: loop fix
+4551eec7 HEAD@{222}: commit: new model qwen3.5:9b-coding-v4 active on planner
+c120ffc3 HEAD@{223}: commit: fix: complete planner lab operator surfaces
+e2f03b4f HEAD@{224}: commit: LAST FIX HTML
+4cef4ff8 HEAD@{225}: commit: LAST FIX
+42099a07 HEAD@{226}: checkout: moving from codex/post-merge-final-quality-regression-20260616 to codex/post-merge-final-quality-regression-20260616
+42099a07 HEAD@{227}: commit: html build fix
+a383daf4 HEAD@{228}: commit: job: make terminal judge persistence fully non-blocking
+c3a219b8 HEAD@{229}: commit: fix broker
+1ece1242 HEAD@{230}: commit: fix: retain planner lab payload for code product actions
+193aba3f HEAD@{231}: commit: Ultimo micro-fix
+f571c237 HEAD@{232}: commit: fix 2 carmine human
+c7a38d6f HEAD@{233}: commit: broker fix
+301322b9 HEAD@{234}: commit: Fix Tool/job incosistency - Carmine Human
+86aee6d5 HEAD@{235}: commit: planner: propagate semantic preplanner fallback without terminal block semantics
+200b1550 HEAD@{236}: commit: controller: expose public semantic query-plan fallback
+cf8d9ddd HEAD@{237}: commit: Fix renderer escaping and payload field mapping
+1549c113 HEAD@{238}: commit: Fix: Issue 1,2,5,7 - preplanner semantic intent fallback, judge_blocked_job, pointer containment, RAG success measurement
+2f9b80e9 HEAD@{239}: commit: Fix: Issue 1,2,5,7 - preplanner semantic intent fallback, judge_blocked_job, pointer containment, RAG success measurement
+a1ffbe38 HEAD@{240}: commit: Fix: job_html_assets.py - Correggere rendering chain e escaping
+6df38408 HEAD@{241}: commit: Fix: job_html_assets.py - Correggere PLANNER_LAB_JS per browser-first
+064a32e5 HEAD@{242}: commit: Fix: repo_search requested_mode e result_compaction scalar_keys
+5a9fcb14 HEAD@{243}: commit: Fix: job_html_assets.py - Correggere PLANNER_LAB_JS per browser-first
+835dd326 HEAD@{244}: commit: Fix: P1-A, P1-B, P1-C, P2 - Correzioni repo_read, repo_search, result_compaction
+2e27dc35 HEAD@{245}: commit: Fix: job_html_assets.py - Correggere PLANNER_LAB_JS rispetto agli endpoint reali
+c7957dd3 HEAD@{246}: commit: Fix: repo_semantic_search e repo_search payload
+fb5ab9fd HEAD@{247}: commit: Fix: job_html_assets.py - Correggere scope errors in startPlannerJob() e loadJob()
+92b13762 HEAD@{248}: commit: AGENT.MD update
+0a2e38cd HEAD@{249}: commit: Residui P1/P2/P3 — bounded line, needle schema, quoting path/scope
+df57f6c6 HEAD@{250}: commit: P1 cleanup: move planner-lab JS to PLANNER_LAB_JS; remove duplicate functions from _html_page()
+1eea9733 HEAD@{251}: commit: Align repo_search schema/validator to needle|text; update contract docs
+f0991559 HEAD@{252}: commit: FIX
+ca9eec42 HEAD@{253}: commit: Fix job_planner_lab JS structure and htmlEscape; add global vars
+05b46b8a HEAD@{254}: commit: Fix repo_search glob path validation and git_grep scope; document needle/text args
+260910d6 HEAD@{255}: commit: refactor: centralize job view HTML assets and remove duplication
+a49f7ef6 HEAD@{256}: commit: Fix P1/P2: repo_search glob suggestion, path validation, repo_semantic_search risk
+f1634104 HEAD@{257}: commit: Add suggested_next_actions to scalar_keys in result_compaction
+c74096e2 HEAD@{258}: commit: Fix P1/P2: bound max_results, remove hardcoded suggestions, update repo_capabilities args
+71d7436a HEAD@{259}: commit: P1/P2: compaction aggiorna repair_hints/suggested_next_tool_calls/coverage_status; repo_search/query alias+bounded; repo_command/timeout bounded; memory_tools/bounded limit/max_chars/offset/ttl_days
+d4a1be18 HEAD@{260}: commit: Fix: terminal.py usa helper locale _terminal_input_error invece di deterministic_input_error
+0e24319c HEAD@{261}: commit: Fix circular import in terminal.py and correct git_surface import
+32f3e7a6 HEAD@{262}: commit: Add bounded_int_arg to executors and actionable payloads to discovery/validation tools
+2fbf89f8 HEAD@{263}: commit: Remove hard-required query from repo_semantic_search schema
+8ffec432 HEAD@{264}: commit: Add bounded_int_arg to repo_read executor and max_paths to schema
+7014aa21 HEAD@{265}: commit: carmine commit
+ced02664 HEAD@{266}: commit: fix: ordine corretto payload_evidence dopo preserve_required_next_tool_call_for_prompt; rimuovi planner_scratchpad_read non compatibile
+774099f1 HEAD@{267}: commit: feat: route di consumo evidenza planner_scratchpad_read per duplicate repo_read recovery
+dfeff6d0 HEAD@{268}: commit: fix: rileggi evidence_contract dopo normalize_transport_tool_surface_state in hard_budget (secondo ramo)
+5a449342 HEAD@{269}: commit: fix: rileggi evidence_contract dopo normalize_transport_tool_surface_state in hard_budget
+0d455180 HEAD@{270}: commit: fix: normalizza required_next_tool_call con controllo dict non vuoto
+b49ec853 HEAD@{271}: commit: Fix pack_builder.py: usa evidence_for_prompt come payload_evidence per evitare contract vuoto
+be4435e9 HEAD@{272}: commit: Fix pack_builder.py: usa payload_evidence per allowed_actions, required_next_tool_call e forbidden_repeated_tool_calls
+c526c9ec HEAD@{273}: commit: Fix pack_builder.py hard-budget: forza uso di payload_evidence invece di evidence_for_prompt per allowed_actions, required_next_tool_call e forbidden_repeated_tool_calls
+a4e70da3 HEAD@{274}: commit: Update local changes
+b7ea9e7d HEAD@{275}: commit: Update local changes
+967eee00 HEAD@{276}: commit: Update local changes
+d5ac4b6f HEAD@{277}: commit: planner: enforce transport-safe evidence + rewrite candidate saturation
+ae3d1b89 HEAD@{278}: commit: planner: short-circuit final in terminal block lane
+66efa6c3 HEAD@{279}: commit: planner: bind controller repo_read max_paths to selected paths
+dd3cc2eb HEAD@{280}: commit: planner: bind preplanner repo_read max_paths to selected paths
+cf828d26 HEAD@{281}: commit: planner: semantic-only discovery args for required tool satisfaction
+8199c264 HEAD@{282}: commit: planner: harden final-quality route normalization and cleanup
+eca3617c HEAD@{283}: commit: planner: normalize final-quality required tools
+08bdd836 HEAD@{284}: commit: planner: finish final-quality rewrite cleanup
+bc10f514 HEAD@{285}: commit: planner: normalize post_json timeout and error reporting
+379306f0 HEAD@{286}: commit: planner: finish final-quality cleanup and restore long stream timeout floor
+84c4b0e3 HEAD@{287}: commit: planner: harden final-quality and terminal decision flow
+30aac625 HEAD@{288}: commit: Clear terminal final block state after successful final answer
+2b772381 HEAD@{289}: commit: Tighten terminal/finalization gates for block and rewrite latches
+6ef4e35e HEAD@{290}: commit: planner: recover duplicate preseed reads from verified evidence
+b824e996 HEAD@{291}: checkout: moving from codex/post-merge-final-quality-regression-20260616 to codex/post-merge-final-quality-regression-20260616
+b824e996 HEAD@{292}: commit: planner: preserve final-quality invalid route diagnostics
+2430f4bb HEAD@{293}: commit: planner: validate final-quality search and list routes before locking
+f2503265 HEAD@{294}: commit: planner: validate required routes before surface lock
+89e0a73f HEAD@{295}: checkout: moving from codex/repair-replan-judge-block to codex/post-merge-final-quality-regression-20260616
+47f027e7 HEAD@{296}: commit (merge): planner: merge repair replan final-quality hardening with main
+f43804bf HEAD@{297}: checkout: moving from main to codex/repair-replan-judge-block
+ebb16d52 HEAD@{298}: commit: planner: harden final rewrite retry->block and preserve latch overlay
+d9a6f396 HEAD@{299}: commit: planner: harden final rewrite path contracts and guard transport
+e05fc842 HEAD@{300}: commit: planner: persist final rewrite contract overlay
+f6046c60 HEAD@{301}: checkout: moving from codex/repair-replan-judge-block to main
+f43804bf HEAD@{302}: commit: planner: persist final rewrite contract overlay
+13663ff4 HEAD@{303}: checkout: moving from codex/read-only-mcp-observability to codex/repair-replan-judge-block
+c730809a HEAD@{304}: commit: planner: persist final rewrite contract overlay
+2dbe1cbd HEAD@{305}: checkout: moving from codex/rag-mcp-solid-base to codex/read-only-mcp-observability
+927343a2 HEAD@{306}: commit: planner: persist final rewrite contract overlay
+1654749c HEAD@{307}: checkout: moving from codex/planner-cuda-rewrite-retry to codex/rag-mcp-solid-base
+fc82ffb4 HEAD@{308}: commit: planner: persist final rewrite contract overlay
+bdded342 HEAD@{309}: checkout: moving from codex/main-clean-20260614 to codex/planner-cuda-rewrite-retry
+9e1a64c0 HEAD@{310}: commit: planner: persist final rewrite contract overlay
+f99409ec HEAD@{311}: checkout: moving from codex/tool-aliases-writeguard-fix to codex/main-clean-20260614
+d1dbf06e HEAD@{312}: checkout: moving from main to codex/tool-aliases-writeguard-fix
+f6046c60 HEAD@{313}: reset: moving to f6046c60911233f16a6840b7cc9e158cc19e0a91
+f6046c60 HEAD@{314}: checkout: moving from codex/repair-replan-judge-block to main
+13663ff4 HEAD@{315}: reset: moving to 13663ff41d8d5642a461c9e751c9e3ea2201c8e8
+13663ff4 HEAD@{316}: checkout: moving from codex/read-only-mcp-observability to codex/repair-replan-judge-block
+2dbe1cbd HEAD@{317}: reset: moving to 2dbe1cbd8c74985d54dd35437ae269da5a6f6da5
+2dbe1cbd HEAD@{318}: checkout: moving from codex/rag-mcp-solid-base to codex/read-only-mcp-observability
+1654749c HEAD@{319}: reset: moving to 1654749cbcd8b7b6eee21857fe07eebdd43fb5ed
+1654749c HEAD@{320}: checkout: moving from codex/planner-cuda-rewrite-retry to codex/rag-mcp-solid-base
+bdded342 HEAD@{321}: reset: moving to bdded342f863f382efa351fdeacf413e1b8d8bc6
+bdded342 HEAD@{322}: checkout: moving from codex/npu-phi35-mini-int4-cw-ov-integration to codex/planner-cuda-rewrite-retry
+ad622882 HEAD@{323}: cherry-pick: planner: persist final rewrite contract overlay
+ce4d6dfc HEAD@{324}: checkout: moving from codex/main-clean-20260614 to codex/npu-phi35-mini-int4-cw-ov-integration
+f99409ec HEAD@{325}: reset: moving to f99409ec590569ef6f5cac9d79c5853287219983
+f99409ec HEAD@{326}: checkout: moving from codex/fai-le-fix-based-on to codex/main-clean-20260614
+0158d568 HEAD@{327}: cherry-pick: planner: persist final rewrite contract overlay
+cd8ce913 HEAD@{328}: checkout: moving from codex/tool-aliases-writeguard-fix to codex/fai-le-fix-based-on
+d1dbf06e HEAD@{329}: commit: planner: persist final rewrite contract overlay
+94cfe702 HEAD@{330}: checkout: moving from codex/tool-aliases-writeguard-fix to codex/tool-aliases-writeguard-fix
+94cfe702 HEAD@{331}: checkout: moving from codex/npu-phi35-mini-int4-cw-ov-integration to codex/tool-aliases-writeguard-fix
+ce4d6dfc HEAD@{332}: checkout: moving from codex/fai-le-fix-based-on to codex/npu-phi35-mini-int4-cw-ov-integration
+cd8ce913 HEAD@{333}: checkout: moving from codex/tool-aliases-writeguard-fix to codex/fai-le-fix-based-on
+94cfe702 HEAD@{334}: checkout: moving from codex/npu-phi35-mini-int4-cw-ov-integration to codex/tool-aliases-writeguard-fix
+ce4d6dfc HEAD@{335}: checkout: moving from codex/fai-le-fix-based-on to codex/npu-phi35-mini-int4-cw-ov-integration
+cd8ce913 HEAD@{336}: checkout: moving from codex/repair-replan-judge-block to codex/fai-le-fix-based-on
+13663ff4 HEAD@{337}: checkout: moving from main to codex/repair-replan-judge-block
+f6046c60 HEAD@{338}: checkout: moving from codex/tool-aliases-writeguard-fix to main
+94cfe702 HEAD@{339}: checkout: moving from codex/repair-replan-judge-block to codex/tool-aliases-writeguard-fix
+13663ff4 HEAD@{340}: checkout: moving from codex/read-only-mcp-observability to codex/repair-replan-judge-block
+2dbe1cbd HEAD@{341}: checkout: moving from codex/rag-mcp-solid-base to codex/read-only-mcp-observability
+1654749c HEAD@{342}: checkout: moving from codex/planner-cuda-rewrite-retry to codex/rag-mcp-solid-base
+bdded342 HEAD@{343}: checkout: moving from codex/npu-phi35-mini-int4-cw-ov-integration to codex/planner-cuda-rewrite-retry
+ce4d6dfc HEAD@{344}: checkout: moving from codex/main-clean-20260614 to codex/npu-phi35-mini-int4-cw-ov-integration
+f99409ec HEAD@{345}: checkout: moving from codex/fai-le-fix-based-on to codex/main-clean-20260614
+cd8ce913 HEAD@{346}: checkout: moving from codex/repair-replan-judge-block to codex/fai-le-fix-based-on
+13663ff4 HEAD@{347}: checkout: moving from main to codex/repair-replan-judge-block
+f6046c60 HEAD@{348}: checkout: moving from codex/tool-aliases-writeguard-fix to main
+94cfe702 HEAD@{349}: checkout: moving from codex/repair-replan-judge-block to codex/tool-aliases-writeguard-fix
+13663ff4 HEAD@{350}: checkout: moving from codex/read-only-mcp-observability to codex/repair-replan-judge-block
+2dbe1cbd HEAD@{351}: checkout: moving from codex/rag-mcp-solid-base to codex/read-only-mcp-observability
+1654749c HEAD@{352}: checkout: moving from codex/planner-cuda-rewrite-retry to codex/rag-mcp-solid-base
+bdded342 HEAD@{353}: checkout: moving from codex/npu-phi35-mini-int4-cw-ov-integration to codex/planner-cuda-rewrite-retry
+ce4d6dfc HEAD@{354}: checkout: moving from codex/main-clean-20260614 to codex/npu-phi35-mini-int4-cw-ov-integration
+f99409ec HEAD@{355}: checkout: moving from codex/fai-le-fix-based-on to codex/main-clean-20260614
+cd8ce913 HEAD@{356}: checkout: moving from codex/repair-replan-judge-block to codex/fai-le-fix-based-on
+13663ff4 HEAD@{357}: commit: planner: avoid rereading verified final evidence
+ffa6ba94 HEAD@{358}: commit: planner: require concrete paths for final-quality repo reads
+4ba09806 HEAD@{359}: commit: planner: validate replan specialist repo_read paths
+900f0dd8 HEAD@{360}: checkout: moving from codex/repair-replan-judge-block to codex/repair-replan-judge-block
+900f0dd8 HEAD@{361}: commit: planner: reject non-repo final-quality evidence paths
+e3b8a70e HEAD@{362}: checkout: moving from codex/repair-replan-judge-block to codex/repair-replan-judge-block
+e3b8a70e HEAD@{363}: commit: planner: harden final-quality missing path coalescing
+e9999edd HEAD@{364}: checkout: moving from codex/repair-replan-judge-block to codex/repair-replan-judge-block
+e9999edd HEAD@{365}: commit: planner: raise stream header timeout floor to 3600
+9d392cf5 HEAD@{366}: commit: Harden planner post-final reject latch and planner-visible contract metadata
+32ecf23b HEAD@{367}: commit: Raise planner stream header timeout floor to 3600s
+ed770976 HEAD@{368}: commit: Constrain final rewrite lane after final quality reject
+3c4bbc77 HEAD@{369}: commit: Strengthen final-rewrite contract and tool surface after final reject
+287e3339 HEAD@{370}: commit: Add specialist route prevalidation with one-shot retries and terminal alias handling
+f6046c60 HEAD@{371}: checkout: moving from main to codex/repair-replan-judge-block
+f6046c60 HEAD@{372}: commit: Add guided runtime first-read documentation
+d2ea4f47 HEAD@{373}: commit: Prune stale docs and align MCP contract
+b21a391d HEAD@{374}: commit: Update global runtime documentation
+3f9ab0f6 HEAD@{375}: commit: Expand MCP operational guide
+ba054c3e HEAD@{376}: commit: Document Codex MCP tool surfaces
+661b62bf HEAD@{377}: commit: Update runtime flow documentation
+befcb532 HEAD@{378}: merge codex/main-clean-20260614: Merge made by the 'ort' strategy.
+867bfeec HEAD@{379}: checkout: moving from codex/main-clean-20260614 to main
+f99409ec HEAD@{380}: commit: Document and harden agentic planner guidance flow
+c2368b4a HEAD@{381}: commit: Add runtime effect taxonomy and MCP diagnostics
+c47d9489 HEAD@{382}: commit: Add conservative diagnostics for runtime and MCP fragility
+4748c082 HEAD@{383}: commit: Improve residual infrastructure diagnostics
+ba704a62 HEAD@{384}: commit: Improve config port diagnostics
+6f1ed434 HEAD@{385}: commit: Improve payload diagnostics robustness
+ee200626 HEAD@{386}: commit: Improve job planner diagnostics
+70fa1fec HEAD@{387}: commit: Improve diagnostic robustness
+1646a004 HEAD@{388}: commit: Fix stale required tool call flow
+90e17a84 HEAD@{389}: commit: Optimize planner payload and final quality flow
+867bfeec HEAD@{390}: checkout: moving from main to codex/main-clean-20260614
+867bfeec HEAD@{391}: commit: Consolidate tool registry contract
+2dbe1cbd HEAD@{392}: reset: moving to 2dbe1cbd8c74985d54dd35437ae269da5a6f6da5
+2dbe1cbd HEAD@{393}: reset: moving to 2dbe1cbd8c74985d54dd35437ae269da5a6f6da5
+2dbe1cbd HEAD@{394}: reset: moving to 2dbe1cbd8c74985d54dd35437ae269da5a6f6da5
+2dbe1cbd HEAD@{395}: reset: moving to 2dbe1cbd8c74985d54dd35437ae269da5a6f6da5
+2dbe1cbd HEAD@{396}: reset: moving to 2dbe1cbd8c74985d54dd35437ae269da5a6f6da5
+2dbe1cbd HEAD@{397}: merge codex/read-only-mcp-observability: Fast-forward
+cd8ce913 HEAD@{398}: checkout: moving from codex/read-only-mcp-observability to main
+2dbe1cbd HEAD@{399}: commit: Enforce minimum read coverage for planner final
+f7cad724 HEAD@{400}: commit: Remove local test scripts and harden runtime guardrails
+258f68e4 HEAD@{401}: commit: Add dedicated broker restart for Codex MCP
+6b1928b7 HEAD@{402}: commit: Stop optional repo windows blocking planner final
+3c4ba94b HEAD@{403}: commit: Tighten preplanner semantic audit query planning
+eb348843 HEAD@{404}: commit: Fix read-only batch continuation contracts
+6443e326 HEAD@{405}: commit: Unify prompt continuation contract enforcement
+5dd68e5f HEAD@{406}: commit: Improve Codex MCP payload and planner stream handling
+60104a85 HEAD@{407}: commit: Fix read-only intent and subturn rejection guards
+20232c6a HEAD@{408}: commit: Fix planner terminal guards and subturn artifacts
+5b1f549a HEAD@{409}: commit: Enforce controlled preplanner semantic intent
+da815e03 HEAD@{410}: commit: Allow terminal prose in native planner mode
+fcf951f4 HEAD@{411}: commit: Remove direct local subagent loop
+d3b49490 HEAD@{412}: commit: Improve preplanner semantic intent routing
+ac3c71d2 HEAD@{413}: commit: Make agentic loop Codex caller aware
+4033530c HEAD@{414}: commit: Improve agentic loop RAG targeting and reranker startup
+697c7238 HEAD@{415}: commit: Add dedicated Codex agentic loop MCP client
+4344b41e HEAD@{416}: commit: Retry local subagent finalization after tool evidence
+4f9dad6c HEAD@{417}: commit: Harden local subagent delegated tool behavior
+53a5de3a HEAD@{418}: commit: Harden local subagent tool evidence gates
+631ad42a HEAD@{419}: commit: Harden local subagent MCP diagnostics
+08e96a26 HEAD@{420}: commit: Update agentic evidence payload handling
+2e192b69 HEAD@{421}: commit: Add local read-only subagent MCP
+93797988 HEAD@{422}: commit: Add read-only job view MCP
+7ba5572c HEAD@{423}: commit: Improve adaptive job dashboard layout
+e658778a HEAD@{424}: commit: Improve loop dashboard observability
+78a16f22 HEAD@{425}: commit: Add project-local memory MCP
+241248f9 HEAD@{426}: checkout: moving from codex/project-memory-mcp to codex/read-only-mcp-observability
+241248f9 HEAD@{427}: checkout: moving from codex/read-only-mcp-observability to codex/project-memory-mcp
+241248f9 HEAD@{428}: commit: Add read-only observability MCP servers
+bdded342 HEAD@{429}: checkout: moving from codex/planner-cuda-rewrite-retry to codex/read-only-mcp-observability
+bdded342 HEAD@{430}: commit: Fix RAG context small-budget chunk return
+59acf510 HEAD@{431}: commit: Clarify native planner blocks and tighten RAG preseed
+d79a96d2 HEAD@{432}: commit: Keep support tools available in planner branches
+15e358c7 HEAD@{433}: commit: Fix planner preloop and OpenWebUI payload handling
+e0d93036 HEAD@{434}: commit (amend): Add Codex MCP root isolation and tooling incubators
+0013b6e6 HEAD@{435}: commit: Add Codex MCP root isolation and repo-code incubator
+62afff3d HEAD@{436}: commit: Add planner CUDA rewrite retry
+1654749c HEAD@{437}: checkout: moving from codex/rag-mcp-solid-base to codex/planner-cuda-rewrite-retry
+1654749c HEAD@{438}: checkout: moving from codex/planner-cuda-rewrite-retry to codex/rag-mcp-solid-base
+cd8ce913 HEAD@{439}: reset: moving to cd8ce913c4f5f5e8d3ff2762530fa08bcd8c2e2c
+cd8ce913 HEAD@{440}: reset: moving to HEAD
+cd8ce913 HEAD@{441}: checkout: moving from codex/rag-mcp-solid-base to codex/planner-cuda-rewrite-retry
+1654749c HEAD@{442}: commit: Fix apply patch loop validation
+3221fefb HEAD@{443}: commit: Move repo MCP one-of validation out of schemas
+6d83572e HEAD@{444}: commit: Harden planner limits and repo tooling
+4c15f2cb HEAD@{445}: commit: Harden agentic loop and OpenWebUI bridge
+9f50f5f9 HEAD@{446}: commit: Stabilize planner targeting and public payload surface
+157ce13c HEAD@{447}: commit: Add deterministic repo MCP servers
+13c83d50 HEAD@{448}: commit: Add payload replay feedback validation
+cd8ce913 HEAD@{449}: checkout: moving from codex/fai-le-fix-based-on to codex/rag-mcp-solid-base
+cd8ce913 HEAD@{450}: commit: Add Codex RAG MCP index tools
+ce4d6dfc HEAD@{451}: checkout: moving from codex/tool-aliases-writeguard-fix to codex/fai-le-fix-based-on
+94cfe702 HEAD@{452}: commit: fix bug
+8e5ad754 HEAD@{453}: commit: Fix _delta_reindex: repo.working_dir, len>=2, full reindex, DELETE+INSERT, row_factory
+b3782354 HEAD@{454}: commit: update code
+b5d826f0 HEAD@{455}: commit: MCP rerank CODEX only
+ce4d6dfc HEAD@{456}: checkout: moving from main to codex/tool-aliases-writeguard-fix
+ce4d6dfc HEAD@{457}: merge codex/npu-phi35-mini-int4-cw-ov-integration: Fast-forward
+b40b0cac HEAD@{458}: checkout: moving from codex/npu-phi35-mini-int4-cw-ov-integration to main
+ce4d6dfc HEAD@{459}: commit: fix: align WRITE_GUARDED_TOOLS usage and clean up tool aliases
+b36f7496 HEAD@{460}: commit: refactor: extract MCP schemas to external tool_schemas registry
+8b9d095b HEAD@{461}: commit: P1: split public_payload lab from planner_lab.py into dedicated package
+f097a485 HEAD@{462}: commit: P0: Remove dead planner variants and 14 stale .bak files
+da2d3d5e HEAD@{463}: commit: consistence
+757d6a03 HEAD@{464}: commit (amend): Make macro runtime test request-driven
+af18b859 HEAD@{465}: commit (amend): Make macro runtime test request-driven
+7e9b9877 HEAD@{466}: commit (amend): Make macro runtime test request-driven
+21924abe HEAD@{467}: commit (amend): Make macro runtime test request-driven
+89c42fe0 HEAD@{468}: commit (amend): Make macro runtime test request-driven
+c02f296e HEAD@{469}: commit: Make macro runtime test request-driven
+7d62d99e HEAD@{470}: commit: Separate failed tool turn indexes from artifacts
+6aed45c5 HEAD@{471}: commit: Materialize explicit target loop failures
+bbac15ca HEAD@{472}: commit: Fix macro write-file and ast-grep coverage
+a1c7850c HEAD@{473}: commit: Annotate macro runtime tool cases
+2433ea5a HEAD@{474}: commit: Harden macro loop payload edge cases
+536c4d83 HEAD@{475}: commit: Fix explicit target loop payload coverage
+ce605ec4 HEAD@{476}: commit: Move full loop audit into runtime replay
+a33f3942 HEAD@{477}: commit: Align macro runtime test with live loop diagnostics
+fe5b9004 HEAD@{478}: commit: Use runtime handoff in macro test
+d4d0b36d HEAD@{479}: commit: Harden macro runtime loop coverage and unload
+7f1236a0 HEAD@{480}: commit: Reset macro runtime filter environment
+618b86da HEAD@{481}: commit: Fix macro loop native tool preseed audit
+d37a0656 HEAD@{482}: commit: Harden OpenWebUI evidence materialization and macro loop test
+5a866e57 HEAD@{483}: commit: Add broker public evidence materializer
+c050dca3 HEAD@{484}: commit: Make public tool context an artifact mirror
+9e0a3129 HEAD@{485}: commit: Add guided planner payload conversation
+29c9fc7e HEAD@{486}: commit: Strengthen planner payload lab chat surface
+181f3a4a HEAD@{487}: commit: Deduplicate narrative guide fields across bridge surfaces
+586ec8dd HEAD@{488}: commit: Deduplicate internal loop narrative payload
+6ae84be0 HEAD@{489}: commit: Harden OpenWebUI evidence guide payload
+4d7b0467 HEAD@{490}: commit: Add NPU Phi doctor diagnostics
+5da90f76 HEAD@{491}: commit: Add planner payload lab
+658828a5 HEAD@{492}: commit: Harden NPU Phi diagnostics
+59a6f286 HEAD@{493}: commit: Add NPU Phi diagnostic sidecar
+d43949d8 HEAD@{494}: commit: Bind NPU Phi launcher contract
+b40b0cac HEAD@{495}: checkout: moving from main to codex/npu-phi35-mini-int4-cw-ov-integration
+b40b0cac HEAD@{496}: merge codex/runtime-debug-coding: Fast-forward
+11da10fb HEAD@{497}: checkout: moving from codex/runtime-debug-coding to main
+b40b0cac HEAD@{498}: commit: Preserve failed job payload context
+eafe3745 HEAD@{499}: commit: Fix candidate gate and replay rejection diagnostics
+2ec3e692 HEAD@{500}: commit: Tighten diagnostics in IA job view
+6829f4a1 HEAD@{501}: commit: Attach command and search diagnostics to tool payloads
+d4da8762 HEAD@{502}: commit: Add memory diagnostics and docs flow checks
+6c6df6ed HEAD@{503}: commit: Add command and search diagnostics
+45d707e4 HEAD@{504}: commit: Add progress factories and public payload lint
+09594d53 HEAD@{505}: commit: Gate candidate actions by proof
+e851e913 HEAD@{506}: commit: Add loop replay harness
+aad9ba0f HEAD@{507}: commit: Add runtime debug packet
+11da10fb HEAD@{508}: checkout: moving from main to codex/runtime-debug-coding
+11da10fb HEAD@{509}: merge codex/runtime-debug-coding: Fast-forward
+cc44136b HEAD@{510}: checkout: moving from codex/runtime-debug-coding to main
+11da10fb HEAD@{511}: commit: Keep evidence coverage diagnostic-only
+cc0b1c8f HEAD@{512}: commit: Add structured evidence diagnostics
+40be92df HEAD@{513}: commit: Test missing core discovery candidates
+aa7eeeee HEAD@{514}: commit: Update runtime documentation references
+5b3d5632 HEAD@{515}: commit: Refresh documentation paths and call references
+a47822fb HEAD@{516}: commit: Add navigable flow maps for complex folders
+88adc12a HEAD@{517}: commit: Fix planner validator wiring and slim public tool surface
+9d3aabe0 HEAD@{518}: commit: Document lab repo env root contract
+07ea69cb HEAD@{519}: commit: Align candidate repo reads with validator admissible paths
+cc44136b HEAD@{520}: checkout: moving from main to codex/runtime-debug-coding
+cc44136b HEAD@{521}: merge codex/refactor-agentic-tool-loop: Merge made by the 'ort' strategy.
+5b9e4b91 HEAD@{522}: checkout: moving from codex/refactor-agentic-tool-loop to main
+3421279b HEAD@{523}: commit: Fix OpenWebUI terminal surface and planner candidates
+d03398c1 HEAD@{524}: commit: Fix operational contract inconsistencies
+12625d40 HEAD@{525}: commit: Remove completed broker dispatcher shim
+8f1f16e5 HEAD@{526}: commit: Encapsulate application owner services
+73233f8a HEAD@{527}: commit: Remove flat application compatibility shims
+dc394424 HEAD@{528}: commit: Consolidate application superowner packages
+6d617d47 HEAD@{529}: commit: Extract planner system prompt contract
+c4d5e947 HEAD@{530}: commit: Extract multi-step planner loop owner
+de5724ea HEAD@{531}: commit: Extract single planner turn owner
+5a06e451 HEAD@{532}: commit: Extract planner decision validator
+425aa103 HEAD@{533}: commit: Extract planner evidence contract builder
+65bffe9f HEAD@{534}: commit: Extract planner prompt pack builder
+758e0fc2 HEAD@{535}: commit: Update planner refactor status
+d66a0f50 HEAD@{536}: commit: Extract required working set builder
+0444e2f5 HEAD@{537}: commit: Extract prompt context window continuation helpers
+190839fd HEAD@{538}: commit: Extract initial orientation surface builder
+024264bf HEAD@{539}: commit: Extract evidence candidate action builder
+c19e8871 HEAD@{540}: commit: Extract OpenWebUI context and controller memory helpers
+ddc7ee81 HEAD@{541}: commit: Extract OpenWebUI terminal answer helpers
+8b886b25 HEAD@{542}: commit: Update status after planner output splits
+d8a179c2 HEAD@{543}: commit: Extract agent flow diagnostics
+d46148f2 HEAD@{544}: commit: Extract code product public outputs
+9ca1f40f HEAD@{545}: commit: Extract execution evidence digest
+f1e07ce3 HEAD@{546}: commit: Update status after terminal result splits
+3d850e62 HEAD@{547}: commit: Extract terminal context row helpers
+52a151e0 HEAD@{548}: commit: Extract public terminal result ledger
+879ef205 HEAD@{549}: commit: Update status after planner helper splits
+45c6f041 HEAD@{550}: commit: Extract public terminal sanitizers
+865099ab HEAD@{551}: commit: Extract planner final state digest
+d5296f87 HEAD@{552}: commit: Extract planner status helpers
+dcafa8fc HEAD@{553}: commit: Update status after SQLite and bridge splits
+c27ff836 HEAD@{554}: commit: Extract bridge response value helpers
+11fddfde HEAD@{555}: commit: Extract bridge request payload helpers
+529dd929 HEAD@{556}: commit: Extract job SQLite store adapter
+6423edc1 HEAD@{557}: commit: Update status after job store response split
+c1d3cd02 HEAD@{558}: commit: Extract wait timeout response builder
+4c4015be HEAD@{559}: commit: Extract compact status response builder
+3c24ad79 HEAD@{560}: commit: Extract compact terminal response builder
+ec11e06e HEAD@{561}: commit: Extract job response value helpers
+99fa99a2 HEAD@{562}: commit: Update refactoring status after agent entry split
+1f570c11 HEAD@{563}: commit: Extract agent job action router
+cf242d62 HEAD@{564}: commit: Extract selector dispatch runner
+bfd87612 HEAD@{565}: commit: Extract agent job lifecycle service
+2ce29cf0 HEAD@{566}: commit: Extract agent job worker service
+220b1b82 HEAD@{567}: commit: Lock repo tools facade contract
+3632fd43 HEAD@{568}: commit: Complete dispatcher facade contract tests
+01dd7e4b HEAD@{569}: commit: Close broker config env compatibility
+a3b73e89 HEAD@{570}: commit: Align refactor facade status docs
+55de3d9a HEAD@{571}: commit: Extract scope conflict resolution helpers
+07996d86 HEAD@{572}: commit: Extract core discovery helpers
+7a5b2fb8 HEAD@{573}: commit: Extract user scope claim helpers
+d8ef5e15 HEAD@{574}: commit: Extract repo history evidence helpers
+5f84d655 HEAD@{575}: commit: Extract controller preseed helpers
+27d637d7 HEAD@{576}: commit: Extract repo path policy helpers
+4ca03644 HEAD@{577}: commit: Extract goal scope helpers
+04f8b6ba HEAD@{578}: commit: Extract duplicate window replan helpers
+c4b8bded HEAD@{579}: commit: Extract code product history helpers
+d0abb2c5 HEAD@{580}: commit: Extract controller guard helpers
+976f3c08 HEAD@{581}: commit: Extract public tool context shaping
+cb4c25ad HEAD@{582}: commit: Extract planner history messages
+ecb93f0a HEAD@{583}: commit: Extract planner history ledger
+2bf521a8 HEAD@{584}: commit: Extract planner tool result compaction
+9edb7c50 HEAD@{585}: commit: Extract planner last result digest
+eb693000 HEAD@{586}: commit: Extract prompt context window compaction
+01f845e2 HEAD@{587}: commit: Extract history result and artifact helpers
+4751ab55 HEAD@{588}: commit: Extract validation rejection compaction
+dd2cad58 HEAD@{589}: commit: Extract hard budget evidence summary
+17e742d7 HEAD@{590}: commit: Extract available tools prompt window pack
+ce163a1d HEAD@{591}: commit: Extract planner history prompt compaction
+5ecef26f HEAD@{592}: commit: Extract prompt continuation decision matcher
+d286174d HEAD@{593}: commit: Extract required next tool call preservation
+83f2b610 HEAD@{594}: commit: Move planner headroom report check to prompt budget
+f6c47a33 HEAD@{595}: commit: Move planner prompt budget report to application
+9a4b959e HEAD@{596}: commit: Extract planner intrinsic context prompt compaction
+25723270 HEAD@{597}: commit: Extract planner evidence prompt contract
+8da88baf HEAD@{598}: commit: Extract planner tool prompt contract
+f20e072b HEAD@{599}: commit: Extract planner turn tool surface selection
+6e1971b1 HEAD@{600}: commit: Extract planner turn surface policy
+9ec068c3 HEAD@{601}: commit: Extract planner candidate action helpers
+7c8d708c HEAD@{602}: commit: Extract planner tool manifest builder
+3b3c3256 HEAD@{603}: commit: Extract planner prompt budget helpers
+16762db2 HEAD@{604}: commit: Extract planner text window primitives
+9b735ece HEAD@{605}: commit: Extract planner prompt value helpers
+b9bc14b0 HEAD@{606}: commit: Extract planner history queries
+59ce5854 HEAD@{607}: commit: Extract planner window signatures
+3b67103f HEAD@{608}: commit: Extract code product state helpers
+cbf34c4a HEAD@{609}: commit: Share planner path token normalization
+e1ab5df4 HEAD@{610}: commit: Extract planner goal classifier
+679e1d60 HEAD@{611}: commit: Extract deterministic repo tools
+240b7ac4 HEAD@{612}: commit: Extract deterministic tool primitives
+e7d4d8e1 HEAD@{613}: commit: Extract repo status tools
+91f946f7 HEAD@{614}: commit: Extract terminal adapter tools
+7455d038 HEAD@{615}: commit: Extract code product proposal tool
+36ee1f83 HEAD@{616}: commit: Extract repo patch tools
+f081f398 HEAD@{617}: commit: Extract repo command tool
+3d5bf227 HEAD@{618}: commit: Extract repo validation tool
+ca6d1bcd HEAD@{619}: commit: Extract repo inspection tools
+f100b588 HEAD@{620}: commit: Extract repo_read tool implementation
+4dd9378b HEAD@{621}: commit: Extract Vulkan bridge config
+92eb7f61 HEAD@{622}: commit: Extract Vulkan bridge OpenAPI builder
+ab66f050 HEAD@{623}: commit: Extract public result digest ledger
+855d294b HEAD@{624}: commit: Extract planner decision normalizer
+6dedfda6 HEAD@{625}: commit: Delegate repo and job primitives to adapters
+3c853232 HEAD@{626}: commit: Extract registry tool dispatcher
+8e61a506 HEAD@{627}: commit: Add agentic loop refactor foundations
+5b9e4b91 HEAD@{628}: checkout: moving from main to codex/refactor-agentic-tool-loop
+5b9e4b91 HEAD@{629}: commit: Remove ignored workspace artifacts
+02d4a6df HEAD@{630}: commit: Remove ignored workspace artifacts
+14c1d88d HEAD@{631}: commit: Add IA view lazy section smoke checks
+550a7be4 HEAD@{632}: commit: Fix terminal payload transport for non-ok jobs
+9f6b876b HEAD@{633}: commit: Remove ignored workspace artifacts
+c5e5a2ab HEAD@{634}: commit: Remove ignored workspace artifacts
+1f1492e1 HEAD@{635}: commit: Remove ignored workspace artifacts
+6fa2c9b1 HEAD@{636}: commit: Remove ignored workspace artifacts
+72af5e16 HEAD@{637}: commit: Remove ignored workspace artifacts
+9d3f2594 HEAD@{638}: commit: Remove qwen workspace artifacts
+ca28cae4 HEAD@{639}: commit: Remove qwen workspace artifacts
+485d9767 HEAD@{640}: commit: Remove qwen workspace artifacts
+02a6de63 HEAD@{641}: commit: Remove qwen workspace artifacts
+cf3a453d HEAD@{642}: commit: Remove qwen workspace artifacts
+ef62c072 HEAD@{643}: commit: Remove qwen workspace artifacts
+fe12e4cc HEAD@{644}: commit: Remove ignored workspace artifacts
+ebadedd1 HEAD@{645}: commit: Initial private agentic tool loop import
+23b47d88 HEAD@{646}: commit: Initial private agentic tool loop import
+cd0f7665 HEAD@{647}: commit: Initial private agentic tool loop import
+1690d623 HEAD@{648}: commit: Initial private agentic tool loop import
+6571c4b7 HEAD@{649}: commit: Initial private agentic tool loop import
+8a28908f HEAD@{650}: commit (initial): Initial private agentic tool loop import
