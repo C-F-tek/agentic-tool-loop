@@ -3,12 +3,105 @@
   "version": "1.0.0",
   "generated_at": "runtime",
   "metadata": {
-    "total_tools": 39,
-    "total_servers": 3,
-    "total_categories": 21,
+    "total_tools": 122,
+    "total_servers": 15,
+    "total_categories": 94,
     "write_gated_tools": 10
   },
   "tool_entries": [
+    {
+      "tool_name": "aicarmine_agentic_loop_capabilities",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/capabilities",
+      "family": "agentic",
+      "subtype": "capabilities",
+      "description": "Describe agentic-loop client contract",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_agentic_loop_ensure_broker",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/ensure",
+      "family": "agentic",
+      "subtype": "ensure",
+      "description": "Ensure dedicated broker is running",
+      "read_only": false,
+      "confirmation_gate": "confirm_ensure_broker",
+      "related_tools": [
+        "aicarmine_agentic_loop_ensure_reranker"
+      ],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_agentic_loop_ensure_broker"
+    },
+    {
+      "tool_name": "aicarmine_agentic_loop_ensure_reranker",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/ensure",
+      "family": "agentic",
+      "subtype": "ensure",
+      "description": "Ensure BGE reranker is ready",
+      "read_only": false,
+      "confirmation_gate": "confirm_ensure_reranker",
+      "related_tools": [
+        "aicarmine_agentic_loop_ensure_broker"
+      ],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_agentic_loop_ensure_reranker"
+    },
+    {
+      "tool_name": "aicarmine_agentic_loop_health",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/health",
+      "family": "agentic",
+      "subtype": "health",
+      "description": "Report agentic-loop client health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_agentic_loop_result",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/result",
+      "family": "agentic",
+      "subtype": "result",
+      "description": "Fetch compact result for a job",
+      "read_only": true,
+      "confirmation_gate": "confirm_agentic_loop",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_agentic_loop_result"
+    },
+    {
+      "tool_name": "aicarmine_agentic_loop_run",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/run",
+      "family": "agentic",
+      "subtype": "run",
+      "description": "Start agentic-loop job on dedicated port",
+      "read_only": false,
+      "confirmation_gate": "confirm_agentic_loop",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_agentic_loop_run"
+    },
+    {
+      "tool_name": "aicarmine_agentic_loop_status",
+      "server_name": "aicarmine-agentic-loop-client",
+      "category": "agentic/status",
+      "family": "agentic",
+      "subtype": "status",
+      "description": "Fetch compact status for a job",
+      "read_only": true,
+      "confirmation_gate": "confirm_agentic_loop",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_agentic_loop_status"
+    },
     {
       "tool_name": "aicarmine_bridge_health",
       "server_name": "aicarmine-codex-app",
@@ -516,6 +609,18 @@
       "confirmation_required": false
     },
     {
+      "tool_name": "aicarmine_codex_ops_health",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/health",
+      "family": "ops",
+      "subtype": "health",
+      "description": "Report Codex ops MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
       "tool_name": "aicarmine_mcp_inventory",
       "server_name": "aicarmine-codex-ops",
       "category": "unknown/general",
@@ -526,6 +631,521 @@
       "confirmation_gate": null,
       "related_tools": [],
       "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_mcp_inventory_health",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/inventory",
+      "family": "ops",
+      "subtype": "inventory",
+      "description": "Report MCP inventory health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_mcp_inventory_list_targets"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_mcp_inventory_list_targets",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/inventory",
+      "family": "ops",
+      "subtype": "inventory",
+      "description": "List allowlist of MCP servers",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_mcp_inventory_health"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_mcp_inventory_probe",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/probe",
+      "family": "ops",
+      "subtype": "probe",
+      "description": "Run stdio initialize/health probes",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_service_state_health",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/state",
+      "family": "ops",
+      "subtype": "state",
+      "description": "Report service-state read-only scope",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_service_state_logs",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/logs",
+      "family": "ops",
+      "subtype": "logs",
+      "description": "Read tails of log files",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_service_state_ports",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/ports",
+      "family": "ops",
+      "subtype": "ports",
+      "description": "Read listening sockets",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_service_state_processes",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/processes",
+      "family": "ops",
+      "subtype": "processes",
+      "description": "Read process command lines",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_service_state_snapshot",
+      "server_name": "aicarmine-codex-ops",
+      "category": "ops/snapshot",
+      "family": "ops",
+      "subtype": "snapshot",
+      "description": "Return bounded snapshot of ports/processes/logs",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_git_readonly_blame",
+      "server_name": "aicarmine-git-readonly",
+      "category": "git/blame",
+      "family": "git",
+      "subtype": "blame",
+      "description": "Read line-by-line blame for a file",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_git_readonly_branch_compare",
+      "server_name": "aicarmine-git-readonly",
+      "category": "git/compare",
+      "family": "git",
+      "subtype": "compare",
+      "description": "Compare branch with remote tracking",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_git_readonly_diff",
+      "server_name": "aicarmine-git-readonly",
+      "category": "git/diff",
+      "family": "git",
+      "subtype": "diff",
+      "description": "Read bounded git diff for worktree or revisions",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_git_readonly_health",
+      "server_name": "aicarmine-git-readonly",
+      "category": "git/health",
+      "family": "git",
+      "subtype": "health",
+      "description": "Report Git MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_git_readonly_log",
+      "server_name": "aicarmine-git-readonly",
+      "category": "git/history",
+      "family": "git",
+      "subtype": "history",
+      "description": "Read recent commits with structured format",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_git_readonly_show"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_git_readonly_show",
+      "server_name": "aicarmine-git-readonly",
+      "category": "git/history",
+      "family": "git",
+      "subtype": "history",
+      "description": "Read one commit with stat and optional patch",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_git_readonly_log"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_events",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/events",
+      "family": "job",
+      "subtype": "events",
+      "description": "Read filtered/tail events from job",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_final",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/final",
+      "family": "job",
+      "subtype": "final",
+      "description": "Read final.json and final.md for a job",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_health",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/health",
+      "family": "job",
+      "subtype": "health",
+      "description": "Report job artifact MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_list_jobs",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/list",
+      "family": "job",
+      "subtype": "list",
+      "description": "List persisted agent jobs",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_planner_payload",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/planner",
+      "family": "job",
+      "subtype": "planner",
+      "description": "Read planner step payload",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_rejections",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/rejections",
+      "family": "job",
+      "subtype": "rejections",
+      "description": "Extract planner rejection events",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_subturns",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/turns",
+      "family": "job",
+      "subtype": "turns",
+      "description": "Read support-subturn events and results",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_summary",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/detail",
+      "family": "job",
+      "subtype": "detail",
+      "description": "Summarize one job without HTTP call",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_job_detail"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_artifact_tool_results",
+      "server_name": "aicarmine-job-artifact",
+      "category": "job/tools",
+      "family": "job",
+      "subtype": "tools",
+      "description": "List or read tool-result artifacts",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_health",
+      "server_name": "aicarmine-job-view",
+      "category": "job/view",
+      "family": "job",
+      "subtype": "view",
+      "description": "Report job-view MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_job_view_list_views"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_ia_payload",
+      "server_name": "aicarmine-job-view",
+      "category": "job/ia",
+      "family": "job",
+      "subtype": "ia",
+      "description": "Read IA live control payload directly",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_links",
+      "server_name": "aicarmine-job-view",
+      "category": "job/links",
+      "family": "job",
+      "subtype": "links",
+      "description": "Render view and extract links",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_list_views",
+      "server_name": "aicarmine-job-view",
+      "category": "job/view",
+      "family": "job",
+      "subtype": "view",
+      "description": "List available job HTML views",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_job_view_health"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_outline",
+      "server_name": "aicarmine-job-view",
+      "category": "job/outline",
+      "family": "job",
+      "subtype": "outline",
+      "description": "Render view and return HTML outline",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_render",
+      "server_name": "aicarmine-job-view",
+      "category": "job/render",
+      "family": "job",
+      "subtype": "render",
+      "description": "Render one job HTML view locally",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_job_view_render_section"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_render_section",
+      "server_name": "aicarmine-job-view",
+      "category": "job/render",
+      "family": "job",
+      "subtype": "render",
+      "description": "Render one section HTML fragment",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_job_view_render"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_view_validate_html",
+      "server_name": "aicarmine-job-view",
+      "category": "job/validate",
+      "family": "job",
+      "subtype": "validate",
+      "description": "Render view and run structural checks",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_local_subagent_capabilities",
+      "server_name": "aicarmine-local-subagent",
+      "category": "subagent/capabilities",
+      "family": "subagent",
+      "subtype": "capabilities",
+      "description": "Describe local subagent capabilities",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_local_subagent_health",
+      "server_name": "aicarmine-local-subagent",
+      "category": "subagent/health",
+      "family": "subagent",
+      "subtype": "health",
+      "description": "Report local subagent facade health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_local_subagent_run_readonly",
+      "server_name": "aicarmine-local-subagent",
+      "category": "subagent/run",
+      "family": "subagent",
+      "subtype": "run",
+      "description": "Run bounded read-only subagent task",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_project_memory_audit_sources",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/audit",
+      "family": "memory",
+      "subtype": "audit",
+      "description": "Audit source references",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_project_memory_get",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/get",
+      "family": "memory",
+      "subtype": "get",
+      "description": "Read one memory record by ID or key",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_project_memory_health",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/health",
+      "family": "memory",
+      "subtype": "health",
+      "description": "Report project-local memory health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_project_memory_mark_stale",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/stale",
+      "family": "memory",
+      "subtype": "stale",
+      "description": "Mark memory record stale",
+      "read_only": false,
+      "confirmation_gate": "confirm_stale",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_project_memory_mark_stale"
+    },
+    {
+      "tool_name": "aicarmine_project_memory_search",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/search",
+      "family": "memory",
+      "subtype": "search",
+      "description": "Search project-local memory records",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_memory_report"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_project_memory_supersede",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/supersede",
+      "family": "memory",
+      "subtype": "supersede",
+      "description": "Supersede memory record",
+      "read_only": false,
+      "confirmation_gate": "confirm_supersede",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_project_memory_supersede"
+    },
+    {
+      "tool_name": "aicarmine_project_memory_upsert_verified",
+      "server_name": "aicarmine-project-memory",
+      "category": "memory/write",
+      "family": "memory",
+      "subtype": "write",
+      "description": "Write/verify memory record (write)",
+      "read_only": false,
+      "confirmation_gate": "confirm_write",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_project_memory_upsert_verified"
     },
     {
       "tool_name": "aicarmine_rag_context",
@@ -562,23 +1182,579 @@
       "confirmation_gate": null,
       "related_tools": [],
       "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_code_apply_patch",
+      "server_name": "aicarmine-repo-code",
+      "category": "code/apply",
+      "family": "code",
+      "subtype": "apply",
+      "description": "Apply verified patch (write tool)",
+      "read_only": false,
+      "confirmation_gate": "allow_source_write",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_repo_code_apply_patch"
+    },
+    {
+      "tool_name": "aicarmine_repo_code_git_apply_check",
+      "server_name": "aicarmine-repo-code",
+      "category": "code/apply_check",
+      "family": "code",
+      "subtype": "apply_check",
+      "description": "Run git apply --check",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_code_health",
+      "server_name": "aicarmine-repo-code",
+      "category": "code/health",
+      "family": "code",
+      "subtype": "health",
+      "description": "Report repo-code MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_code_propose_edit",
+      "server_name": "aicarmine-repo-code",
+      "category": "code/propose",
+      "family": "code",
+      "subtype": "propose",
+      "description": "Build report-only code edit proposal",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_code_unidiff_validate",
+      "server_name": "aicarmine-repo-code",
+      "category": "code/validate",
+      "family": "code",
+      "subtype": "validate",
+      "description": "Validate unified diff structure",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_ast_grep",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/astgrep",
+      "family": "search",
+      "subtype": "astgrep",
+      "description": "Run ast-grep search in repo",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_search_ast_grep_dry_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_ast_grep_dry_run",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/astgrep",
+      "family": "search",
+      "subtype": "astgrep",
+      "description": "Run ast-grep rewrite dry-run",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_search_ast_grep"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_ctags",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/ctags",
+      "family": "search",
+      "subtype": "ctags",
+      "description": "List symbols with ctags JSON output",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_det_health",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: aicarmine_repo_search_det_health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_fd",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/fd",
+      "family": "search",
+      "subtype": "fd",
+      "description": "Find files with fd in repo root",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_jq",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/jq",
+      "family": "search",
+      "subtype": "jq",
+      "description": "Run jq against JSON text or file",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_rg",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/rg",
+      "family": "search",
+      "subtype": "rg",
+      "description": "Search contents with ripgrep JSON output",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search_tree_sitter_parse",
+      "server_name": "aicarmine-repo-search-det",
+      "category": "search/treesitter",
+      "family": "search",
+      "subtype": "treesitter",
+      "description": "Parse file with tree-sitter",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_state_capabilities",
+      "server_name": "aicarmine-repo-state",
+      "category": "state/capabilities",
+      "family": "state",
+      "subtype": "capabilities",
+      "description": "Run deterministic repo capabilities",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_state_health",
+      "server_name": "aicarmine-repo-state",
+      "category": "state/health",
+      "family": "state",
+      "subtype": "health",
+      "description": "Report repo state health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_state_status",
+      "server_name": "aicarmine-repo-state",
+      "category": "state/status",
+      "family": "state",
+      "subtype": "status",
+      "description": "Run deterministic repo status",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_diffcheck",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/diff",
+      "family": "validate",
+      "subtype": "diff",
+      "description": "Run git diff --check validation",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_health",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/health",
+      "family": "validate",
+      "subtype": "health",
+      "description": "Report repo-validate MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_probe_profiles",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/probe",
+      "family": "validate",
+      "subtype": "probe",
+      "description": "List static probe profiles",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_validate_probe_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_probe_run",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/probe",
+      "family": "validate",
+      "subtype": "probe",
+      "description": "Run reviewed probe profile",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_validate_probe_profiles"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_pyright",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/pyright",
+      "family": "validate",
+      "subtype": "pyright",
+      "description": "Run pyright with JSON diagnostics",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_pytest",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/pytest",
+      "family": "validate",
+      "subtype": "pytest",
+      "description": "Run pytest on selected paths",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_ruff",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/ruff",
+      "family": "validate",
+      "subtype": "ruff",
+      "description": "Run ruff check with JSON diagnostics",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_semgrep",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/semgrep",
+      "family": "validate",
+      "subtype": "semgrep",
+      "description": "Run semgrep JSON diagnostics",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate_shellcheck",
+      "server_name": "aicarmine-repo-validate",
+      "category": "validate/shellcheck",
+      "family": "validate",
+      "subtype": "shellcheck",
+      "description": "Run shellcheck JSON diagnostics",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_sqlite_readonly_health",
+      "server_name": "aicarmine-sqlite-readonly",
+      "category": "sqlite/health",
+      "family": "sqlite",
+      "subtype": "health",
+      "description": "Report SQLite read-only MCP health",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_sqlite_readonly_list_databases",
+      "server_name": "aicarmine-sqlite-readonly",
+      "category": "sqlite/list",
+      "family": "sqlite",
+      "subtype": "list",
+      "description": "List allowlisted SQLite databases",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_sqlite_readonly_query",
+      "server_name": "aicarmine-sqlite-readonly",
+      "category": "sqlite/query",
+      "family": "sqlite",
+      "subtype": "query",
+      "description": "Run bounded SELECT/WITH query",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_sqlite_readonly_schema",
+      "server_name": "aicarmine-sqlite-readonly",
+      "category": "sqlite/schema",
+      "family": "sqlite",
+      "subtype": "schema",
+      "description": "Read table/view schema",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "wily_complexity",
+      "server_name": "aicarmine-wily",
+      "category": "wily/complexity",
+      "family": "wily",
+      "subtype": "complexity",
+      "description": "Compute cyclomatic complexity for a Python file",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "wily_health",
+      "server_name": "aicarmine-wily",
+      "category": "wily/health",
+      "family": "wily",
+      "subtype": "health",
+      "description": "Report Wily MCP health and Python analysis availability",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "wily_list_files",
+      "server_name": "aicarmine-wily",
+      "category": "wily/listing",
+      "family": "wily",
+      "subtype": "listing",
+      "description": "List Python files in a directory for complexity analysis",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "wily_maintainability",
+      "server_name": "aicarmine-wily",
+      "category": "wily/maintainability",
+      "family": "wily",
+      "subtype": "maintainability",
+      "description": "Compute maintainability index for a Python file",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "wily_report",
+      "server_name": "aicarmine-wily",
+      "category": "wily/report",
+      "family": "wily",
+      "subtype": "report",
+      "description": "Generate full complexity and maintainability report",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
     }
   ],
   "category_index": {
+    "agentic/capabilities": [
+      "aicarmine_agentic_loop_capabilities"
+    ],
+    "agentic/ensure": [
+      "aicarmine_agentic_loop_ensure_broker",
+      "aicarmine_agentic_loop_ensure_reranker"
+    ],
+    "agentic/health": [
+      "aicarmine_agentic_loop_health"
+    ],
+    "agentic/result": [
+      "aicarmine_agentic_loop_result"
+    ],
+    "agentic/run": [
+      "aicarmine_agentic_loop_run"
+    ],
+    "agentic/status": [
+      "aicarmine_agentic_loop_status"
+    ],
     "bridge/health": [
       "aicarmine_bridge_health"
     ],
+    "code/apply": [
+      "aicarmine_repo_code_apply_patch"
+    ],
+    "code/apply_check": [
+      "aicarmine_repo_code_git_apply_check"
+    ],
+    "code/health": [
+      "aicarmine_repo_code_health"
+    ],
+    "code/propose": [
+      "aicarmine_repo_code_propose_edit"
+    ],
+    "code/validate": [
+      "aicarmine_repo_code_unidiff_validate"
+    ],
+    "git/blame": [
+      "aicarmine_git_readonly_blame"
+    ],
+    "git/compare": [
+      "aicarmine_git_readonly_branch_compare"
+    ],
+    "git/diff": [
+      "aicarmine_git_readonly_diff"
+    ],
+    "git/health": [
+      "aicarmine_git_readonly_health"
+    ],
+    "git/history": [
+      "aicarmine_git_readonly_log",
+      "aicarmine_git_readonly_show"
+    ],
     "job/detail": [
+      "aicarmine_job_artifact_summary",
       "aicarmine_job_detail"
+    ],
+    "job/events": [
+      "aicarmine_job_artifact_events"
+    ],
+    "job/final": [
+      "aicarmine_job_artifact_final"
+    ],
+    "job/health": [
+      "aicarmine_job_artifact_health"
+    ],
+    "job/ia": [
+      "aicarmine_job_view_ia_payload"
+    ],
+    "job/links": [
+      "aicarmine_job_view_links"
+    ],
+    "job/list": [
+      "aicarmine_job_artifact_list_jobs"
+    ],
+    "job/outline": [
+      "aicarmine_job_view_outline"
+    ],
+    "job/planner": [
+      "aicarmine_job_artifact_planner_payload"
+    ],
+    "job/rejections": [
+      "aicarmine_job_artifact_rejections"
+    ],
+    "job/render": [
+      "aicarmine_job_view_render",
+      "aicarmine_job_view_render_section"
     ],
     "job/status": [
       "aicarmine_jobs_status"
+    ],
+    "job/tools": [
+      "aicarmine_job_artifact_tool_results"
+    ],
+    "job/turns": [
+      "aicarmine_job_artifact_subturns"
+    ],
+    "job/validate": [
+      "aicarmine_job_view_validate_html"
+    ],
+    "job/view": [
+      "aicarmine_job_view_health",
+      "aicarmine_job_view_list_views"
+    ],
+    "memory/audit": [
+      "aicarmine_project_memory_audit_sources"
+    ],
+    "memory/get": [
+      "aicarmine_project_memory_get"
+    ],
+    "memory/health": [
+      "aicarmine_project_memory_health"
     ],
     "memory/packet": [
       "aicarmine_memory_state_packet"
     ],
     "memory/search": [
-      "aicarmine_memory_report"
+      "aicarmine_memory_report",
+      "aicarmine_project_memory_search"
+    ],
+    "memory/stale": [
+      "aicarmine_project_memory_mark_stale"
+    ],
+    "memory/supersede": [
+      "aicarmine_project_memory_supersede"
+    ],
+    "memory/write": [
+      "aicarmine_project_memory_upsert_verified"
+    ],
+    "ops/health": [
+      "aicarmine_codex_ops_health"
+    ],
+    "ops/inventory": [
+      "aicarmine_mcp_inventory_health",
+      "aicarmine_mcp_inventory_list_targets"
+    ],
+    "ops/logs": [
+      "aicarmine_service_state_logs"
+    ],
+    "ops/ports": [
+      "aicarmine_service_state_ports"
+    ],
+    "ops/probe": [
+      "aicarmine_mcp_inventory_probe"
+    ],
+    "ops/processes": [
+      "aicarmine_service_state_processes"
+    ],
+    "ops/snapshot": [
+      "aicarmine_service_state_snapshot"
+    ],
+    "ops/state": [
+      "aicarmine_service_state_health"
     ],
     "rag/query": [
       "aicarmine_rag_context"
@@ -632,6 +1808,55 @@
     "repo/write": [
       "aicarmine_repo_apply_patch"
     ],
+    "search/astgrep": [
+      "aicarmine_repo_search_ast_grep",
+      "aicarmine_repo_search_ast_grep_dry_run"
+    ],
+    "search/ctags": [
+      "aicarmine_repo_search_ctags"
+    ],
+    "search/fd": [
+      "aicarmine_repo_search_fd"
+    ],
+    "search/jq": [
+      "aicarmine_repo_search_jq"
+    ],
+    "search/rg": [
+      "aicarmine_repo_search_rg"
+    ],
+    "search/treesitter": [
+      "aicarmine_repo_search_tree_sitter_parse"
+    ],
+    "sqlite/health": [
+      "aicarmine_sqlite_readonly_health"
+    ],
+    "sqlite/list": [
+      "aicarmine_sqlite_readonly_list_databases"
+    ],
+    "sqlite/query": [
+      "aicarmine_sqlite_readonly_query"
+    ],
+    "sqlite/schema": [
+      "aicarmine_sqlite_readonly_schema"
+    ],
+    "state/capabilities": [
+      "aicarmine_repo_state_capabilities"
+    ],
+    "state/health": [
+      "aicarmine_repo_state_health"
+    ],
+    "state/status": [
+      "aicarmine_repo_state_status"
+    ],
+    "subagent/capabilities": [
+      "aicarmine_local_subagent_capabilities"
+    ],
+    "subagent/health": [
+      "aicarmine_local_subagent_health"
+    ],
+    "subagent/run": [
+      "aicarmine_local_subagent_run_readonly"
+    ],
     "terminal/list": [
       "terminal_list_files"
     ],
@@ -642,12 +1867,66 @@
       "aicarmine_mcp_inventory",
       "aicarmine_mcp_only",
       "aicarmine_repo_command",
+      "aicarmine_repo_search_det_health",
       "aicarmine_repo_write_file",
       "aicarmine_vulkan_helper",
       "terminal_run_command_wait"
+    ],
+    "validate/diff": [
+      "aicarmine_repo_validate_diffcheck"
+    ],
+    "validate/health": [
+      "aicarmine_repo_validate_health"
+    ],
+    "validate/probe": [
+      "aicarmine_repo_validate_probe_profiles",
+      "aicarmine_repo_validate_probe_run"
+    ],
+    "validate/pyright": [
+      "aicarmine_repo_validate_pyright"
+    ],
+    "validate/pytest": [
+      "aicarmine_repo_validate_pytest"
+    ],
+    "validate/ruff": [
+      "aicarmine_repo_validate_ruff"
+    ],
+    "validate/semgrep": [
+      "aicarmine_repo_validate_semgrep"
+    ],
+    "validate/shellcheck": [
+      "aicarmine_repo_validate_shellcheck"
+    ],
+    "wily/complexity": [
+      "wily_complexity"
+    ],
+    "wily/health": [
+      "wily_health"
+    ],
+    "wily/listing": [
+      "wily_list_files"
+    ],
+    "wily/maintainability": [
+      "wily_maintainability"
+    ],
+    "wily/report": [
+      "wily_report"
     ]
   },
   "family_summary": {
+    "agentic": {
+      "tool_count": 7,
+      "read_only_count": 4,
+      "write_count": 3,
+      "categories": [
+        "agentic/capabilities",
+        "agentic/ensure",
+        "agentic/health",
+        "agentic/result",
+        "agentic/run",
+        "agentic/status"
+      ]
+    },
     "bridge": {
       "tool_count": 1,
       "read_only_count": 1,
@@ -657,29 +1936,49 @@
       ]
     },
     "job": {
-      "tool_count": 2,
-      "read_only_count": 2,
+      "tool_count": 19,
+      "read_only_count": 19,
       "write_count": 0,
       "categories": [
         "job/detail",
-        "job/status"
+        "job/status",
+        "job/events",
+        "job/final",
+        "job/health",
+        "job/list",
+        "job/planner",
+        "job/rejections",
+        "job/turns",
+        "job/tools",
+        "job/view",
+        "job/ia",
+        "job/links",
+        "job/outline",
+        "job/render",
+        "job/validate"
       ]
     },
     "unknown": {
-      "tool_count": 6,
-      "read_only_count": 6,
+      "tool_count": 7,
+      "read_only_count": 7,
       "write_count": 0,
       "categories": [
         "unknown/general"
       ]
     },
     "memory": {
-      "tool_count": 2,
-      "read_only_count": 2,
-      "write_count": 0,
+      "tool_count": 9,
+      "read_only_count": 6,
+      "write_count": 3,
       "categories": [
         "memory/search",
-        "memory/packet"
+        "memory/packet",
+        "memory/audit",
+        "memory/get",
+        "memory/health",
+        "memory/stale",
+        "memory/supersede",
+        "memory/write"
       ]
     },
     "repo": {
@@ -708,6 +2007,43 @@
         "terminal/search"
       ]
     },
+    "ops": {
+      "tool_count": 9,
+      "read_only_count": 9,
+      "write_count": 0,
+      "categories": [
+        "ops/health",
+        "ops/inventory",
+        "ops/probe",
+        "ops/state",
+        "ops/logs",
+        "ops/ports",
+        "ops/processes",
+        "ops/snapshot"
+      ]
+    },
+    "git": {
+      "tool_count": 6,
+      "read_only_count": 6,
+      "write_count": 0,
+      "categories": [
+        "git/blame",
+        "git/compare",
+        "git/diff",
+        "git/health",
+        "git/history"
+      ]
+    },
+    "subagent": {
+      "tool_count": 3,
+      "read_only_count": 3,
+      "write_count": 0,
+      "categories": [
+        "subagent/capabilities",
+        "subagent/health",
+        "subagent/run"
+      ]
+    },
     "rag": {
       "tool_count": 3,
       "read_only_count": 3,
@@ -716,6 +2052,79 @@
         "rag/query",
         "rag/status",
         "rag/reindex"
+      ]
+    },
+    "code": {
+      "tool_count": 5,
+      "read_only_count": 4,
+      "write_count": 1,
+      "categories": [
+        "code/apply",
+        "code/apply_check",
+        "code/health",
+        "code/propose",
+        "code/validate"
+      ]
+    },
+    "search": {
+      "tool_count": 7,
+      "read_only_count": 7,
+      "write_count": 0,
+      "categories": [
+        "search/astgrep",
+        "search/ctags",
+        "search/fd",
+        "search/jq",
+        "search/rg",
+        "search/treesitter"
+      ]
+    },
+    "state": {
+      "tool_count": 3,
+      "read_only_count": 3,
+      "write_count": 0,
+      "categories": [
+        "state/capabilities",
+        "state/health",
+        "state/status"
+      ]
+    },
+    "validate": {
+      "tool_count": 9,
+      "read_only_count": 9,
+      "write_count": 0,
+      "categories": [
+        "validate/diff",
+        "validate/health",
+        "validate/probe",
+        "validate/pyright",
+        "validate/pytest",
+        "validate/ruff",
+        "validate/semgrep",
+        "validate/shellcheck"
+      ]
+    },
+    "sqlite": {
+      "tool_count": 4,
+      "read_only_count": 4,
+      "write_count": 0,
+      "categories": [
+        "sqlite/health",
+        "sqlite/list",
+        "sqlite/query",
+        "sqlite/schema"
+      ]
+    },
+    "wily": {
+      "tool_count": 5,
+      "read_only_count": 5,
+      "write_count": 0,
+      "categories": [
+        "wily/complexity",
+        "wily/health",
+        "wily/listing",
+        "wily/maintainability",
+        "wily/report"
       ]
     }
   },

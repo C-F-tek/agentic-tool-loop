@@ -166,6 +166,12 @@ TOOL_CATEGORIES: dict[str, str] = {
     "planner_scratchpad_write": "planner/write",
     # Runtime operations
     "runtime_sqlite_memory_write": "runtime/write",
+    # Wily operations (code complexity metrics)
+    "wily_health": "wily/health",
+    "wily_list_files": "wily/listing",
+    "wily_complexity": "wily/complexity",
+    "wily_maintainability": "wily/maintainability",
+    "wily_report": "wily/report",
 }
 
 # Tool descriptions (authoritative, from MCP contract)
@@ -296,6 +302,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "terminal_search_files": "Direct terminal-style file search",
     "planner_scratchpad_write": "Write planner scratchpad memory",
     "runtime_sqlite_memory_write": "Write runtime SQLite memory",
+    "wily_health": "Report Wily MCP health and Python analysis availability",
+    "wily_list_files": "List Python files in a directory for complexity analysis",
+    "wily_complexity": "Compute cyclomatic complexity for a Python file",
+    "wily_maintainability": "Compute maintainability index for a Python file",
+    "wily_report": "Generate full complexity and maintainability report",
 }
 
 # Write gates: tools that require explicit confirmation
@@ -336,25 +347,31 @@ def _extract_tool_names_from_file(file_path: Path) -> list[str]:
     content = file_path.read_text(encoding="utf-8")
     tools: list[str] = []
 
-    # Pattern 1: Docstring list of tools (e.g., "  - aicarmine_repo_read")
-    docstring_pattern = r'-\s+(aicarmine_\w+|terminal_\w+)'
+    # Pattern 1: ToolSpec registration (authoritative)
+    # matches: tools["tool_name"] = ToolSpec(name="tool_name", ...)
+    toolspec_pattern = r'tools\["([^"]*(?:aicarmine|terminal|planner|runtime|wily)[^"]*)"\]\s*=\s*ToolSpec\('
+    for match in re.finditer(toolspec_pattern, content):
+        tools.append(match.group(1))
+
+    # Pattern 2: Docstring list of tools (e.g., "  - aicarmine_repo_read")
+    docstring_pattern = r'-\s+(aicarmine_\w+|terminal_\w+|wily_\w+)'
     for match in re.finditer(docstring_pattern, content):
         tools.append(match.group(1))
 
-    # Pattern 2: TOOL_NAMES = [...] or TOOL_NAMES = {...}
+    # Pattern 3: TOOL_NAMES = [...] or TOOL_NAMES = {...}
     pattern_list = r'TOOL_NAMES\s*=\s*\[([^\]]+)\]'
     for match in re.finditer(pattern_list, content):
         bracket_content = match.group(1)
         for item in re.findall(r'["\']([^"\']+)["\']', bracket_content):
             tools.append(item)
 
-    # Pattern 3: JSON schema tool name definitions
-    json_pattern = r'"name"\s*:\s*"([^"]*(?:aicarmine|terminal)[^"]*)"'
+    # Pattern 4: JSON schema tool name definitions
+    json_pattern = r'"name"\s*:\s*"([^"]*(?:aicarmine|terminal|wily)[^"]*)"'
     for match in re.finditer(json_pattern, content):
         tools.append(match.group(1))
 
-    # Pattern 4: Function definitions that look like tool handlers
-    pattern_define = r'def\s+((?:handle_|tool_)?(?:aicarmine_\w+|terminal_\w+))'
+    # Pattern 5: Function definitions that look like tool handlers
+    pattern_define = r'def\s+((?:handle_|tool_)?(?:aicarmine_\w+|terminal_\w+|wily_\w+))'
     for match in re.finditer(pattern_define, content):
         tools.append(match.group(1))
 
@@ -380,6 +397,7 @@ def _extract_server_name(file_path: Path) -> str:
         "agentic_loop_client_mcp_server": "aicarmine-agentic-loop-client",
         "repo_code_mcp_server": "aicarmine-repo-code",
         "ops_mcp_server": "aicarmine-codex-ops",
+        "wily_mcp_server": "aicarmine-wily",
     }
     return name_map.get(stem, stem)
 

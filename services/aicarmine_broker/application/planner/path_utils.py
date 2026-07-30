@@ -1,0 +1,200 @@
+"""Repository path utilities extracted from validator.py.
+
+This module provides deterministic path tokenization, validation, and
+collection helpers used by the planner decision validator.
+
+All functions are pure (no side-effects) and accept/return only data.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Set
+
+
+def repo_path_token(value: Any) -> str:
+    """Normalize a value to a concrete repository path token.
+
+    Returns an empty string when the value is None, empty, or not
+    convertible to a meaningful path token.
+    """
+    if value is None:
+        return ""
+    token = str(value).strip()
+    return token
+
+
+def repo_path_is_concrete(token: Any) -> bool:
+    """Determine whether *token* refers to a concrete, actionable repo path.
+
+    Rejects vague tokens such as ``services``, ``tools``, ``cache``,
+    bare directories without extensions, and tokens containing spaces
+    or multiple-dot-segments that look like metrics.
+    """
+    token = repo_path_token(token)
+    if not token:
+        return False
+    lowered = token.lower()
+    if lowered in {"services", "tools", "cache", "cache_dir", "repo"}:
+        return False
+    if " " in token:
+        return False
+    if token in {".", ".."}:
+        return False
+    if "/" in token or "\\" in token:
+        return True
+    if token.count(".") >= 1:
+        return True
+    return False
+
+
+def coalesce_repo_read_paths(values: Any) -> list[str]:
+    """Deduplicate and validate a collection of repo read path values.
+
+    Accepts lists, tuples, or single values.  Returns a deduplicated
+    list of concrete path tokens suitable for ``repo_read`` arguments.
+    """
+    if isinstance(values, tuple):
+        values = list(values)
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    for value in values:
+        token = repo_path_token(value)
+        if not repo_path_is_concrete(token):
+            continue
+        if token not in out:
+            out.append(token)
+    return out
+
+
+def collect_repo_paths(values: Any) -> Set[str]:
+    """Collect concrete repository path tokens from nested structures.
+
+    Handles dicts (values or nested ``path``/``repo_path`` keys),
+    lists of dicts or scalars, and single scalar values.
+    """
+    out: Set[str] = set()
+    if isinstance(values, dict):
+        for item in values.values():
+            token = repo_path_token(item)
+            if token:
+                out.add(token)
+    elif isinstance(values, list):
+        for item in values:
+            if isinstance(item, dict):
+                token = repo_path_token(
+                    item.get("path") or item.get("source_path") or item.get("repo_path")
+                )
+            else:
+                token = repo_path_token(item)
+            if token:
+                out.add(token)
+    else:
+        token = repo_path_token(values)
+        if token:
+            out.add(token)
+    return out
+
+
+def known_contract_repo_paths(contract: dict[str, Any]) -> Set[str]:
+    """Extract all known repository paths from a planner evidence contract.
+
+    Walks the standard contract keys that carry path information and
+    returns a deduplicated set of concrete tokens.
+    """
+    paths: Set[str] = set()
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "verified_content_reads",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        paths.update(collect_repo_paths(contract.get(key)))
+    coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        paths.update(collect_repo_paths(coverage.get(key)))
+    final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+    final_coverage = (
+        final_contract.get("minimum_read_coverage")
+        if isinstance(final_contract.get("minimum_read_coverage"), dict)
+        else {}
+    )
+    for key in ("covered_owner_paths", "candidate_owner_paths", "missing_owner_paths"):
+        paths.update(collect_repo_paths(final_coverage.get(key)))
+    return {path for path in paths if path and path != "."}
+
+
+def known_contract_repo_dirs(contract: dict[str, Any]) -> Set[str]:
+    """Derive all directory tokens from known contract repo paths.
+
+    For each path like ``services/codex_bridge/mcp_server.py`` the
+    function yields ``services`` and ``services/codex_bridge``.
+    """
+    dirs: Set[str] = {"."}
+    for path in known_contract_repo_paths(contract):
+        parts = [part for part in path.split("/") if part]
+        for index in range(1, len(parts)):
+            dirs.add("/".join(parts[:index]))
+    return dirs
+
+
+def route_token_is_prose_or_metric(token: Any) -> bool:
+    """Determine whether *token* is prose-like or a metric indicator.
+
+    Prose tokens contain spaces, slashes that resolve to numeric
+    segments, or known prose categories such as ``docs/config``.
+    Metric tokens are slash-separated numbers like ``8/2``.
+    """
+    tok = repo_path_token(token)
+    if not tok:
+        return True
+    lowered = tok.lower()
+    if lowered in {
+        "ridondanze/rischi",
+        "docs/config",
+        "planner/final-quality",
+        "planner/controller rejection paths",
+    }:
+        return True
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return True
+    if " " in tok:
+        return True
+    return False
+
+
+def search_query_is_concrete(value: Any) -> bool:
+    """Determine whether a search query is concrete enough to route.
+
+    Rejects empty queries, overly long queries (>260 chars), known
+    prose/metric tokens, and slash-separated numeric segments that
+    lack meaningful keywords.
+    """
+    text = str(value or "").strip()
+    if not text or len(text) > 260:
+        return False
+    lowered = text.lower()
+    if lowered in {
+        "docs/config",
+        "ridondanze/rischi",
+        "8/2",
+        "8/8",
+        "9/9",
+        "planner/controller rejection paths",
+    }:
+        return False
+    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
+    if "/" in lowered and compact.isdigit():
+        return False
+    useful_tokens = [
+        token
+        for token in lowered.replace(",", " ").replace(";", " ").split()
+        if len(token) >= 3 and "/" not in token and any(ch.isalpha() for ch in token)
+    ]
+    if "/" in lowered and len(useful_tokens) < 2:
+        return False
+    return bool(useful_tokens)
