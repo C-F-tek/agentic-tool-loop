@@ -12,6 +12,8 @@
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
         "AICARMINE_MCP_MAX_TEXT_CHARS": "24000",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -26,6 +28,9 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -41,6 +46,8 @@
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
         "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -60,6 +67,8 @@
         "AICARMINE_RAG_RERANK_URL": "http://127.0.0.1:3550/v3/rerank",
         "AICARMINE_RAG_RERANK_READY_URL": "http://127.0.0.1:3550/v2/models/BAAI%2Fbge-reranker-v2-m3/ready",
         "AICARMINE_RAG_RERANK_MODEL": "BAAI/bge-reranker-v2-m3",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -74,6 +83,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -88,6 +99,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -102,6 +115,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -117,6 +132,8 @@
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
         "AICARMINE_AGENT_JOB_ROOT": "output/agent-jobs",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -132,6 +149,8 @@
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
         "AICARMINE_AGENT_JOB_ROOT": "output/agent-jobs",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -148,6 +167,8 @@
         "AICARMINE_LAB_REPO": ".",
         "AICARMINE_OPERATIONAL_MEMORY_DB": "output/ai_runtime_memory/operational_context.sqlite",
         "AICARMINE_PERSISTENT_MEMORY_DB": "indexAI/agent_memory/agent_memory.sqlite",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -162,6 +183,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -176,6 +199,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -190,6 +215,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
@@ -204,6 +231,8 @@
       "env": {
         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
         "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_MCP_GZIP_ENABLED": "1",
+        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     }
