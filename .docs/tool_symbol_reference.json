@@ -1,0 +1,746 @@
+{
+  "schema": "aicarmine_tool_symbol_reference.v1",
+  "version": "1.0.0",
+  "generated_at": "runtime",
+  "metadata": {
+    "total_tools": 39,
+    "total_servers": 3,
+    "total_categories": 21,
+    "write_gated_tools": 10
+  },
+  "tool_entries": [
+    {
+      "tool_name": "aicarmine_bridge_health",
+      "server_name": "aicarmine-codex-app",
+      "category": "bridge/health",
+      "family": "bridge",
+      "subtype": "health",
+      "description": "Report bridge health (no HTTP call)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_job_detail",
+      "server_name": "aicarmine-codex-app",
+      "category": "job/detail",
+      "family": "job",
+      "subtype": "detail",
+      "description": "Read a job artifact directory by ID",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_job_artifact_summary"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_jobs_status",
+      "server_name": "aicarmine-codex-app",
+      "category": "job/status",
+      "family": "job",
+      "subtype": "status",
+      "description": "Read agent-job artifacts from filesystem",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_mcp_only",
+      "server_name": "aicarmine-codex-app",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: aicarmine_mcp_only",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_memory_report",
+      "server_name": "aicarmine-codex-app",
+      "category": "memory/search",
+      "family": "memory",
+      "subtype": "search",
+      "description": "Search operational/persistent memory records",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_project_memory_search"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_memory_state_packet",
+      "server_name": "aicarmine-codex-app",
+      "category": "memory/packet",
+      "family": "memory",
+      "subtype": "packet",
+      "description": "Build compact context packet from memory",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_apply_patch",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/write",
+      "family": "repo",
+      "subtype": "write",
+      "description": "Apply exact old_text/new_text patch (write tool)",
+      "read_only": false,
+      "confirmation_gate": "allow_source_write",
+      "related_tools": [],
+      "confirmation_required": true,
+      "confirmation_value": "aicarmine_repo_apply_patch"
+    },
+    {
+      "tool_name": "aicarmine_repo_ast_grep_dry_run",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/search",
+      "family": "repo",
+      "subtype": "search",
+      "description": "Run ast-grep rewrite dry-run (no write)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_search",
+        "aicarmine_repo_rg_search",
+        "aicarmine_repo_fd_files",
+        "aicarmine_repo_ast_grep_search"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_ast_grep_search",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/search",
+      "family": "repo",
+      "subtype": "search",
+      "description": "Run ast-grep semantic search",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_search",
+        "aicarmine_repo_rg_search",
+        "aicarmine_repo_fd_files",
+        "aicarmine_repo_ast_grep_dry_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_capabilities",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/state",
+      "family": "repo",
+      "subtype": "state",
+      "description": "List repository capability map (read-only)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_status"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_command",
+      "server_name": "aicarmine-codex-app",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: aicarmine_repo_command",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_ctags_symbols",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/symbols",
+      "family": "repo",
+      "subtype": "symbols",
+      "description": "Extract symbols with universal-ctags",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_fd_files",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/search",
+      "family": "repo",
+      "subtype": "search",
+      "description": "Direct fd-style file discovery by pattern",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_search",
+        "aicarmine_repo_rg_search",
+        "aicarmine_repo_ast_grep_search",
+        "aicarmine_repo_ast_grep_dry_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_git_apply_check",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run git-apply --check without applying",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pyright_check",
+        "aicarmine_repo_pytest_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_jq_query",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/query",
+      "family": "repo",
+      "subtype": "query",
+      "description": "Run jq query against JSON file",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_list_files",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/listing",
+      "family": "repo",
+      "subtype": "listing",
+      "description": "List files under a path with optional glob filter",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_tree"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_propose_code_edit",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/edit",
+      "family": "repo",
+      "subtype": "edit",
+      "description": "Report-only code edit proposal (does not write)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_pyright_check",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run pyright type checker",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pytest_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_pytest_run",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run pytest test suite",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pyright_check"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_read",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/read",
+      "family": "repo",
+      "subtype": "read",
+      "description": "Read one or more file contents with character limit",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_rg_search",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/search",
+      "family": "repo",
+      "subtype": "search",
+      "description": "Direct ripgrep-style file content search",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_search",
+        "aicarmine_repo_fd_files",
+        "aicarmine_repo_ast_grep_search",
+        "aicarmine_repo_ast_grep_dry_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_ruff_check",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run ruff linter check",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_pyright_check",
+        "aicarmine_repo_pytest_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_search",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/search",
+      "family": "repo",
+      "subtype": "search",
+      "description": "Broker-managed repository search (generic)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_rg_search",
+        "aicarmine_repo_fd_files",
+        "aicarmine_repo_ast_grep_search",
+        "aicarmine_repo_ast_grep_dry_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_semgrep_scan",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run semgrep security scan",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pyright_check"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_shellcheck",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run shellcheck on shell scripts",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pyright_check"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_status",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/state",
+      "family": "repo",
+      "subtype": "state",
+      "description": "Get repository status: branch, commit, dirty state (read-only)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_capabilities"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_tree",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/listing",
+      "family": "repo",
+      "subtype": "listing",
+      "description": "List directory tree with bounded depth and file count",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_list_files"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_tree_sitter_parse",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/parse",
+      "family": "repo",
+      "subtype": "parse",
+      "description": "Parse file with tree-sitter for AST",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_unidiff_validate",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Validate unified diff structure without applying",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_validate",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pyright_check",
+        "aicarmine_repo_pytest_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_validate",
+      "server_name": "aicarmine-codex-app",
+      "category": "repo/validate",
+      "family": "repo",
+      "subtype": "validate",
+      "description": "Run broker-defined validation suite",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [
+        "aicarmine_repo_unidiff_validate",
+        "aicarmine_repo_git_apply_check",
+        "aicarmine_repo_ruff_check",
+        "aicarmine_repo_pyright_check",
+        "aicarmine_repo_pytest_run"
+      ],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_repo_write_file",
+      "server_name": "aicarmine-codex-app",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: aicarmine_repo_write_file",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_vulkan_helper",
+      "server_name": "aicarmine-codex-app",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: aicarmine_vulkan_helper",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "terminal_list_files",
+      "server_name": "aicarmine-codex-app",
+      "category": "terminal/list",
+      "family": "terminal",
+      "subtype": "list",
+      "description": "Direct terminal-style file listing",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "terminal_run_command_wait",
+      "server_name": "aicarmine-codex-app",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: terminal_run_command_wait",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "terminal_search_files",
+      "server_name": "aicarmine-codex-app",
+      "category": "terminal/search",
+      "family": "terminal",
+      "subtype": "search",
+      "description": "Direct terminal-style file search",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_mcp_inventory",
+      "server_name": "aicarmine-codex-ops",
+      "category": "unknown/general",
+      "family": "unknown",
+      "subtype": "general",
+      "description": "MCP tool: aicarmine_mcp_inventory",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_rag_context",
+      "server_name": "aicarmine-rag",
+      "category": "rag/query",
+      "family": "rag",
+      "subtype": "query",
+      "description": "Search RAG SQLite index and optionally rerank",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_rag_index_status",
+      "server_name": "aicarmine-rag",
+      "category": "rag/status",
+      "family": "rag",
+      "subtype": "status",
+      "description": "Inspect RAG index, DB metadata, reranker",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    },
+    {
+      "tool_name": "aicarmine_rag_reindex",
+      "server_name": "aicarmine-rag",
+      "category": "rag/reindex",
+      "family": "rag",
+      "subtype": "reindex",
+      "description": "Update RAG SQLite index (delta or full)",
+      "read_only": true,
+      "confirmation_gate": null,
+      "related_tools": [],
+      "confirmation_required": false
+    }
+  ],
+  "category_index": {
+    "bridge/health": [
+      "aicarmine_bridge_health"
+    ],
+    "job/detail": [
+      "aicarmine_job_detail"
+    ],
+    "job/status": [
+      "aicarmine_jobs_status"
+    ],
+    "memory/packet": [
+      "aicarmine_memory_state_packet"
+    ],
+    "memory/search": [
+      "aicarmine_memory_report"
+    ],
+    "rag/query": [
+      "aicarmine_rag_context"
+    ],
+    "rag/reindex": [
+      "aicarmine_rag_reindex"
+    ],
+    "rag/status": [
+      "aicarmine_rag_index_status"
+    ],
+    "repo/edit": [
+      "aicarmine_repo_propose_code_edit"
+    ],
+    "repo/listing": [
+      "aicarmine_repo_list_files",
+      "aicarmine_repo_tree"
+    ],
+    "repo/parse": [
+      "aicarmine_repo_tree_sitter_parse"
+    ],
+    "repo/query": [
+      "aicarmine_repo_jq_query"
+    ],
+    "repo/read": [
+      "aicarmine_repo_read"
+    ],
+    "repo/search": [
+      "aicarmine_repo_ast_grep_dry_run",
+      "aicarmine_repo_ast_grep_search",
+      "aicarmine_repo_fd_files",
+      "aicarmine_repo_rg_search",
+      "aicarmine_repo_search"
+    ],
+    "repo/state": [
+      "aicarmine_repo_capabilities",
+      "aicarmine_repo_status"
+    ],
+    "repo/symbols": [
+      "aicarmine_repo_ctags_symbols"
+    ],
+    "repo/validate": [
+      "aicarmine_repo_git_apply_check",
+      "aicarmine_repo_pyright_check",
+      "aicarmine_repo_pytest_run",
+      "aicarmine_repo_ruff_check",
+      "aicarmine_repo_semgrep_scan",
+      "aicarmine_repo_shellcheck",
+      "aicarmine_repo_unidiff_validate",
+      "aicarmine_repo_validate"
+    ],
+    "repo/write": [
+      "aicarmine_repo_apply_patch"
+    ],
+    "terminal/list": [
+      "terminal_list_files"
+    ],
+    "terminal/search": [
+      "terminal_search_files"
+    ],
+    "unknown/general": [
+      "aicarmine_mcp_inventory",
+      "aicarmine_mcp_only",
+      "aicarmine_repo_command",
+      "aicarmine_repo_write_file",
+      "aicarmine_vulkan_helper",
+      "terminal_run_command_wait"
+    ]
+  },
+  "family_summary": {
+    "bridge": {
+      "tool_count": 1,
+      "read_only_count": 1,
+      "write_count": 0,
+      "categories": [
+        "bridge/health"
+      ]
+    },
+    "job": {
+      "tool_count": 2,
+      "read_only_count": 2,
+      "write_count": 0,
+      "categories": [
+        "job/detail",
+        "job/status"
+      ]
+    },
+    "unknown": {
+      "tool_count": 6,
+      "read_only_count": 6,
+      "write_count": 0,
+      "categories": [
+        "unknown/general"
+      ]
+    },
+    "memory": {
+      "tool_count": 2,
+      "read_only_count": 2,
+      "write_count": 0,
+      "categories": [
+        "memory/search",
+        "memory/packet"
+      ]
+    },
+    "repo": {
+      "tool_count": 23,
+      "read_only_count": 22,
+      "write_count": 1,
+      "categories": [
+        "repo/write",
+        "repo/search",
+        "repo/state",
+        "repo/symbols",
+        "repo/validate",
+        "repo/query",
+        "repo/listing",
+        "repo/edit",
+        "repo/read",
+        "repo/parse"
+      ]
+    },
+    "terminal": {
+      "tool_count": 2,
+      "read_only_count": 2,
+      "write_count": 0,
+      "categories": [
+        "terminal/list",
+        "terminal/search"
+      ]
+    },
+    "rag": {
+      "tool_count": 3,
+      "read_only_count": 3,
+      "write_count": 0,
+      "categories": [
+        "rag/query",
+        "rag/status",
+        "rag/reindex"
+      ]
+    }
+  },
+  "write_gated_tools": [
+    "aicarmine_agentic_loop_ensure_broker",
+    "aicarmine_agentic_loop_ensure_reranker",
+    "aicarmine_agentic_loop_run",
+    "aicarmine_project_memory_mark_stale",
+    "aicarmine_project_memory_supersede",
+    "aicarmine_project_memory_upsert_verified",
+    "aicarmine_repo_apply_patch",
+    "aicarmine_repo_code_apply_patch",
+    "planner_scratchpad_write",
+    "runtime_sqlite_memory_write"
+  ],
+  "confirmation_gates": {
+    "aicarmine_agentic_loop_ensure_broker": "confirm_ensure_broker",
+    "aicarmine_agentic_loop_ensure_reranker": "confirm_ensure_reranker",
+    "aicarmine_agentic_loop_result": "confirm_agentic_loop",
+    "aicarmine_agentic_loop_run": "confirm_agentic_loop",
+    "aicarmine_agentic_loop_status": "confirm_agentic_loop",
+    "aicarmine_project_memory_mark_stale": "confirm_stale",
+    "aicarmine_project_memory_supersede": "confirm_supersede",
+    "aicarmine_project_memory_upsert_verified": "confirm_write",
+    "aicarmine_repo_apply_patch": "allow_source_write",
+    "aicarmine_repo_code_apply_patch": "allow_source_write"
+  }
+}
