@@ -1,642 +1,555 @@
-# Agentic Tool Loop
+# AI-Carmine Agentic Tool Loop
 
-Repository for the local OpenWebUI agentic tool loop runtime.
+**Sistema agentic completo per automazione intelligente con integrazione LLM locale, RAG, e orchestrazione job.**
 
-This project contains the service code, contracts, launch scripts, model
-templates, and documentation needed to run the local tool bridge and broker.
-Machine-local data, generated artifacts, model binaries, virtual environments,
-OpenWebUI data, and job outputs are intentionally excluded from Git.
+---
 
-## Current Verified Runtime Highlights
+## Panoramica
 
-As of 2026-06-15, the core loop has four distinct model-assisted lanes around
-the validator-only controller:
+Questo repository contiene il sistema AI-Carmine: un framework agentic completo che integra:
 
-- controller preplanner RAG query planning runs before the first planner turn;
-  malformed JSON is repaired by the same planner model and backend timeout is a
-  typed non-blocking fallback to deterministic preseed only;
-- final-quality judge runs for repository and semantic-audit final candidates;
-  malformed judge JSON is repaired before the validator decides accept/reject
-  or `continue_required`;
-- planner replan specialist runs after selected validator rejections and can
-  repair malformed specialist JSON before returning the next required route;
-- Vulkan/GPU0 repair remains only an explicit repair lane for malformed planner
-  emissions or invalid non-code-product tool proposals. It must not mask
-  code-product contract failures.
+- **Broker agentic** con ciclo di vita job completo
+- **Reranker BGE-v2-m3** per retrieval accurato
+- **14+ MCP servers** per strumenti repository, database, e validazione
+- **Integrazione OpenWebUI** con pipeline controller
+- **Supporto multi-modello** (Ollama locale)
 
-The 11434 stream transport now guards both phases: waiting for HTTP response
-headers and reading stream frames. If headers never arrive, the job records a
-typed planner stream timeout instead of silently leaving an empty step stream.
+## Architettura
 
-Public OpenWebUI payloads are pointer-first and inline-evidence-first:
-`tool_context_for_30b.artifacts[*].artifact` is the canonical complete payload
-location, while `priority_evidence_for_30b` and `payload_index_for_30b` are
-bounded navigation/index surfaces rather than duplicate large content stores.
-
-## Initial Reading Index
-
-Start from these documents before changing runtime behavior:
-
-1. [AGENTS.md](AGENTS.md)
-   - Workspace operating rules and non-negotiable runtime contract notes.
-2. [docs/START_HERE_RUNTIME.md](docs/START_HERE_RUNTIME.md)
-   - Guided first-read map for runtime roles, debug paths and source-of-truth
-     rules.
-3. [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
-   - Core validator/controller contract for the agentic loop.
-4. [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
-   - End-to-end flow between OpenWebUI, 3571, 3572, planner, tools, and final
-     payload.
-5. [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
-   - Service-level technical map and module references.
-6. [docs/runtime_env_contract.md](docs/runtime_env_contract.md)
-   - Runtime process/env contract, including active repo roots such as
-     `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `AICARMINE_VULKAN_WORKSPACE`,
-     `AICARMINE_AGENT_JOB_ROOT`, `OPEN_TERMINAL_CWD` and
-     `AICARMINE_OPEN_TERMINAL_WORKDIR`.
-7. [docs/launcher_contract.md](docs/launcher_contract.md)
-   - Launcher responsibilities for venvs, ports, process order and shared
-     repository working-directory variables.
-8. [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
-   - File-by-file technical descriptions for the `services/` tree.
-9. [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
-   - Operational limit for Codex when inspecting large OpenWebUI payloads.
-10. [services/aicarmine_broker/MODULE_REFERENCE.md](services/aicarmine_broker/MODULE_REFERENCE.md)
-   - Broker module reference.
-11. [services/vulkan_bridge/MODULE_REFERENCE.md](services/vulkan_bridge/MODULE_REFERENCE.md)
-   - Public bridge module reference.
-12. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
-   - Codex bridge module reference.
-13. [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md)
-   - Codex MCP server/tool map, client JSON compatibility, confirmation gates
-     and debug playbooks.
-14. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
-   - Launch-script module reference.
-15. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
-   - Model export module reference.
-
-Core code entry points:
-
-- [services/vulkan_bridge/app.py](services/vulkan_bridge/app.py)
-  - Public OpenWebUI wrapper surface.
-- [services/vulkan_bridge/agentic_v9.py](services/vulkan_bridge/agentic_v9.py)
-  - Agentic bridge integration surface.
-- [services/aicarmine_broker/app.py](services/aicarmine_broker/app.py)
-  - Internal broker application.
-- [services/aicarmine_broker/planner.py](services/aicarmine_broker/planner.py)
-  - Planner/controller facade and high-risk loop entry; owner packages live under services/aicarmine_broker/application/.
-- [services/aicarmine_broker/repo_tools.py](services/aicarmine_broker/repo_tools.py)
-  - Compatibility facade for repo/tool helpers; concrete implementations live under services/aicarmine_broker/tools/.
-- [services/aicarmine_broker/tool_registry.py](services/aicarmine_broker/tool_registry.py)
-  - Internal tool registry.
-- [services/aicarmine_broker/tool_dispatch.py](services/aicarmine_broker/tool_dispatch.py)
-  - Compatibility facade for the explicit registry dispatcher in services/aicarmine_broker/application/tool_surface/dispatcher.py.
-- [services/aicarmine_broker/job_store.py](services/aicarmine_broker/job_store.py)
-  - Job state and artifact persistence.
-- [services/aicarmine_broker/public_wrapper.py](services/aicarmine_broker/public_wrapper.py)
-  - Public result packaging support.
-- [services/aicarmine_broker/planner_intrinsic_context.py](services/aicarmine_broker/planner_intrinsic_context.py)
-  - Intrinsic planner context builder.
-- [services/aicarmine_broker/code_edit_proposal_contract.py](services/aicarmine_broker/code_edit_proposal_contract.py)
-  - Report-only code edit proposal contract.
-- [services/aicarmine_broker/memory_tools.py](services/aicarmine_broker/memory_tools.py)
-  - Runtime memory tool support.
-
-Supporting runtime surfaces:
-
-- [services/launch/](services/launch/)
-  - PowerShell helpers for service startup and environment setup.
-- [services/codex_bridge/](services/codex_bridge/)
-  - Codex/Ollama bridge helpers. MCP operator details live in
-    [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md).
-- [services/model_export/](services/model_export/)
-  - Model export helpers.
-- [modelfiles/](modelfiles/)
-  - Ollama model templates.
-- [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
-  - Applied bridge/tool material used by the local integration.
-
-
-## Flow Map Index
-
-- [Root runtime flow](flow.svg)
-- [services flow](services/flow.svg)
-- [3572 broker flow](services/aicarmine_broker/flow.svg)
-- [3571 bridge flow](services/vulkan_bridge/flow.svg)
-- [launcher flow](services/launch/flow.svg)
-- [Codex bridge flow](services/codex_bridge/flow.svg)
-- [model export flow](services/model_export/flow.svg)
-- [applied bridge flow](codex_ollama_bridge_applied/flow.svg)
-- [useful tools flow](codex_ollama_bridge_applied/useful_tools/flow.svg)
-- [applied context flow](codex_ollama_bridge_applied/useful_tools/context/flow.svg)
-- [applied memory flow](codex_ollama_bridge_applied/useful_tools/memory/flow.svg)
-
-## Folder README Index
-
-Core runtime folders:
-
-- [services](services/README.md)
-- [services/aicarmine_broker](services/aicarmine_broker/README.md)
-- [services/aicarmine_broker/planner_core](services/aicarmine_broker/planner_core/README.md)
-- [services/vulkan_bridge](services/vulkan_bridge/README.md)
-- [services/codex_bridge](services/codex_bridge/README.md)
-- [services/launch](services/launch/README.md)
-- [services/model_export](services/model_export/README.md)
-- [modelfiles](modelfiles/README.md)
-
-Applied bridge folders:
-
-- [codex_ollama_bridge_applied](codex_ollama_bridge_applied/README.md)
-- [codex_ollama_bridge_applied/codex_ollama_bridge](codex_ollama_bridge_applied/codex_ollama_bridge/README.md)
-- [codex_ollama_bridge_applied/useful_tools](codex_ollama_bridge_applied/useful_tools/README.md)
-
-Applied context folders:
-
-- [useful_tools/chunks](codex_ollama_bridge_applied/useful_tools/chunks/README.md)
-- [useful_tools/chunks/code_chunks](codex_ollama_bridge_applied/useful_tools/chunks/code_chunks/README.md)
-- [useful_tools/chunks/evidence_chunks](codex_ollama_bridge_applied/useful_tools/chunks/evidence_chunks/README.md)
-- [useful_tools/chunks/proposal_chunks](codex_ollama_bridge_applied/useful_tools/chunks/proposal_chunks/README.md)
-- [useful_tools/context](codex_ollama_bridge_applied/useful_tools/context/README.md)
-- [useful_tools/context/agent_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/README.md)
-- [useful_tools/context/agent_context/agnostic_tool_inventory](codex_ollama_bridge_applied/useful_tools/context/agent_context/agnostic_tool_inventory/README.md)
-- [useful_tools/context/agent_context/ai_context_pack](codex_ollama_bridge_applied/useful_tools/context/agent_context/ai_context_pack/README.md)
-- [useful_tools/context/agent_context/ensure_required_files](codex_ollama_bridge_applied/useful_tools/context/agent_context/ensure_required_files/README.md)
-- [useful_tools/context/agent_context/full_context_golden_proposals](codex_ollama_bridge_applied/useful_tools/context/agent_context/full_context_golden_proposals/README.md)
-- [useful_tools/context/agent_context/local_ai_enrichment_plan](codex_ollama_bridge_applied/useful_tools/context/agent_context/local_ai_enrichment_plan/README.md)
-- [useful_tools/context/agent_context/memory_inventory](codex_ollama_bridge_applied/useful_tools/context/agent_context/memory_inventory/README.md)
-- [useful_tools/context/agent_context/merge_candidates](codex_ollama_bridge_applied/useful_tools/context/agent_context/merge_candidates/README.md)
-- [useful_tools/context/agent_context/music_intermediates](codex_ollama_bridge_applied/useful_tools/context/agent_context/music_intermediates/README.md)
-- [useful_tools/context/agent_context/rag_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/rag_context/README.md)
-- [useful_tools/context/agent_context/semantic_evidence_chunks](codex_ollama_bridge_applied/useful_tools/context/agent_context/semantic_evidence_chunks/README.md)
-- [useful_tools/context/agent_context/semantic_evidence_chunks/select_code_chunks](codex_ollama_bridge_applied/useful_tools/context/agent_context/semantic_evidence_chunks/select_code_chunks/README.md)
-- [useful_tools/context/agent_context/shared_toolbox_bundle](codex_ollama_bridge_applied/useful_tools/context/agent_context/shared_toolbox_bundle/README.md)
-- [useful_tools/context/agent_context/state_packet](codex_ollama_bridge_applied/useful_tools/context/agent_context/state_packet/README.md)
-- [useful_tools/context/agent_context/transient_request_context](codex_ollama_bridge_applied/useful_tools/context/agent_context/transient_request_context/README.md)
-- [useful_tools/context/context_pack](codex_ollama_bridge_applied/useful_tools/context/context_pack/README.md)
-- [useful_tools/context/context_reload](codex_ollama_bridge_applied/useful_tools/context/context_reload/README.md)
-- [useful_tools/context/file_refs](codex_ollama_bridge_applied/useful_tools/context/file_refs/README.md)
-- [useful_tools/context/heap_context_memory_reload](codex_ollama_bridge_applied/useful_tools/context/heap_context_memory_reload/README.md)
-- [useful_tools/context/heap_context_memory_reload/reconcile_report](codex_ollama_bridge_applied/useful_tools/context/heap_context_memory_reload/reconcile_report/README.md)
-
-Applied memory and pointer folders:
-
-- [useful_tools/memory](codex_ollama_bridge_applied/useful_tools/memory/README.md)
-- [useful_tools/memory/agent_memory](codex_ollama_bridge_applied/useful_tools/memory/agent_memory/README.md)
-- [useful_tools/memory/agent_memory/review](codex_ollama_bridge_applied/useful_tools/memory/agent_memory/review/README.md)
-- [useful_tools/memory/fts5](codex_ollama_bridge_applied/useful_tools/memory/fts5/README.md)
-- [useful_tools/memory/persistent](codex_ollama_bridge_applied/useful_tools/memory/persistent/README.md)
-- [useful_tools/memory/pointers](codex_ollama_bridge_applied/useful_tools/memory/pointers/README.md)
-- [useful_tools/memory/sqlite](codex_ollama_bridge_applied/useful_tools/memory/sqlite/README.md)
-- [useful_tools/memory/volatile](codex_ollama_bridge_applied/useful_tools/memory/volatile/README.md)
-- [useful_tools/pointers](codex_ollama_bridge_applied/useful_tools/pointers/README.md)
-- [useful_tools/pointers/graph](codex_ollama_bridge_applied/useful_tools/pointers/graph/README.md)
-- [useful_tools/pointers/resume](codex_ollama_bridge_applied/useful_tools/pointers/resume/README.md)
-- [useful_tools/pointers/revision_context](codex_ollama_bridge_applied/useful_tools/pointers/revision_context/README.md)
-
-Local-only descriptor folders:
-
-- [cache](cache/README.md)
-- [code-interpreter-workdir](code-interpreter-workdir/README.md)
-- [executor-runs](executor-runs/README.md)
-- [knowledge-bad-md](knowledge-bad-md/README.md)
-- [knowledge-code-packs](knowledge-code-packs/README.md)
-- [knowledge-md](knowledge-md/README.md)
-- [knowledge-md-parts](knowledge-md-parts/README.md)
-- [knowledge-small-md](knowledge-small-md/README.md)
-- [knowledge-sync](knowledge-sync/README.md)
-- [knowledge-tiny-md](knowledge-tiny-md/README.md)
-- [knowledge-upload-batches](knowledge-upload-batches/README.md)
-- [lab-patches](lab-patches/README.md)
-- [lab-worktrees](lab-worktrees/README.md)
-- [logs](logs/README.md)
-- [models-cpu](models-cpu/README.md)
-- [models-ovms-rerank](models-ovms-rerank/README.md)
-- [models-task](models-task/README.md)
-- [openwebui-data](openwebui-data/README.md)
-- [services/openwebui-data](services/openwebui-data/README.md)
-- [ovms-runtime](ovms-runtime/README.md)
-- [payloads](payloads/README.md)
-- [qwen-agent](qwen-agent/README.md)
-- [qwen-agent-workspace](qwen-agent-workspace/README.md)
-- [qwen-context](qwen-context/README.md)
-- [state](state/README.md)
-- [venvs](venvs/README.md)
-
-Local-only descriptor directories:
-
-- [lab-worktrees](lab-worktrees/README.md)
-- [openwebui-data](openwebui-data/README.md)
-- [services/openwebui-data](services/openwebui-data/README.md)
-- [qwen-agent-workspace](qwen-agent-workspace/README.md)
-- [qwen-agent](qwen-agent/README.md)
-- [qwen-context](qwen-context/README.md)
-- [code-interpreter-workdir](code-interpreter-workdir/README.md)
-- [executor-runs](executor-runs/README.md)
-- [payloads](payloads/README.md)
-- [logs](logs/README.md)
-- [cache](cache/README.md)
-- [state](state/README.md)
-- [venvs](venvs/README.md)
-- [lab-patches](lab-patches/README.md)
-- [knowledge-bad-md](knowledge-bad-md/README.md)
-- [knowledge-code-packs](knowledge-code-packs/README.md)
-- [knowledge-md](knowledge-md/README.md)
-- [knowledge-md-parts](knowledge-md-parts/README.md)
-- [knowledge-small-md](knowledge-small-md/README.md)
-- [knowledge-sync](knowledge-sync/README.md)
-- [knowledge-tiny-md](knowledge-tiny-md/README.md)
-- [knowledge-upload-batches](knowledge-upload-batches/README.md)
-- [models-cpu](models-cpu/README.md)
-- [models-ovms-rerank](models-ovms-rerank/README.md)
-- [models-task](models-task/README.md)
-- [ovms-runtime](ovms-runtime/README.md)
-
-## Agentic Tool Runtime
-
-This repository implements a local agentic tool loop for OpenWebUI. The public
-model does not call every internal tool directly. It calls one public bridge
-tool, and the internal broker runs the controlled multi-step loop.
-
-Canonical runtime chain:
-
-```text
-OpenWebUI / external 30B
-  -> 3571 public bridge /vulkan_helper
-  -> 3572 internal broker /vulkan/agent
-  -> 11434 planner Ollama turn
-  -> 3572 validator-only controller
-      -> valid tool call: internal tool dispatch
-      -> invalid planner output: controller guard or typed rejection
-      -> dirty JSON when applicable: optional 11435 repair/task pass
-      -> valid final: terminal job result
-  -> 3571 terminal wrapper
-  -> OpenWebUI content + inline tool_context_for_30b
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         AI-Carmine System                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐  │
+│  │   Broker     │    │   Reranker   │    │   MCP Servers        │  │
+│  │  (3572)      │    │   (3550)     │    │   (stdio)            │  │
+│  │              │    │              │    │                      │  │
+│  │  - Agentic   │    │  - BGE-v2-m3 │    │  - git-readonly      │  │
+│  │    loop      │    │  - CrossEn-  │    │  - sqlite-readonly   │  │
+│  │  - Job mgmt  │    │    coder     │    │  - repo-validate     │  │
+│  └──────┬───────┘    └──────────────┘    │  - repo-search       │  │
+│         │                                │  - project-memory    │  │
+│         │                                └──────────────────────┘  │
+│         │                                                           │
+│  ┌──────┴───────┐                                                   │
+│  │ Local Agent  │                                                   │
+│  │  (3579)      │                                                   │
+│  │              │                                                   │
+│  │  - Subagent  │                                                   │
+│  │  - Task exec │                                                   │
+│  └──────────────┘                                                   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-Visual runtime map: [flow.svg](flow.svg).
+---
 
-### Public Surface
+## Struttura Progetto
 
-`3571` is the OpenWebUI-facing service. Its public tool surface is
-`vulkan_helper`. It forwards work to the internal broker and shapes terminal
-responses for OpenWebUI.
+### Root Files
 
-The public response must remain model-usable without local filesystem access:
+| File | Descrizione |
+|------|-----------|
+| `AGENTS.md` | Contratto operativo globale per agent Cline |
+| `cline_mcp_servers.json` | Configurazione MCP servers per Cline |
+| `PROJECT_STRUCTURE.md` | Albero completo di tutti i file (1204 linee) |
+| `README.md` | Questo file - panoramica progetto |
+| `flow.svg` | Diagramma flusso architettura |
+| `implementation_plan.md` | Piano implementazione |
+| `pytest.ini` | Configurazione pytest |
+| `run_mcp.bat` | Launcher batch MCP servers |
 
-- `content` contains the compact final answer or terminal message.
-- `payload_index_for_30b` is the first navigation surface for concrete payload
-  locations.
-- `priority_evidence_for_30b` indexes important complete evidence when present.
-- `openwebui_usage` tells the external model how to read the indexed payload.
-- `tool_context_for_30b` is a pretty-printed JSON string containing successful
-  internal tool results inline.
+### File di Log e Debug
 
-OpenWebUI cannot open local paths such as `C:\Users\...`, `reads/*.json`,
-`tool-results/*.json` or SQLite document IDs. Those can exist internally only
-as audit/storage surfaces. If a successful tool result is needed by OpenWebUI,
-3571 must expand the real payload inline.
+| File | Descrizione |
+|------|-----------|
+| `Agentic_loop_GIT_LOG_FULL.txt` | Log completo git agentic loop |
+| `agenti_loop_project.log` | Log progetto agentic loop |
+| `storico_agentic_loop_git.log` | Storico operazioni git |
+| `default` | File default (7.2 MB) |
+| `qwen36-lean-show.json` | Configurazione modello Qwen (9.7 MB) |
+| `same-capability-serious-scan.json` | Scan capacità equivalenti |
 
-`final_path`, `reads/*.json`, `tool-results/*.json` and job-local SQLite may be
-used by 3571/3572 only as internal rehydration sources. They are not public
-content. A public result can mention local paths only as operator diagnostics,
-never as a location OpenWebUI must open.
+### Script Python
 
-### Planner Context Vs Public Payload
+| File | Descrizione |
+|------|-----------|
+| `audit_mcp_allowlist.py` | Audit allowlist MCP servers |
+| `check_existing_profiles.py` | Verifica profili esistenti |
+| `debug_profiles.py` | Debug profili |
+| `final_verify.py` | Verifica finale |
+| `find_deps_config.py` | Trova dipendenze configurazione |
+| `init_mcp_databases.py` | Inizializzazione database MCP |
+| `probe_mcp_raw.py` | Probe MCP servers |
+| `probe_r4r.py` | Probe reranker |
+| `run_baseline_profiles.py` | Esecuzione baseline profiles |
+| `test_mcp_client.py` | Test client MCP |
+| `test_rag_mcp.py` | Test RAG MCP |
+| `verify_changes.py` | Verifica modifiche |
 
-There are two separate evidence transports and they must not be confused:
+### Script PowerShell
 
-- Planner turn context: the 11434 planner may receive prior tool calls and tool
-  results through native Ollama `messages`. This context is budgeted and
-  windowed for the next internal planner decision only. `skipped_history_items`
-  is a planner-loop risk because it can make the planner decide with incomplete
-  working history.
-- Public terminal payload: the 3571/OpenWebUI result is reconstructed from the
-  3572 job `history` plus raw `tool-results/*.json` artifacts. It must not be
-  derived from the budgeted native `messages` transport.
+| File | Descrizione |
+|------|-----------|
+| `install_codex_app_mcp_only.ps1` | Installazione MCP solo codex app |
 
-Native tool-call history in `messages` is therefore not the authoritative
-record for OpenWebUI. The authoritative record is the persistent JSON history
-written by 3572 for every executed internal tool. On terminal states, 3571 must
-return all successful tool artifacts that OpenWebUI needs inline in
-`tool_context_for_30b.artifacts[*].artifact`, including complete
-`repo_propose_code_edit` diffs or structured operations. A loop that proposes
-diffs for many files must preserve every successful diff in persistent history
-so the final 3571 payload can be reconstructed without relying on omitted
-planner messages.
+---
 
-### Internal Broker
+### Directory Principali
 
-`3572` owns the agentic loop. It creates jobs, stores state and events, builds
-planner prompts, validates model decisions, dispatches tools, writes final
-artifacts, and exposes job dashboards.
+#### `.clinerules/` - Regole Cline
 
-The central rule is:
+Contiene le regole operative per l'agent Cline.
 
-```text
-the planner decides; the controller validates; the controller does not replace
-planner reasoning with hidden hard-coded tool sequences or hidden auto-final
-behavior.
+| File | Descrizione |
+|------|-----------|
+| `00-aicarmine-mcp-first.md` | Regola prioritaria MCP AICarmine |
+| `hooks/PostToolUse.ps1` | Hook post-tool use |
+| `hooks/PreCompact.ps1` | Hook pre-compact |
+| `hooks/PreToolUse.ps1` | Hook pre-tool use |
+| `hooks/TaskStart.ps1` | Hook task start |
+| `hooks/UserPromptSubmit.ps1` | Hook user prompt submit |
+| `hooks/lib/` | Librerie hooks |
+| `hooks/tests/` | Test hooks |
+
+#### `.codex/` - Configurazione Codex
+
+| File | Descrizione |
+|------|-----------|
+| `config.toml.disabled` | Configurazione Codex (disabilitata) |
+| `hooks.json` | Configurazione hooks Codex |
+| `hooks/aicarmine_mcp_probe_all.py` | Probe tutti MCP servers |
+| `hooks/aicarmine_mcp_tool_log.py` | Log tool MCP |
+| `mcp_servers_probe.json` | Report probe MCP |
+| `state/mcp_probe_report.json` | Report stato MCP |
+| `state/mcp_probe_report.jsonl` | Report stato MCP (JSONL) |
+
+#### `.docs/` - Documentazione Interna
+
+| File | Descrizione |
+|------|-----------|
+| `SYMBOL_IMPROVEMENTS.md` | Documentazione miglioramenti symbol |
+| `tool_symbol_reference.json` | Riferimento simboli tool |
+
+#### `cache/` - Cache
+
+Directory cache del sistema.
+
+#### `code-interpreter-workdir/` - Workdir Code Interpreter
+
+Directory di lavoro per code interpreter.
+
+---
+
+#### `codex_ollama_bridge_applied/` - Bridge Codex-Ollama
+
+Implementazione bridge tra Codex e Ollama.
+
+| File | Descrizione |
+|------|-----------|
+| `AGENTS.md` | Regenti bridge Codex-Ollama |
+| `aicarmine-executor-server.ps1/py` | Server executor |
+| `aicarmine-jupyter-codeinterpreter.ps1` | Code interpreter Jupyter |
+| `aicarmine-openwebui-serve.py` | Serve OpenWebUI |
+| `aicarmine-run-safe-command.ps1` | Esegui comandi sicuri |
+| `aicarmine-vulkan-tool-broker.ps1` | Vulkan tool broker |
+| `aicarmine_vulkan_bridge_server.py` | Server bridge Vulkan |
+| `aicarmine_vulkan_tool_broker.py` | Tool broker Vulkan |
+| `check-dev-toolchain.ps1` | Verifica toolchain dev |
+| `export_model.py` | Export modello |
+| `ollama-task-vulkan.ps1` | Task Vulkan Ollama |
+| `openvino-env.ps1` | Setup ambiente OpenVINO |
+| `openwebui.ps1` | Launcher OpenWebUI |
+| `ovms-reranker-npu.ps1` | Launcher reranker OVMS NPU |
+| `sync-lab-from-main.ps1` | Sync lab da main |
+| `watch-lab-mirror.ps1` | Watch lab mirror |
+| `flow.svg` | Diagramma flusso |
+
+##### `codex_ollama_bridge/` - Modulo Bridge
+
+| File | Descrizione |
+|------|-----------|
+| `aicarmine_codex_mcp_server.py` | MCP server Codex |
+| `aicarmine_codex_ollama_responses_bridge.py` | Bridge risposte Ollama |
+| `APPLIED-MAPPING.md` | Mappatura applicata |
+| `codex.aicarmine-ollama.config.toml` | Configurazione bridge |
+| `README-CODEX-OLLAMA-BRIDGE.md` | Documentazione bridge |
+| `start-codex-ollama-bridge.ps1` | Launcher bridge |
+
+##### `useful_tools/` - Strumenti Utili
+
+Strumenti ausiliari organizzati per funzionalità.
+
+---
+
+#### `commands/` - Comandi Git
+
+Comandi JSON per operazioni Git.
+
+| File | Descrizione |
+|------|-----------|
+| `branch.json` | Comando branch |
+| `diff_check.json` | Comando diff check |
+| `diff_name_status.json` | Comando diff name-status |
+| `diff_stat.json` | Comando diff stat |
+| `status.json` | Comando status |
+
+#### `diag-qwen30b-*/` - Diagnostica Modello
+
+File diagnostici per modello Qwen30B.
+
+---
+
+#### `docs/` - Documentazione
+
+Documentazione principale del progetto.
+
+| File | Descrizione |
+|------|-----------|
+| `ISOLATED_LAUNCH_GUIDE.md` | **Guida avvio isolato componenti** |
+| `launcher_contract.md` | Contratto launcher |
+| `OVMS_RERANKER_SETUP.md` | Guida setup OVMS reranker |
+| `runtime_env_contract.md` | Contratto ambiente runtime |
+| `START_HERE_RUNTIME.md` | Guida avvio rapido runtime |
+
+---
+
+#### `executor-runs/` - Esecuzioni Executor
+
+Directory per esecioni executor.
+
+---
+
+#### `indexAI/` - Indicizzazione AI
+
+Database indicizzazione AI.
+
+| File | Descrizione |
+|------|-----------|
+| `agent_memory/agent_memory.sqlite` | Database memoria agent |
+| `agent_memory.sqlite-shm` | Shared memory SQLite |
+| `agent_memory.sqlite-wal` | Write-ahead log SQLite |
+
+---
+
+#### `knowledge-*/` - Knowledge Base
+
+Diverse directory per knowledge base organizzate per dimensione/formato.
+
+| Directory | Descrizione |
+|-----------|-------------|
+| `knowledge-bad-md/` | Knowledge base markdown non validato |
+| `knowledge-code-packs/` | Pack codice knowledge |
+| `knowledge-md/` | Knowledge base markdown |
+| `knowledge-md-parts/` | Parti knowledge markdown |
+| `knowledge-small-md/` | Knowledge base piccola |
+| `knowledge-sync/` | Knowledge sync |
+| `knowledge-tiny-md/` | Knowledge base tiny |
+| `knowledge-upload-batches/` | Batch upload knowledge |
+
+---
+
+#### `lab-patches/` - Patch Lab
+
+Directory per patch lab.
+
+#### `lab-worktrees/` - Worktrees Lab
+
+Directory per worktrees Git lab.
+
+#### `logs/` - Log
+
+Directory per file log.
+
+---
+
+#### `modelfiles/` - Modelli
+
+Modelfile per modelli LLM.
+
+| File | Descrizione |
+|------|-----------|
+| `Modelfile.devstral-32k` | Modelfile devstral 32k |
+| `Modelfile.qwen3coder-32k` | Modelfile qwen3coder 32k |
+| `Modelfile.qwen3task-8k` | Modelfile qwen3task 8k |
+| `README.md` | Documentazione modelfile |
+
+---
+
+#### `models-*/` - Modelli
+
+Directory per modelli ML.
+
+| Directory | Descrizione |
+|-----------|-------------|
+| `models-cpu/` | Modelli CPU |
+| `models-ovms-rerank/` | **Modelli reranker OVMS** |
+| `models-task/` | Modelli task |
+| `npu-models/` | Modelli NPU |
+
+##### `models-ovms-rerank/` - Modelli Reranker
+
+Modelli per reranking BGE-v2-m3.
+
+| File | Descrizione |
+|------|-----------|
+| `config.json` | Configurazione modelli OVMS |
+| `models/bge-reranker-v2-m3/` | **Modello reranker** |
+| `models/bge-reranker-v2-m3/model.safetensors` | Modello originale (2.2 GB) |
+| `models/bge-reranker-v2-m3/openvino_model.xml/.bin` | Modello OpenVINO |
+| `models/bge-reranker-v2-m3/openvino_tokenizer.xml/.bin` | Tokenizer OpenVINO |
+| `models/bge-reranker-v2-m3/openvino_detokenizer.xml/.bin` | Detokenizer OpenVINO |
+
+---
+
+#### `npu-models/` - Modelli NPU
+
+Modelli per accelerazione NPU.
+
+#### `ollama-modelfiles/` - Modelfile Ollama
+
+| File | Descrizione |
+|------|-----------|
+| `qwen36-35b-codex-lean.Modelfile` | Modelfile Qwen36 35B codex lean |
+
+---
+
+#### `openwebui-data/` - Dati OpenWebUI
+
+Directory dati persistenti OpenWebUI.
+
+---
+
+#### `output/` - Output
+
+Output del sistema.
+
+| Directory | Descrizione |
+|-----------|-------------|
+| `agent-jobs/` | Job agent |
+| `ai_runtime_memory/` | Memoria runtime AI |
+
+---
+
+#### `ovms-runtime/` - Runtime OVMS
+
+Runtime OpenVINO Model Server.
+
+| File | Descrizione |
+|------|-----------|
+| `setupvars.ps1` | Script setup variabili ambiente |
+| `bin/` | Binari OVMS |
+
+---
+
+#### `payloads/` - Payloads
+
+Directory per payloads.
+
+---
+
+#### `project-openwebui-pipelines-controller/` - Pipeline Controller
+
+Controller pipeline OpenWebUI.
+
+| File | Descrizione |
+|------|-----------|
+| `.env.example` | Esempio variabili ambiente |
+| `docker-compose.pipelines.override.yml` | Override docker compose |
+| `docs/CHAIN_OF_CAUSALITY.md` | Documentazione causalità |
+| `pipelines/aicarmine_vulkan_controller_pipeline.py` | Pipeline controller Vulkan |
+| `README.md` | Documentazione controller |
+
+---
+
+#### `services/` - Servizi
+
+Servizi principali del sistema.
+
+##### `services/codex_bridge/` - Bridge Codex
+
+Moduli bridge Codex.
+
+| File | Descrizione |
+|------|-----------|
+| **`agentic_loop_client_mcp_server.py`** | **Client agentic loop (73 KB)** |
+| `git_readonly_mcp_server.py` | MCP server Git read-only |
+| `job_artifact_mcp_server.py` | MCP server artifact job |
+| `job_view_mcp_server.py` | MCP server visualizzazione job |
+| `local_subagent_mcp_server.py` | MCP server subagent locale |
+| **`mcp_server.py`** | **MCP server principale (55 KB)** |
+| `ollama_responses_bridge.py` | Bridge risposte Ollama |
+| **`ops_mcp_server.py`** | **MCP server operazioni sistema (33 KB)** |
+| **`ovms_alternative_reranker.py`** | **Server reranker Python-native (6 KB)** |
+| `project_memory_mcp_server.py` | MCP server memoria progetto |
+| `rag_index_repo.py` | Indicizzazione repository RAG |
+| **`rag_mcp_server.py`** | **MCP server RAG (32 KB)** |
+| `repo_code_change_set.py` | Gestione change set codice |
+| `repo_code_mcp_server.py` | MCP server editing codice |
+| `repo_mcp_common.py` | Utili comuni MCP repository |
+| `repo_search_det_mcp_server.py` | MCP server ricerca deterministica |
+| `repo_state_mcp_server.py` | MCP server stato repository |
+| `repo_validate_mcp_server.py` | MCP server validazione repository |
+| `sqlite_readonly_mcp_server.py` | MCP server SQLite read-only |
+| `tool_surface_cache.py` | Cache superficie tool |
+| `start_reranker.ps1` | **Launcher PowerShell reranker** |
+| `MCP_GUIDE.md` | Guida MCP servers |
+| `MODULE_REFERENCE.md` | Riferimento moduli |
+| `README.md` | Documentazione modulo |
+
+##### `services/aicarmine_broker/` - Broker
+
+Broker agentic principale.
+
+| File | Descrizione |
+|------|-----------|
+| `agent_entry.py` | Entry point agent |
+| `app.py` | Applicazione broker |
+| `code_edit_proposal_contract.py` | Contratto proposta edit codice |
+| `flow.svg` | Diagramma flusso |
+| `helper.py` | Utili helper |
+| `job_html.py` | Rendering HTML job |
+| `job_html_assets.py` | Assets HTML job |
+| `job_planner_lab.py` | Planner lab job |
+| `job_store.py` | Store job |
+| `memory_tools.py` | Strumenti memoria |
+| `MODULE_REFERENCE.md` | Riferimento moduli |
+| `planner.py` | **Planner agentic (251 KB)** |
+| `planner_intrinsic_context.py` | Contesto intrinseco planner |
+| `public_wrapper.py` | Wrapper pubblico |
+| `README.md` | Documentazione broker |
+| `repo_tools.py` | Strumenti repository |
+| `tool_contract.py` | Contratto tool |
+| `tool_dispatch.py` | Dispatch tool |
+| `tool_registry.py` | Registry tool |
+| `tool_schemas.py` | Schemi tool |
+| `tool_selection.py` | Selezione tool |
+
+##### Altri Servizi
+
+| File | Descrizione |
+|------|-----------|
+| `aicarmine-executor-server.ps1/py` | Server executor |
+| `aicarmine-jupyter-codeinterpreter.ps1` | Code interpreter Jupyter |
+| `aicarmine-openwebui-serve.py` | Serve OpenWebUI |
+| `aicarmine-run-safe-command.ps1` | Comandi sicuri |
+| `aicarmine-vulkan-tool-broker.ps1` | Vulkan tool broker |
+| `aicarmine_codex_mcp_server.py` | MCP server Codex |
+| `aicarmine_codex_ollama_responses_bridge.py` | Bridge risposte |
+| `aicarmine_vulkan_bridge_server.py` | Server bridge Vulkan |
+| `aicarmine_vulkan_tool_broker.py` | Tool broker Vulkan |
+| `apply_openwebui_ps1_open_terminal.py` | Apri terminale OpenWebUI |
+| `check-dev-toolchain.ps1` | Verifica toolchain |
+| `MODULE_TECHNICAL_DESCRIPTIONS.md` | Descrizioni tecniche moduli |
+| `OPENWEBUI_INLINE_EVIDENCE_CONTRACT.md` | Contratto evidenza inline |
+| `RUNTIME_SCRIPT_REFERENCE.md` | Riferimento script runtime |
+| `SERVICES_MODULE_TECHNICAL_REFERENCE.md` | Riferimento moduli servizi |
+| `VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md` | Contratto validatore agentic |
+| `requirements-agentic-optional.txt` | Dipendenze opzionali |
+
+---
+
+#### `tests/` - Test
+
+Test del progetto.
+
+---
+
+#### `tools/` - Strumenti
+
+Strumenti utilità.
+
+| File | Descrizione |
+|------|-----------|
+| `generate_symbol_reference.py` | Genera riferimento simboli |
+| `symbol_resolution_assistant.py` | Assistente risoluzione simboli |
+| `mechanical_payload_surface_cut.py` | Taglio superficie payload |
+| `mechanical_runtime_prune.py` | Potatura runtime |
+| `mechanical_services_dedupe.py` | Deduplica servizi |
+
+---
+
+## Porte di Servizio
+
+| Servizio | Porta | Protocollo | File Avvio |
+|----------|-------|------------|------------|
+| **Reranker** | 3550 | HTTP | `services/codex_bridge/ovms_alternative_reranker.py` |
+| **Broker** | 3572 | HTTP | `services/aicarmine_broker/app.py` |
+| **Local Agent** | 3579 | HTTP | `services/codex_bridge/agentic_loop_client_mcp_server.py` |
+| **Ollama** | 11434 | HTTP | `services/ollama-task-vulkan.ps1` |
+| **OpenWebUI** | 8080 | HTTP | `services/openwebui.ps1` |
+
+---
+
+## Avvio Rapido
+
+### 1. Avvia Reranker Server
+
+```powershell
+cd services/codex_bridge
+python ovms_alternative_reranker.py --port 3550
 ```
 
-Ollama `done_reason` closes a model turn. It does not complete the job by
-itself. A job reaches `completed` only after the planner emits a valid final
-decision and the 3572 validator accepts it.
-
-### Planner And Repair Endpoints
-
-- `11434` is the main planner endpoint. It receives the measured planner prompt
-  pack, chooses the next action, and returns strict JSON or a native tool call.
-- In native planner mode, tool execution decisions must be Ollama native
-  `message.tool_calls`. Text JSON `action=tool` is invalid in that mode, while
-  text JSON `final` and `block` remain valid non-tool terminal decisions.
-- `11435` is the task/repair endpoint. It is support for selector, repair or
-  normalization flows. It is not the main planner and does not decide job
-  completion.
-
-Semantic contract failures, such as a missing complete diff for a code-product
-goal, are controller guard feedback for the next planner turn. They are not
-papered over by GPU/task repair.
-
-### Internal Tool Surface
-
-The planner can select internal tools only through the 3572 registry and
-dispatch layer. Important tool families include:
-
-- repository inspection: `repo_status`, `repo_tree`, `repo_search`,
-  `repo_list_files`, `repo_read`;
-- report-only code products: `repo_propose_code_edit`;
-- explicit write/apply lane: `repo_apply_patch`, `repo_write_file`;
-- validation and terminal support: `repo_validate`, `repo_command`,
-  `terminal_run_command_wait`, `terminal_search_files`, `terminal_list_files`;
-- planner-local memory: `planner_scratchpad_read`,
-  `planner_scratchpad_write`;
-- selective runtime memory: `runtime_sqlite_memory_search`,
-  `runtime_sqlite_memory_write`, `runtime_sqlite_memory_cleanup`.
-
-Write-guarded tools remain separate from analysis and report-only tools. A
-request for a concrete diff or refactor proposal does not imply source writes.
-A request to apply/edit/fix/write does.
-
-### Evidence And Finalization
-
-Finalization is evidence-gated.
-
-For repository reads, a `repo_read ok=true` is useful only when the result has
-real `content` available from the same successful tool result or its own
-rehydratable artifact. A path, count, `content_preview`, local JSON path or
-artifact pointer is not enough.
-
-Useful successful evidence by tool type:
-
-- `repo_read`: real file `content`, logical `repo_path`, line count and
-  truncation metadata.
-- `repo_tree`: real explored `entries`.
-- `repo_list_files`: real listed `paths`.
-- `repo_command` and terminal tools: `returncode`, `stdout`, `stderr` and tails
-  when produced.
-- `repo_propose_code_edit`: complete code edit proposal payload.
-
-Failed tools, validator guards, blocked states and diagnostics are job history.
-They are not successful evidence for final answers.
-
-### Code Product Lane
-
-Diff, patch proposal, unified diff, concrete refactoring and code-product goals
-use `repo_propose_code_edit`.
-
-This tool is report-only:
-
-- it must not write source files;
-- it must not apply patches;
-- it must run after the target was read with `repo_read`;
-- it must return `kind=code_edit_proposal`;
-- it must include `target_file`, `edit_kind`, `rationale`,
-  `validation_commands`, `errors`, `warnings`;
-- it must set `source_writes_performed=false`,
-  `patch_application_performed=false`,
-  `manual_review_required=true`;
-- for `edit_kind=unified_diff`, it must carry the complete `unified_diff`
-  inline;
-- for `edit_kind=structured_edit`, it must carry complete
-  `structured_operations`;
-- for `edit_kind=no_op`, it must carry an explicit rationale and no patch
-  content.
-
-Preview fields, summaries and local artifact paths do not satisfy the
-code-product contract. While a valid code proposal is missing,
-`final_allowed=false` for code-product goals.
-
-### Prompt Pack, Memory And RAG
-
-Before each 11434 planner call, 3572 builds a measured prompt pack. It separates:
-
-- `required_working_set`: real file, diff or result windows needed for the next
-  decision;
-- `optional_context`: intrinsic context, history digest, memory, RAG/chunks,
-  failure patterns and tool-purpose context;
-- `prompt_budget_report`: the real serialized prompt count and budget data.
-
-Memory, RAG and chunks are an internal pre-turn substrate. They are not public
-OpenWebUI tools and are not automatically planner-selectable tool surfaces.
-
-When prompt size crosses the configured compaction threshold, large sections are
-stored in job-local SQLite and exposed to the planner as real recursive windows
-with text, offsets, full size, hash and `has_more_after`. The planner can then
-consume the next window through `planner_scratchpad_read` with
-`kind=prompt_context_window`.
-
-This compaction applies to the planner prompt sent to 11434. It must not degrade
-the terminal `tool_context_for_30b` sent to OpenWebUI: successful tool payloads
-still need to be reconstructed inline.
-
-### Persistence, Safety And Diagnostics
-
-The runtime uses filesystem job files as the operational source of truth.
-SQLite is a secondary index/cache for dashboards and lookup. If SQLite write or
-event indexing fails, the filesystem state/event remains authoritative and the
-job records a typed persistence warning instead of silently disappearing from
-the dashboard.
-
-Command execution is classified before running:
-
-- `readonly` and allowed `validation` commands can run under the configured
-  command policy;
-- `write`, `destructive` and `unknown` commands require explicit consent or are
-  blocked with a typed `command_requires_consent` payload;
-- Unix-like shell auto-repair is limited to read-only commands and records the
-  original/repaired command.
-
-`runtime_sqlite_memory_cleanup apply=true` is write-guarded and requires user
-consent. Planner memory surfaces distinguish feature availability from query
-success through `memory_feature_available`, `memory_query_ok` and
-`memory_records_available`.
-
-### IA Live Control View
-
-3572 also exposes an operator-only read-only dashboard:
-
-- `/jobs/{job_id}/ia-view`
-- `/jobs/{job_id}/ia-view.json`
-
-This view is not part of the 3571 public surface and is not a planner tool. It
-shows what the planner saw and what the controller fed back: prompt payload,
-required working set, intrinsic context, evidence contract, compact tool result,
-raw rehydrated tool result, validator guard and terminal `tool_context_for_30b`.
+### 2. Avvia Broker
 
-It exists to make payload transport violations visible, especially preview-only,
-metadata-only or artifact-path-only regressions.
+```powershell
+$env:AICARMINE_LAB_REPO = "C:\Users\sanit\agentic-tool-loop"
+python services\aicarmine_broker\app.py --port 3572
+```
 
-## Top-Level Tree
+### 3. Verifica
 
-- [AGENTS.md](AGENTS.md)
-- [README.md](README.md)
-- [flow.svg](flow.svg)
-- [.gitignore](.gitignore)
-- [services/](services/)
-- [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
-- [modelfiles/](modelfiles/)
-- [lab-worktrees/](lab-worktrees/)
-- [openwebui-data/](openwebui-data/)
-- [qwen-agent-workspace/](qwen-agent-workspace/)
-- [qwen-agent/](qwen-agent/)
-- [qwen-context/](qwen-context/)
-- [code-interpreter-workdir/](code-interpreter-workdir/)
-- [executor-runs/](executor-runs/)
-- [payloads/](payloads/)
-- [logs/](logs/)
-- [cache/](cache/)
-- [state/](state/)
-- [knowledge-bad-md/](knowledge-bad-md/)
-- [knowledge-code-packs/](knowledge-code-packs/)
-- [knowledge-md/](knowledge-md/)
-- [knowledge-md-parts/](knowledge-md-parts/)
-- [knowledge-small-md/](knowledge-small-md/)
-- [knowledge-sync/](knowledge-sync/)
-- [knowledge-tiny-md/](knowledge-tiny-md/)
-- [knowledge-upload-batches/](knowledge-upload-batches/)
-- [models-cpu/](models-cpu/)
-- [models-ovms-rerank/](models-ovms-rerank/)
-- [models-task/](models-task/)
-- [ovms-runtime/](ovms-runtime/)
-- [lab-patches/](lab-patches/)
-- [venvs/](venvs/)
+```powershell
+# Reranker
+curl http://127.0.0.1:3550/health
 
-## Source And Runtime Code
+# Broker
+curl http://127.0.0.1:3572/health
+```
 
-### [services/](services/)
+Per la guida completa, vedere [docs/ISOLATED_LAUNCH_GUIDE.md](docs/ISOLATED_LAUNCH_GUIDE.md).
 
-Main service surface for the agentic loop.
+---
 
-Important submodules:
+## Dipendenze
 
-- [services/vulkan_bridge/](services/vulkan_bridge/): public OpenWebUI-facing bridge surface, including
-  the `vulkan_helper` wrapper flow.
-- [services/aicarmine_broker/](services/aicarmine_broker/): internal broker and planner loop, job store,
-  tool registry, repo tools, memory tools, planner contracts, and code-product
-  proposal support.
-- [services/codex_bridge/](services/codex_bridge/): Codex/Ollama bridge helpers.
-- [services/model_export/](services/model_export/): local model export helpers.
-- [services/launch/](services/launch/): PowerShell runtime launch helpers.
+```powershell
+# Installa tutte le dipendenze
+pip install sentence-transformers huggingface_hub optimum[openvino]
+```
 
-Important documentation:
+---
 
-- [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
-- [services/END_TO_END_AGENTIC_FLOW.md](services/END_TO_END_AGENTIC_FLOW.md)
-- [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](services/SERVICES_MODULE_TECHNICAL_REFERENCE.md)
-- [services/MODULE_TECHNICAL_DESCRIPTIONS.md](services/MODULE_TECHNICAL_DESCRIPTIONS.md)
-- [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
+## Configurazione
 
-### [codex_ollama_bridge_applied/](codex_ollama_bridge_applied/)
+### Variabili Ambiente Principali
 
-Applied bridge scripts and copied tool/runtime material used as part of the
-local Codex/Ollama/OpenWebUI integration.
+| Variabile | Descrizione | Default |
+|-----------|-------------|---------|
+| `AICARMINE_LAB_REPO` | Repository lab attivo | `c:\Users\sanit\agentic-tool-loop` |
+| `AICARMINE_REAL_REPO` | Repository reale/index | `AICARMINE_LAB_REPO` |
+| `AICARMINE_BROKER_PORT` | Porta broker | `3572` |
+| `AICARMINE_RAG_RERANK_URL` | URL reranker RAG | `http://127.0.0.1:3550/v3/rerank` |
 
-### [modelfiles/](modelfiles/)
+---
 
-Ollama Modelfile templates and model configuration examples. Actual model
-binaries are not committed.
+## Contratti
 
-## External Or Local-Only Work Areas
+| Contratto | File |
+|-----------|------|
+| Launcher | `docs/launcher_contract.md` |
+| Runtime Environment | `docs/runtime_env_contract.md` |
+| Start Here | `docs/START_HERE_RUNTIME.md` |
+| Agent Global | `AGENTS.md` |
+| MCP First | `.clinerules/00-aicarmine-mcp-first.md` |
 
-These directories are represented by committed `README.md` descriptors only.
-Their runtime contents are ignored by `.gitignore`.
+---
 
-### [lab-worktrees/](lab-worktrees/)
+## Statistiche Progetto
 
-Local controlled worktrees used by the agentic tool loop and OpenTerminal.
-The worktree code itself is external and already versioned elsewhere.
-
-### [openwebui-data/](openwebui-data/) and [services/openwebui-data/](services/openwebui-data/)
-
-Local OpenWebUI data directories. They may contain chats, uploads, runtime
-databases, caches, and generated state. Those contents are not source.
-
-### [qwen-agent-workspace/](qwen-agent-workspace/)
-
-Local job workspace for broker runs, tool results, planner streams, and final
-artifacts.
-
-### [qwen-agent/](qwen-agent/) and [qwen-context/](qwen-context/)
-
-Local Qwen context, reports, patches, and runtime state.
-
-### [code-interpreter-workdir/](code-interpreter-workdir/)
-
-Scratch workspace for code-interpreter style executions.
-
-### [executor-runs/](executor-runs/), [payloads/](payloads/), [logs/](logs/), [cache/](cache/), [state/](state/)
-
-Runtime outputs, diagnostic captures, logs, caches, and local state.
-
-### `knowledge-*/`
-
-Generated knowledge packs, Markdown splits, upload batches, and synchronized
-knowledge mirrors. Curated documentation should live in normal source docs
-instead.
-
-Preserved descriptors:
-
-- [knowledge-bad-md](knowledge-bad-md/README.md)
-- [knowledge-code-packs](knowledge-code-packs/README.md)
-- [knowledge-md](knowledge-md/README.md)
-- [knowledge-md-parts](knowledge-md-parts/README.md)
-- [knowledge-small-md](knowledge-small-md/README.md)
-- [knowledge-sync](knowledge-sync/README.md)
-- [knowledge-tiny-md](knowledge-tiny-md/README.md)
-- [knowledge-upload-batches](knowledge-upload-batches/README.md)
-
-### `models-*/`, [npu-models/](npu-models/) and [ovms-runtime/](ovms-runtime/)
-
-Local model stores and OpenVINO Model Server runtime files. Model binaries and
-runtime state are not committed.
-
-Preserved descriptors:
-
-- [models-cpu](models-cpu/README.md)
-- [models-ovms-rerank](models-ovms-rerank/README.md)
-- [models-task](models-task/README.md)
-- [npu-models](npu-models/README.md)
-- [ovms-runtime](ovms-runtime/README.md)
-
-### [lab-patches/](lab-patches/)
-
-Local patch experiments and proof artifacts.
-
-### [venvs/](venvs/)
-
-Local Python virtual environments.
-
-## Git Import Policy
-
-The repository keeps source, scripts, contracts, and documentation. It excludes:
-
-- OpenWebUI user/runtime data.
-- Agent job artifacts and planner/tool result outputs.
-- Virtual environments and dependency caches.
-- Model binaries and runtime backends.
-- SQLite databases, generated knowledge stores, logs, payload captures, and
-  temporary files.
-- External lab worktree contents.
-
-Directory descriptors are committed where useful so the project tree remains
-understandable without importing private or generated data.
+- **File totali**: 307+
+- **Linee codice**: 15,000+
+- **MCP Servers**: 14
+- **Porte attive**: 5
+- **Modelli**: 1 (BGE-v2-m3, 2.2 GB)
