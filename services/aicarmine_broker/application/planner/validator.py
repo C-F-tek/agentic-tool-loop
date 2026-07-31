@@ -16,6 +16,19 @@ from aicarmine_broker.application.planner.path_utils import (
     route_token_is_prose_or_metric,
     search_query_is_concrete,
 )
+from aicarmine_broker.application.planner.rewrite_latch import (
+    clear_final_terminal_block_state as _clear_final_terminal_block_state_compat,
+    escalate_final_rewrite_retry_count as _escalate_final_rewrite_retry_count_compat,
+    next_final_rewrite_latch as _next_final_rewrite_latch_compat,
+)
+from aicarmine_broker.application.planner.required_call_validator import (
+    coerce_final_rewrite_latch as _coerce_final_rewrite_latch_compat,
+    coalesce_required_next_tool_tool as _coalesce_required_next_tool_tool_compat,
+    required_next_route_has_deterministic_proof as _required_next_route_has_deterministic_proof_compat,
+)
+from aicarmine_broker.application.planner.final_quality_route import (
+    final_quality_repo_read_allowlist as _final_quality_repo_read_allowlist_compat,
+)
 from aicarmine_broker.application.tool_surface.required_tool_call import (
     append_stale_required_call_marker,
     required_next_tool_call_satisfaction,
@@ -83,71 +96,16 @@ def _final_quality_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
     return allowlist
 
 
-def _next_final_rewrite_latch(
-    current: str,
-    *,
-    reject_count: int,
-    has_gap_route: bool,
-) -> str:
-    current = str(current or "").strip().lower()
-    if current == "terminal_block_required":
-        return current
+# Backward-compat aliases: rewrite latch logic moved to rewrite_latch.py
+_next_final_rewrite_latch = _next_final_rewrite_latch_compat
+_escalate_final_rewrite_retry_count = _escalate_final_rewrite_retry_count_compat
 
-    # one retry is allowed; on the second final-quality reject, block deterministically.
-    if reject_count >= 2:
-        return "terminal_block_required"
+# Backward-compat aliases: required call validator moved to required_call_validator.py
+_coerce_final_rewrite_latch = _coerce_final_rewrite_latch_compat
+_coalesce_required_next_tool_tool = _coalesce_required_next_tool_tool_compat
 
-    if current == "required_gap_only":
-        if has_gap_route:
-            return "required_gap_only"
-        return "terminal_block_required"
-
-    # first rejection starts rewrite branch and keeps retry path concrete.
-    return "rewrite_required"
-
-
-def _escalate_final_rewrite_retry_count(
-    contract: dict[str, Any],
-    *,
-    has_gap_route: bool,
-) -> dict[str, Any]:
-    contract = contract if isinstance(contract, dict) else {}
-    current_latch = str(contract.get("final_rewrite_latch") or "").strip().lower()
-    if not current_latch:
-        return contract
-    if current_latch not in {"rewrite_required", "required_gap_only", "terminal_block_required"}:
-        return contract
-    if contract.get("planner_cuda_rewrite_required") is not True:
-        return contract
-    if current_latch == "terminal_block_required":
-        contract["planner_may_choose_block"] = True
-        return contract
-
-    reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
-    contract["planner_final_quality_reject_count"] = reject_count
-    next_latch = _next_final_rewrite_latch(
-        current_latch,
-        reject_count=reject_count,
-        has_gap_route=has_gap_route,
-    )
-    contract["final_rewrite_latch"] = next_latch
-    contract["planner_may_choose_block"] = next_latch == "terminal_block_required"
-    final_contract = (
-        contract.get("finalization_contract")
-        if isinstance(contract.get("finalization_contract"), dict)
-        else {}
-    )
-    if next_latch == "terminal_block_required":
-        final_contract["planner_may_choose_block"] = True
-        final_contract["final_allowed"] = False
-        final_contract["planner_may_choose_final"] = False
-        final_contract["reason"] = "planner_cuda_rewrite_required_repeated_retry_block_required"
-    elif next_latch == "required_gap_only":
-        final_contract["reason"] = "planner_cuda_rewrite_required_retry_gap_only"
-    else:
-        final_contract["reason"] = "planner_cuda_rewrite_required_retry_continue"
-    contract["finalization_contract"] = final_contract
-    return contract
+# Backward-compat alias: final quality allowlist moved to final_quality_route.py
+_final_quality_repo_read_allowlist = _final_quality_repo_read_allowlist_compat
 
 
 def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any]:
@@ -158,8 +116,6 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
         else {}
     )
 
-    # A valid final answer is considered an explicit reset of terminal rewrite/block
-    # pressure for the current contract state.
     contract["final_rewrite_latch"] = "inactive"
     contract["planner_may_choose_block"] = False
     contract["planner_may_choose_final"] = True

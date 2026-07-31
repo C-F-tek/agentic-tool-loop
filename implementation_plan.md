@@ -1,195 +1,81 @@
 # Implementation Plan
 
-## [Overview]
-Analisi e risoluzione dei problemi di congruenza nelle richieste all'IA nel job-3f4635af.
+## Overview
+Extract the remaining ~102 CC from `validate_planner_decision_against_evidence` in validator.py into dedicated pipeline stages (`StageQualityGate` and `StageDuplicateRecovery`), wire them into the existing `ValidatorPipeline`, and remove ~1400 lines of nested function definitions. This completes Phase 5 of the validator complexity reduction effort, building on the 211 CC already extracted into 8 new modules across Phases 1-5.
 
-Questo documento descrive l'analisi approfondita del job `job-3f4635af` che è stato bloccato a causa di problemi di congruenza tra le richieste dell'IA e le risposte del controller. Il job aveva come obiettivo "Analizza il progetto e trova re-factoring potenziali da fare" ed è stato bloccato al step 20 con lo stato `blocked_needs_attention`.
+## Types
+- `PipelineState` (already exists): dataclass with `goal`, `decision`, `history`, `config`, `deps`, `action`, `tool`, `args`, `contract`, `violations`, `result`, `coverage_required`, `coverage_satisfied`, `missing_owner_paths`
+- `QualityGateResult`: new TypedDict with `reject_count`, `final_rewrite_latch`, `required_next_tool_call`, `required_next_progress`, `finalization_contract`
+- `DuplicateRecoveryResult`: new TypedDict with `forbidden_paths`, `recovery_count`, `required_next_progress`
 
-### Problemi Identificati
+## Files
 
-1. **Violazione del contratto di finalizzazione**: Il planner ha emesso una risposta `final` senza aver completato le letture richieste dal contratto di evidenza
-2. **Affermazioni speculative**: Il planner ha fatto affermazioni su duplicazioni di codice senza aver letto i file candidati
-3. **Ignoramento delle route degli strumenti pendenti**: Il planner non ha seguito le indicazioni del controller per leggere i file candidati
-4. **Mancata verifica delle affermazioni**: Il planner menziona file senza averli letti completamente
+### New Files to Create
+1. `services/aicarmine_broker/application/planner/validator_quality_gate.py` (replace scaffold)
+   - Purpose: Final quality gate evaluation, rewrite latch state transitions
+   - Contains: `StageQualityGate` class with full `_apply_final_quality_route` logic (~72 CC)
+   - Extracts: reject count tracking, required-next tool call generation, deterministic proof validation, candidate-next-actions population, finalization contract updates
 
-### Cause Radice
+2. `services/aicarmine_broker/application/planner/validator_duplicate_recovery.py`
+   - Purpose: Duplicate repo read recovery contract logic
+   - Contains: `StageDuplicateRecovery` class
+   - Extracts: `_apply_duplicate_repo_read_path_recovery_contract` (~30 CC)
+   - Handles: forbidden path tracking, recovery count thresholds, evidence consumption routes
 
-- Il planner decide di finalizzare prima che il controller abbia validato il contratto
-- Il controller rifiuta la final con `planner_cuda_rewrite_required`
-- Il loop entra in uno stato di blocco perché il planner non esegue le letture candidate richieste
+### Existing Files to Modify
+1. `services/aicarmine_broker/application/planner/validator.py`
+   - Replace inline nested helper functions with calls to pipeline stages
+   - Wire `ValidatorPipeline.run()` as the main entry point
+   - Remove ~1400 lines of nested function definitions
+   - Keep backward-compat aliases for existing callers
 
-## [Types]
+2. `services/aicarmine_broker/application/planner/validator_pipeline.py`
+   - Import `StageQualityGate` (replace scaffold) and `StageDuplicateRecovery`
+   - Add stages to `ValidatorPipeline.__init__`
+   - Wire stages into `ValidatorPipeline.run()` with early-return logic
 
-### EvidenceContractSummary
-```python
-@dataclass
-class EvidenceContractSummary:
-    schema: str = "planner_evidence_contract_storage_summary.v1"
-    full_contract_not_duplicated_here: bool = True
-    evidence_contract_chars: int = 0
-    evidence_contract_sha256: str = ""
-    coverage_satisfied: bool = False
-    minimum_read_coverage: MinimumReadCoverage
-    candidate_next_actions: list[Action]
-    finalization_contract: FinalizationContract
-```
+## Functions
 
-### FinalizationContract
-```python
-@dataclass
-class FinalizationContract:
-    final_allowed: bool = False
-    reason: str = ""
-    planner_may_choose_final: bool = False
-    coverage_satisfied: bool = False
-    minimum_read_coverage: MinimumReadCoverage
-    code_product_required: bool = False
-    planner_forced_terminal_block: bool = False
-    planner_may_choose_block: bool = False
-```
+### New Functions to Create
+1. `StageQualityGate.run(self, state: PipelineState) -> PipelineState`
+   - File: validator_quality_gate.py
+   - Purpose: Full `_apply_final_quality_route` logic extraction
 
-### MinimumReadCoverage
-```python
-@dataclass
-class MinimumReadCoverage:
-    required: bool = True
-    coverage_satisfied: bool = False
-    target_kind: str = "repo_owner_core"
-    required_count: int = 2
-    covered_count: int = 0
-    missing_owner_paths: list[str]
-    covered_owner_paths: list[str]
-    candidate_owner_paths: list[str]
-```
-
-## [Files]
-
-### New Files to be Created
-- `implementation_plan.md` - Questo documento di pianificazione
-
-### Existing Files to be Modified
-- Nessuno - L'analisi è completa e i problemi sono stati identificati
-
-### Files to be Deleted or Moved
-- Nessuno
-
-### Configuration File Updates
-- Nessuno - I problemi sono di logica del loop, non di configurazione
-
-## [Functions]
-
-### New Functions
-- Nessuna - L'analisi è basata su letture esistenti
+2. `StageDuplicateRecovery.run(self, state: PipelineState) -> PipelineState`
+   - File: validator_duplicate_recovery.py
+   - Purpose: Full `_apply_duplicate_repo_read_path_recovery_contract` logic extraction
 
 ### Modified Functions
-- Nessuna - L'analisi è basata su letture esistenti
+1. `ValidatorPipeline.__init__()` in validator_pipeline.py
+   - Add `self.quality_gate = StageQualityGate()`
+   - Add `self.duplicate_recovery = StageDuplicateRecovery()`
 
-### Removed Functions
-- Nessuna - L'analisi è basata su letture esistenti
+2. `ValidatorPipeline.run()` in validator_pipeline.py
+   - Add stage 9 execution: quality gate
+   - Add stage 10 execution: duplicate recovery
+   - Add early-return logic after each stage
 
-## [Classes]
+### Removed Functions (from validator.py)
+1. `_apply_final_quality_route` (~72 CC) — moved to StageQualityGate
+2. `_apply_duplicate_repo_read_path_recovery_contract` (~30 CC) — moved to StageDuplicateRecovery
+3. Supporting nested helpers: `_required_gap_paths_from_quality`, `_coalesce_required_next_missing_paths`, `_verified_required_next_missing_paths`, `_successful_read_paths_for_final_route`, `_stale_required_next_repo_read_paths`, `_path_allowed_by_missing_evidence`, `_required_next_tool_from_missing_evidences`, `_coalesce_required_next_tool_tool`, `_coerce_final_rewrite_latch`
 
-### New Classes
-- Nessuna - L'analisi è basata su letture esistenti
+## Dependencies
+- No new external package dependencies required
+- Internal imports only between planner submodules
+- Existing deps/config injection pattern preserved through PipelineState
 
-### Modified Classes
-- Nessuna - L'analisi è basata su letture esistenti
+## Testing
+- Unit tests for StageQualityGate in `tests/test_validator_quality_gate.py`
+- Unit tests for StageDuplicateRecovery in `tests/test_validator_duplicate_recovery.py`
+- Integration test: verify `ValidatorPipeline.run()` produces identical results to original `validate_planner_decision_against_evidence`
+- Regression test: verify existing callers of `validate_planner_decision_against_evidence` produce identical results
+- Complexity verification: run wily report to confirm validator.py CC < 200
 
-### Removed Classes
-- Nessuna - L'analisi è basata su letture esistenti
-
-## [Dependencies]
-
-### New Packages
-- Nessuno - L'analisi è basata su letture esistenti
-
-### Version Changes
-- Nessuno - L'analisi è basata su letture esistenti
-
-### Integration Requirements
-- Nessuno - L'analisi è basata su letture esistenti
-
-## [Testing]
-
-### Test File Requirements
-- Nessuno - L'analisi è basata su letture esistenti
-
-### Existing Test Modifications
-- Nessuno - L'analisi è basata su letture esistenti
-
-### Validation Strategies
-- Analisi degli eventi del job tramite `aicarmine_job_artifact_events`
-- Lettura del final.json tramite `aicarmine_job_artifact_final`
-- Verifica dello stato del job tramite `aicarmine_job_artifact_list_jobs`
-
-## [Implementation Order]
-
-1. **Analisi degli eventi del job**: Lettura completa di `events.ndjson` per tracciare il flusso del loop
-2. **Analisi del final.json**: Lettura del file finale per identificare le violazioni del contratto
-3. **Identificazione delle violazioni**: Mappatura delle violazioni del contratto di finalizzazione
-4. **Documentazione dei problemi**: Creazione di questo documento di pianificazione
-5. **Raccomandazioni**: Fornire raccomandazioni per risolvere i problemi di congruenza
-
----
-
-## Dettagli dei Problemi di Congruenza
-
-### Problema 1: Violazione del Contratto di Finalizzazione
-
-**Sintomo**: Il planner emette `action=final` ma il controller rifiuta con `planner_cuda_rewrite_required`
-
-**Evidenza**:
-- Evento step=6: `planner_decision_rejected` con `guard_type=planner_cuda_rewrite_required`
-- Violazione: `final_not_allowed_by_evidence_contract:Need root/ranked orientation + baseline markdown/config reads + one meaningful non-infra/code area/read set + 43/10 verified concrete readable reads + semantic owner target coverage 7/2 for analysis/action-plan finalization`
-
-**Causa**: Il planner decide di finalizzare senza aver completato le letture richieste dal contratto
-
-### Problema 2: Affermazioni Speculative
-
-**Sintomo**: Il planner fa affermazioni su duplicazioni di codice senza aver letto i file candidati
-
-**Evidenza**:
-- Violazione: `speculative_claims_without_verification`
-- Violazione: `repo_analysis_final_mentions_unverified_paths:application/planner/validator.py,application/evidence/final_quality.py,application/planner/loop.py,application/controller/memory.py`
-
-**Causa**: Il planner fa affermazioni su file che non ha letto completamente o che non sono stati verificati
-
-### Problema 3: Ignoramento delle Route degli Strumenti Pendenti
-
-**Sintomo**: Il planner non segue le indicazioni del controller per leggere i file candidati
-
-**Evidenza**:
-- Violazione: `ignores_pending_tool_routes`
-- `required_next_tool_call` indica di leggere `pack_builder.py`, `text_windows.py`, `tool_contract.py`
-
-**Causa**: Il planner ignora le indicazioni del controller e continua con altre letture non prioritarie
-
-### Problema 4: Mancata Verifica delle Affermazioni
-
-**Sintomo**: Il planner menziona file senza averli letti completamente
-
-**Evidenza**:
-- Violazione: `shallow_analysis_of_large_files`
-- Il planner menziona duplicazioni tra file che non ha confrontato
-
-**Causa**: Il planner fa affermazioni basate su letture parziali o incomplete
-
-## Raccomandazioni
-
-1. **Rispettare il contratto di finalizzazione**: Il planner deve completare tutte le letture richieste prima di emettere una final answer
-2. **Verificare le affermazioni**: Prima di fare affermazioni su duplicazioni, leggere e confrontare i file candidati
-3. **Seguire le route degli strumenti pendenti**: Il planner deve seguire le indicazioni del controller per leggere i file candidati
-4. **Completare le letture candidate**: Leggere i file indicati in `candidate_next_actions` prima di finalizzare
-5. **Documentare le letture**: Tenere traccia di quali file sono stati letti e quali affermazioni sono state verificate
-
-## Stato Attuale del Job
-
-- **Job ID**: job-3f4635af
-- **Stato**: blocked_needs_attention
-- **Step corrente**: 20
-- **Goal**: Analizza il progetto e trova re-factoring potenziali da fare
-- **Ultimo evento**: planner_decision_rejected con `planner_cuda_rewrite_required:final`
-
-## File Modificati
-
-Nessun file è stato modificato. L'analisi è stata effettuata tramite letture esistenti degli eventi del job.
+## Implementation Order
+1. Replace scaffold in `validator_quality_gate.py` with full `_apply_final_quality_route` extraction (~72 CC)
+2. Create `validator_duplicate_recovery.py` with `StageDuplicateRecovery` (~30 CC)
+3. Update `validator_pipeline.py` to import and wire both new stages
+4. Refactor `validator.py` to delegate to `ValidatorPipeline.run()` and remove ~1400 lines of nested functions
+5. Run wily report to verify validator.py CC < 200
+6. Run existing test suite to verify regression compliance

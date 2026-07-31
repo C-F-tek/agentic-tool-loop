@@ -1,0 +1,72 @@
+"""Final quality route extracted from validator.py.
+
+Manages the ``_apply_final_quality_route`` logic that evaluates model-quality
+feedback and translates it into required-next-tool-calls, rewrite latches,
+and candidate-next-actions.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+from aicarmine_broker.application.planner.path_utils import (
+    coalesce_repo_read_paths,
+    known_contract_repo_paths,
+)
+from aicarmine_broker.application.planner.required_call_validator import (
+    coerce_final_rewrite_latch,
+    coalesce_required_next_tool_tool,
+    required_next_route_has_deterministic_proof,
+)
+from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
+
+
+def final_quality_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
+    """Build the allowlist of paths the final-quality gate may read."""
+    contract = contract if isinstance(contract, dict) else {}
+    allowlist: set[str] = set()
+    memory = contract.get("file_memory") if isinstance(contract.get("file_memory"), list) else []
+    operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
+    read_notes = operational.get("read_notes") if isinstance(operational.get("read_notes"), list) else []
+    rows = [row for row in memory if isinstance(row, dict)] + [
+        row for row in read_notes if isinstance(row, dict)
+    ]
+
+    def add_token(raw: Any) -> None:
+        token = _repo_path_token(raw)
+        if token:
+            allowlist.add(token)
+
+    for key in (
+        "validator_admissible_repo_read_paths",
+        "read_admissible_paths",
+        "successful_repo_read_paths",
+        "covered_owner_paths",
+        "candidate_owner_paths",
+        "missing_owner_paths",
+    ):
+        values = contract.get(key)
+        if isinstance(values, dict):
+            for item in values.values():
+                if isinstance(item, dict):
+                    add_token(item.get("path"))
+                    add_token(item.get("repo_path"))
+                else:
+                    add_token(item)
+        elif isinstance(values, list):
+            for item in values:
+                if isinstance(item, dict):
+                    add_token(item.get("path"))
+                    add_token(item.get("repo_path"))
+                else:
+                    add_token(item)
+    verified_reads = contract.get("verified_content_reads")
+    if isinstance(verified_reads, list):
+        for read in verified_reads:
+            if isinstance(read, dict):
+                add_token(read.get("path") or read.get("repo_path"))
+    for row in rows:
+        add_token(row.get("path"))
+        for path in row.get("mentioned_paths") if isinstance(row.get("mentioned_paths"), list) else []:
+            add_token(path)
+    return allowlist
