@@ -1,0 +1,68 @@
+==============================================================================================================
+CYCOMPLEXITY REPORT
+==============================================================================================================
+File                                                                CC  Lines   Code  Funcs Classes MaxCC AvgCC
+--------------------------------------------------------------------------------------------------------------
+services\aicarmine_broker\planner.py                              1154   6004   5251    280       0    47   4.1
+--------------------------------------------------------------------------------------------------------------
+TOTAL                                                             1154                  280       0
+
+============================================================
+SUMMARY
+============================================================
+Files analyzed:        1
+Total functions:       280
+Total classes:         0
+Total CC:              1154
+Avg CC per file:       1154.0
+
+COMPLEXITY RATINGS:
+  CC 0-5:   Simple (Green)
+  CC 6-10:  Moderate (Yellow)
+  CC 11-20: Complex (Orange)
+  CC 21-50: Very Complex (Red)
+  CC >50:   Extremely Complex (Critical)
+
+================================================================================
+HIGH COMPLEXITY FUNCTIONS (Max CC > 10)
+================================================================================
+
+  File: services\aicarmine_broker\planner.py
+    Line 3103: _repo_analysis_final_answer_model_quality CC= 47
+    Line 4390: planner_replan_specialist_for_validation CC= 40
+    Line 4254: _sanitize_replan_specialist_result_against_contract CC= 37
+    Line 3017: _apply_unverified_old_text_replan_contract CC= 30
+    Line 2856: _agentic_v2_enrich_evidence_contract     CC= 27
+    Line 5565: judge_blocked_job                        CC= 25
+    Line  511: _windowed_evidence_contract_for_prompt   CC= 24
+    Line 2822: _agentic_v2_successful_read_paths        CC= 24
+    Line 1851: _paths_from_result                       CC= 23
+    Line 4763: _should_attempt_vulkan_repair            CC= 23
+    Line 4019: _sanitize_replan_required_next_tool_call CC= 20
+    Line 4960: controller_guard_result_for_validation   CC= 19
+    Line 1907: _verified_repo_read_content_rows         CC= 18
+    Line 2978: _verified_repo_read_contents_for_path    CC= 18
+    Line 3826: _controller_guard_contract_overlay       CC= 18
+    Line 1075: _repo_read_item_full_content             CC= 17
+    Line 3025: admissible_replan_candidate              CC= 17
+    Line 3516: _raw_planner_text_classification         CC= 17
+    Line 5231: _compact_evidence_guide_for_30b          CC= 15
+    Line  836: _optional_context_for_prompt             CC= 14
+    Line 3558: _raw_planner_text_has_explicit_tool_alias_invocation CC= 14
+    Line 3670: _should_retry_incomprehensible_planner_output CC= 14
+    Line 3700: _is_unrecoverable_plain_text_planner_output CC= 14
+    Line 3752: _compact_vulkan_repair_evidence_contract CC= 14
+    Line 4841: vulkan_repair_invalid_planner_decision   CC= 14
+    Line 2729: _agentic_v2_decision_paths               CC= 13
+    Line 4207: _replan_search_query_is_concrete         CC= 13
+    Line 2793: _agentic_v2_repo_list_rows               CC= 12
+    Line 4647: planner_cuda_rewrite_target              CC= 12
+    Line  780: _optional_context_window_pack            CC= 11
+    Line 2712: _agentic_v2_goal_scope                   CC= 11
+    Line 3623: _raw_planner_text_has_valid_embedded_json_with_prose CC= 11
+    Line 4185: _replan_route_token_is_prose_or_metric   CC= 11
+
+================================================================================
+TOP 10 MOST COMPLEX FILES
+================================================================================
+   1. services\aicarmine_broker\planner.py                         CC=1154

@@ -19,7 +19,278 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .config import (
+# Consolidated facade imports — replaces 40+ aliased imports
+from .planner_facade import (
+    # Core planner functions
+    run_agentic_planner_job,
+    planner_decision,
+    validate_planner_decision_against_evidence,
+    normalize_planner_decision,
+    _native_tool_calls_decision,
+    _normalize_terminal_planner_decision,
+    planner_done_token,
+    summarize_history_artifacts,
+    planner_system_for_current_mode,
+    required_next_progress_from_text,
+    required_next_route_has_deterministic_proof,
+    clear_final_terminal_block_state,
+    validate_control_lane_catalog,
+    final_quality_repo_read_allowlist,
+    run_validator_pipeline,
+    run_validator_code_product,
+    run_validator_duplicate_recovery,
+    run_validator_path_validation,
+    canonical_invalid_code_product_decision_signature,
+    compact_validation_rejections_tail,
+    disallowed_invalid_code_product_signatures,
+    invalid_code_product_decision_signature_count,
+    invalid_code_product_decision_signature_from_history_item,
+    invalid_decision_signature_key,
+    search_query_is_concrete,
+    collect_repo_paths,
+    # Evidence builder
+    EvidenceBuilder,
+    planner_evidence_contract,
+    score_evidence_coverage,
+    # Goal classifiers
+    goal_requests_semantic_audit,
+    role_guidance_for_goal,
+    role_guidance_text,
+    effective_repo_analysis_goal,
+    final_answer_is_action_plan_without_code_product,
+    goal_requires_code_security_coverage,
+    goal_operational_intent_text,
+    goal_requests_apply,
+    goal_requests_code_product,
+    has_any,
+    input_error_goal,
+    semantic_goal_classification,
+    semantic_goal_low,
+    extract_existing_goal_paths,
+    extract_existing_goal_path,
+    goal_requested_repo_scope,
+    requested_file_limit_from_goal,
+    initial_orientation_surface_from_history,
+    repo_read_items_for_prompt,
+    required_working_set_for_prompt,
+    execution_evidence_digest_text,
+    repo_read_content_views,
+    repo_analysis_final_answer_model_quality_request,
+    repo_analysis_final_answer_quality,
+    sanitize_repo_analysis_final_model_quality,
+    dynamic_read_candidate_paths,
+    low_signal_top_dir,
+    meaningful_read_candidates_from_evidence,
+    path_under_scope,
+    read_candidate_sort_key,
+    repo_code_file,
+    repo_doc_or_config,
+    repo_existing_dir,
+    repo_existing_file,
+    repo_path_kind,
+    repo_readable_evidence_file,
+    scope_candidate_source_paths,
+    scope_read_candidates_from_evidence,
+    top_dir,
+    append_unique,
+    extract_headings,
+    extract_key_lines,
+    extract_mentioned_paths,
+    failed_repo_read_paths,
+    failed_repo_list_files_paths,
+    file_memory_from_history,
+    rank_core_candidates,
+    read_items_from_history,
+    repo_list_evidence,
+    successful_repo_read_paths,
+    target_scope_conflict_resolved,
+    add_core_discovery_candidate,
+    core_discovery_candidates_from_intrinsic,
+    core_discovery_read_paths,
+    claim_area_from_user_token,
+    normalize_scope_claim_text,
+    scope_claim_conflict_for_path,
+    user_scope_claims,
+    CODE_PRODUCT_BUILD_STATE_KIND,
+    code_product_action_has_complete_payload,
+    code_product_build_state_has_collecting_progress,
+    code_product_build_state_parse,
+    code_product_build_state_ready_payload,
+    code_product_payload_violations,
+    copyable_example_text,
+    goal_exact_text_block,
+    best_partial_product_for_30b,
+    code_product_answer_text,
+    latest_code_product_payload,
+    partial_product_answer_text,
+    partial_product_clean_text,
+    partial_products_for_30b,
+    CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS,
+    apply_duplicate_window_replan_contract,
+    code_product_build_state_duplicate_write,
+    code_product_build_state_from_result,
+    code_product_build_state_propose_action,
+    code_product_build_state_read_action,
+    code_product_build_state_write_action,
+    code_product_candidate_action,
+    code_product_low_signal_target,
+    code_product_payload_rejection_count,
+    code_product_source_window_candidate,
+    code_product_source_windows_from_reads,
+    failed_code_edit_proposal_validation_row,
+    latest_code_product_build_state,
+    strip_duplicate_window_candidate,
+    successful_code_edit_proposals,
+    successful_repo_read_window_ranges,
+    successful_window_signatures,
+    latest_code_product_for_prompt,
+    agent_flow_diagnostics,
+    controller_guard_count,
+    controller_guard_rejection_signature,
+    controller_guard_rejection_signature_count,
+    recoverable_planner_block,
+    controller_memory_lesson_text,
+    loop_turn_memory_text,
+    write_controller_memory_lesson,
+    write_loop_turn_memory,
+    controller_initial_area_list_plans,
+    controller_initial_area_read_plan,
+    controller_initial_doc_preseed_plan,
+    controller_initial_orientation_candidate_pool,
+    initial_area_file_sort_key,
+    initial_area_sort_key,
+    initial_doc_sort_key,
+    list_result_file_paths,
+    root_surface_dir_paths,
+    root_surface_entries,
+    root_surface_file_paths,
+    controller_orientation_model_select,
+    orientation_shadow_effective_mode,
+    orientation_legacy_selected_candidate_ids,
+    orientation_shadow_selection_metrics,
+    controller_preplanner_rag_query_plan,
+    controller_preplanner_rag_preseed_plan,
+    build_planner_user_payload,
+    compact_evidence_contract_for_prompt,
+    hard_budget_evidence_contract_summary,
+    evidence_contract_continuation_action,
+    forbidden_repeated_prompt_window_calls,
+    planner_scratchpad_next_window_action_from_history,
+    prompt_context_continuation_from_payload,
+    prompt_context_continue_action,
+    prompt_window_consumed_offsets,
+    prompt_window_tracking_metadata_errors,
+    required_working_set_continuation_action,
+    LOCAL_ARTIFACT_KEYS,
+    OLLAMA_STREAM_META_KEYS,
+    PLANNER_HISTORY_NOISE_KEYS,
+    clean_planner_history_value,
+    planner_controller_guard_history_payload,
+    planner_history_arguments,
+    planner_history_evidence_payload,
+    planner_history_item_messages,
+    planner_history_messages_for_ollama,
+    planner_history_reason,
+    planner_history_summary,
+    planner_tool_result_message_payload,
+    compact_history_for_prompt,
+    compact_intrinsic_context_for_prompt,
+    available_tools_window_pack,
+    available_tools_for_user_payload,
+    hard_budget_tool_shape_examples_for_prompt,
+    tool_shape_examples_for_prompt,
+    PROMPT_CHARS_PER_TOKEN,
+    report_exceeds_generation_headroom,
+    prompt_clip_text,
+    prompt_clip_value,
+    text_hash,
+    decision_paths,
+    planner_scratchpad_window_signature,
+    repo_read_window_signature,
+    window_text,
+    history_item_ollama_turn,
+    planner_history_ledger,
+    planner_ollama_turn_from_decision,
+    history_tool_result,
+    history_has_tool,
+    drop_empty_dict_values,
+    evidence_contract_summary_triplet,
+    repo_rel_token,
+    compact_final_state_result,
+    answer_for_openwebui,
+    next_action_for_openwebui,
+    materialize_public_evidence,
+    build_tool_context_for_30b,
+    PUBLIC_LOCAL_REFERENCE_KEYS,
+    decision_for_turn_memory,
+    final_summary_with_ollama_done_reasons,
+    ollama_turn_rows,
+    ollama_turn_summary_text,
+    planner_turn_memory,
+    public_tool_artifact_rows,
+    public_tool_context_limits,
+    public_tool_response,
+    strip_public_artifact_paths,
+    strip_public_local_references,
+    successful_tool_turns,
+    PUBLIC_TERMINAL_POINTER_KEYS,
+    public_terminal_content_key,
+    public_terminal_sanitize_text,
+    public_terminal_sanitize_value,
+    public_terminal_history_ledger,
+    public_terminal_result_for_30b,
+    executed_tool_rows,
+    planner_decision_rows,
+    terminal_context_alias,
+    validation_rejection_rows,
+    candidate_actions_from_evidence,
+    decision_matches_prompt_context_continuation,
+    enforce_required_scratchpad_read_continuation_contract,
+    final_composition_tool_names_from_candidates,
+    preserve_required_next_tool_call_for_prompt,
+    required_next_tool_call_from_action,
+    compact_tool_manifest_for_prompt,
+    filter_tool_manifest_for_names,
+    json_char_len,
+    native_tools_schema_for_planner,
+    planner_last_result_digest,
+    compact_tool_result_for_planner,
+    apply_turn_surface_policy,
+    contract_final_required_now,
+    tool_surface_names_for_turn,
+    required_next_tool_call_satisfaction,
+    append_stale_required_call_marker,
+    canonical_batch_call_key,
+    gate_candidate_actions,
+    attach_action_proof,
+    build_runtime_debug_packet,
+    maybe_enqueue_npu_phi_diagnostic,
+    validate_unified_diff_text,
+    planner_composed_answer,
+    planner_memory_surface,
+    planner_prompt_context_store_window,
+    runtime_sqlite_memory_write,
+    agent_job_planner_stream_path,
+    agent_job_root,
+    append_agent_event,
+    load_agent_job_state,
+    write_agent_job_state,
+    write_json,
+    capability_map,
+    resolve_tool,
+    dispatch_tool_call,
+    TOOL_SCHEMAS,
+    select_tool,
+    run_planner_job,
+    create_broker_app,
+    FilesystemRepo,
+    same_tool_artifact_payload,
+    JobSqliteStore,
+    resolve_executable,
+    run_command,
+    now_utc,
+    monotonic_now,
+    # Config constants
     WRITE_GUARDED_TOOLS,
     AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,
     AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY,
@@ -60,363 +331,28 @@ from .config import (
     internal_tools_list,
     ollama_options,
     AICARMINE_ORIENTATION_LANE_MODE,
-)
-from .job_store import (
-    agent_job_planner_stream_path,
-    agent_job_root,
-    append_agent_event,
-    load_agent_job_state,
-    write_agent_job_state,
-    write_json,
-)
-from .memory_tools import (
-    planner_composed_answer,
-    planner_memory_surface,
-    planner_prompt_context_store_window,
-    runtime_sqlite_memory_write,
-)
-from .code_edit_proposal_contract import validate_unified_diff_text
-from .planner_intrinsic_context import build_planner_intrinsic_context
-from .repo_tools import safe_rel_path
-from .planner_core.json_io import (
-    _parse_strict_json_object,
-    parse_strict_json_object_diagnostics,
-    post_json,
-    post_json_stream_to_file,
-)
-from .planner_core.cache import (
+    # Cache
+    CACHEABLE_READ_TOOLS,
     _cached_tool_result,
     _tool_cache_hit,
     _tool_cache_key,
     _cached_vulkan_repair_result,
     _repair_cache_key,
     repeated_tool_call_count,
+    # JSON I/O
+    _parse_strict_json_object,
+    parse_strict_json_object_diagnostics,
+    post_json,
+    post_json_stream_to_file,
+    # Helper functions
+    safe_rel_path,
+    dict_or_empty,
+    list_or_empty,
+    compact_text,
+    json_size,
+    bridge_result_digest,
 )
-from .application.planner.decision_normalizer import (
-    _native_tool_calls_decision,
-    _normalize_terminal_planner_decision,
-    normalize_planner_decision,
-)
-from .application.prompt.available_tools import (
-    available_tools_window_pack as _available_tools_window_pack_impl,
-)
-from .application.controller.diagnostics import agent_flow_diagnostics as _agent_flow_diagnostics_impl
-from .application.prompt.context_windows import (
-    evidence_contract_continuation_action as _evidence_contract_continuation_action_impl,
-    forbidden_repeated_prompt_window_calls as _forbidden_repeated_prompt_window_calls_impl,
-    planner_scratchpad_next_window_action_from_history as _planner_scratchpad_next_window_action_from_history_impl,
-    prompt_context_continuation_from_payload as _prompt_context_continuation_from_payload_impl,
-    prompt_context_continue_action as _prompt_context_continue_action_impl,
-    prompt_window_consumed_offsets as _prompt_window_consumed_offsets_impl,
-    prompt_window_tracking_metadata_errors as _prompt_window_tracking_metadata_errors_impl,
-    required_working_set_continuation_action as _required_working_set_continuation_action_impl,
-)
-from .application.evidence.required_working_set import (
-    repo_read_items_for_prompt as _repo_read_items_for_prompt_impl,
-    required_working_set_for_prompt as _required_working_set_for_prompt_impl,
-)
-from .application.code_product.required_working_set import (
-    latest_code_product_for_prompt as _latest_code_product_for_prompt_impl,
-)
-from .application.prompt.pack_builder import build_planner_user_payload as _build_planner_user_payload_impl
-from .application.prompt.evidence_contract import (
-    compact_evidence_contract_for_prompt as _compact_evidence_contract_for_prompt_impl,
-    hard_budget_evidence_contract_summary as _hard_budget_evidence_contract_summary,
-)
-from .application.evidence.builder import planner_evidence_contract as _planner_evidence_contract_impl
-from .application.planner.loop import run_agentic_planner_job as _run_agentic_planner_job_impl
-from .application.planner.system_prompt import planner_system_for_current_mode as _planner_system_for_current_mode_impl
-from .application.planner.turn import planner_decision as _planner_decision_impl
-from .application.planner.validator import validate_planner_decision_against_evidence as _validate_planner_decision_against_evidence_impl
-from .application.public_payload.final_state_result import compact_final_state_result as _compact_final_state_result_impl
-from .application.evidence.execution_digest import (
-    execution_evidence_digest_text as _execution_evidence_digest_text_impl,
-    repo_read_content_views as _repo_read_content_views_impl,
-)
-from .application.evidence.final_quality import (
-    repo_analysis_final_answer_model_quality_request as _repo_analysis_final_answer_model_quality_request,
-    repo_analysis_final_answer_quality as _repo_analysis_final_answer_quality,
-    sanitize_repo_analysis_final_model_quality as _sanitize_repo_analysis_final_model_quality,
-)
-from .application.evidence.audit_guidance import role_guidance_for_goal
-from .application.evidence.initial_orientation import (
-    initial_orientation_surface_from_history as _initial_orientation_surface_from_history_impl,
-)
-from .application.public_payload.openwebui_terminal_answer import (
-    answer_for_openwebui as _answer_for_openwebui_impl,
-    next_action_for_openwebui as _next_action_for_openwebui_impl,
-)
-from .application.public_payload.evidence_materializer import (
-    materialize_public_evidence as _materialize_public_evidence_impl,
-)
-from .application.public_payload.openwebui_tool_context import build_tool_context_for_30b as _build_tool_context_for_30b_impl
-from .application.tool_surface.candidate_actions import (
-    candidate_actions_from_evidence as _candidate_actions_from_evidence_impl,
-    decision_matches_prompt_context_continuation as _decision_matches_prompt_context_continuation_impl,
-    enforce_required_scratchpad_read_continuation_contract as _enforce_scratchpad_read_continuation_contract_impl,
-    final_composition_tool_names_from_candidates as _final_composition_tool_names_from_candidates,
-    preserve_required_next_tool_call_for_prompt as _preserve_required_next_tool_call_for_prompt_impl,
-    required_next_tool_call_from_action as _required_next_tool_call_from_action_impl,
-)
-from .application.controller.guards import (
-    controller_guard_count as _controller_guard_count_impl,
-    controller_guard_rejection_signature as _controller_guard_rejection_signature_impl,
-    controller_guard_rejection_signature_count as _controller_guard_rejection_signature_count_impl,
-    recoverable_planner_block as _recoverable_planner_block_impl,
-)
-from .application.runtime_debug import build_runtime_debug_packet as _build_runtime_debug_packet
-from .application.npu_phi import maybe_enqueue_npu_phi_diagnostic as _maybe_enqueue_npu_phi_diagnostic
-from .application.controller.memory import (
-    controller_memory_lesson_text as _controller_memory_lesson_text_impl,
-    loop_turn_memory_text as _loop_turn_memory_text_impl,
-    write_controller_memory_lesson as _write_controller_memory_lesson_impl,
-    write_loop_turn_memory as _write_loop_turn_memory_impl,
-)
-from .application.controller.preseed import (
-    controller_initial_area_list_plans as _controller_initial_area_list_plans_impl,
-    controller_initial_area_read_plan as _controller_initial_area_read_plan_impl,
-    controller_initial_doc_preseed_plan as _controller_initial_doc_preseed_plan_impl,
-    controller_initial_orientation_candidate_pool
-    as _controller_initial_orientation_candidate_pool_impl,
-    initial_area_file_sort_key as _initial_area_file_sort_key_impl,
-    initial_area_sort_key as _initial_area_sort_key_impl,
-    initial_doc_sort_key as _initial_doc_sort_key_impl,
-    list_result_file_paths as _list_result_file_paths_impl,
-    root_surface_dir_paths as _root_surface_dir_paths_impl,
-    root_surface_entries as _root_surface_entries_impl,
-    root_surface_file_paths as _root_surface_file_paths_impl,
-)
-from .application.controller.orientation_lane import (
-    controller_orientation_model_select
-    as _controller_orientation_model_select_impl,
-    orientation_shadow_effective_mode
-    as _orientation_shadow_effective_mode_impl,
-    orientation_legacy_selected_candidate_ids
-    as _orientation_legacy_selected_candidate_ids_impl,
-    orientation_shadow_selection_metrics
-    as _orientation_shadow_selection_metrics_impl,
-)
-from .application.controller.rag_preseed import (
-    controller_preplanner_rag_query_plan as _controller_preplanner_rag_query_plan_impl,
-    controller_preplanner_rag_preseed_plan as _controller_preplanner_rag_preseed_plan_impl,
-)
-from .application.evidence.core_discovery import (
-    add_core_discovery_candidate as _add_core_discovery_candidate_impl,
-    core_discovery_candidates_from_intrinsic as _core_discovery_candidates_from_intrinsic_impl,
-    core_discovery_read_paths as _core_discovery_read_paths_impl,
-)
-from .application.code_product.state import (
-    CODE_PRODUCT_BUILD_STATE_KIND,
-    code_product_action_has_complete_payload as _code_product_action_has_complete_payload,
-    code_product_build_state_has_collecting_progress as _code_product_build_state_has_collecting_progress,
-    code_product_build_state_parse as _code_product_build_state_parse,
-    code_product_build_state_ready_payload as _code_product_build_state_ready_payload,
-    code_product_payload_violations as _code_product_payload_violations,
-    copyable_example_text as _copyable_example_text,
-    goal_exact_text_block as _goal_exact_text_block,
-)
-from .application.code_product.public_outputs import (
-    best_partial_product_for_30b as _best_partial_product_for_30b_impl,
-    code_product_answer_text as _code_product_answer_text_impl,
-    latest_code_product_payload as _latest_code_product_payload_impl,
-    partial_product_answer_text as _partial_product_answer_text_impl,
-    partial_product_clean_text as _partial_product_clean_text_impl,
-    partial_products_for_30b as _partial_products_for_30b_impl,
-)
-from .application.code_product.history import (
-    CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS as _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL,
-    apply_duplicate_window_replan_contract as _apply_duplicate_window_replan_contract_impl,
-    code_product_build_state_duplicate_write as _code_product_build_state_duplicate_write_impl,
-    code_product_build_state_from_result as _code_product_build_state_from_result_impl,
-    code_product_build_state_propose_action as _code_product_build_state_propose_action_impl,
-    code_product_build_state_read_action as _code_product_build_state_read_action_impl,
-    code_product_build_state_write_action as _code_product_build_state_write_action_impl,
-    code_product_candidate_action as _code_product_candidate_action_impl,
-    code_product_low_signal_target as _code_product_low_signal_target_impl,
-    code_product_payload_rejection_count as _code_product_payload_rejection_count_impl,
-    code_product_source_window_candidate as _code_product_source_window_candidate_impl,
-    code_product_source_windows_from_reads as _code_product_source_windows_from_reads_impl,
-    failed_code_edit_proposal_validation_row as _failed_code_edit_proposal_validation_row,
-    latest_code_product_build_state as _latest_code_product_build_state_impl,
-    strip_duplicate_window_candidate as _strip_duplicate_window_candidate_impl,
-    successful_code_edit_proposals,
-    successful_repo_read_window_ranges as _successful_repo_read_window_ranges_impl,
-    successful_window_signatures as _successful_window_signatures_impl,
-)
-from .application.evidence.goal_classifier import (
-    final_answer_is_action_plan_without_code_product as _final_answer_is_action_plan_without_code_product,
-    goal_requires_code_security_coverage,
-    goal_operational_intent_text as _goal_operational_intent_text,
-    goal_requests_apply,
-    goal_requests_code_product,
-    has_any as _has_any,
-    input_error_goal as _input_error_goal,
-    semantic_goal_classification as _classify_goal_deliverable,
-    semantic_goal_low as _semantic_goal_low,
-)
-from .application.evidence.goal_scope import (
-    extract_existing_goal_paths as _extract_existing_goal_paths_impl,
-    extract_existing_goal_path as _extract_existing_goal_path_impl,
-    goal_requested_repo_scope as _goal_requested_repo_scope_impl,
-    requested_file_limit_from_goal as _requested_file_limit_from_goal_impl,
-)
-from .application.shared.history_queries import (
-    history_tool_result as _history_tool_result_impl,
-    history_has_tool,
-)
-from .application.shared.clean_values import drop_empty_dict_values as _drop_empty_dict_values_impl
-from .application.shared.evidence_contract_summary import (
-    evidence_contract_summary_triplet as _evidence_contract_summary_triplet_impl,
-)
-from .application.shared.history_ledger import (
-    history_item_ollama_turn as _history_item_ollama_turn_impl,
-    planner_history_ledger as _planner_history_ledger_impl,
-    planner_ollama_turn_from_decision as _planner_ollama_turn_from_decision_impl,
-)
-from .application.prompt.history_messages import (
-    LOCAL_ARTIFACT_KEYS as _LOCAL_ARTIFACT_KEYS_IMPL,
-    OLLAMA_STREAM_META_KEYS as _OLLAMA_STREAM_META_KEYS_IMPL,
-    PLANNER_HISTORY_NOISE_KEYS as _PLANNER_HISTORY_NOISE_KEYS_IMPL,
-    clean_planner_history_value as _clean_planner_history_value_impl,
-    planner_controller_guard_history_payload as _planner_controller_guard_history_payload_impl,
-    planner_history_arguments as _planner_history_arguments_impl,
-    planner_history_evidence_payload as _planner_history_evidence_payload_impl,
-    planner_history_item_messages as _planner_history_item_messages_impl,
-    planner_history_messages_for_ollama as _planner_history_messages_for_ollama_impl,
-    planner_history_reason as _planner_history_reason_impl,
-    planner_history_summary as _planner_history_summary_impl,
-    planner_tool_result_message_payload as _planner_tool_result_message_payload_impl,
-)
-from .application.public_payload.tool_context import (
-    PUBLIC_LOCAL_REFERENCE_KEYS as _PUBLIC_LOCAL_REFERENCE_KEYS_IMPL,
-    decision_for_turn_memory as _decision_for_turn_memory_impl,
-    final_summary_with_ollama_done_reasons as _final_summary_with_ollama_done_reasons_impl,
-    ollama_turn_rows as _ollama_turn_rows_impl,
-    ollama_turn_summary_text as _ollama_turn_summary_text_impl,
-    planner_turn_memory as _planner_turn_memory_impl,
-    public_tool_artifact_rows as _public_tool_artifact_rows_impl,
-    public_tool_context_limits as _public_tool_context_limits_impl,
-    public_tool_response as _public_tool_response_impl,
-    strip_public_artifact_paths as _strip_public_artifact_paths_impl,
-    strip_public_local_references as _strip_public_local_references_impl,
-    successful_tool_turns as _successful_tool_turns_impl,
-)
-from .application.public_payload.terminal_sanitizer import (
-    PUBLIC_TERMINAL_POINTER_KEYS as _PUBLIC_TERMINAL_POINTER_KEYS_IMPL,
-    public_terminal_content_key as _public_terminal_content_key_impl,
-    public_terminal_sanitize_text as _public_terminal_sanitize_text_impl,
-    public_terminal_sanitize_value as _public_terminal_sanitize_value_impl,
-)
-from .application.public_payload.terminal_result import (
-    public_terminal_history_ledger as _public_terminal_history_ledger_impl,
-    public_terminal_result_for_30b as _public_terminal_result_for_30b_impl,
-)
-from .application.public_payload.terminal_context_rows import (
-    executed_tool_rows as _executed_tool_rows_impl,
-    planner_decision_rows as _planner_decision_rows_impl,
-    terminal_context_alias as _terminal_context_alias_impl,
-    validation_rejection_rows as _validation_rejection_rows_impl,
-)
-from .application.prompt.history_contract import (
-    compact_history_for_prompt as _compact_history_for_prompt_impl,
-)
-from .application.prompt.intrinsic_context import (
-    compact_intrinsic_context_for_prompt as _compact_intrinsic_context_for_prompt_impl,
-)
-from .application.shared.path_tokens import repo_rel_token as _repo_rel_token
-from .application.planner.status import (
-    planner_done_token as _planner_done_token_impl,
-    summarize_history_artifacts as _summarize_history_artifacts_impl,
-)
-from .application.prompt.budget import (
-    PROMPT_CHARS_PER_TOKEN as _PROMPT_CHARS_PER_TOKEN,
-    report_exceeds_generation_headroom as _report_exceeds_generation_headroom_impl,
-)
-from .application.prompt.values import (
-    prompt_clip_text as _prompt_clip_text,
-    prompt_clip_value as _prompt_clip_value,
-    text_hash as _text_hash,
-)
-from .application.evidence.repo_path_policy import (
-    dynamic_read_candidate_paths as _dynamic_read_candidate_paths_impl,
-    low_signal_top_dir as _low_signal_top_dir_impl,
-    meaningful_read_candidates_from_evidence as _meaningful_read_candidates_from_evidence_impl,
-    path_under_scope as _path_under_scope_impl,
-    read_candidate_sort_key as _read_candidate_sort_key_impl,
-    repo_code_file as _repo_code_file_impl,
-    repo_doc_or_config as _repo_doc_or_config_impl,
-    repo_existing_dir as _repo_existing_dir_impl,
-    repo_existing_file as _repo_existing_file_impl,
-    repo_path_kind as _repo_path_kind_impl,
-    repo_readable_evidence_file as _repo_readable_evidence_file_impl,
-    scope_candidate_source_paths as _scope_candidate_source_paths_impl,
-    scope_read_candidates_from_evidence as _scope_read_candidates_from_evidence_impl,
-    top_dir as _top_dir_impl,
-)
-from .application.evidence.repo_history import (
-    append_unique as _append_unique_impl,
-    extract_headings as _extract_headings_impl,
-    extract_key_lines as _extract_key_lines_impl,
-    extract_mentioned_paths as _extract_mentioned_paths_impl,
-    failed_repo_read_paths as _failed_repo_read_paths_impl,
-    failed_repo_list_files_paths as _failed_repo_list_files_paths_impl,
-    file_memory_from_history as _file_memory_from_history_impl,
-    rank_core_candidates as _rank_core_candidates_impl,
-    read_items_from_history as _read_items_from_history_impl,
-    repo_list_evidence as _repo_list_evidence_impl,
-    successful_repo_read_paths as _successful_repo_read_paths_impl,
-)
-from .application.evidence.scope_conflict_resolution import (
-    SCOPE_CONFLICT_RATIONALE_TERMS as _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL,
-    target_scope_conflict_resolved as _target_scope_conflict_resolved_impl,
-)
-from .application.prompt.context_windows import (
-    PROMPT_CONTEXT_WINDOW_COMPACT_KEYS as _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL,
-    PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS as _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL,
-    compact_prompt_context_window_item as _compact_prompt_context_window_item_impl,
-)
-from .application.prompt.text_windows import window_text as _window_text
-from .application.tool_surface.manifest_builder import (
-    compact_tool_manifest_for_prompt as _compact_tool_manifest_for_prompt,
-    filter_tool_manifest_for_names as _filter_tool_manifest_for_names,
-    json_char_len as _json_char_len,
-    native_tools_schema_for_planner as _native_tools_schema_for_planner,
-)
-from .application.prompt.tool_contract import (
-    available_tools_for_user_payload as _available_tools_for_user_payload_impl,
-    hard_budget_tool_shape_examples_for_prompt as _hard_budget_tool_shape_examples_for_prompt_impl,
-    tool_shape_examples_for_prompt as _tool_shape_examples_for_prompt_impl,
-)
-from .application.tool_surface.result_digest import planner_last_result_digest as _planner_last_result_digest_impl
-from .application.tool_surface.result_compaction import compact_tool_result_for_planner as _compact_tool_result_for_planner_impl
-from .application.tool_surface.turn_surface_policy import (
-    apply_turn_surface_policy as _apply_turn_surface_policy_impl,
-    contract_final_required_now as _contract_final_required_now,
-    tool_surface_names_for_turn as _tool_surface_names_for_turn_impl,
-)
-from .application.tool_surface.required_tool_call import (
-    required_next_tool_call_satisfaction as _required_next_tool_call_satisfaction,
-)
-from .application.evidence.user_scope_claims import (
-    claim_area_from_user_token as _claim_area_from_user_token_impl,
-    normalize_scope_claim_text as _normalize_scope_claim_text_impl,
-    scope_claim_conflict_for_path as _scope_claim_conflict_for_path_impl,
-    user_scope_claims as _user_scope_claims_impl,
-)
-from .application.planner.validation_rejections import (
-    canonical_invalid_code_product_decision_signature as _canonical_invalid_code_product_decision_signature_impl,
-    compact_validation_rejections_tail as _compact_validation_rejections_tail_impl,
-    disallowed_invalid_code_product_signatures as _disallowed_invalid_code_product_signatures_impl,
-    invalid_code_product_decision_signature_count as _invalid_code_product_decision_signature_count_impl,
-    invalid_code_product_decision_signature_from_history_item as _invalid_code_product_decision_signature_from_history_item_impl,
-    invalid_decision_signature_key as _invalid_decision_signature_key_impl,
-)
-from .application.prompt.window_signatures import (
-    decision_paths as _decision_paths,
-    planner_scratchpad_window_signature as _planner_scratchpad_window_signature,
-    repo_read_window_signature as _repo_read_window_signature,
-)
-from .infrastructure.json_files import same_tool_artifact_payload as _same_tool_artifact_payload_impl
+
 
 
 # ---------------------------------------------------------------------------

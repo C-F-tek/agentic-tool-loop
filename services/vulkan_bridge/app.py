@@ -89,21 +89,28 @@ def _bool_env(name: str, default: bool) -> bool:
     return bool_env(name, default)
 
 
-AGENT_URL = BRIDGE_CONFIG.agent_url
-BRIDGE_TIMEOUT_SECONDS = BRIDGE_CONFIG.bridge_timeout_seconds
-BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS = BRIDGE_CONFIG.max_openwebui_response_chars
-BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = BRIDGE_CONFIG.max_openwebui_summary_chars
-BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = BRIDGE_CONFIG.max_openwebui_answer_chars
-BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = BRIDGE_CONFIG.openwebui_inline_file_chars
-BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = BRIDGE_CONFIG.openwebui_inline_evidence_chars
-OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR = Path(
-    os.environ.get("AICARMINE_OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR")
-    or (Path(__file__).resolve().parents[2] / "state" / "openwebui_tool_payloads")
-)
-OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = BRIDGE_CONFIG.final_tool_settle_seconds
-OPENWEBUI_FINAL_UNLOAD_PLANNER = BRIDGE_CONFIG.final_unload_planner
-OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = BRIDGE_CONFIG.final_unload_timeout_seconds
-PLANNER_URL = BRIDGE_CONFIG.planner_url
+
+# Configuration values extracted from app.py
+from .app_config import resolve_config_values
+
+# Resolve config values at module load time
+_config_values = resolve_config_values()
+AGENT_URL = _config_values["AGENT_URL"]
+BRIDGE_TIMEOUT_SECONDS = _config_values["BRIDGE_TIMEOUT_SECONDS"]
+BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS = _config_values["BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS"]
+BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS = _config_values["BRIDGE_MAX_OPENWEBUI_SUMMARY_CHARS"]
+BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS = _config_values["BRIDGE_MAX_OPENWEBUI_ANSWER_CHARS"]
+BRIDGE_OPENWEBUI_INLINE_FILE_CHARS = _config_values["BRIDGE_OPENWEBUI_INLINE_FILE_CHARS"]
+BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS = _config_values["BRIDGE_OPENWEBUI_INLINE_EVIDENCE_CHARS"]
+OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR = _config_values["OPENWEBUI_TOOL_PAYLOAD_CACHE_DIR"]
+OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS = _config_values["OPENWEBUI_FINAL_TOOL_SETTLE_SECONDS"]
+OPENWEBUI_FINAL_UNLOAD_PLANNER = _config_values["OPENWEBUI_FINAL_UNLOAD_PLANNER"]
+OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS = _config_values["OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS"]
+PLANNER_URL = _config_values["PLANNER_URL"]
+PLANNER_MODEL = _config_values["PLANNER_MODEL"]
+OPENWEBUI_RETURN_MODEL = _config_values["OPENWEBUI_RETURN_MODEL"]
+
+
 PLANNER_MODEL = BRIDGE_CONFIG.planner_model
 OPENWEBUI_RETURN_MODEL = BRIDGE_CONFIG.openwebui_return_model
 DEFAULT_INTERNAL_TOOLS = list(PLANNER_INTERNAL_TOOLS)
@@ -252,117 +259,14 @@ def _attach_public_payload_lint(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 # --- agentic-loop-v2 OpenWebUI context compaction ---
-def _agentic_v2_strip_large_for_openwebui(value, depth=0):
-    if depth > 6:
-        return {"omitted": "max_depth"}
-    if isinstance(value, str):
-        return _compact_text(value, 1200)
-    if isinstance(value, (int, float, bool)) or value is None:
-        return value
-    if isinstance(value, list):
-        limit = 30 if depth <= 2 else 12
-        out = [_agentic_v2_strip_large_for_openwebui(v, depth + 1) for v in value[:limit]]
-        if len(value) > limit:
-            out.append({"omitted_items": len(value) - limit})
-        return out
-    if isinstance(value, dict):
-        large_keys = {
-            "content", "content_preview", "text", "raw", "raw_text",
-            "raw_planner_text", "raw_planner_text_preview", "full_raw",
-            "full_result", "items", "files_preview",
-        }
-        out = {}
-        for k, v in value.items():
-            if k in large_keys:
-                if isinstance(v, str):
-                    out[k + "_omitted_chars"] = len(v)
-                elif isinstance(v, list):
-                    out[k + "_omitted_items"] = len(v)
-                else:
-                    out[k + "_omitted"] = True
-                continue
-            out[k] = _agentic_v2_strip_large_for_openwebui(v, depth + 1)
-        return out
-    return _compact_text(str(value), 500)
+# OpenWebUI compaction helpers extracted from app.py
+from .app_compaction import (
+    strip_large_for_openwebui as _agentic_v2_strip_large_for_openwebui,
+    compact_context_for_openwebui as _legacy_agentic_v2_compact_context_for_openwebui,
+    compact_payload_for_openwebui as _legacy_compact_for_openwebui,
+)
 
 
-def _legacy_agentic_v2_compact_context_for_openwebui(ctx):
-    if not isinstance(ctx, dict):
-        return ctx
-    keep = {}
-    for key in (
-        "type", "contract_type", "not_a_summary", "openwebui_usage", "job",
-        "contract", "execution_contract", "final_answer",
-        "next_action_for_30b", "evidence_contract_at_terminal",
-        "evidence_contract_at_finish", "blocked_by", "artifacts", "result_digest",
-    ):
-        if ctx.get(key) not in (None, "", [], {}):
-            keep[key] = _agentic_v2_strip_large_for_openwebui(ctx.get(key))
-
-    planner = ctx.get("planner")
-    if isinstance(planner, dict):
-        keep["planner"] = {
-            "planner_model": planner.get("planner_model"),
-            "decisions": _agentic_v2_strip_large_for_openwebui((planner.get("decisions") or [])[-16:]),
-            "validation_rejections": _agentic_v2_strip_large_for_openwebui((planner.get("validation_rejections") or [])[-10:]),
-        }
-
-    executed = ctx.get("executed_tools")
-    if isinstance(executed, list):
-        keep["executed_tools"] = _agentic_v2_strip_large_for_openwebui(executed[-24:])
-
-    history = ctx.get("history")
-    if isinstance(history, list):
-        keep["history_digest"] = _agentic_v2_strip_large_for_openwebui(history[-12:])
-        keep["history_omitted_full_items"] = max(0, len(history) - 12)
-
-    keep.setdefault("openwebui_usage", {})
-    if isinstance(keep["openwebui_usage"], dict):
-        keep["openwebui_usage"]["rule"] = (
-            "Read the top-level evidence_guide_for_30b first. Use evidence_contract_at_terminal, "
-            "planner.validation_rejections, executed_tools and artifacts for diagnosis. "
-            "Do not ask the user to invent a new plan when next_action_for_30b is present."
-        )
-    return keep
-
-def _legacy_compact_for_openwebui(decoded: dict[str, Any]) -> dict[str, Any]:
-    if _json_size(decoded) <= BRIDGE_MAX_OPENWEBUI_RESPONSE_CHARS:
-        return decoded
-
-    compacted: dict[str, Any] = {}
-    keep_keys = (
-        "ok", "service", "mode", "required_top_level_keys", "payload_index_for_30b",
-        "priority_evidence_for_30b", "openwebui_usage", "tool_context_for_30b",
-        "result",
-    )
-    for key in keep_keys:
-        if decoded.get(key) not in (None, "", [], {}):
-            compacted[key] = decoded.get(key)
-
-    compacted.setdefault("required_top_level_keys", [
-        "ok",
-        "service",
-        "mode",
-        "required_top_level_keys",
-        "payload_index_for_30b",
-        "priority_evidence_for_30b",
-        "openwebui_usage",
-        "tool_context_for_30b",
-    ])
-    compacted.setdefault("openwebui_usage", {
-        "primary_payload_fields": [
-            "payload_index_for_30b",
-            "priority_evidence_for_30b",
-            "tool_context_for_30b",
-            "result",
-        ],
-        "rule": "Leggi i payload primari inline; non usare campi narrativi o path locali come sostituti.",
-    })
-    compacted["bridge_compacted_for_openwebui"] = True
-    compacted["bridge_original_response_chars"] = _json_size(decoded)
-    compacted["bridge_compaction_rule"] = (
-        "Large nested agent payload retained only through primary inline fields; no narrative/path substitute promoted."
-    )
     return compacted
 
 
