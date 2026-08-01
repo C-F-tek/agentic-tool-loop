@@ -1,12 +1,4 @@
-"""Multi-step planner loop owner."""from services.aicarmine_broker.error_handling import (
-    BrokerError,
-    ErrorCategory,
-    ErrorSeverity,
-    ErrorReport,
-    ErrorSummary,
-)
-
-
+"""Multi-step planner loop owner."""
 
 from __future__ import annotations
 
@@ -213,14 +205,7 @@ def evaluate_initial_orientation_shadow(
     # STAGE 3 — CANDIDATE POOL
     try:
         raw_pool = candidate_pool_fn(deepcopy(root_result))
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         error_type_name = type(exc).__name__
         error_text = str(exc)[:500]
         return {
@@ -316,14 +301,7 @@ def evaluate_initial_orientation_shadow(
             doc_plan=deepcopy(doc_plan),
             area_plans=deepcopy(area_plans),
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         error_type_name = type(exc).__name__
         error_text = str(exc)[:500]
         return {
@@ -378,14 +356,8 @@ def evaluate_initial_orientation_shadow(
             semantic_intent=semantic_intent_copy,
             candidates=deepcopy(valid_candidates_list),
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+
         error_type_name = type(exc).__name__
         error_text = str(exc)[:500]
         return {
@@ -574,14 +546,7 @@ def evaluate_initial_orientation_shadow(
             legacy_selected_candidate_ids=deepcopy(legacy_selected_candidate_ids),
             model_selected_candidate_ids=deepcopy(model_selected_candidate_ids),
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         error_type_name = type(exc).__name__
         error_text = str(exc)[:500]
         return {
@@ -948,21 +913,14 @@ def run_agentic_planner_job(
                 decision=planner_decision_row,
                 validation=validation_row,
             )
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - defensive around model sidecar
+        except Exception:
             replan = {
                 "schema": "planner_replan_specialist_result.v1",
                 "available": False,
                 "ok": False,
                 "decision": "exception",
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:500],
+                "error_type": "Exception",
+                "error": "unhandled exception in replan specialist",
             }
         if not replan:
             return validation_row
@@ -1570,14 +1528,7 @@ def run_agentic_planner_job(
                 allow_command=True,
                 user_consent=str(original_args.get("user_consent") or state.get("user_consent") or ""),
             )
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - defensive artifact preservation
+        except Exception as exc:
             preseed_result = {
                 "ok": False,
                 "tool": preseed_tool,
@@ -1709,14 +1660,7 @@ def run_agentic_planner_job(
     preplanner_query_plan: dict[str, Any] = {}
     try:
         preplanner_query_plan = _controller_preplanner_rag_query_plan(str(state.get("goal") or ""))
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - query planning must not block deterministic RAG
+    except Exception as exc:
         preplanner_query_plan = {
             "schema": "agentic_loop_preplanner_rag_query_plan.v1",
             "ok": False,
@@ -1787,14 +1731,7 @@ def run_agentic_planner_job(
             str(state.get("goal") or ""),
             preplanner_args,
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - loop must fall back to legacy preseed
+    except Exception as exc:
         preplanner_report = {
             "schema": "agentic_loop_preplanner_rag.v1",
             "ok": False,
@@ -2019,14 +1956,7 @@ def run_agentic_planner_job(
             )
         try:
             decision = planner_decision(job_id, state, step, history)
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception:
             if planner_role_override:
                 append_agent_event(
                     job_id,

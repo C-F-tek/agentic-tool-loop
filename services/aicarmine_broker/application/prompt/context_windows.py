@@ -1,4 +1,4 @@
-"""Prompt context window compaction from services.aicarmine_broker.error_handling import (
+"""Prompt context window compaction from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

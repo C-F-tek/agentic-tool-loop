@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -41,14 +41,7 @@ def repo_fd_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         limit = _bounded_int_arg(args, ("limit", "max_results"), default=200, minimum=1, maximum=5000)
         rel, full = _repo_existing_path(args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return _deterministic_input_error("repo_fd_files", exc)
     argv = [
         exe,
@@ -67,14 +60,7 @@ def repo_fd_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     argv.append(str(full))
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=60, minimum=1, maximum=600)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_fd_files", exc)
     result = _run_argv(argv, timeout=timeout)
     lines = [line for line in result["stdout"].splitlines() if line.strip()]
@@ -115,14 +101,7 @@ def repo_rg_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
         context = _bounded_int_arg(args, "context", default=0, minimum=0, maximum=5)
         timeout = _bounded_int_arg(args, "timeout_seconds", default=120, minimum=1, maximum=600)
         rel, full = _repo_existing_path(args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_rg_search", exc)
     argv = [
         exe,
@@ -196,14 +175,8 @@ def repo_jq_query(args: dict[str, Any], root: Path) -> dict[str, Any]:
     json_text = args.get("json_text")
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=60, minimum=1, maximum=600)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+            
         return _deterministic_input_error("repo_jq_query", exc)
     argv = [exe, query]
     repo_path = None
@@ -213,14 +186,7 @@ def repo_jq_query(args: dict[str, Any], root: Path) -> dict[str, Any]:
     else:
         try:
             repo_path, full = _repo_existing_path(args.get("path"))
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception as exc:
             return _deterministic_input_error("repo_jq_query", exc)
         if not full.is_file():
             return {"ok": False, "tool": "repo_jq_query", "path": repo_path, "error": "path_is_not_file"}
@@ -255,14 +221,8 @@ def repo_ast_grep_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=120, minimum=1, maximum=600)
         rel, full = _repo_existing_path(args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         return _deterministic_input_error("repo_ast_grep_search", exc)
     argv = [exe, "run", "--json=compact"]
     if pattern:
@@ -314,14 +274,7 @@ def repo_tree_sitter_parse(args: dict[str, Any], root: Path) -> dict[str, Any]:
         tree_sitter_python = importlib.import_module("tree_sitter_python")
         Language = tree_sitter.Language
         Parser = tree_sitter.Parser
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return {
             "ok": False,
             "tool": "repo_tree_sitter_parse",
@@ -334,14 +287,7 @@ def repo_tree_sitter_parse(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "tool": "repo_tree_sitter_parse", "error": "unsupported_tree_sitter_language", "language": language}
     try:
         rel, full = _repo_existing_path(args.get("path"))
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_tree_sitter_parse", exc)
     if not full.is_file():
         return {"ok": False, "tool": "repo_tree_sitter_parse", "path": rel, "error": "path_is_not_file"}
@@ -390,14 +336,8 @@ def repo_tree_sitter_parse(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def repo_unidiff_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         from unidiff import PatchSet
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         return {
             "ok": False,
             "tool": "repo_unidiff_validate",
@@ -424,14 +364,7 @@ def repo_unidiff_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "removed": patched.removed,
                 "hunks": len(patched),
             })
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         errors.append(f"unidiff_parse_error:{type(exc).__name__}:{str(exc)[:300]}")
     if "--- " not in diff_text or "+++ " not in diff_text or "@@" not in diff_text:
         errors.append("missing_unified_diff_markers")
@@ -461,14 +394,8 @@ def repo_git_apply_check(args: dict[str, Any], root: Path) -> dict[str, Any]:
     argv.extend(["--whitespace=error", "-"])
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=120, minimum=1, maximum=600)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         return _deterministic_input_error("repo_git_apply_check", exc)
     result = _run_argv(
         argv,
@@ -499,14 +426,8 @@ def repo_ruff_check(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=180, minimum=1, maximum=1200)
         targets = _repo_existing_paths(args.get("paths") or args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         return _deterministic_input_error("repo_ruff_check", exc)
     argv = [exe, "check", "--output-format=json"]
     argv.extend(str(full) for _rel, full in targets)
@@ -536,14 +457,7 @@ def repo_pyright_check(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=240, minimum=1, maximum=1200)
         targets = _repo_existing_paths(args.get("paths") or args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_pyright_check", exc)
     argv = [exe, "--outputjson"]
     argv.extend(str(full) for _rel, full in targets)
@@ -570,14 +484,7 @@ def repo_pytest_run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         maxfail = _bounded_int_arg(args, "maxfail", default=1, minimum=1, maximum=20)
         timeout = _bounded_int_arg(args, "timeout_seconds", default=300, minimum=1, maximum=1800)
         targets = _repo_existing_paths(args.get("paths") or args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_pytest_run", exc)
     argv = [exe, "-q", "--maxfail", str(maxfail), "--disable-warnings"]
     marker = str(args.get("marker") or "").strip()
@@ -607,14 +514,7 @@ def repo_shellcheck(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=120, minimum=1, maximum=600)
         targets = _repo_existing_paths(args.get("paths") or args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_shellcheck", exc)
     files = [(rel, full) for rel, full in targets if full.is_file()]
     if not files:
@@ -645,14 +545,7 @@ def repo_ctags_symbols(args: dict[str, Any], root: Path) -> dict[str, Any]:
         limit = _bounded_int_arg(args, "limit", default=500, minimum=1, maximum=5000)
         timeout = _bounded_int_arg(args, "timeout_seconds", default=120, minimum=1, maximum=600)
         targets = _repo_existing_paths(args.get("paths") or args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_ctags_symbols", exc)
     argv = [exe, "--output-format=json", "-f", "-"]
     if any(full.is_dir() for _rel, full in targets):
@@ -696,14 +589,7 @@ def repo_semgrep_scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=240, minimum=1, maximum=1200)
         targets = _repo_existing_paths(args.get("paths") or args.get("path"), default=".")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_semgrep_scan", exc)
     argv = [exe, "--json", "--disable-version-check"]
     if pattern:
@@ -770,14 +656,7 @@ def repo_hyperfine_benchmark(
         runs = _bounded_int_arg(args, "runs", default=3, minimum=1, maximum=20)
         warmup = _bounded_int_arg(args, "warmup", default=1, minimum=0, maximum=10)
         timeout = _bounded_int_arg(args, "timeout_seconds", default=600, minimum=1, maximum=3600)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return _deterministic_input_error("repo_hyperfine_benchmark", exc)
     argv = [exe, "--runs", str(runs), "--warmup", str(warmup), "--export-json", "-"]
     argv.extend(commands)

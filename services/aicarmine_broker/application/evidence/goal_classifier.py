@@ -1,4 +1,4 @@
-"""Goal text and deliverable classiffrom services.aicarmine_broker.error_handling import (
+"""Goal text and deliverable classiffrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

@@ -1,4 +1,4 @@
-"""Diagnostic conflict detection forfrom services.aicarmine_broker.error_handling import (
+"""Diagnostic conflict detection forfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

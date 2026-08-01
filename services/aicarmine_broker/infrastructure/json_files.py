@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -23,15 +23,8 @@ logger = logging.getLogger(__name__)
 def _preview(value: Any, *, limit: int = 500) -> str:
     try:
         return str(value)[:limit]
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        return f"<unstringifiable:{type(exc).__name__}>"
+    except Exception:
+        return f"<unstringifiable:Exception>"
 
 
 class JsonFileStore:
@@ -86,14 +79,7 @@ class JsonFileStore:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 try:
                     json.dump(payload, handle, ensure_ascii=False, indent=2, default=str)
-                except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+                except Exception as exc:
                     logger.warning(
                         "JSON serialization failed before atomic replace. path=%s payload_type=%s error_type=%s",
                         target,

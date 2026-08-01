@@ -1,4 +1,4 @@
-"""Path validation stage extracted ffrom services.aicarmine_broker.error_handling import (
+"""Path validation stage extracted ffrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

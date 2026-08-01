@@ -1,4 +1,4 @@
-"""Planner scratchpad and broker-ownfrom services.aicarmine_broker.error_handling import (
+"""Planner scratchpad and broker-ownfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -45,15 +45,8 @@ def _memory_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], 
 def _preview(value: Any, *, limit: int = 500) -> str:
     try:
         return str(value)[:limit]
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        return f"<unstringifiable:{type(exc).__name__}>"
+    except Exception:
+        return f"<unstringifiable:Exception>"
 
 
 def _memory_sqlite_diagnostic(db_path: Path, exc: Exception, *, stage: str) -> dict[str, Any]:
@@ -392,14 +385,7 @@ def planner_composed_answer(root: Path) -> dict[str, Any]:
             ORDER BY ts ASC, id ASC
             """
         ).fetchall()
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "ok": False,
             "reason": "planner_composer_read_failed",
@@ -483,7 +469,7 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
     if offset_arg not in (None, ""):
         try:
             offset = _memory_bounded_int_arg(args, ("offset",), default=0, minimum=0, maximum=1000000)
-        except Exception:
+        except Exception as exc:
             return {
                 "ok": False,
                 "tool": "planner_scratchpad_read",
@@ -705,14 +691,7 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
     metadata = args.get("metadata") if isinstance(args.get("metadata"), dict) else {}
     try:
         metadata_json = json.dumps(metadata, ensure_ascii=False, default=str)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "ok": False,
             "tool": "runtime_sqlite_memory_write",

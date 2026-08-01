@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -104,19 +104,12 @@ def _normalized_lane_mode(value: object, *, default: str = "legacy") -> str:
 def _resolved_path(value: Any, *, env_name: str) -> Path:
     try:
         raw = str(value).strip()
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        context = env_error_context(env_name, expected="filesystem path", value=value, exc=exc)
+    except Exception:
+        context = env_error_context(env_name, expected="filesystem path", value=value, exc=Exception)
         raise ValueError(
             f"{env_name} path is not stringifiable; "
             f"received_type={context['received_type']}; error_type={context.get('error_type')}"
-        ) from exc
+        ) from _e
     if not raw:
         raise ValueError(f"{env_name} path must not be empty")
     try:

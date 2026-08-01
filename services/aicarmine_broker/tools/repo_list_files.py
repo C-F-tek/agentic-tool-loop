@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -41,14 +41,7 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         limit = bounded_int_arg(args, ("limit", "max_files"), default=20, minimum=1, maximum=2000)
         max_depth = bounded_int_arg(args, "max_depth", default=50, minimum=0, maximum=1000)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return deterministic_input_error("repo_list_files", exc)
     core = parse_bool(args.get("core", False), False)
 
@@ -65,14 +58,7 @@ def repo_list_files(args: dict[str, Any], root: Path) -> dict[str, Any]:
         rel = "." if path in {"", "."} else safe_rel_path(path)
         base = (LAB_REPO / rel).resolve(strict=False)
         base.relative_to(LAB_REPO)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "ok": False,
             "tool": "repo_list_files",

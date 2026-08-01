@@ -40,14 +40,14 @@ class ErrorHandlingMigrator:
         # Replace bare except clauses with proper error handling
         new_content = re.sub(
             r'(\s+)except\s*:(\s*\n\s+pass)',
-            r'\1except Exception as _e:\n\1    from services.aicarmine_broker.error_handling import BrokerError\n\1    raise BrokerError(message=str(_e))',
+            r'\1except Exception as _e:\n\1    from aicarmine_broker.error_handling import BrokerError\n\1    raise BrokerError(message=str(_e))',
             new_content
         )
         
         # Replace bare except with Exception as e clauses
         new_content = re.sub(
             r'except\s+Exception\s+as\s+_e:',
-            r'except Exception as _e:\n        from services.aicarmine_broker.error_handling import BrokerError\n        raise BrokerError(message=str(_e))',
+            r'except Exception as _e:\n        from aicarmine_broker.error_handling import BrokerError\n        raise BrokerError(message=str(_e))',
             new_content
         )
         
@@ -98,21 +98,21 @@ def migrate_bare_except(file_path: str) -> str:
     # Pattern 1: bare except with pass
     content = re.sub(
         r'(\s+)except\s*:(\s*\n\s+pass)',
-        r'\1except Exception as _e:\n\1    from services.aicarmine_broker.error_handling import BrokerError\n\1    raise BrokerError(message=str(_e))',
+        r'\1except Exception as _e:\n\1    from aicarmine_broker.error_handling import BrokerError\n\1    raise BrokerError(message=str(_e))',
         content
     )
     
     # Pattern 2: bare except with logging
     content = re.sub(
         r'(\s+)except\s*:(\s*\n\s+logger\.\w+\(.*\))',
-        r'\1except Exception as _e:\n\1    from services.aicarmine_broker.error_handling import BrokerError\n\1    logger.error("Error: %s", str(_e))\n\1    raise BrokerError(message=str(_e))',
+        r'\1except Exception as _e:\n\1    from aicarmine_broker.error_handling import BrokerError\n\1    logger.error("Error: %s", str(_e))\n\1    raise BrokerError(message=str(_e))',
         content
     )
     
     # Pattern 3: bare except with return
     content = re.sub(
         r'(\s+)except\s*:(\s*\n\s+return\s+.*\n)',
-        r'\1except Exception as _e:\n\1    from services.aicarmine_broker.error_handling import BrokerError\n\1    raise BrokerError(message=str(_e))',
+        r'\1except Exception as _e:\n\1    from aicarmine_broker.error_handling import BrokerError\n\1    raise BrokerError(message=str(_e))',
         content
     )
     
@@ -127,7 +127,7 @@ def migrate_sqlite_except(file_path: str) -> str:
     # Pattern: except sqlite3.Error
     content = re.sub(
         r'except\s+sqlite3\.Error\s+as\s+(\w+):',
-        r'except Exception as _e:\n    from services.aicarmine_broker.error_handling import DatabaseError\n    raise DatabaseError(message=str(_e))',
+        r'except Exception as _e:\n    from aicarmine_broker.error_handling import DatabaseError\n    raise DatabaseError(message=str(_e))',
         content
     )
     
@@ -142,7 +142,7 @@ def migrate_json_except(file_path: str) -> str:
     # Pattern: except json.JSONDecodeError
     content = re.sub(
         r'except\s+json\.JSONDecodeError\s+as\s+(\w+):',
-        r'except Exception as _e:\n    from services.aicarmine_broker.error_handling import BrokerError\n    raise BrokerError(message=str(_e))',
+        r'except Exception as _e:\n    from aicarmine_broker.error_handling import BrokerError\n    raise BrokerError(message=str(_e))',
         content
     )
     

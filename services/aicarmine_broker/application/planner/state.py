@@ -1,4 +1,4 @@
-"""Planner loop mutable state owner.from services.aicarmine_broker.error_handling import (
+"""Planner loop mutable state owner.from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -45,14 +45,7 @@ class PlannerLoopState:
                     self._evidence_builder(self._history),
                     schema="planner_evidence_contract_state_summary.v1",
                 )
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception as exc:
                 diagnostic = {
                     "schema": "planner_evidence_contract_refresh_error.v1",
                     "error_type": type(exc).__name__,

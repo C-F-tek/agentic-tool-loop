@@ -1,4 +1,4 @@
-"""Sanitizers for terminal payloads from services.aicarmine_broker.error_handling import (
+"""Sanitizers for terminal payloads from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -67,11 +67,13 @@ def public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
             text = re.sub(r"[ \t]{2,}", " ", text)
             text = re.sub(r"[ \t]+\n", "\n", text)
         return text
-    except Exception as _e:
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
         raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
+            message=f"Error in {__name__}: error_type={exc_type}, error_message={exc_msg}",
+            error_type=exc_type,
+            error_message=exc_msg,
             category=ErrorCategory.RUNTIME,
             severity=ErrorSeverity.HIGH,
         )
@@ -105,17 +107,19 @@ def public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0)
                 content=public_terminal_content_key(key_text),
             )
         return value
-    except Exception as _e:
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
         raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
+            message=f"Error in {__name__}: error_type={exc_type}, error_message={exc_msg}",
+            error_type=exc_type,
+            error_message=exc_msg,
             category=ErrorCategory.RUNTIME,
             severity=ErrorSeverity.HIGH,
         )
         return {
             "diagnostic_only": True,
             "reason": "terminal_sanitize_value_failed",
-            "error_type": type(exc).__name__,
+            "error_type": exc_type,
             "key": str(key or "")[:120],
         }

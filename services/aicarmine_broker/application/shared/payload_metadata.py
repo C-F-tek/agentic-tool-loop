@@ -1,4 +1,4 @@
-"""Shared metadata helpers for paylofrom services.aicarmine_broker.error_handling import (
+"""Shared metadata helpers for paylofrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -19,15 +19,8 @@ from .diagnostics import diagnostic_row, safe_json_text, safe_text
 def sha256_text(text: str) -> str:
     try:
         source = str(text or "")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        source = f"<unstringifiable:{type(exc).__name__}>"
+    except Exception:
+        source = f"<unstringifiable:Exception>"
     return hashlib.sha256(source.encode("utf-8", errors="replace")).hexdigest()
 
 
@@ -99,15 +92,8 @@ def compact_value(
                         _seen=_seen,
                     )
                 )
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-                out.append(diagnostic_row("compact_value_list_item_failed", exc=exc, item_index=index))
+            except Exception:
+                out.append(diagnostic_row("compact_value_list_item_failed", exc=Exception, item_index=index))
         if len(value) > list_limit:
             out.append({"omitted_count": len(value) - list_limit})
         _seen.discard(value_id)
@@ -130,15 +116,8 @@ def compact_value(
                     depth=depth + 1,
                     _seen=_seen,
                 )
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-                out[key_text] = diagnostic_row("compact_value_dict_item_failed", exc=exc)
+            except Exception:
+                out[key_text] = diagnostic_row("compact_value_dict_item_failed", exc=Exception)
         _seen.discard(value_id)
         return out
     return safe_text(value, limit=text_limit)

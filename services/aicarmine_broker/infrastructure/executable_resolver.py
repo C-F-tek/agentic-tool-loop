@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -21,15 +21,8 @@ logger = logging.getLogger(__name__)
 def _preview(value: object, *, limit: int = 300) -> str:
     try:
         return str(value)[:limit]
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        return f"<unstringifiable:{type(exc).__name__}>"
+    except Exception:
+        return f"<unstringifiable:Exception>"
 
 
 class ExecutableResolver:
@@ -50,30 +43,16 @@ class ExecutableResolver:
     def active_venv_script(self, name: str) -> Path:
         try:
             normalized = str(name or "").strip()
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-            raise ValueError(f"executable name must be stringifiable; error_type={type(exc).__name__}") from exc
+        except Exception:
+            raise ValueError(f"executable name must be stringifiable")
         suffix = ".exe" if os.name == "nt" and not normalized.lower().endswith(".exe") else ""
         return self._active_python.parent / f"{normalized}{suffix}"
 
     def resolve(self, name: str, extra_candidates: tuple[Path, ...] = ()) -> str | None:
         try:
             normalized = str(name or "").strip()
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-            logger.debug("Invalid executable name. error_type=%s value=%s", type(exc).__name__, _preview(name))
+        except Exception:
+            logger.debug("Invalid executable name. value=%s", _preview(name))
             return None
         if not normalized:
             return None

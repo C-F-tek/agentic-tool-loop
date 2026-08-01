@@ -113,6 +113,14 @@ from .apply import (
     apply_to_directory,
 )
 
+from .logging import (
+    ErrorLogger,
+    SilentErrorGuard,
+    ensure_error_not_silent,
+    get_global_logger,
+    log_critical_error,
+)
+
 __all__ = [
     # Core
     "BrokerError",
@@ -193,4 +201,10 @@ __all__ = [
     "ErrorHandlingApplier",
     "apply_to_file",
     "apply_to_directory",
+    # Logging - ENSURE ERRORS ARE NEVER SILENTLY SWALLOWED
+    "ErrorLogger",
+    "SilentErrorGuard",
+    "ensure_error_not_silent",
+    "get_global_logger",
+    "log_critical_error",
 ]

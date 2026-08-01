@@ -1,4 +1,4 @@
-"""Shared helpers for native read-onfrom services.aicarmine_broker.error_handling import (
+"""Shared helpers for native read-onfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -21,14 +21,7 @@ def canonical_batch_value(value: Any, *, _depth: int = 0) -> Any:
         out: dict[str, Any] = {}
         try:
             pairs = sorted(value.items(), key=lambda pair: safe_text(pair[0], limit=120))
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception as exc:
             return diagnostic_row("canonical_batch_mapping_failed", exc=exc)
         for key, item in pairs:
             try:
@@ -36,14 +29,7 @@ def canonical_batch_value(value: Any, *, _depth: int = 0) -> Any:
                 if canonical in (None, "", [], {}):
                     continue
                 out[safe_text(key, limit=120)] = canonical
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception as exc:
                 out[safe_text(key, limit=120)] = diagnostic_row("canonical_batch_value_failed", exc=exc)
         return out
     if isinstance(value, (list, tuple)):
@@ -54,14 +40,7 @@ def canonical_batch_value(value: Any, *, _depth: int = 0) -> Any:
                 if canonical in (None, "", [], {}):
                     continue
                 out.append(canonical)
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception as exc:
                 out.append(diagnostic_row("canonical_batch_list_item_failed", exc=exc, item_index=index))
         return out
     if isinstance(value, str):

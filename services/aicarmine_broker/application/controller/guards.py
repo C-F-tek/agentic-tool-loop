@@ -1,4 +1,4 @@
-"""Controller guard and rejection sifrom services.aicarmine_broker.error_handling import (
+"""Controller guard and rejection sifrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -66,7 +66,7 @@ def _stable_support_subturn_arguments(tool: str, args: dict[str, Any]) -> dict[s
         if str(stable.get("kind") or "").strip() == "code_product_build_state" and isinstance(text, str):
             try:
                 payload = json.loads(text)
-            except Exception:
+            except Exception as exc:
                 payload = {}
             if isinstance(payload, dict):
                 for key in ("target_file", "status"):

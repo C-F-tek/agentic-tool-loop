@@ -1,6 +1,6 @@
 """
 aicarmine_broker.planner
-=======from services.aicarmine_broker.error_handling import (
+=======from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -1079,14 +1079,7 @@ def _repo_read_file_content_from_repo(item: dict[str, Any], known_prefix: str = 
             }
         )
         return text, meta
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         meta.update({"error": "repo_file_rehydrate_failed", "error_type": type(exc).__name__})
         return "", meta
 
@@ -5739,14 +5732,7 @@ def judge_blocked_job(
                     or diagnostics.get("error")
                     or "terminal_judge_invalid_json"
                 )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         provider_error = f"{type(exc).__name__}: {exc}"
 
     judge_report = _sanitize_terminal_judge_provider_report(
@@ -5782,14 +5768,7 @@ def judge_blocked_job(
             _terminal_judge_markdown(judge_report),
             encoding="utf-8",
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         judge_report["persistence_ok"] = False
         judge_report["persistence_error_type"] = type(exc).__name__
         judge_report["persistence_error"] = str(exc)[:1000]
@@ -5818,14 +5797,7 @@ def judge_blocked_job(
             step=step,
         )
         judge_report["event_emit_ok"] = True
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         judge_report["event_emit_ok"] = False
         judge_report["event_emit_error_type"] = type(exc).__name__
         judge_report["event_emit_error"] = str(exc)[:1000]

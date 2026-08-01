@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -18,28 +18,14 @@ logger = logging.getLogger(__name__)
 def _preview(value: object, *, limit: int = 300) -> str:
     try:
         return str(value)[:limit]
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        return f"<unstringifiable:{type(exc).__name__}>"
+    except Exception:
+        return f"<unstringifiable:Exception>"
 
 
 def safe_rel_path(value: str) -> str:
     try:
         raw = str(value or "").strip().strip("\"'").replace("\\", "/")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         raise ValueError(f"path must be stringifiable; error_type={type(exc).__name__}") from exc
     if not raw:
         raise ValueError("empty path")

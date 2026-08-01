@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -66,14 +66,7 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
         before = bounded_int_arg(args, "before", default=40, minimum=0, maximum=1000)
         after = bounded_int_arg(args, "after", default=120, minimum=0, maximum=1000)
         line = bounded_int_arg(args, "line", default=0, minimum=0, maximum=10_000_000)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return deterministic_input_error("repo_read", exc)
     items: list[dict[str, Any]] = []
 
@@ -114,14 +107,7 @@ def repo_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
             write_json(artifact, artifact_item)
             item["artifact"] = str(artifact)
             items.append(item)
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception:
             items.append(
                 {
                     "ok": False,

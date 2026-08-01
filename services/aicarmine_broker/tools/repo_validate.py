@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -40,14 +40,7 @@ def repo_validate(args: dict[str, Any], root: Path) -> dict[str, Any]:
     )
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=300, minimum=1, maximum=1800)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return _deterministic_input_error("repo_validate", exc)
     continue_on_failure = parse_bool(args.get("continue_on_failure", False), False)
 

@@ -1,4 +1,4 @@
-"""Goal path/scope extraction helperfrom services.aicarmine_broker.error_handling import (
+"""Goal path/scope extraction helperfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

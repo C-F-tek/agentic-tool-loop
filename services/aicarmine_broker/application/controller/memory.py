@@ -1,4 +1,4 @@
-"""Controller-owned SQLite memory hefrom services.aicarmine_broker.error_handling import (
+"""Controller-owned SQLite memory hefrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -132,19 +132,12 @@ def write_controller_memory_lesson(
             },
         }, root)
     except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - memory must not block job finalization
         written = {
             "ok": False,
             "tool": "runtime_sqlite_memory_write",
             "error": "controller_memory_lesson_write_failed",
-            "error_type": type(exc).__name__,
-            "details": str(exc)[:1000],
+            "error_type": type(_e).__name__,
+            "details": str(_e)[:1000],
         }
     written["target_key"] = target_key
     written["controller_owned"] = True
@@ -261,19 +254,12 @@ def write_loop_turn_memory(
             },
         }, root)
     except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - loop memory must not block routing
         written = {
             "ok": False,
             "tool": "runtime_sqlite_memory_write",
             "error": "controller_loop_turn_memory_write_failed",
-            "error_type": type(exc).__name__,
-            "details": str(exc)[:1000],
+            "error_type": type(_e).__name__,
+            "details": str(_e)[:1000],
         }
     written["target_key"] = target_key
     written["controller_owned"] = True

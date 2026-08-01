@@ -1,4 +1,4 @@
-"""Planner-facing tool result compacfrom services.aicarmine_broker.error_handling import (
+"""Planner-facing tool result compacfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -41,14 +41,7 @@ def python_static_evidence(path: str, content: str) -> dict[str, Any]:
     )
     try:
         tree = ast.parse(text)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         evidence.update({
             "parse_ok": False,
             "parse_error_type": type(exc).__name__,
@@ -145,14 +138,7 @@ def summary_from_result(result: dict[str, Any]) -> str:
             return value.strip()
     try:
         return compact(result, 2000)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return safe_text(diagnostic_row("result_summary_compaction_failed", exc=exc), limit=2000)
 
 
@@ -178,14 +164,7 @@ def compact_tool_result_for_planner(
         }
     try:
         summary = summary_from_result(result)[:result_compact_chars]
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         summary = "tool result summary unavailable"
         summary_diagnostic = diagnostic_row("tool_result_summary_failed", schema="tool_result_compaction_diagnostic.v1", exc=exc)
     else:
@@ -301,14 +280,7 @@ def compact_tool_result_for_planner(
             if path.endswith(".py") and item.get("ok"):
                 try:
                     python_evidence.append(python_static_evidence(path, content))
-                except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+                except Exception:
                     python_evidence.append(diagnostic_row(
                         "python_static_evidence_failed",
                         schema="tool_result_compaction_diagnostic.v1",

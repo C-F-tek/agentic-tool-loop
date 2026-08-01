@@ -1,4 +1,4 @@
-"""Code-product build-state history from services.aicarmine_broker.error_handling import (
+"""Code-product build-state history from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -688,5 +688,6 @@ def code_product_low_signal_target(path: str, contract: dict[str, Any]) -> bool:
         try:
             return int(row.get("line_count") or 0) < 20
         except Exception:
-            return True
+            pass
+        return True
     return False

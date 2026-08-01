@@ -1,4 +1,4 @@
-"""Operator-only extraction of the pfrom services.aicarmine_broker.error_handling import (
+"""Operator-only extraction of the pfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -163,14 +163,7 @@ def _parse_jsonish(value: Any) -> tuple[Any, dict[str, Any]]:
     if isinstance(value, str):
         try:
             decoded = json.loads(value)
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception:
             return value, {
                 "parse_ok": False,
                 "raw_type": "str",
@@ -1211,14 +1204,7 @@ def parse_planner_lab_compose_response(response: dict[str, Any]) -> dict[str, An
         }
     try:
         parsed = json.loads(content)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "ok": False,
             "error": "compose_response_not_json",

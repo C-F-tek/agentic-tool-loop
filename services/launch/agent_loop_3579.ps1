@@ -238,6 +238,35 @@ $env:AICARMINE_VULKAN_BROKER_MODEL = "qwen3-task-8k"
 $env:AICARMINE_AGENT_DEFAULT_MAX_STEPS = "40"
 $env:AICARMINE_AGENT_MAX_STEPS = "100"
 
+# Imposta variabili ambiente PER OVMS/Reranker (obbligatorio per il progetto)
+$env:OVMS_ROOT = "C:\Users\carmi\AI\ovms-runtime\ovms"
+$env:OVMS_EXE = "C:\Users\carmi\AI\ovms-runtime\ovms\bin\ovms.exe"
+$env:OVMS_SETUP = "C:\Users\carmi\AI\ovms-runtime\ovms\setupvars.ps1"
+$env:OVMS_RERANK_MODELS = "C:\Users\carmi\AI\models-ovms-rerank"
+$env:OPENVINO_PROVIDER_DEVICE = "GPU.0"
+
+# Imposta variabili ambiente PERMANENTI (Process scope) per rendere accessibili al processo Python
+# Questo assicura che il processo Python possa leggere le variabili ambiente
+[Environment]::SetEnvironmentVariable("AICARMINE_LAB_REPO", "C:\Users\sanit\AI\lab-worktrees\blender-audio-project-lab", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_VULKAN_WORKSPACE", "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENT_JOB_ROOT", "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENT_JOB_DB", "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\agent_jobs.sqlite3", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_MODEL", "mio-qwen-code3:latest", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_NUM_CTX", "262144", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_ENABLED", "1", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", "1", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", "1", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_URL", "http://127.0.0.1:11435/api/chat", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_VULKAN_BROKER_OLLAMA_URL", "http://127.0.0.1:11435/api/chat", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_VULKAN_BROKER_MODEL", "qwen3-task-8k", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENT_DEFAULT_MAX_STEPS", "40", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENT_MAX_STEPS", "100", "Process")
+[Environment]::SetEnvironmentVariable("OVMS_ROOT", "C:\Users\carmi\AI\ovms-runtime\ovms", "Process")
+[Environment]::SetEnvironmentVariable("OVMS_EXE", "C:\Users\carmi\AI\ovms-runtime\ovms\bin\ovms.exe", "Process")
+[Environment]::SetEnvironmentVariable("OVMS_SETUP", "C:\Users\carmi\AI\ovms-runtime\ovms\setupvars.ps1", "Process")
+[Environment]::SetEnvironmentVariable("OVMS_RERANK_MODELS", "C:\Users\carmi\AI\models-ovms-rerank", "Process")
+[Environment]::SetEnvironmentVariable("OPENVINO_PROVIDER_DEVICE", "GPU.0", "Process")
+
 # Avvia il processo broker
 $pythonExe = "python"
 $brokerModule = "aicarmine_broker.app:app"

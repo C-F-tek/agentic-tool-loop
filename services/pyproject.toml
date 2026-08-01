@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aicarmine-broker"
+version = "0.1.0"
+description = "AI-Carmine Broker - Internal agent orchestration service"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["aicarmine_broker*"]
+
+[tool.setuptools.package-dir]
+"" = "."

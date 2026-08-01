@@ -1,4 +1,4 @@
-"""Single planner-turn owner for 114from services.aicarmine_broker.error_handling import (
+"""Single planner-turn owner for 114from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -925,18 +925,11 @@ def planner_decision(
             "path": str(prompt_payload_path),
         })
     except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - capture is diagnostic, not planner fallback
         prompt_capture.update({
             "ok": False,
             "error": "planner_payload_capture_failed",
-            "error_type": type(exc).__name__,
-            "details": str(exc)[:1000],
+            "error_type": type(_e).__name__,
+            "details": str(_e)[:1000],
         })
 
     planner_stream_timeout_seconds = max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 3600))

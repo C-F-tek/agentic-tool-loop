@@ -1,4 +1,4 @@
-"""Public code-product and partial-pfrom services.aicarmine_broker.error_handling import (
+"""Public code-product and partial-pfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

@@ -1,4 +1,4 @@
-"""Repository path policy and read-cfrom services.aicarmine_broker.error_handling import (
+"""Repository path policy and read-cfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

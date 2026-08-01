@@ -1,5 +1,5 @@
 """Offline loop replay diagnostics.
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -133,14 +133,7 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
         return [], {"available": False, "reason": "job_id_missing"}
     try:
         from ...config import AGENT_JOB_DB  # Late import keeps CLI import lightweight.
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return [], {
             "available": False,
             "reason": "config_import_failed",
@@ -193,14 +186,7 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
             "error_type": type(exc).__name__,
             "error": str(exc)[:1000],
         }
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return [], {
             "available": False,
             "reason": "sqlite_read_failed",
@@ -229,14 +215,8 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
                     "error": str(exc)[:500],
                     "payload_preview": raw_payload[:500],
                 }
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception:
+                pass
                 payload = {
                     "_read_error": "sqlite_event_payload_parse_failed",
                     "error_type": type(exc).__name__,

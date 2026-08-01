@@ -1,4 +1,4 @@
-"""Small bounded diagnostics helpersfrom services.aicarmine_broker.error_handling import (
+"""Small bounded diagnostics helpersfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -38,15 +38,8 @@ def diagnostic_row(
 def safe_text(value: Any, *, limit: int = 700, fallback: str = "") -> str:
     try:
         text = str(value if value is not None else "")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        text = f"<unstringifiable:{type(exc).__name__}>"
+    except Exception:
+        text = f"<unstringifiable:Exception>"
     if limit <= 0:
         return fallback
     return text[:limit] if text else fallback

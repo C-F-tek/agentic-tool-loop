@@ -1,4 +1,4 @@
-"""Loop-start Codex RAG reindex and from services.aicarmine_broker.error_handling import (
+"""Loop-start Codex RAG reindex and from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -1337,14 +1337,7 @@ def _indexed_literal_request_paths(
             ).fetchall()
         finally:
             conn.close()
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return [], [
             *diagnostics,
             {
@@ -1581,14 +1574,7 @@ def _rerank_ranked_items(
             "error_type": type(exc).__name__,
             "details": str(exc)[:500],
         }, [{"stage": "preplanner_rag_rerank", "reason": "reranker_network_unavailable", "error_type": type(exc).__name__, "error": str(exc)[:500]}]
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         marked = [dict(item, rerank_score=None) for item in items]
         return marked, {
             **meta,
@@ -1733,14 +1719,8 @@ def _ranked_paths_from_codex_rag(
                     rows.append(row)
         finally:
             conn.close()
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         report.update({
             "status": "failed",
             "reason": "fts_query_failed",
@@ -1874,14 +1854,8 @@ def controller_preplanner_rag_preseed_plan(
 
     try:
         indexer = _load_codex_rag_indexer()
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         report.update({
             "status": "failed",
             "reason": "reindex_failed",
@@ -1929,14 +1903,8 @@ def controller_preplanner_rag_preseed_plan(
             source=str(getattr(indexer, "SOURCE_GIT_DEFAULT")),
             mode=str(getattr(indexer, "MODE_DELTA")),
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         report.update({
             "status": "failed",
             "reason": "reindex_failed",

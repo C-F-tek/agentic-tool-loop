@@ -1,6 +1,6 @@
 """
 aicarmine_broker.job_store
-=====from services.aicarmine_broker.error_handling import (
+=====from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -225,11 +225,13 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
     write_json(agent_job_state_path(job_id), state)
     try:
         _job_sqlite_store().upsert_job_state(state, root)
-    except Exception as _e:
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
         raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
+            message=f"Error in {__name__}: error_type={exc_type}, error_message={exc_msg}",
+            error_type=exc_type,
+            error_message=exc_msg,
             category=ErrorCategory.RUNTIME,
             severity=ErrorSeverity.HIGH,
         )
@@ -328,11 +330,13 @@ def _merge_sqlite_and_filesystem_job_rows(
 def list_agent_jobs(limit: int = 50) -> list[dict[str, Any]]:
     try:
         sqlite_rows = _job_sqlite_store().list_jobs(limit)
-    except Exception as _e:
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
         raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
+            message=f"Error in {__name__}: error_type={exc_type}, error_message={exc_msg}",
+            error_type=exc_type,
+            error_message=exc_msg,
             category=ErrorCategory.RUNTIME,
             severity=ErrorSeverity.HIGH,
         )
@@ -376,11 +380,13 @@ def append_agent_event(
         f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
     try:
         _job_sqlite_store().append_event(event)
-    except Exception as _e:
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
         raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
+            message=f"Error in {__name__}: error_type={exc_type}, error_message={exc_msg}",
+            error_type=exc_type,
+            error_message=exc_msg,
             category=ErrorCategory.RUNTIME,
             severity=ErrorSeverity.HIGH,
         )
@@ -480,8 +486,8 @@ def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") 
                             value = loaded.get(key)
                             if isinstance(value, str) and value:
                                 return value, {"source": f"artifact.{key}"}
-            except Exception:
-                return "", {"source": "artifact_read_failed"}
+            except Exception as exc:
+                pass
         return "", {"source": "missing"}
 
     def same_tool_artifact_payload(result: dict[str, Any]) -> dict[str, Any]:
@@ -499,7 +505,7 @@ def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") 
             if not str(resolved_artifact).lower().startswith(str(resolved_root).lower()):
                 return result
             loaded = read_json(resolved_artifact, {})
-        except Exception:
+        except Exception as exc:
             return result
         if not isinstance(loaded, dict):
             return result

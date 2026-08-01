@@ -1,4 +1,4 @@
-"""Bounded runtime debug packets forfrom services.aicarmine_broker.error_handling import (
+"""Bounded runtime debug packets forfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -76,14 +76,7 @@ def _bounded_jsonable(value: Any, *, key: str = "", depth: int = 0) -> Any:
                         key=str(item_key),
                         depth=depth + 1,
                     )
-                except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+                except Exception:
                     out[str(item_key)] = {
                         "_bounded_json_error": type(exc).__name__,
                         "diagnostic_only": True,
@@ -99,14 +92,7 @@ def _bounded_jsonable(value: Any, *, key: str = "", depth: int = 0) -> Any:
                 out.append({"_truncated_items": len(seq) - MAX_LIST_LENGTH})
             return out
         return _clip_text(str(value))
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "_bounded_json_error": type(exc).__name__,
             "diagnostic_only": True,

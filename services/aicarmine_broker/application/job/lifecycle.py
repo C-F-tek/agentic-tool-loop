@@ -1,12 +1,4 @@
-"""Agent job lifecycle application sfrom services.aicarmine_broker.error_handling import (
-    BrokerError,
-    ErrorCategory,
-    ErrorSeverity,
-    ErrorReport,
-    ErrorSummary,
-)
-
-ervice."""
+"""Agent job lifecycle application service."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -137,6 +129,12 @@ class AgentJobLifecycle:
         return waited
 
     def _ensure_worker_thread(self, job_id: str) -> None:
+        from aicarmine_broker.error_handling import (
+            BrokerError,
+            ErrorCategory,
+            ErrorSeverity,
+        )
+
         with self.lock:
             existing = self.background_threads.get(job_id)
             existing_alive = False
@@ -145,14 +143,7 @@ class AgentJobLifecycle:
                 try:
                     existing_alive = bool(existing.is_alive())
                     existing_daemon = bool(getattr(existing, "daemon", False))
-                except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+                except Exception as exc:
                     logger.warning(
                         "Failed to inspect worker thread for job_id=%s error_type=%s",
                         job_id,
@@ -204,14 +195,7 @@ class AgentJobLifecycle:
                 )
                 self.background_threads[job_id] = thread
                 thread.start()
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception as exc:
                 self.background_threads.pop(job_id, None)
                 logger.warning(
                     "Failed to start worker thread for job_id=%s error_type=%s",

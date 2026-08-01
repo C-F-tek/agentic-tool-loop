@@ -1,4 +1,4 @@
-"""Repository evidence extraction frfrom services.aicarmine_broker.error_handling import (
+"""Repository evidence extraction frfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -250,7 +250,7 @@ def rank_core_candidates(
             if not full.exists() or not full.is_dir():
                 return
         except Exception:
-            return
+            pass
         scores[top] = scores.get(top, 0) + score
         reasons.setdefault(top, [])
         if reason not in reasons[top]:

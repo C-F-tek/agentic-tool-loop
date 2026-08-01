@@ -1,4 +1,4 @@
-"""Resolve public payload-index pathfrom services.aicarmine_broker.error_handling import (
+"""Resolve public payload-index pathfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

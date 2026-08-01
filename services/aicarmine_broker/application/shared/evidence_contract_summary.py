@@ -1,4 +1,4 @@
-"""Canonical compact summaries for pfrom services.aicarmine_broker.error_handling import (
+"""Canonical compact summaries for pfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -168,15 +168,8 @@ def compact_evidence_contract_summary(
             value = contract.get(key)
             if value not in (None, "", [], {}):
                 summary[key] = compact_value(value, text_limit=text_limit, list_limit=8)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-        return diagnostic_row("evidence_contract_summary_failed", schema=schema, exc=exc)
+    except Exception:
+        return diagnostic_row("evidence_contract_summary_failed", schema=schema, exc=Exception)
     return {
         key: value
         for key, value in summary.items()

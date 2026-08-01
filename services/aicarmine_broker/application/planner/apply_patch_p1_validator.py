@@ -1,5 +1,5 @@
 import re
-with open('C:/Users/carmi/from services.aicarmine_broker.error_handling import (
+with open('C:/Users/carmi/from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

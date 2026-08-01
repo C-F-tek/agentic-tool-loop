@@ -1,4 +1,4 @@
-"""Consolidated domain models for thfrom services.aicarmine_broker.error_handling import (
+"""Consolidated domain models for thfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

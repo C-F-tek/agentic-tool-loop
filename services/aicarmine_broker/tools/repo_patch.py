@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -71,14 +71,8 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     new_text = args.get("new_text")
     try:
         max_replacements = bounded_int_arg(args, "max_replacements", default=1, minimum=1, maximum=100)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         return deterministic_input_error("repo_apply_patch", exc)
 
     if not path:
@@ -92,14 +86,7 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
         rel = safe_rel_path(path)
         full = (LAB_REPO / rel).resolve(strict=False)
         full.relative_to(LAB_REPO)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         return {
             "ok": False,
             "tool": "repo_apply_patch",
@@ -329,14 +316,8 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
             )
             if normalized_bytes != after_apply_bytes:
                 full_path.write_bytes(normalized_bytes)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         _rollback_change_set_files(root, backup_records)
         rollback_performed = True
         return {
@@ -439,14 +420,8 @@ def repo_write_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
         rel = safe_rel_path(path)
         full = (LAB_REPO / rel).resolve(strict=False)
         full.relative_to(LAB_REPO)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
+                
         return {
             "ok": False,
             "tool": "repo_write_file",

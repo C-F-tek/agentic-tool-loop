@@ -1,12 +1,4 @@
-"""Required-next-tool-call state helfrom services.aicarmine_broker.error_handling import (
-    BrokerError,
-    ErrorCategory,
-    ErrorSeverity,
-    ErrorReport,
-    ErrorSummary,
-)
-
-pers."""
+"""Required-next-tool-call state helpers."""
 
 from __future__ import annotations
 
@@ -222,14 +214,7 @@ def required_next_tool_call_satisfaction(
         try:
             signature = repo_read_window_signature(args)
             paths = decision_paths(args)
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception as exc:
             status["reason"] = "required_next_tool_call_signature_failed"
             status["satisfaction_diagnostics"] = [
                 diagnostic_row("repo_read_signature_or_paths_failed", schema="required_tool_call_diagnostic.v1", exc=exc)
@@ -240,14 +225,7 @@ def required_next_tool_call_satisfaction(
             status["window_signature"] = signature
             try:
                 successful_signatures = successful_window_signatures(history, "repo_read")
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception as exc:
                 status["reason"] = "required_next_tool_call_history_signature_failed"
                 status["satisfaction_diagnostics"] = [
                     diagnostic_row("repo_read_successful_window_signatures_failed", schema="required_tool_call_diagnostic.v1", exc=exc)
@@ -258,14 +236,7 @@ def required_next_tool_call_satisfaction(
             else:
                 try:
                     successful_paths = set(successful_repo_read_paths(history))
-                except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+                except Exception as exc:
                     status["reason"] = "required_next_tool_call_successful_paths_failed"
                     status["satisfaction_diagnostics"] = [
                         diagnostic_row("repo_read_successful_paths_failed", schema="required_tool_call_diagnostic.v1", exc=exc)
@@ -282,14 +253,7 @@ def required_next_tool_call_satisfaction(
             return status
         try:
             successful_paths = set(successful_repo_read_paths(history))
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception as exc:
             status["reason"] = "required_next_tool_call_successful_paths_failed"
             status["satisfaction_diagnostics"] = [
                 diagnostic_row("repo_read_successful_paths_failed", schema="required_tool_call_diagnostic.v1", exc=exc)
@@ -304,14 +268,7 @@ def required_next_tool_call_satisfaction(
     if tool == "planner_scratchpad_read":
         try:
             signature = planner_scratchpad_window_signature(args)
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception as exc:
             status["reason"] = "required_next_tool_call_signature_failed"
             status["satisfaction_diagnostics"] = [
                 diagnostic_row("scratchpad_signature_failed", schema="required_tool_call_diagnostic.v1", exc=exc)
@@ -321,14 +278,7 @@ def required_next_tool_call_satisfaction(
             status["window_signature"] = signature
             try:
                 successful_signatures = successful_window_signatures(history, "planner_scratchpad_read")
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception as exc:
                 status["reason"] = "required_next_tool_call_history_signature_failed"
                 status["satisfaction_diagnostics"] = [
                     diagnostic_row("scratchpad_successful_window_signatures_failed", schema="required_tool_call_diagnostic.v1", exc=exc)

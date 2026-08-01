@@ -1,4 +1,4 @@
-"""Deterministic code-product state from services.aicarmine_broker.error_handling import (
+"""Deterministic code-product state from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

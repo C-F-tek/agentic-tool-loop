@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -176,14 +176,8 @@ def validate_unified_diff_text(
                 parsed = PatchSet(diff_text.splitlines(True))
                 if not parsed:
                     errors.append("unidiff_parse_empty")
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception:
+                pass
                 errors.append(f"unidiff_parse_failed:{type(exc).__name__}")
     return errors
 
@@ -244,14 +238,7 @@ def tree_sitter_parse_evidence(repo_root: Path, target_file: str, language: str)
         )
         if root.has_error:
             errors.append("tree_sitter_parse_error")
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         errors.append(f"tree_sitter_parse_failed:{type(exc).__name__}")
     return evidence, errors
 
@@ -265,14 +252,7 @@ def python_ast_anchor_evidence(repo_root: Path, target_file: str, ast_anchor: st
     try:
         text = (repo_root / rel).read_text(encoding="utf-8")
         tree = ast.parse(text)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return evidence, [f"ast_anchor_parse_failed:{type(exc).__name__}"]
     matches: list[dict[str, Any]] = []
     for node in ast.walk(tree):
@@ -308,14 +288,7 @@ def ast_grep_evidence(repo_root: Path, target_file: str, pattern: str) -> tuple[
             capture_output=True,
             timeout=20,
         )
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return evidence, [f"ast_grep_failed:{type(exc).__name__}"]
     evidence.update(
         {
@@ -364,14 +337,8 @@ def build_code_edit_proposal(
         if target_path.is_file():
             try:
                 original_text = target_path.read_text(encoding="utf-8-sig", errors="replace")
-            except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+            except Exception:
+                pass
                 errors.append(f"target_file_read_failed:{type(exc).__name__}")
             else:
                 occurrences = original_text.count(old_text)

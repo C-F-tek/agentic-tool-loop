@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.aicarmine_broker.error_handling import (
+from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -237,14 +237,7 @@ def run_argv(
             "timed_out": True,
             "error": "timeout",
         }
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "returncode": None,
             "stdout": "",
@@ -310,7 +303,7 @@ def parse_json_output(stdout: str) -> Any:
                 continue
             try:
                 rows.append(json.loads(line))
-            except Exception:
+            except Exception as exc:
                 return None
         return rows
 

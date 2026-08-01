@@ -1,4 +1,4 @@
-"""Diagnostic quality assessment forfrom services.aicarmine_broker.error_handling import (
+"""Diagnostic quality assessment forfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

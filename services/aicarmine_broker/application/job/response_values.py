@@ -1,4 +1,4 @@
-"""Pure value helpers for public jobfrom services.aicarmine_broker.error_handling import (
+"""Pure value helpers for public jobfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

@@ -1,4 +1,4 @@
-"""Pure non-executive catalog of 28 from services.aicarmine_broker.error_handling import (
+"""Pure non-executive catalog of 28 from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

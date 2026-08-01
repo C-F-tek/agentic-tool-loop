@@ -1,4 +1,4 @@
-"""Candidate next-action helpers forfrom services.aicarmine_broker.error_handling import (
+"""Candidate next-action helpers forfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,

@@ -1,4 +1,4 @@
-"""Pure builders for compact terminafrom services.aicarmine_broker.error_handling import (
+"""Pure builders for compact terminafrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -251,11 +251,13 @@ def verify_local_final_path(path: str | Path, *, expected_type: str = "json") ->
     except json.JSONDecodeError:
         result["final_path_error"] = "invalid_json"
         return result
-    except Exception as _e:
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
         raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
+            message=f"Error in {__name__}: error_type={exc_type}, error_message={exc_msg}",
+            error_type=exc_type,
+            error_message=exc_msg,
             category=ErrorCategory.RUNTIME,
             severity=ErrorSeverity.HIGH,
         )

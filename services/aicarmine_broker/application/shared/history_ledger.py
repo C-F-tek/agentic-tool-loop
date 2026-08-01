@@ -1,12 +1,5 @@
-"""Planner history ledger shaping.""from services.aicarmine_broker.error_handling import (
-    BrokerError,
-    ErrorCategory,
-    ErrorSeverity,
-    ErrorReport,
-    ErrorSummary,
-)
+"""Planner history ledger shaping helpers."""
 
-"
 from __future__ import annotations
 
 from typing import Any
@@ -16,6 +9,7 @@ from .diagnostics import diagnostic_row
 from .evidence_contract_summary import compact_evidence_contract_summary
 from .history_queries import history_tool_result
 from ..prompt.context_windows import compact_prompt_context_window_item
+
 
 
 def planner_ollama_turn_from_decision(
@@ -146,15 +140,8 @@ def planner_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]
                             continue
                         try:
                             compact_items.append(compact_prompt_context_window_item(sub))
-                        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-                            compact_items.append(_ledger_diagnostic(sub_index, "prompt_context_item_compaction_failed", exc))
+                        except Exception:
+                            compact_items.append(_ledger_diagnostic(sub_index, "prompt_context_item_compaction_failed", Exception))
                     row["items"] = compact_items
                 else:
                     row["items"] = [
@@ -192,13 +179,6 @@ def planner_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]
                     if repair.get(k) not in (None, "", [], {})
                 }
             ledger.append(drop_empty_dict_values(row))
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
-            ledger.append(_ledger_diagnostic(index, "history_ledger_item_failed", exc))
+        except Exception:
+            ledger.append(_ledger_diagnostic(index, "history_ledger_item_failed", Exception))
     return ledger

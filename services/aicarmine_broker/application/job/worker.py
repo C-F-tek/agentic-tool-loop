@@ -1,4 +1,4 @@
-"""Background agent job worker applifrom services.aicarmine_broker.error_handling import (
+"""Background agent job worker applifrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -76,14 +76,7 @@ class AgentJobWorker:
                     "refusing legacy one-shot fallback for OpenWebUI wrapper job."
                 )
             self._run_legacy_oneshot(job_id, state)
-        except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+        except Exception as exc:
             self._write_failure(job_id, state, exc)
 
     def _run_legacy_oneshot(self, job_id: str, state: dict[str, Any]) -> None:

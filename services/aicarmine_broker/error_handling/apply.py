@@ -46,13 +46,13 @@ class ErrorHandlingApplier:
         new_content = original_content
         
         # Pattern 1: Add import statement at the top if not present
-        import_pattern = r'from services.aicarmine_broker.error_handling import'
+        import_pattern = r'from aicarmine_broker.error_handling import'
         if not re.search(import_pattern, new_content):
             # Add import after the first import block
             import_insert_pos = len("from __future__ import annotations\n\n")
             new_content = (
                 new_content[:import_insert_pos] +
-                "from services.aicarmine_broker.error_handling import (\n"
+                "from aicarmine_broker.error_handling import (\n"
                 "    BrokerError,\n"
                 "    ErrorCategory,\n"
                 "    ErrorSeverity,\n"
@@ -128,9 +128,9 @@ def apply_to_file(file_path: str) -> str:
     content = Path(file_path).read_text(encoding="utf-8")
     
     # Pattern 1: Add import statement
-    if "from services.aicarmine_broker.error_handling import" not in content:
+    if "from aicarmine_broker.error_handling import" not in content:
         content = (
-            "from services.aicarmine_broker.error_handling import (\n"
+            "from aicarmine_broker.error_handling import (\n"
             "    BrokerError,\n"
             "    ErrorCategory,\n"
             "    ErrorSeverity,\n"

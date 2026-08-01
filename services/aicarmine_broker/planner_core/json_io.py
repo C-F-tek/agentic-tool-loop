@@ -1,6 +1,6 @@
 """Planner JSON/HTTP I/O helpers.
 
-Cfrom services.aicarmine_broker.error_handling import (
+Cfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -78,14 +78,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
     try:
         decoded = json.loads(raw)
         return decoded if isinstance(decoded, dict) else {"ok": True, "data": decoded}
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {"ok": False, "error_type": type(exc).__name__,
                 "error": str(exc), "raw": raw[:4000]}
 
@@ -329,16 +322,9 @@ def post_json_stream_to_file(
                 return
             response_queue.put(("response", response), block=False)
         except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )  # pragma: no cover - transported to caller thread
             if response_abandoned.is_set():
                 return
-            response_queue.put(("exception", exc), block=False)
+            response_queue.put(("exception", _e), block=False)
 
     opener = threading.Thread(
         target=open_response,
@@ -527,14 +513,7 @@ def post_json_stream_to_file(
                 if item.get("done") is True:
                     terminal_item = item
                     break
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception as exc:
         return {
             "ok": False,
             "backend_timeout": "timed out" in str(exc).lower(),
@@ -644,17 +623,10 @@ def parse_strict_json_object_diagnostics(text: str) -> dict[str, Any]:
             "position": exc.pos,
         })
         return diagnostics
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         diagnostics.update({
-            "error_type": type(exc).__name__,
-            "error": str(exc)[:500],
+            "error_type": "unknown",
+            "error": "unexpected error during json_decode",
         })
         return diagnostics
     trailing = raw[end:].strip()

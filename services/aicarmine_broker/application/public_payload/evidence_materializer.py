@@ -1,4 +1,4 @@
-"""Broker-side inline evidence materfrom services.aicarmine_broker.error_handling import (
+"""Broker-side inline evidence materfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -39,7 +39,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
         try:
             parsed = json.loads(value)
         except Exception:
-            return {}
+            pass
         return parsed if isinstance(parsed, dict) else {}
     return {}
 
@@ -602,7 +602,8 @@ def _item_index_from_location(value: Any) -> int | None:
         try:
             return int(match.group("index"))
         except Exception:
-            return None
+            pass
+        return None
     return None
 
 

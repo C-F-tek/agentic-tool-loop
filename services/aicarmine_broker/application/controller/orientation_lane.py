@@ -1,4 +1,4 @@
-"""Orientation model selector isolatfrom services.aicarmine_broker.error_handling import (
+"""Orientation model selector isolatfrom aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
@@ -692,14 +692,7 @@ def controller_orientation_model_select(
     # POST
     try:
         response = post_json(planner_url, request_body, timeout_seconds)
-    except Exception as _e:
-        raise BrokerError(
-            message=f"Error in {__name__}:
-            error_type=type(_e).__name__,
-            error_message=str(_e),
-            category=ErrorCategory.RUNTIME,
-            severity=ErrorSeverity.HIGH,
-        )
+    except Exception:
         result["rationale"] = "backend_exception"
         result["error_type"] = type(exc).__name__
         result["error"] = str(exc)[:500]
