@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
@@ -96,7 +104,14 @@ def _normalized_lane_mode(value: object, *, default: str = "legacy") -> str:
 def _resolved_path(value: Any, *, env_name: str) -> Path:
     try:
         raw = str(value).strip()
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         context = env_error_context(env_name, expected="filesystem path", value=value, exc=exc)
         raise ValueError(
             f"{env_name} path is not stringifiable; "
@@ -111,7 +126,7 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding-v5-1"
+DEFAULT_PLANNER_MODEL = "mio-qwen-code3:latest"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -132,13 +147,13 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         else num_ctx_requested
     )
     real_repo = _resolved_path(
-        env_str("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project", env),
+        env_str("AICARMINE_REAL_REPO", r"C:\Users\sanit\ProjectsDir\blender-audio-project", env),
         env_name="AICARMINE_REAL_REPO",
     )
     workspace = _resolved_path(
         env_str(
             "AICARMINE_VULKAN_WORKSPACE",
-            r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker",
+            r"C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker",
             env,
         ),
         env_name="AICARMINE_VULKAN_WORKSPACE",
@@ -179,7 +194,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         ),
         ollama_task_model=env_first(
             ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
-            "qwen3-task-8k",
+            "mio-qwen-code3:latest",
             env,
         ),
         ollama_keep_alive=env_first(
@@ -237,7 +252,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         lab_repo=_resolved_path(
             env_str(
                 "AICARMINE_LAB_REPO",
-                r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab",
+                r"C:\Users\sanit\AI\lab-worktrees\blender-audio-project-lab",
                 env,
             ),
             env_name="AICARMINE_LAB_REPO",

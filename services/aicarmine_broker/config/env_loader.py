@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 import logging
 import os
 from collections.abc import Mapping
@@ -20,7 +28,14 @@ def _env(env: EnvMapping | None = None) -> EnvMapping:
 def _safe_preview(value: object, *, limit: int = 200) -> str:
     try:
         text = str(value)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         text = f"<unstringifiable:{type(exc).__name__}>"
     return text[: max(0, int(limit or 0))]
 
@@ -56,7 +71,14 @@ def _format_env_error(context: Mapping[str, Any]) -> str:
 def _env_text(name: str, value: object, *, expected: str) -> str:
     try:
         return str(value).strip()
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         context = env_error_context(name, expected=expected, value=value, exc=exc)
         raise ValueError(_format_env_error(context)) from exc
 
@@ -70,7 +92,14 @@ def parse_bool(value: object, default: bool = False) -> bool:
         return value != 0
     try:
         text = str(value).strip().lower()
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         logger.debug(
             "Boolean parse fallback to default. value_type=%s error_type=%s",
             type(value).__name__,
@@ -116,7 +145,14 @@ def env_bool(name: str, default: bool, env: EnvMapping | None = None) -> bool:
         return parse_bool(value, default)
     try:
         str(value)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         context = env_error_context(name, expected="boolean", value=value, exc=exc)
         logger.debug(
             "Boolean env parse fallback to default. env_name=%s received_type=%s error_type=%s",

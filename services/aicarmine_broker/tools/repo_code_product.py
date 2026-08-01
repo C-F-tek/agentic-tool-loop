@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +41,14 @@ def repo_propose_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any
 
     try:
         change_set = resolve_change_set(args, root)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return change_set_error_payload("repo_propose_unified_diff", exc)
 
     validation_commands = (
@@ -67,7 +82,14 @@ def repo_propose_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any
 def repo_propose_code_edit(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         from aicarmine_broker.code_edit_proposal_contract import build_code_edit_proposal
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return {
             "ok": False,
             "tool": "repo_propose_code_edit",
@@ -105,7 +127,14 @@ def repo_propose_code_edit(args: dict[str, Any], root: Path) -> dict[str, Any]:
             ast_grep_rule=str(args.get("ast_grep_rule") or "").strip() or None,
             tree_sitter_language=tree_sitter_language or None,
         )
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         proposal = {
             "kind": "code_edit_proposal",
             "target_file": target_file,

@@ -1,4 +1,12 @@
-"""Executed-tool evidence views for OpenWebUI follow-up context."""
+"""Executed-tool evidence views for from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+OpenWebUI follow-up context."""
 
 from __future__ import annotations
 

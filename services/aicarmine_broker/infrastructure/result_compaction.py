@@ -1,4 +1,12 @@
-"""Generic text compaction primitives."""
+"""Generic text compaction primitivefrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+s."""
 from __future__ import annotations
 
 import json
@@ -14,7 +22,14 @@ _TRUNCATION_SUFFIX = "\n... <truncated>"
 def _preview(value: Any, *, limit: int = 300) -> str:
     try:
         return str(value)[:limit]
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return f"<unstringifiable:{type(exc).__name__}>"
 
 
@@ -49,7 +64,14 @@ def compact(value: Any, limit: int) -> str:
     else:
         try:
             text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             logger.debug(
                 "Result compaction JSON serialization failed. value_type=%s error_type=%s",
                 type(value).__name__,

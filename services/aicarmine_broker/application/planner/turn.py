@@ -1,4 +1,12 @@
-"""Single planner-turn owner for 11434 decision calls."""
+"""Single planner-turn owner for 114from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+34 decision calls."""
 
 from __future__ import annotations
 
@@ -916,7 +924,14 @@ def planner_decision(
             "ok": True,
             "path": str(prompt_payload_path),
         })
-    except Exception as exc:  # pragma: no cover - capture is diagnostic, not planner fallback
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )  # pragma: no cover - capture is diagnostic, not planner fallback
         prompt_capture.update({
             "ok": False,
             "error": "planner_payload_capture_failed",

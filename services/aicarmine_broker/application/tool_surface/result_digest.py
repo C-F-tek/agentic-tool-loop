@@ -1,4 +1,12 @@
-"""Planner-facing tool result digest helpers."""
+"""Planner-facing tool result digestfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ helpers."""
 from __future__ import annotations
 
 from typing import Any
@@ -46,7 +54,14 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
             "stderr_tail": safe_text(result.get("stderr_tail"), limit=1200),
             "stdout_tail": safe_text(result.get("stdout_tail"), limit=1200),
         }
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return diagnostic_row("result_digest_header_failed", schema="planner_last_result_digest_diagnostic.v1", exc=exc)
     if result.get("tool") == "repo_propose_code_edit":
         for key in (
@@ -86,7 +101,14 @@ def planner_last_result_digest(result: dict[str, Any]) -> dict[str, Any]:
                     continue
                 try:
                     items.append(compact_prompt_context_window_item(item))
-                except Exception as exc:
+                except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
                     items.append(diagnostic_row(
                         "result_digest_prompt_context_item_failed",
                         schema="planner_last_result_digest_diagnostic.v1",

@@ -1,4 +1,12 @@
-"""Code-product build-state history and action helpers."""
+"""Code-product build-state history from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+and action helpers."""
 from __future__ import annotations
 
 import json

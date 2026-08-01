@@ -1,4 +1,12 @@
-"""Broker-side inline evidence materializer for OpenWebUI payloads.
+"""Broker-side inline evidence materfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ializer for OpenWebUI payloads.
 
 The materializer is the 3572 owner for public evidence fields. It does not
 load local files and does not duplicate payload content inside the index; it

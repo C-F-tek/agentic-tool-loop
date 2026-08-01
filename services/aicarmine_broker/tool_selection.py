@@ -57,3 +57,8 @@ def select_internal_tool(*, public_tool_name: str, task: str, original_args: dic
     if tool_name not in VALID_INTERNAL_TOOLS:
         return ('vulkan_helper', {'public_tool_name': public_tool_name, 'task': task, 'reason': f'unsupported internal tool emitted by Vulkan: {raw_name}', 'arguments': original_args}, response)
     return (tool_name, raw_args, response)
+
+
+def select_tool(*, public_tool_name: str, task: str, original_args: dict[str, Any], timeout_seconds: int = 240) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Compatibility alias for select_internal_tool."""
+    return select_internal_tool(public_tool_name=public_tool_name, task=task, original_args=original_args, timeout_seconds=timeout_seconds)

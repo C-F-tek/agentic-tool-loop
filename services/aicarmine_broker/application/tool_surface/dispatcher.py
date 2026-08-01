@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,7 +100,14 @@ class RegistryToolDispatcher:
         )
         try:
             result = tool.execute(normalized_request)
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             return {
                 "ok": False,
                 "tool": tool_name,

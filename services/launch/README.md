@@ -1,13 +1,10 @@
 # services/launch
-
 `services/launch/` contains PowerShell launcher modules and shared runtime
 helpers. This area defines service startup order, venv boundaries, process
 checks, Ollama endpoint handling and OpenWebUI boot behavior.
 
 ## Initial Reading Index
-
 Start from these documents before changing runtime behavior:
-
 - [AGENTS.md](../../AGENTS.md)
   - Workspace operating rules and non-negotiable runtime contract notes.
 - [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](../VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
@@ -33,9 +30,7 @@ Start from these documents before changing runtime behavior:
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](../model_export/MODULE_REFERENCE.md)
   - Model export module reference.
-
 Core code entry points:
-
 - [services/vulkan_bridge/app.py](../vulkan_bridge/app.py)
   - Public OpenWebUI wrapper surface.
 - [services/vulkan_bridge/agentic_v9.py](../vulkan_bridge/agentic_v9.py)
@@ -62,7 +57,6 @@ Core code entry points:
   - Runtime memory tool support.
 
 ## Current Folder Structure
-
 - [openwebui_runtime.ps1](openwebui_runtime.ps1)
   - Main runtime launcher and startup order owner.
 - [env.ps1](env.ps1)
@@ -75,3 +69,9 @@ Core code entry points:
   - Process and port ownership helpers.
 - [MODULE_REFERENCE.md](MODULE_REFERENCE.md)
   - Detailed launcher module reference.
+- [STANDLAUNCH_GUIDE.md](STANDLAUNCH_GUIDE.md)
+  - Complete guide for launching the agentic broker loop without OpenWebUI.
+- [agent_loop_3579.ps1](agent_loop_3579.ps1)
+  - Standalone agentic loop launcher for port 3579 (no OpenWebUI).
+- [set_env_vars.ps1](set_env_vars.ps1)
+  - Script to set permanent environment variables in PowerShell profile.

@@ -1,6 +1,14 @@
 """
 aicarmine_broker.planner
-========================
+=======from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+=================
 The controlled 30B planner loop.
 
 Responsibilities:
@@ -36,10 +44,6 @@ from .planner_facade import (
     clear_final_terminal_block_state,
     validate_control_lane_catalog,
     final_quality_repo_read_allowlist,
-    run_validator_pipeline,
-    run_validator_code_product,
-    run_validator_duplicate_recovery,
-    run_validator_path_validation,
     canonical_invalid_code_product_decision_signature,
     compact_validation_rejections_tail,
     disallowed_invalid_code_product_signatures,
@@ -281,15 +285,12 @@ from .planner_facade import (
     dispatch_tool_call,
     TOOL_SCHEMAS,
     select_tool,
-    run_planner_job,
-    create_broker_app,
     FilesystemRepo,
     same_tool_artifact_payload,
     JobSqliteStore,
     resolve_executable,
     run_command,
     now_utc,
-    monotonic_now,
     # Config constants
     WRITE_GUARDED_TOOLS,
     AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,
@@ -346,13 +347,28 @@ from .planner_facade import (
     post_json_stream_to_file,
     # Helper functions
     safe_rel_path,
-    dict_or_empty,
-    list_or_empty,
-    compact_text,
-    json_size,
-    bridge_result_digest,
 )
 
+# ---------------------------------------------------------------------------
+# Direct _IMPL imports — restored after extraction removed them
+# ---------------------------------------------------------------------------
+from .application.code_product.history import (
+    CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS as _CODE_PRODUCT_PAYLOAD_ROUTE_VIOLATIONS_IMPL,
+)
+from .application.evidence.scope_conflict_resolution import (
+    SCOPE_CONFLICT_RATIONALE_TERMS as _SCOPE_CONFLICT_RATIONALE_TERMS_IMPL,
+)
+from .application.prompt.history_messages import (
+    LOCAL_ARTIFACT_KEYS as _LOCAL_ARTIFACT_KEYS_IMPL,
+    OLLAMA_STREAM_META_KEYS as _OLLAMA_STREAM_META_KEYS_IMPL,
+    PLANNER_HISTORY_NOISE_KEYS as _PLANNER_HISTORY_NOISE_KEYS_IMPL,
+)
+from .application.public_payload.terminal_sanitizer import (
+    PUBLIC_TERMINAL_POINTER_KEYS as _PUBLIC_TERMINAL_POINTER_KEYS_IMPL,
+)
+from .application.public_payload.tool_context import (
+    PUBLIC_LOCAL_REFERENCE_KEYS as _PUBLIC_LOCAL_REFERENCE_KEYS_IMPL,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -403,10 +419,6 @@ def _list_or_empty(value: Any) -> list[Any]:
 # ---------------------------------------------------------------------------
 # History helpers
 # ---------------------------------------------------------------------------
-
-
-_PROMPT_CONTEXT_WINDOW_COMPACT_KEYS = _PROMPT_CONTEXT_WINDOW_COMPACT_KEYS_IMPL
-_PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS = _PROMPT_CONTEXT_WINDOW_TRACKING_REQUIRED_KEYS_IMPL
 
 
 def _compact_prompt_context_window_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -1067,7 +1079,14 @@ def _repo_read_file_content_from_repo(item: dict[str, Any], known_prefix: str = 
             }
         )
         return text, meta
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         meta.update({"error": "repo_file_rehydrate_failed", "error_type": type(exc).__name__})
         return "", meta
 
@@ -5720,7 +5739,14 @@ def judge_blocked_job(
                     or diagnostics.get("error")
                     or "terminal_judge_invalid_json"
                 )
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         provider_error = f"{type(exc).__name__}: {exc}"
 
     judge_report = _sanitize_terminal_judge_provider_report(
@@ -5756,7 +5782,14 @@ def judge_blocked_job(
             _terminal_judge_markdown(judge_report),
             encoding="utf-8",
         )
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         judge_report["persistence_ok"] = False
         judge_report["persistence_error_type"] = type(exc).__name__
         judge_report["persistence_error"] = str(exc)[:1000]
@@ -5785,7 +5818,14 @@ def judge_blocked_job(
             step=step,
         )
         judge_report["event_emit_ok"] = True
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         judge_report["event_emit_ok"] = False
         judge_report["event_emit_error_type"] = type(exc).__name__
         judge_report["event_emit_error"] = str(exc)[:1000]

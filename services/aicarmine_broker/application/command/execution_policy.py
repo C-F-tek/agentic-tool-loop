@@ -1,4 +1,12 @@
-"""Diagnostic command execution policy.
+"""Diagnostic command execution polifrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+cy.
 
 This module does not execute commands and does not grant consent. It turns the
 existing command classification plus cwd/repo context into an inspectable policy

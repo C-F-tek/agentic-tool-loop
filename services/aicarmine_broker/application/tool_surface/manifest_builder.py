@@ -1,4 +1,12 @@
-"""Planner tool manifest compaction and native schema helpers."""
+"""Planner tool manifest compaction from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+and native schema helpers."""
 from __future__ import annotations
 
 import copy
@@ -49,7 +57,14 @@ def compact_tool_manifest_for_prompt(tool_manifest: list[dict[str, Any]]) -> lis
             if argument_contract:
                 row["argument_contract"] = argument_contract
             compacted.append(row)
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             compacted.append(diagnostic_row(
                 "tool_manifest_item_compaction_failed",
                 schema="tool_manifest_prompt_diagnostic.v1",

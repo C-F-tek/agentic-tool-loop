@@ -1,4 +1,12 @@
 """Intra-job planner cache helpers.
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 
 The cache is history-only: it reuses successful read-only tool results and
 successful Vulkan repair decisions already present in the same job history.

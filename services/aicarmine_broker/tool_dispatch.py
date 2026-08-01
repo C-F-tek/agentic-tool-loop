@@ -24,3 +24,14 @@ def dispatch_tool(
             user_consent=user_consent,
         )
     )
+
+
+def dispatch_tool_call(
+    name: str,
+    args: dict[str, Any],
+    root: Path,
+    allow_command: bool = True,
+    user_consent: str = "",
+) -> dict[str, Any]:
+    """Compatibility alias for dispatch_tool."""
+    return dispatch_tool(name, args, root, allow_command, user_consent)

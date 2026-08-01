@@ -1,4 +1,12 @@
-"""Goal path/scope extraction helpers."""
+"""Goal path/scope extraction helperfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+s."""
 from __future__ import annotations
 
 import re

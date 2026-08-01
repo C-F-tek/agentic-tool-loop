@@ -1,4 +1,12 @@
-﻿"""HTML rendering for agent job dashboards."""
+﻿"""HTML rendering for agent job dasfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+hboards."""
 from __future__ import annotations
 
 import html
@@ -18,7 +26,14 @@ HTML_PRETTY_TEXT_LIMIT = 300_000
 def _safe_text(value: Any, *, limit: int = 500) -> str:
     try:
         text = str(value)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return f"<unstringifiable:{type(exc).__name__}>"
     return text[:limit] + (f"... <truncated {len(text) - limit} chars>" if len(text) > limit else "")
 
@@ -32,7 +47,14 @@ def _clip_text(text: str, *, limit: int = HTML_PRETTY_TEXT_LIMIT) -> str:
 def _json_pretty(value: Any, *, max_chars: int = HTML_PRETTY_TEXT_LIMIT) -> str:
     try:
         text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         text = json.dumps(
             {
                 "schema": "job_html_json_diagnostic.v1",

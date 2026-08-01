@@ -1,6 +1,14 @@
 """
 aicarmine_broker.job_store
-==========================
+=====from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+=====================
 All persistence logic for agent jobs:
 - SQLite initialisation and upserts
 - Filesystem JSON state files
@@ -217,7 +225,14 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
     write_json(agent_job_state_path(job_id), state)
     try:
         _job_sqlite_store().upsert_job_state(state, root)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         warning = _sqlite_warning(exc)
         _log_sqlite_warning(job_id, "job_state_upsert", warning, exc)
         state["_persistence_warning"] = warning
@@ -313,7 +328,14 @@ def _merge_sqlite_and_filesystem_job_rows(
 def list_agent_jobs(limit: int = 50) -> list[dict[str, Any]]:
     try:
         sqlite_rows = _job_sqlite_store().list_jobs(limit)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         error = str(exc)[:1000]
         rows = _list_agent_jobs_from_filesystem(limit)
         for row in rows:
@@ -354,7 +376,14 @@ def append_agent_event(
         f.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
     try:
         _job_sqlite_store().append_event(event)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         warning = _sqlite_warning(exc)
         warning["filesystem_event_written"] = True
         warning["event_type"] = event_type

@@ -1,4 +1,12 @@
-"""Structured terminal context builder returned to OpenWebUI."""
+"""Structured terminal context buildfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+er returned to OpenWebUI."""
 
 from __future__ import annotations
 
@@ -76,7 +84,14 @@ class OpenWebUIPayloadBuilder:
         def build_section(name: str, default: Any, builder: Callable[[], Any]) -> Any:
             try:
                 return builder()
-            except Exception as exc:
+            except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
                 context_build_errors.append({
                     "section": name,
                     "error_type": type(exc).__name__,

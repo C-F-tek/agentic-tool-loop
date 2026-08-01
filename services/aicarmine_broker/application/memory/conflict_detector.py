@@ -1,4 +1,12 @@
-"""Diagnostic conflict detection for planner memory records.
+"""Diagnostic conflict detection forfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ planner memory records.
 
 The detector is read-only: it does not delete SQLite rows, rewrite memory
 surfaces or decide planner actions. It marks records that appear stale or

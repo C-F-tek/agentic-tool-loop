@@ -1,4 +1,12 @@
-"""Pure internal tool contract helpers for the broker.
+"""Pure internal tool contract helpefrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+rs for the broker.
 
 This module owns tool aliases and argument normalization shared by
 ``dispatcher`` and ``planner``. It intentionally performs no dispatch, HTTP,
@@ -120,7 +128,14 @@ def _paths_from_items(value: object) -> list[str]:
 def _preview(value: Any, *, limit: int = 300) -> str:
     try:
         return str(value)[:limit]
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return f"<unstringifiable:{type(exc).__name__}>"
 
 

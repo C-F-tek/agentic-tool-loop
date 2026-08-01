@@ -1,4 +1,12 @@
-"""Gate planner candidate actions by proof metadata."""
+"""Gate planner candidate actions byfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ proof metadata."""
 
 from __future__ import annotations
 

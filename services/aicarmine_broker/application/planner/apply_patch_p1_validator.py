@@ -1,5 +1,13 @@
 import re
-with open('C:/Users/carmi/AI/services/aicarmine_broker/application/planner/validator.py', 'r', encoding='utf-8') as f:
+with open('C:/Users/carmi/from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+AI/services/aicarmine_broker/application/planner/validator.py', 'r', encoding='utf-8') as f:
     content = f.read()
 
 # P1: Correggere condizione di promotion per required_next_tool_call={}

@@ -1,4 +1,12 @@
-"""Public code-product and partial-product text helpers."""
+"""Public code-product and partial-pfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+roduct text helpers."""
 
 from __future__ import annotations
 

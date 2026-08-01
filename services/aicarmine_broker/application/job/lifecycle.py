@@ -1,4 +1,12 @@
-"""Agent job lifecycle application service."""
+"""Agent job lifecycle application sfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ervice."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -137,7 +145,14 @@ class AgentJobLifecycle:
                 try:
                     existing_alive = bool(existing.is_alive())
                     existing_daemon = bool(getattr(existing, "daemon", False))
-                except Exception as exc:
+                except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
                     logger.warning(
                         "Failed to inspect worker thread for job_id=%s error_type=%s",
                         job_id,
@@ -189,7 +204,14 @@ class AgentJobLifecycle:
                 )
                 self.background_threads[job_id] = thread
                 thread.start()
-            except Exception as exc:
+            except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
                 self.background_threads.pop(job_id, None)
                 logger.warning(
                     "Failed to start worker thread for job_id=%s error_type=%s",

@@ -1,4 +1,12 @@
-"""Prompt context window compaction helpers."""
+"""Prompt context window compaction from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+helpers."""
 from __future__ import annotations
 
 from typing import Any, Callable

@@ -1,4 +1,12 @@
-"""Consolidated domain models for the 3572 agentic loop.
+"""Consolidated domain models for thfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+e 3572 agentic loop.
 
 This module centralizes all frozen dataclass types used across the planner,
 controller, validator, and job orchestration layers. Each individual submodule

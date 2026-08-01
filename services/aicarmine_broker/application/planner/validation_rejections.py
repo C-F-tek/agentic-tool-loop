@@ -1,4 +1,12 @@
-"""Validation rejection signature and prompt compaction helpers."""
+"""Validation rejection signature anfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+d prompt compaction helpers."""
 from __future__ import annotations
 
 import json

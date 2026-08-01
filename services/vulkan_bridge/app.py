@@ -256,8 +256,6 @@ def _attach_public_payload_lint(payload: dict[str, Any]) -> dict[str, Any]:
     )
     return payload
 
-
-
 # --- agentic-loop-v2 OpenWebUI context compaction ---
 # OpenWebUI compaction helpers extracted from app.py
 from .app_compaction import (
@@ -265,9 +263,6 @@ from .app_compaction import (
     compact_context_for_openwebui as _legacy_agentic_v2_compact_context_for_openwebui,
     compact_payload_for_openwebui as _legacy_compact_for_openwebui,
 )
-
-
-    return compacted
 
 
 def _effective_wait_seconds(payload: dict[str, Any]) -> int:

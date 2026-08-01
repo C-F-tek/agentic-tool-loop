@@ -1,4 +1,12 @@
-"""OpenWebUI-visible terminal result shaping helpers."""
+"""OpenWebUI-visible terminal resultfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ shaping helpers."""
 
 from __future__ import annotations
 
@@ -70,7 +78,14 @@ def public_terminal_history_ledger(
                 "violations": result.get("violations"),
                 "summary": public_summary(result.get("summary")),
             }
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             ledger.append(_history_ledger_diagnostic(index, "history_row_failed", exc))
             continue
         if tool == "repo_read" and isinstance(result.get("items"), list):
@@ -95,7 +110,14 @@ def public_terminal_history_ledger(
                         "content_sha256": sha256_text(content) if content else None,
                         "error": sub.get("error"),
                     })
-                except Exception as exc:
+                except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
                     read_items.append({
                         "schema": "repo_read_item_content_diagnostic.v1",
                         "diagnostic_only": True,

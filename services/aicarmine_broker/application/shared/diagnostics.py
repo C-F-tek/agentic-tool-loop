@@ -1,4 +1,12 @@
-"""Small bounded diagnostics helpers for shared planner payload shaping."""
+"""Small bounded diagnostics helpersfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+ for shared planner payload shaping."""
 
 from __future__ import annotations
 
@@ -30,7 +38,14 @@ def diagnostic_row(
 def safe_text(value: Any, *, limit: int = 700, fallback: str = "") -> str:
     try:
         text = str(value if value is not None else "")
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         text = f"<unstringifiable:{type(exc).__name__}>"
     if limit <= 0:
         return fallback

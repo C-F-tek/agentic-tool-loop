@@ -1,4 +1,12 @@
-"""Controller-owned SQLite memory helpers for planner jobs."""
+"""Controller-owned SQLite memory hefrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+lpers for planner jobs."""
 
 from __future__ import annotations
 
@@ -123,7 +131,14 @@ def write_controller_memory_lesson(
                 **text_metadata,
             },
         }, root)
-    except Exception as exc:  # pragma: no cover - memory must not block job finalization
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )  # pragma: no cover - memory must not block job finalization
         written = {
             "ok": False,
             "tool": "runtime_sqlite_memory_write",
@@ -245,7 +260,14 @@ def write_loop_turn_memory(
                 **text_metadata,
             },
         }, root)
-    except Exception as exc:  # pragma: no cover - loop memory must not block routing
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )  # pragma: no cover - loop memory must not block routing
         written = {
             "ok": False,
             "tool": "runtime_sqlite_memory_write",

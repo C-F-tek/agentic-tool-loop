@@ -80,3 +80,14 @@ def capability_map() -> dict[str, Any]:
         "module": __name__,
         "schema_tools": [item["function"]["name"] for item in schemas],
     }
+
+
+def resolve_tool(name: str) -> dict:
+    """Resolve a tool name to its schema dict from VALID_INTERNAL_TOOLS."""
+    from .tool_schemas import VALID_INTERNAL_TOOLS
+    tool = VALID_INTERNAL_TOOLS.get(name)
+    if tool is None:
+        return {}
+    if isinstance(tool, dict):
+        return tool
+    return dict(tool)

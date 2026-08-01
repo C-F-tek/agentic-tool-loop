@@ -1,4 +1,12 @@
-"""Planner history ledger shaping."""
+"""Planner history ledger shaping.""from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+"
 from __future__ import annotations
 
 from typing import Any
@@ -138,7 +146,14 @@ def planner_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]
                             continue
                         try:
                             compact_items.append(compact_prompt_context_window_item(sub))
-                        except Exception as exc:
+                        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
                             compact_items.append(_ledger_diagnostic(sub_index, "prompt_context_item_compaction_failed", exc))
                     row["items"] = compact_items
                 else:
@@ -177,6 +192,13 @@ def planner_history_ledger(history: list[dict[str, Any]]) -> list[dict[str, Any]
                     if repair.get(k) not in (None, "", [], {})
                 }
             ledger.append(drop_empty_dict_values(row))
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             ledger.append(_ledger_diagnostic(index, "history_ledger_item_failed", exc))
     return ledger

@@ -865,6 +865,7 @@ def tools_schema() -> list[dict[str, Any]]:
 
 
 TOOLS_SCHEMA: list[dict[str, Any]] = tools_schema()
+TOOL_SCHEMAS: list[dict[str, Any]] = tools_schema()
 TOOL_ARGUMENT_CONTRACTS: dict[str, dict[str, Any]] = {
     name: copy.deepcopy(schema.get("function", {}).get("argument_contract") or {})
     for name, schema in _SCHEMAS.items()

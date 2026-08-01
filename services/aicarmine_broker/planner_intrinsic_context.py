@@ -1,6 +1,14 @@
 """
 planner_intrinsic_context
-=========================
+======from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+===================
 Controller-built context injected before each planner turn.
 
 This module is not a planner tool surface. It reads already available memory
@@ -340,7 +348,14 @@ def _external_rerank_items(
     except (OSError, ValueError) as exc:
         rerank.update({"status": "unavailable", "error": "external_reranker_unavailable", "details": type(exc).__name__})
         return _items_with_missing_rerank_scores(items), rerank
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         rerank.update({"status": "error", "error": "external_reranker_response_error", "details": type(exc).__name__})
         return _items_with_missing_rerank_scores(items), rerank
 
@@ -437,7 +452,14 @@ def _rag_sqlite_chunks(
     try:
         conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         base.update({"status": "error", "error": "rag_sqlite_open_failed", "details": type(exc).__name__})
         return base
 

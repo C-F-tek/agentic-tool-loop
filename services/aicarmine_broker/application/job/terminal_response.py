@@ -1,4 +1,12 @@
-"""Pure builders for compact terminal job responses."""
+"""Pure builders for compact terminafrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+l job responses."""
 from __future__ import annotations
 
 import hashlib
@@ -243,7 +251,14 @@ def verify_local_final_path(path: str | Path, *, expected_type: str = "json") ->
     except json.JSONDecodeError:
         result["final_path_error"] = "invalid_json"
         return result
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         result["final_path_error"] = "read_failed"
         result["final_path_error_type"] = type(exc).__name__
         result["final_path_error_detail"] = str(exc)[:1000]

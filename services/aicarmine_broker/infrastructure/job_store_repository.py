@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 import logging
 import sqlite3
 from pathlib import Path
@@ -14,7 +22,14 @@ logger = logging.getLogger(__name__)
 def _mapping_payload(payload: Mapping[str, Any], *, job_id: str, event_type: str = "") -> dict[str, Any]:
     try:
         return dict(payload)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         logger.warning(
             "Failed to materialize job repository payload. job_id=%s event_type=%s error_type=%s",
             job_id,

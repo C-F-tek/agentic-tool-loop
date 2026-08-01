@@ -1,4 +1,12 @@
-"""Path validation stage extracted from validator.py.
+"""Path validation stage extracted ffrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+rom validator.py.
 
 Handles path existence, scope, read verification, and evidence gap logic.
 """

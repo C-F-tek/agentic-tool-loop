@@ -1,4 +1,12 @@
-"""Sanitizers for terminal payloads visible to OpenWebUI."""
+"""Sanitizers for terminal payloads from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+visible to OpenWebUI."""
 
 from __future__ import annotations
 
@@ -59,7 +67,14 @@ def public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
             text = re.sub(r"[ \t]{2,}", " ", text)
             text = re.sub(r"[ \t]+\n", "\n", text)
         return text
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return f"[terminal_sanitize_error:{type(exc).__name__}]"
 
 
@@ -90,7 +105,14 @@ def public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0)
                 content=public_terminal_content_key(key_text),
             )
         return value
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return {
             "diagnostic_only": True,
             "reason": "terminal_sanitize_value_failed",

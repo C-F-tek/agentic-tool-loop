@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 from pathlib import Path
 from typing import Any
 try:
@@ -265,7 +273,14 @@ def repo_command(
     command = str(args.get("command") or "").strip()
     try:
         timeout = _repo_bounded_int_arg(args, ("timeout_seconds", "timeout"), default=COMMAND_TIMEOUT_SECONDS, minimum=1, maximum=3600)
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return {"ok": False, "tool": "repo_command", "error": str(exc), "error_type": type(exc).__name__}
 
     if not command:

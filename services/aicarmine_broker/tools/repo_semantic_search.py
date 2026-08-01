@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
 import sqlite3
 import json
 import os
@@ -378,7 +386,14 @@ def repo_semantic_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             maximum=120.0,
         )
         scope, _ = repo_existing_path(args.get("path"), default=".")
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         return deterministic_input_error(TOOL, exc)
 
     repo_root = LAB_REPO.resolve(strict=False)
@@ -388,7 +403,14 @@ def repo_semantic_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if reindex_enabled:
         try:
             reindex = _build_delta_index(repo_root, db)
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             payload = {
                 "ok": False,
                 "tool": TOOL,
@@ -418,7 +440,14 @@ def repo_semantic_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             rerank_doc_chars=rerank_doc_chars,
             rerank_timeout_seconds=rerank_timeout_seconds,
         )
-    except Exception as exc:
+    except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
         payload = {
             "ok": False,
             "tool": TOOL,

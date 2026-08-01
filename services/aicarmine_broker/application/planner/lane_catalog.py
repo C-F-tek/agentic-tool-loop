@@ -1,4 +1,12 @@
-"""Pure non-executive catalog of 28 control lanes.
+"""Pure non-executive catalog of 28 from services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+control lanes.
 
 This module provides a frozen dataclass-based catalog describing all 28
 control lanes without side effects. It does NOT:

@@ -1,4 +1,12 @@
-"""Pure terminal-context row helpers."""
+"""Pure terminal-context row helpersfrom services.aicarmine_broker.error_handling import (
+    BrokerError,
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorReport,
+    ErrorSummary,
+)
+
+."""
 
 from __future__ import annotations
 
@@ -49,7 +57,14 @@ def planner_decision_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]
                 }.items()
                 if value not in (None, "", [], {})
             })
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             rows.append(_history_row_error(index, "planner_decision_row_failed", exc))
     return rows
 
@@ -81,7 +96,14 @@ def validation_rejection_rows(history: list[dict[str, Any]]) -> list[dict[str, A
                 }.items()
                 if value not in (None, "", [], {})
             })
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             rows.append(_history_row_error(index, "validation_rejection_row_failed", exc))
     return rows
 
@@ -113,6 +135,13 @@ def executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }.items()
                 if value not in (None, "", [], {})
             })
-        except Exception as exc:
+        except Exception as _e:
+        raise BrokerError(
+            message=f"Error in {__name__}:
+            error_type=type(_e).__name__,
+            error_message=str(_e),
+            category=ErrorCategory.RUNTIME,
+            severity=ErrorSeverity.HIGH,
+        )
             rows.append(_history_row_error(index, "executed_tool_row_failed", exc))
     return rows
