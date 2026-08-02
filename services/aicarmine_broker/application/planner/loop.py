@@ -2609,6 +2609,21 @@ def run_agentic_planner_job(
                     )
                 continue
             if "planner_native_tool_call_required" in validation_violations:
+                # Skip the guard when the decision is a valid final/block answer
+                # and the evidence contract explicitly allows it.
+                # This prevents blocking analysis-only goals where the planner
+                # correctly returns a final answer instead of tool calls.
+                decision_action = str(decision.get("action") or "").strip().lower()
+                finalization_contract = (
+                    validation.get("finalization_contract")
+                    if isinstance(validation.get("finalization_contract"), dict)
+                    else {}
+                )
+                final_allowed = finalization_contract.get("final_allowed") is not False
+                planner_may_choose_final = finalization_contract.get("planner_may_choose_final") is not False
+                if decision_action in {"final", "block"} and final_allowed and planner_may_choose_final:
+                    # Allow the decision through; the controller will handle it normally.
+                    continue
                 prior_native_empty_guards = controller_guard_count(
                     history,
                     "planner_native_tool_call_required",
