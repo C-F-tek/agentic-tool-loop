@@ -406,7 +406,7 @@ def _orientation_call(
         candidates=selected_candidates,
         post_json=post_json,
         planner_url="http://127.0.0.1:11434/api/chat",
-        planner_model="qwen3.5:9b-coding-v5-1",
+        planner_model="mio-qwen-code-toolnative:latest",
         keep_alive="30m",
         timeout_seconds=37,
         max_selected=max_selected,
@@ -456,7 +456,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             "root_doc:README.md",
             "root_area:services",
         ], result
-        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", result
+        assert result.get("planner_model") == "mio-qwen-code-toolnative:latest", result
         assert result.get("planner_url") == (
             "http://127.0.0.1:11434/api/chat"
         ), result
@@ -465,7 +465,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
 
         body = captured.get("body")
         assert isinstance(body, dict), captured
-        assert body.get("model") == "qwen3.5:9b-coding-v5-1", body
+        assert body.get("model") == "mio-qwen-code-toolnative:latest", body
         assert body.get("stream") is False, body
         assert body.get("think") is False, body
         assert body.get("format") == "json", body
@@ -761,7 +761,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             prompt_ids = [c["candidate_id"] for c in parsed["candidates"]]
             # Il modello emette: README due volte + INVENTED + services
             return {
-                "model": "qwen3.5:9b-coding-v5-1",
+                "model": "mio-qwen-code-toolnative:latest",
                 "message": {
                     "role": "assistant",
                     "content": json.dumps({

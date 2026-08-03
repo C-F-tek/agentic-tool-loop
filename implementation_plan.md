@@ -1,85 +1,72 @@
-# Implementation Plan
+# Implementation Plan: Cross-Referenced MCP Agentic Loop Control Surface Audit
 
 ## [Overview]
-Analisi e risoluzione dei problemi di congruenza nelle richieste all'IA nel job-3f4635af.
+Piano per eseguire una ricerca incrociata completa del codebase usando 10 subagent per coprire tutti i componenti del agentic loop, verificare la superficie MCP esistente, e identificare cosa manca per un controllo completo tramite MCP del agentic loop.
 
-Questo documento descrive l'analisi approfondita del job `job-3f4635af` che è stato bloccato a causa di problemi di congruenza tra le richieste dell'IA e le risposte del controller. Il job aveva come obiettivo "Analizza il progetto e trova re-factoring potenziali da fare" ed è stato bloccato al step 20 con lo stato `blocked_needs_attention`.
-
-### Problemi Identificati
-
-1. **Violazione del contratto di finalizzazione**: Il planner ha emesso una risposta `final` senza aver completato le letture richieste dal contratto di evidenza
-2. **Affermazioni speculative**: Il planner ha fatto affermazioni su duplicazioni di codice senza aver letto i file candidati
-3. **Ignoramento delle route degli strumenti pendenti**: Il planner non ha seguito le indicazioni del controller per leggere i file candidati
-4. **Mancata verifica delle affermazioni**: Il planner menziona file senza averli letti completamente
-
-### Cause Radice
-
-- Il planner decide di finalizzare prima che il controller abbia validato il contratto
-- Il controller rifiuta la final con `planner_cuda_rewrite_required`
-- Il loop entra in uno stato di blocco perché il planner non esegue le letture candidate richieste
+Questo piano copre:
+1. Discovery di tutti i file Python nel codebase
+2. Analisi delle dipendenze e import patterns
+3. Verifica dei tool MCP esistenti vs tool necessari
+4. Identificazione dei gap nella superficie MCP
+5. Creazione di un piano per colmare i gap
 
 ## [Types]
 
-### EvidenceContractSummary
+### SubagentDiscovery
 ```python
 @dataclass
-class EvidenceContractSummary:
-    schema: str = "planner_evidence_contract_storage_summary.v1"
-    full_contract_not_duplicated_here: bool = True
-    evidence_contract_chars: int = 0
-    evidence_contract_sha256: str = ""
-    coverage_satisfied: bool = False
-    minimum_read_coverage: MinimumReadCoverage
-    candidate_next_actions: list[Action]
-    finalization_contract: FinalizationContract
+class SubagentDiscovery:
+    name: str
+    target_directory: str
+    file_count: int
+    file_patterns: list[str]
+    output_format: "json"
 ```
 
-### FinalizationContract
+### MCPToolSurface
 ```python
 @dataclass
-class FinalizationContract:
-    final_allowed: bool = False
-    reason: str = ""
-    planner_may_choose_final: bool = False
-    coverage_satisfied: bool = False
-    minimum_read_coverage: MinimumReadCoverage
-    code_product_required: bool = False
-    planner_forced_terminal_block: bool = False
-    planner_may_choose_block: bool = False
+class MCPToolSurface:
+    server_name: str
+    tools: list[str]
+    missing_tools: list[str]
+    coverage_percent: float
 ```
 
-### MinimumReadCoverage
+### GapAnalysis
 ```python
 @dataclass
-class MinimumReadCoverage:
-    required: bool = True
-    coverage_satisfied: bool = False
-    target_kind: str = "repo_owner_core"
-    required_count: int = 2
-    covered_count: int = 0
-    missing_owner_paths: list[str]
-    covered_owner_paths: list[str]
-    candidate_owner_paths: list[str]
+class GapAnalysis:
+    component: str
+    current_mcp_tool: str | None
+    required_tool: str
+    priority: str  # "critical", "high", "medium", "low"
+    implementation_effort: str  # "easy", "medium", "hard"
 ```
 
 ## [Files]
 
 ### New Files to be Created
-- `implementation_plan.md` - Questo documento di pianificazione
+- `mcp_audit_report.md` - Report completo dell'audit MCP
+- `mcp_gap_analysis.json` - Analisi dei gap in formato JSON
+- `services/codex_bridge/mcp_audit_server.py` - Server MCP per l'audit
 
 ### Existing Files to be Modified
-- Nessuno - L'analisi è completa e i problemi sono stati identificati
+- Nessuno - L'analisi è basata su letture esistenti
 
 ### Files to be Deleted or Moved
 - Nessuno
 
 ### Configuration File Updates
-- Nessuno - I problemi sono di logica del loop, non di configurazione
+- `cline_mcp_settings.json` - Aggiungere nuovi MCP servers
 
 ## [Functions]
 
 ### New Functions
-- Nessuna - L'analisi è basata su letture esistenti
+- `discover_subagent_files(subagent_id: str, target: str) -> list[str]`
+- `analyze_import_patterns(files: list[str]) -> dict[str, int]`
+- `compare_mcp_tools(existing: list[str], required: list[str]) -> list[str]`
+- `generate_gap_report(gaps: list[GapAnalysis]) -> str`
 
 ### Modified Functions
 - Nessuna - L'analisi è basata su letture esistenti
@@ -118,78 +105,116 @@ class MinimumReadCoverage:
 - Nessuno - L'analisi è basata su letture esistenti
 
 ### Validation Strategies
-- Analisi degli eventi del job tramite `aicarmine_job_artifact_events`
-- Lettura del final.json tramite `aicarmine_job_artifact_final`
-- Verifica dello stato del job tramite `aicarmine_job_artifact_list_jobs`
+- Esecuzione di 10 subagent con target diversi
+- Cross-reference dei risultati
+- Validazione della copertura MCP
 
 ## [Implementation Order]
 
-1. **Analisi degli eventi del job**: Lettura completa di `events.ndjson` per tracciare il flusso del loop
-2. **Analisi del final.json**: Lettura del file finale per identificare le violazioni del contratto
-3. **Identificazione delle violazioni**: Mappatura delle violazioni del contratto di finalizzazione
-4. **Documentazione dei problemi**: Creazione di questo documento di pianificazione
-5. **Raccomandazioni**: Fornire raccomandazioni per risolvere i problemi di congruenza
+1. **Subagent 1**: Discover files in `services/aicarmine_broker/`
+2. **Subagent 2**: Discover files in `services/codex_bridge/`
+3. **Subagent 3**: Discover files in `services/launch/`
+4. **Subagent 4**: Analyze import patterns across all Python files
+5. **Subagent 5**: List all existing MCP tools
+6. **Subagent 6**: Identify required MCP tools for agentic loop
+7. **Subagent 7**: Compare existing vs required MCP tools
+8. **Subagent 8**: Generate gap report
+9. **Subagent 9**: Create implementation plan for gaps
+10. **Subagent 10**: Validate results and cross-reference
 
 ---
 
-## Dettagli dei Problemi di Congruenza
+## Subagent Target Directories
 
-### Problema 1: Violazione del Contratto di Finalizzazione
+### Subagent 1: aicarmine_broker
+- Directory: `services/aicarmine_broker/`
+- File patterns: `**/*.py`
+- Focus: broker, planner, validator, tool_surface
 
-**Sintomo**: Il planner emette `action=final` ma il controller rifiuta con `planner_cuda_rewrite_required`
+### Subagent 2: codex_bridge
+- Directory: `services/codex_bridge/`
+- File patterns: `**/*.py`
+- Focus: MCP servers, bridge components
 
-**Evidenza**:
-- Evento step=6: `planner_decision_rejected` con `guard_type=planner_cuda_rewrite_required`
-- Violazione: `final_not_allowed_by_evidence_contract:Need root/ranked orientation + baseline markdown/config reads + one meaningful non-infra/code area/read set + 43/10 verified concrete readable reads + semantic owner target coverage 7/2 for analysis/action-plan finalization`
+### Subagent 3: launch
+- Directory: `services/launch/`
+- File patterns: `**/*.ps1`, `**/*.md`
+- Focus: launcher scripts, documentation
 
-**Causa**: Il planner decide di finalizzare senza aver completato le letture richieste dal contratto
+### Subagent 4: import_analysis
+- Target: All Python files
+- Focus: Import patterns, dependencies
 
-### Problema 2: Affermazioni Speculative
+### Subagent 5: mcp_inventory
+- Target: All MCP servers
+- Focus: Existing tool inventory
 
-**Sintomo**: Il planner fa affermazioni su duplicazioni di codice senza aver letto i file candidati
+### Subagent 6: agentic_loop_requirements
+- Target: Planner loop, validator
+- Focus: Required tools for agentic loop
 
-**Evidenza**:
-- Violazione: `speculative_claims_without_verification`
-- Violazione: `repo_analysis_final_mentions_unverified_paths:application/planner/validator.py,application/evidence/final_quality.py,application/planner/loop.py,application/controller/memory.py`
+### Subagent 7: gap_analysis
+- Target: Existing vs required
+- Focus: Gap identification
 
-**Causa**: Il planner fa affermazioni su file che non ha letto completamente o che non sono stati verificati
+### Subagent 8: report_generation
+- Target: All results
+- Focus: Report generation
 
-### Problema 3: Ignoramento delle Route degli Strumenti Pendenti
+### Subagent 9: implementation_planning
+- Target: Gap analysis
+- Focus: Implementation plan
 
-**Sintomo**: Il planner non segue le indicazioni del controller per leggere i file candidati
+### Subagent 10: validation
+- Target: All results
+- Focus: Cross-reference validation
 
-**Evidenza**:
-- Violazione: `ignores_pending_tool_routes`
-- `required_next_tool_call` indica di leggere `pack_builder.py`, `text_windows.py`, `tool_contract.py`
+## MCP Tools Existing vs Required
 
-**Causa**: Il planner ignora le indicazioni del controller e continua con altre letture non prioritarie
+### Existing MCP Servers
+1. `aicarmine-codex-app` - 32 tools
+2. `aicarmine-ovms-reranker` - 8 tools
+3. `aicarmine-ollama` - 11 tools
+4. `aicarmine-broker-planner` - 8 tools
+5. `aicarmine-repo-state` - 3 tools
+6. `aicarmine-repo-search-det` - 8 tools
+7. `aicarmine-rag` - 3 tools
+8. `aicarmine-repo-validate` - 9 tools
+9. `aicarmine-git-readonly` - 6 tools
+10. `aicarmine-sqlite-readonly` - 4 tools
+11. `aicarmine-job-artifact` - 9 tools
+12. `aicarmine-job-view` - 8 tools
+13. `aicarmine-project-memory` - 7 tools
+14. `aicarmine-local-subagent` - 3 tools
+15. `aicarmine-agentic-loop-client` - 7 tools
+16. `aicarmine-repo-code` - 5 tools
+17. `aicarmine-codex-ops` - 9 tools
+18. `knowledge-RAG-UNIFIED` - 7 tools
+19. `aicarmine-planner-components` - 5 tools
 
-### Problema 4: Mancata Verifica delle Affermazioni
+### Required MCP Tools for Complete Agentic Loop Control
+- `planner_state_inspect` - EXISTS
+- `planner_decision_history` - EXISTS
+- `planner_tool_selection` - EXISTS
+- `planner_validator_diagnostics` - EXISTS
+- `planner_evidence_contract` - EXISTS
+- `planner_loop_metrics` - EXISTS
+- `planner_list_jobs` - EXISTS
+- `planner_config_summary` - EXISTS
+- `orientation_shadow` - EXISTS (simulated)
+- `vulkan_repair` - EXISTS (simulated)
+- `replan_specialist` - EXISTS (simulated)
+- `guard_rejection` - EXISTS (simulated)
+- `incomprehensible_retry` - EXISTS (simulated)
 
-**Sintomo**: Il planner menziona file senza averli letti completamente
+### Missing/Gap Tools
+- Nessuno - Tutti i tool richiesti esistono già
 
-**Evidenza**:
-- Violazione: `shallow_analysis_of_large_files`
-- Il planner menziona duplicazioni tra file che non ha confrontato
+## Implementation Steps
 
-**Causa**: Il planner fa affermazioni basate su letture parziali o incomplete
-
-## Raccomandazioni
-
-1. **Rispettare il contratto di finalizzazione**: Il planner deve completare tutte le letture richieste prima di emettere una final answer
-2. **Verificare le affermazioni**: Prima di fare affermazioni su duplicazioni, leggere e confrontare i file candidati
-3. **Seguire le route degli strumenti pendenti**: Il planner deve seguire le indicazioni del controller per leggere i file candidati
-4. **Completare le letture candidate**: Leggere i file indicati in `candidate_next_actions` prima di finalizzare
-5. **Documentare le letture**: Tenere traccia di quali file sono stati letti e quali affermazioni sono state verificate
-
-## Stato Attuale del Job
-
-- **Job ID**: job-3f4635af
-- **Stato**: blocked_needs_attention
-- **Step corrente**: 20
-- **Goal**: Analizza il progetto e trova re-factoring potenziali da fare
-- **Ultimo evento**: planner_decision_rejected con `planner_cuda_rewrite_required:final`
-
-## File Modificati
-
-Nessun file è stato modificato. L'analisi è stata effettuata tramite letture esistenti degli eventi del job.
+1. **Eseguire 10 subagent** con target specifici
+2. **Cross-reference dei risultati**
+3. **Generare report completo**
+4. **Identificare gap**
+5. **Creare piano di implementazione**
+6. **Validare risultati**
