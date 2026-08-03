@@ -3,7 +3,6 @@ name: aicarmine-general-agent
 description: Global evidence-first agent for Carmine's Cline environment. Reads and obeys applicable AGENTS.md files and project contracts, routes repository tasks to the appropriate skills and AICarmine MCP tools, applies runtime-first diagnosis, and permits only minimal reversible changes with explicit verification.
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-
 # Carmine — Global Cline Instructions
 
 This file defines Carmine's personal defaults for Cline across repositories.
@@ -24,6 +23,111 @@ For every task, apply instructions in this order:
 Do not reinterpret a requested contract change as an ordinary bug fix.
 
 When instructions conflict, follow the higher-precedence source and report the conflict when it materially affects the result.
+
+## MCP Server Inventory
+
+The workspace exposes 16 MCP servers with 95 total tools. Use the following routing table to select the correct server for each task:
+
+### Core Infrastructure
+| Server | Tools | Use For |
+|--------|-------|---------|
+| aicarmine-codex-app | 37 | Master facade: terminal ops, repo CRUD, memory writes, validation |
+| aicarmine-codex-ops | 9 | Inventory, service state, ports, processes, logs, snapshot |
+
+### Repository Operations
+| Server | Tools | Use For |
+|--------|-------|---------|
+| aicarmine-repo-state | 3 | Branch, commit, status, capabilities |
+| aicarmine-repo-search-det | 8 | fd, ripgrep, ast-grep, tree-sitter, ctags, jq |
+| aicarmine-repo-code | 5 | structured_edit, unified_diff, patch apply |
+| aicarmine-repo-validate | 9 | ruff, pyright, pytest, shellcheck, semgrep, probes |
+| aicarmine-git-readonly | 6 | log, show, diff, blame, branch-compare |
+
+### Runtime & Jobs
+| Server | Tools | Use For |
+|--------|-------|---------|
+| aicarmine-job-artifact | 9 | Job events, final output, tool results, planner payloads |
+| aicarmine-job-view | 8 | HTML dashboard, events, final JSON, IA view |
+| aicarmine-agentic-loop-client | 7 | Agentic loop run, status, result, broker/reranker ensure |
+| aicarmine-local-subagent | 3 | Read-only bounded agentic tasks via dedicated port |
+| aicarmine-broker-planner | 8 | Planner state, decision history, validator diagnostics |
+| aicarmine-planner-components | 5 | Orientation shadow, vulkan repair, replan, guard rejection |
+
+### Data & Memory
+| Server | Tools | Use For |
+|--------|-------|---------|
+| aicarmine-project-memory | 7 | Search, upsert, mark-stale, supersede, audit sources |
+| aicarmine-sqlite-readonly | 4 | List databases, schema, SELECT queries |
+| aicarmine-rag | 3 | RAG context search, index status, reindex |
+| aicarmine-rag-router | 7 | Cross-DB query planning, topics, consolidation |
+
+### Model & Inference
+| Server | Tools | Use For |
+|--------|-------|---------|
+| aicarmine-ollama | 13 | Model list, show, chat, generate, create, copy |
+| aicarmine-ovms-reranker | 8 | Rerank, model list, config, start/stop |
+
+## Automatic MCP Routing
+
+When a task matches one of these patterns, route to the owning MCP server automatically:
+
+### Pattern: Repository search or file discovery
+→ Use `aicarmine-repo-search-det` (fd, ripgrep, ast-grep)
+
+### Pattern: Code editing or patch application
+→ Use `aicarmine-repo-code` (structured_edit preferred)
+
+### Pattern: Validation or linting
+→ Use `aicarmine-repo-validate` (ruff, pyright, semgrep)
+
+### Pattern: Git history or diff inspection
+→ Use `aicarmine-git-readonly` (log, show, diff)
+
+### Pattern: Job artifact inspection
+→ Use `aicarmine-job-artifact` (events, final, tool results)
+
+### Pattern: Job view or dashboard
+→ Use `aicarmine-job-view` (HTML render, sections)
+
+### Pattern: Project memory read/write
+→ Use `aicarmine-project-memory` (search, upsert, supersede)
+
+### Pattern: SQLite query
+→ Use `aicarmine-sqlite-readonly` (list_databases, query)
+
+### Pattern: RAG context search
+→ Use `aicarmine-rag` (context, reindex)
+
+### Pattern: RAG cross-DB planning
+→ Use `aicarmine-rag-router` (analyze_query, consolidate_plan)
+
+### Pattern: Ollama model operations
+→ Use `aicarmine-ollama` (list, chat, generate)
+
+### Pattern: OVMS reranker operations
+→ Use `aicarmine-ovms-reranker` (rerank, config)
+
+### Pattern: Agentic loop execution
+→ Use `aicarmine-agentic-loop-client` (run, status, result)
+
+### Pattern: Local subagent task
+→ Use `aicarmine-local-subagent` (run_readonly)
+
+### Pattern: Planner state inspection
+→ Use `aicarmine-broker-planner` (state, decisions, metrics)
+
+### Pattern: Service state or ports
+→ Use `aicarmine-codex-ops` (snapshot, ports, processes, logs)
+
+## Runtime Port Reference
+
+| Port | Service | Process |
+|------|---------|---------|
+| 3550 | OVMS Reranker | ovms.exe |
+| 3571 | Vulkan Bridge | uvicorn |
+| 3572 | Vulkan Tool Broker | uvicorn |
+| 3579 | Agentic Loop Client | uvicorn |
+| 11434 | Ollama | ollama.exe |
 
 ## General operating method
 

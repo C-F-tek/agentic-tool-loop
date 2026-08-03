@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="980" height="640"/>
+  <text class="title" x="34" y="42">Applied Memory Flow</text>
+  <text class="subtitle" x="34" y="64">Memory package map: SQLite/FTS, persistent and volatile memory, review helpers and pointers.</text>
+  <path class="arrow" d="M 278 164 L 368 164"/>
+  <text class="tiny" x="296" y="152">records</text>
+  <path class="arrow" d="M 598 164 L 682 164"/>
+  <text class="tiny" x="620" y="152">review</text>
+  <path class="dash" d="M 450 378 L 566 378"/>
+  <text class="tiny" x="484" y="366">surface</text>
+  <a href="sqlite/README.md">
+    <rect class="box green" x="58" y="112" width="220" height="104" rx="10"/>
+    <text class="label" x="74" y="139">sqlite / fts5</text>
+    <text class="small" x="74" y="163">SQLite storage</text>
+    <text class="small" x="74" y="182">FTS index</text>
+    <text class="small" x="74" y="201">query substrate</text>
+  </a>
+  <a href="persistent/README.md">
+    <rect class="box green" x="368" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="384" y="139">persistent / volatile</text>
+    <text class="small" x="384" y="163">long-lived records</text>
+    <text class="small" x="384" y="182">session memory</text>
+    <text class="small" x="384" y="201">availability vs query ok</text>
+  </a>
+  <a href="agent_memory/README.md">
+    <rect class="box gray" x="682" y="112" width="220" height="104" rx="10"/>
+    <text class="label" x="698" y="139">agent_memory</text>
+    <text class="small" x="698" y="163">inventory</text>
+    <text class="small" x="698" y="182">review helpers</text>
+    <text class="small" x="698" y="201">memory reports</text>
+  </a>
+  <a href="pointers/README.md">
+    <rect class="box orange" x="220" y="326" width="230" height="104" rx="10"/>
+    <text class="label" x="236" y="353">pointers</text>
+    <text class="small" x="236" y="377">memory pointers</text>
+    <text class="small" x="236" y="396">resume handles</text>
+    <text class="small" x="236" y="415">graph links</text>
+  </a>
+  <a href="../../../services/aicarmine_broker/MODULE_REFERENCE.md">
+    <rect class="box blue" x="566" y="326" width="230" height="104" rx="10"/>
+    <text class="label" x="582" y="353">broker memory surface</text>
+    <text class="small" x="582" y="377">feature availability</text>
+    <text class="small" x="582" y="396">query success</text>
+    <text class="small" x="582" y="415">records available</text>
+  </a>
+  <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
+  <a href="../../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="602">Useful tools</text></a>
+  <a href="../context/flow.svg"><text class="link" x="292" y="602">Context</text></a>
+  <a href="README.md"><text class="link" x="402" y="602">README</text></a>
+</svg>

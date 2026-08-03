@@ -1,0 +1,42 @@
+﻿[
+    {
+        "Model":  "qwen3-vl:8b-thinking",
+        "Pull":  "OK",
+        "Accepted":  true,
+        "Missing":  "",
+        "Capabilities":  "completion,vision,tools,thinking",
+        "ParameterSize":  "8.8B",
+        "Quant":  "Q4_K_M",
+        "Context":  262144
+    },
+    {
+        "Model":  "qwen3-vl:30b-a3b-thinking",
+        "Pull":  "OK",
+        "Accepted":  true,
+        "Missing":  "",
+        "Capabilities":  "completion,vision,tools,thinking",
+        "ParameterSize":  "31.1B",
+        "Quant":  "Q4_K_M",
+        "Context":  262144
+    },
+    {
+        "Model":  "qwen3-vl:32b-thinking",
+        "Pull":  "FAILED",
+        "Accepted":  false,
+        "Missing":  "pull_failed",
+        "Capabilities":  "",
+        "ParameterSize":  "",
+        "Quant":  "",
+        "Context":  ""
+    },
+    {
+        "Model":  "qwen3-omni:30b-a3b-thinking",
+        "Pull":  "FAILED",
+        "Accepted":  false,
+        "Missing":  "pull_failed",
+        "Capabilities":  "",
+        "ParameterSize":  "",
+        "Quant":  "",
+        "Context":  ""
+    }
+]

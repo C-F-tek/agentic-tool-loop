@@ -129,8 +129,16 @@ def build_micro_batch_contract(
     seen_call_keys: set[str] = set()
     seen_action_ids: set[str] = set()
     
+    def _hashable_value(v: Any) -> Any:
+        if isinstance(v, dict):
+            return frozenset((k, _hashable_value(sub_v)) for k, sub_v in v.items())
+        if isinstance(v, list):
+            return tuple(_hashable_value(item) for item in v)
+        return v
+
     def canonical_batch_call_key(tool: str, args: dict[str, Any]) -> str:
-        return f"{tool}:{hash(frozenset(args.items()) if args else '')}"
+        hashable_args = frozenset((k, _hashable_value(v)) for k, v in args.items()) if args else ""
+        return f"{tool}:{hash(hashable_args) if hashable_args else ''}"
     
     for action in candidates if isinstance(candidates, list) else []:
         if not isinstance(action, dict):

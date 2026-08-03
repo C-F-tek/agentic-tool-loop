@@ -185,7 +185,7 @@ class StageQualityGate:
 
         # Step 7: Validate required_next_tool_call
         if required_next_tool_call.get("tool") == "repo_read":
-            args = required_next_tool_call.get("arguments") if isinstance(required_tool_call.get("arguments"), dict) else {}
+            args = required_next_tool_call.get("arguments") if isinstance(required_next_tool_call.get("arguments"), dict) else {}
             raw_paths = []
             if args.get("path"):
                 raw_paths.append(args.get("path"))

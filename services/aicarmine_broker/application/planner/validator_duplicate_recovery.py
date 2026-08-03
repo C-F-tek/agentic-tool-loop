@@ -38,7 +38,7 @@ class StageDuplicateRecovery:
         if repeated_reads:
             violations.append("repo_read_already_successful:" + ",".join(repeated_reads[:5]))
             # Apply duplicate repo read recovery contract
-            deps["_apply_duplicate_repo_read_path_recovery_contract"](
+            deps["apply_duplicate_repo_read_path_recovery_contract"](
                 contract,
                 repeated_reads=repeated_reads,
                 history=history,

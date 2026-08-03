@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any, cast
 import urllib.error
 import urllib.parse
@@ -128,7 +128,7 @@ def _endpoint_port(endpoint: str | None, default: int = DEFAULT_AGENTIC_LOOP_POR
         parsed = urllib.parse.urlparse(str(endpoint or ""))
         if parsed.port is not None:
             return int(parsed.port)
-    except Exception:
+    except (TypeError, ValueError):
         pass
     return default
 
@@ -239,7 +239,7 @@ def _http_json(
             "url": url,
             "body": text[:4000],
         }
-    except Exception as exc:
+    except (OSError, urllib.error.URLError, TimeoutError) as exc:
         return {
             "ok": False,
             "error": "request_failed",
@@ -317,7 +317,7 @@ def _tail_text(path: Path, *, max_chars: int = 4000) -> str:
         if not path.is_file():
             return ""
         text = path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
+    except OSError:
         return ""
     if len(text) <= max_chars:
         return text
@@ -366,7 +366,7 @@ def _read_broker_process_metadata(root: Path, port: int) -> dict[str, Any]:
         if not path.is_file():
             return {}
         parsed = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -386,7 +386,7 @@ def _broker_source_files(root: Path) -> list[Path]:
     for path in candidates:
         try:
             resolved = path.resolve(strict=False)
-        except Exception:
+        except OSError:
             resolved = path
         key = str(resolved).lower()
         if key in seen or not path.is_file():
@@ -491,7 +491,7 @@ def _write_broker_process_metadata(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as exc:
+    except OSError as exc:
         return {"ok": False, "path": str(path), "error": type(exc).__name__, "message": str(exc)}
     return {"ok": True, "path": str(path), "payload": payload}
 
@@ -656,7 +656,7 @@ def _path_identity(value: Any) -> str:
         return ""
     try:
         return str(Path(text).resolve(strict=False)).lower().rstrip("\\/")
-    except Exception:
+    except OSError:
         return text.lower().rstrip("\\/")
 
 

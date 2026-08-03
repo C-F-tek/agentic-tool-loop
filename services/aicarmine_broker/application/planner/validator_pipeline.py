@@ -62,7 +62,7 @@ class StageNormalize:
         for key in deps:
             locals()[f"_{key}"] = deps[key]
 
-        state.decision = deps["_normalize_terminal_planner_decision"](
+        state.decision = deps["normalize_terminal_planner_decision"](
             state.decision if isinstance(state.decision, dict) else {}
         )
         state.action = str(state.decision.get("action") or "tool").strip().lower()
@@ -77,7 +77,7 @@ class StageNormalize:
         state.effective_repo_goal = effective_repo_analysis_goal(
             state.goal,
             state.semantic_contract,
-            repo_analysis_goal=deps["_repo_analysis_goal"],
+            repo_analysis_goal=deps["repo_analysis_goal"],
         )
         state.semantic_audit_goal = goal_requests_semantic_audit(state.goal)
         return state
@@ -100,7 +100,7 @@ class StageFinalAction:
             if isinstance(contract.get("finalization_contract"), dict)
             else {}
         )
-        final_rewrite_latch = deps["_coerce_final_rewrite_latch"](contract.get("final_rewrite_latch"))
+        final_rewrite_latch = deps["coerce_final_rewrite_latch"](contract.get("final_rewrite_latch"))
 
         final_forced_block_payload = final_contract.get("planner_forced_terminal_block")
         planner_forced_terminal_block = False
@@ -250,10 +250,10 @@ class StageToolArguments:
             keys, violation_msg = self.TOOL_VALIDATORS[tool]
             if keys is None:  # Special handling for repo_read and planner_scratchpad_read
                 if tool == "repo_read":
-                    if not deps["_repo_read_selector_present"](args):
+                    if not deps["repo_read_selector_present"](args):
                         violations.append(violation_msg)
                 elif tool == "planner_scratchpad_read":
-                    if not deps["_planner_scratchpad_read_selector_present"](args):
+                    if not deps["planner_scratchpad_read_selector_present"](args):
                         violations.append(violation_msg)
             else:
                 if not self._any_argument_group_present(args, [keys]):

@@ -1,12 +1,4 @@
-"""Planner-facing tool result compacfrom aicarmine_broker.error_handling import (
-    BrokerError,
-    ErrorCategory,
-    ErrorSeverity,
-    ErrorReport,
-    ErrorSummary,
-)
-
-tion policy."""
+"""Planner-facing tool result compaction policy."""
 from __future__ import annotations
 
 import ast
@@ -41,7 +33,7 @@ def python_static_evidence(path: str, content: str) -> dict[str, Any]:
     )
     try:
         tree = ast.parse(text)
-    except Exception:
+    except Exception as exc:
         evidence.update({
             "parse_ok": False,
             "parse_error_type": type(exc).__name__,
@@ -164,9 +156,10 @@ def compact_tool_result_for_planner(
         }
     try:
         summary = summary_from_result(result)[:result_compact_chars]
+        summary_diagnostic = {}
     except Exception:
         summary = "tool result summary unavailable"
-        summary_diagnostic = diagnostic_row("tool_result_summary_failed", schema="tool_result_compaction_diagnostic.v1", exc=exc)
+        summary_diagnostic = diagnostic_row("tool_result_summary_failed", schema="tool_result_compaction_diagnostic.v1")
     else:
         summary_diagnostic = {}
     payload: dict[str, Any] = {
@@ -284,7 +277,6 @@ def compact_tool_result_for_planner(
                     python_evidence.append(diagnostic_row(
                         "python_static_evidence_failed",
                         schema="tool_result_compaction_diagnostic.v1",
-                        exc=exc,
                         item_index=item_index,
                         path=path,
                     ))

@@ -49,17 +49,17 @@ class StageRepeatedCallDetection:
         if tool in ("repo_read", "planner_scratchpad_read"):
             window_signature = None
             if tool == "repo_read":
-                window_signature = deps["_repo_read_window_signature"](args)
+                window_signature = deps["repo_read_window_signature"](args)
             elif tool == "planner_scratchpad_read":
-                window_signature = deps["_planner_scratchpad_window_signature"](args)
+                window_signature = deps["planner_scratchpad_window_signature"](args)
 
             if window_signature:
-                successful_sigs = deps["_successful_window_signatures"](history, tool)
+                successful_sigs = deps["successful_window_signatures"](history, tool)
                 if window_signature in successful_sigs:
                     violation_msg = f"{tool}_window_already_successful_without_progress"
                     violations.append(violation_msg)
                     # Apply duplicate window replan contract
-                    deps["_apply_duplicate_window_replan_contract"](
+                    deps["apply_duplicate_window_replan_contract"](
                         contract,
                         violation=violation_msg,
                         tool=tool,
@@ -76,7 +76,7 @@ class StageRepeatedCallDetection:
                 repeated_reads = [p for p in decision_paths if p in already_read]
                 if repeated_reads:
                     violations.append("repo_read_already_successful:" + ",".join(repeated_reads[:5]))
-                    deps["_apply_duplicate_repo_read_path_recovery_contract"](
+                    deps["apply_duplicate_repo_read_path_recovery_contract"](
                         contract,
                         repeated_reads=repeated_reads,
                         history=history,

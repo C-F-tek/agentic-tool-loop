@@ -227,7 +227,7 @@ $env:AICARMINE_LAB_REPO = "C:\Users\sanit\AI\lab-worktrees\blender-audio-project
 $env:AICARMINE_VULKAN_WORKSPACE = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker"
 $env:AICARMINE_AGENT_JOB_ROOT = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs"
 $env:AICARMINE_AGENT_JOB_DB = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\agent_jobs.sqlite3"
-$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code3:latest"
+$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code-toolnative:latest"
 $env:AICARMINE_AGENTIC_PLANNER_NUM_CTX = "262144"
 $env:AICARMINE_AGENTIC_PLANNER_ENABLED = "1"
 $env:AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS = "1"
@@ -251,7 +251,7 @@ $env:OPENVINO_PROVIDER_DEVICE = "GPU.0"
 [Environment]::SetEnvironmentVariable("AICARMINE_VULKAN_WORKSPACE", "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker", "Process")
 [Environment]::SetEnvironmentVariable("AICARMINE_AGENT_JOB_ROOT", "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs", "Process")
 [Environment]::SetEnvironmentVariable("AICARMINE_AGENT_JOB_DB", "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\agent_jobs.sqlite3", "Process")
-[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_MODEL", "mio-qwen-code3:latest", "Process")
+[Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_MODEL", "mio-qwen-code-toolnative:latest", "Process")
 [Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_NUM_CTX", "262144", "Process")
 [Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_ENABLED", "1", "Process")
 [Environment]::SetEnvironmentVariable("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", "1", "Process")

@@ -95,7 +95,6 @@ def _apply_step_budget_guidance_to_contract(
     guidance = _planner_step_budget_guidance_from_state(state)
     if not guidance:
         return contract
-
     out = _dict_from_mapping(contract)
     final_contract = _dict_from_mapping(out.get("finalization_contract"))
     coverage_satisfied = _contract_coverage_satisfied(out)
@@ -113,7 +112,6 @@ def _apply_step_budget_guidance_to_contract(
         "controller_does_not_auto_final": True,
     }
     out["planner_step_budget_guidance"] = guidance_payload
-
     if mode == "prepare_terminal_decision":
         operational = _dict_from_mapping(out.get("operational_notes"))
         operational["step_budget_hint"] = {
@@ -127,7 +125,6 @@ def _apply_step_budget_guidance_to_contract(
         }
         out["operational_notes"] = operational
         return out
-
     required = _dict_from_mapping(out.get("required_next_tool_call"))
     required_tool = str(required.get("tool") or "").strip()
     if required_tool == "planner_scratchpad_read":
@@ -178,7 +175,6 @@ def _apply_step_budget_guidance_to_contract(
         }
         out["operational_notes"] = operational
         return out
-
     final_contract["terminal_decision_required_by_step_budget"] = True
     final_contract["tool_calls_disallowed_by_step_budget"] = True
     final_contract["planner_may_choose_final"] = final_allowed
@@ -193,7 +189,6 @@ def _apply_step_budget_guidance_to_contract(
     out["candidate_next_actions"] = []
     out.pop("required_next_tool_call", None)
     out.pop("forbidden_repeated_tool_calls", None)
-
     if final_allowed:
         required_next_progress = (
             "Step budget is exhausted before max_steps_reached. Produce action=final now "
@@ -224,7 +219,6 @@ def _apply_step_budget_guidance_to_contract(
         "reason": "configured_step_budget_exhausted_before_max_steps_reached",
     }
     out["allowed_actions"] = ["final", "block"] if final_allowed else ["block"]
-
     surface_policy = _dict_from_mapping(out.get("turn_tool_surface_policy"))
     surface_policy.update(
         {
@@ -239,7 +233,6 @@ def _apply_step_budget_guidance_to_contract(
         }
     )
     out["turn_tool_surface_policy"] = surface_policy
-
     operational = _dict_from_mapping(out.get("operational_notes"))
     operational["final_allowed"] = final_allowed
     operational["next_instruction"] = required_next_progress
@@ -377,7 +370,6 @@ def _post_final_reject_turn_tool_names(
         canonical_required_tool = known_by_lower.get(required_tool_key)
         if canonical_required_tool:
             return [canonical_required_tool]
-
         evidence_contract["required_next_tool_call_invalid_tool"] = required_tool_raw
         evidence_contract["required_next_tool_call_invalid_reason"] = (
             "required_next_tool_call.tool is not present in the planner tool registry"
@@ -468,10 +460,8 @@ def planner_decision(
     post_json_stream_to_file = deps["post_json_stream_to_file"]
     summarize_history_artifacts = deps["summarize_history_artifacts"]
     write_json = deps["write_json"]
-
     goal = str(state.get("goal") or "")
     planner_role_override = _planner_role_override_from_state(state)
-
     # Compute planner_lane_id based on planner_role_override
     if planner_role_override and planner_role_override.get("role") == "planner_cuda_rewrite":
         planner_lane_id = "planner.cuda_rewrite"
@@ -479,7 +469,6 @@ def planner_decision(
     else:
         planner_lane_id = "planner.primary"
         trigger = "planner_turn"
-
     planner_lane_metadata = control_lane_event_metadata(
         planner_lane_id,
         step=step,
@@ -511,7 +500,6 @@ def planner_decision(
         for item in all_tool_manifest
         if str(item.get("name") or "").strip()
     }
-
     last_step = history[-1] if history else {}
     last_tool_result = last_step.get("tool_result") if isinstance(last_step, dict) else {}
     evidence_contract = planner_evidence_contract(goal, history)
@@ -548,7 +536,6 @@ def planner_decision(
     evidence_contract = _apply_step_budget_guidance_to_contract(evidence_contract, state)
     if planner_role_override:
         evidence_contract["planner_role_override"] = planner_role_override
-
     base_tool_names = _tool_surface_names_for_turn(
         goal=goal,
         evidence_contract=evidence_contract,
@@ -585,7 +572,6 @@ def planner_decision(
         if final_rewrite_latch != "inactive"
         else "tool_surface_policy"
     )
-
     def build_payload_for_native_tool_names(tool_names: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         schema = (
             _native_tools_schema_for_planner(TOOLS_SCHEMA, tool_names)
@@ -606,7 +592,6 @@ def planner_decision(
             native_tools_schema=schema,
         )
         return payload, budget, schema
-
     user_payload, prompt_budget, native_tools_schema = build_payload_for_native_tool_names(
         native_tool_names
     )
@@ -629,14 +614,12 @@ def planner_decision(
         )
         prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
     runtime_roots = user_payload.get("runtime_roots") if isinstance(user_payload, dict) else {}
-
     def _normalized_root_root(value: str) -> str:
         normalized = str(value or "").strip()
         if not normalized:
             return ""
         normalized = str(Path(normalized).resolve()).lower().replace("\\", "/").rstrip("/")
         return normalized
-
     def _is_terminal_runtime_tool(name: str) -> bool:
         lowered = str(name or "").strip().lower()
         return (
@@ -644,7 +627,6 @@ def planner_decision(
             or lowered.startswith("open_terminal_")
             or lowered in {"run_command", "terminal_run_command", "terminal_run_command_wait"}
         )
-
     runtime_roots_mismatch = False
     if isinstance(runtime_roots, dict):
         lab_root = str(runtime_roots.get("AICARMINE_LAB_REPO") or "").strip()
@@ -692,7 +674,6 @@ def planner_decision(
             "Return action=block with explicit root-drift diagnosis and requested alignment, "
             "then continue after root metadata is coherent."
         )
-
     required_errors = prompt_budget.get("required_working_set_errors") if isinstance(prompt_budget, dict) else []
     if isinstance(prompt_budget, dict):
         native_history_reserve_chars_for_budget = (
@@ -897,7 +878,6 @@ def planner_decision(
         planner_payload["tools"] = native_tools_schema
     else:
         planner_payload["format"] = "json"
-
     prompt_capture: dict[str, Any] = {
         "ok": False,
         "schema": "planner_payload_capture.v1",
@@ -931,9 +911,7 @@ def planner_decision(
             "error_type": type(_e).__name__,
             "details": str(_e)[:1000],
         })
-
     planner_stream_timeout_seconds = max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 3600))
-
     append_agent_event(
         job_id, "planner_request_started",
         f"Planner request step={step} timeout={planner_stream_timeout_seconds}s.",
@@ -982,7 +960,6 @@ def planner_decision(
         },
         step=step,
     )
-
     stream_path = agent_job_planner_stream_path(job_id, step)
     response = post_json_stream_to_file(
         PLANNER_URL, planner_payload,
@@ -1180,11 +1157,9 @@ def planner_decision(
             "controller_synthesized_protocol_block": True,
             **({"planner_stream_meta": stream_meta} if stream_meta else {}),
         }
-
     # --- degenerate output ---
     if response.get("planner_degenerate_output"):
         return _degenerate_output_block_decision(response, stream_path, stream_meta=stream_meta)
-
     # --- timeout: surface, do not force a fallback decision ---
     if response.get("backend_timeout"):
         stream_timeout_seconds = int(response.get("timeout_seconds") or planner_stream_timeout_seconds)
@@ -1210,17 +1185,14 @@ def planner_decision(
             ),
             "raw_planner_text": partial[:12000],
         }
-
     if response.get("backend_unreachable") or response.get("backend_timeout"):
         return {
             "action": "block",
             "reason": "planner backend error",
             "final_answer": f"Planner 30B non raggiungibile: {response.get('error')}.",
         }
-
     message = response.get("message") if isinstance(response.get("message"), dict) else {}
     raw_text = str(message.get("content") or response.get("response") or "")
-
     if planner_done_token(raw_text):
         if goal_requires_code_product_report(goal):
             successful_code_edit_proposals = deps["successful_code_edit_proposals"]
@@ -1260,7 +1232,6 @@ def planner_decision(
             ),
             "history_artifacts": summarize_history_artifacts(history),
         }
-
     decision = normalize_planner_decision(raw_text, goal, step, state)
     decision.setdefault("raw_planner_text_preview", raw_text[:2000])
     decision["allowed_tool_names"] = list(native_tool_names)

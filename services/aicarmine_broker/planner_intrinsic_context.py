@@ -349,7 +349,6 @@ def _external_rerank_items(
         rerank.update({"status": "unavailable", "error": "external_reranker_unavailable", "details": type(exc).__name__})
         return _items_with_missing_rerank_scores(items), rerank
     except Exception:
-                pass
         rerank.update({"status": "error", "error": "external_reranker_response_error", "details": type(exc).__name__})
         return _items_with_missing_rerank_scores(items), rerank
 
@@ -447,7 +446,6 @@ def _rag_sqlite_chunks(
         conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
     except Exception:
-                pass
         base.update({"status": "error", "error": "rag_sqlite_open_failed", "details": type(exc).__name__})
         return base
 

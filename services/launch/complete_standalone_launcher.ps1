@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------
 # Questo script lancia TUTTI i componenti necessari per il broker agentic loop:
 # 1. Reranker (OVMS) su porta 3550
-# 2. Ollama su porta 11434 con modello mio-qwen-code3:latest
+# 2. Ollama su porta 11434 con modello mio-qwen-code-toolnative:latest
 # 3. Broker su porta 3579
 #
 # COMANDO DA USARE:
@@ -184,7 +184,7 @@ $env:AICARMINE_VULKAN_WORKSPACE = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan
 $env:AICARMINE_LAB_REPO = "C:\Users\sanit\AI\lab-worktrees\blender-audio-project-lab"
 $env:AICARMINE_AGENT_JOB_ROOT = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs"
 $env:AICARMINE_AGENT_JOB_DB = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\agent_jobs.sqlite3"
-$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code3:latest"
+$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code-toolnative:latest"
 $env:AICARMINE_AGENTIC_PLANNER_NUM_CTX = "262144"
 
 Write-Host "  AICARMINE_VULKAN_WORKSPACE = $env:AICARMINE_VULKAN_WORKSPACE"

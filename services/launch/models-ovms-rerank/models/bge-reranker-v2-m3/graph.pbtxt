@@ -1,0 +1,20 @@
+input_stream: "HTTP_REQUEST_PAYLOAD:input"
+output_stream: "HTTP_RESPONSE_PAYLOAD:output"
+
+node: {
+  name: "RerankCalculator"
+  calculator: "RerankCalculator"
+  input_stream: "HTTP_REQUEST_PAYLOAD:input"
+  output_side_packet: "HTTP_RESPONSE_PAYLOAD:output"
+
+  options: {
+    [ovms_rerank_calculator_options]: {
+      target_device: "CPU"
+      model_path: "openvino_model.xml"
+      tokenizer_model_path: "openvino_tokenizer.xml"
+      tokenizer_config_path: "tokenizer_config.json"
+      detokenizer_model_path: "openvino_detokenizer.xml"
+      max_length: 512
+    }
+  }
+}

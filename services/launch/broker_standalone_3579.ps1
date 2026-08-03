@@ -117,7 +117,7 @@ $env:AICARMINE_VULKAN_WORKSPACE = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan
 $env:AICARMINE_LAB_REPO = "C:\Users\sanit\AI\lab-worktrees\blender-audio-project-lab"
 $env:AICARMINE_AGENT_JOB_ROOT = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs"
 $env:AICARMINE_AGENT_JOB_DB = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\agent_jobs.sqlite3"
-$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code3:latest"
+$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code-toolnative:latest"
 $env:AICARMINE_AGENTIC_PLANNER_NUM_CTX = "262144"
 
 Write-Host "  AICARMINE_VULKAN_WORKSPACE = $env:AICARMINE_VULKAN_WORKSPACE"

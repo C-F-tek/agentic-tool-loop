@@ -444,6 +444,12 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
 
 
 # Re-export for use in loop.py
+
+# Import the query plan repair service
+from .rag_query_plan_fix import (
+    RAGQueryPlanRepairService,
+    RAGQueryPlanRepairError,
+)
 def query_plan_continue_without_model(
     report: Mapping[str, Any],
     *,
@@ -454,7 +460,21 @@ def query_plan_continue_without_model(
     response: Mapping[str, Any] | None = None,
     extra: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Continue without model when the planner query plan is unavailable.
+    
+    This function handles HTTP 500 errors from Ollama by providing a deterministic
+    fallback query plan that allows the agentic loop to proceed with limited context.
+    """
     response = response if isinstance(response, Mapping) else {}
+    
+    # Determine if this is an HTTP 500 error from Ollama
+    is_http_500 = (
+        response.get("http_status") == 500
+        or response.get("http_status") == 503
+        or "http_500" in reason.lower()
+        or "http_503" in reason.lower()
+    )
+    
     result: dict[str, Any] = {
         **dict(report),
         "ok": False,
@@ -463,11 +483,12 @@ def query_plan_continue_without_model(
         "planner_model": planner_model,
         "timeout_seconds": timeout_seconds,
         "attempts": attempt,
-        "semantic_intent_required": False,
+        "semantic_intent_required": True,
         "semantic_intent_available": False,
         "preplanner_rag_can_continue": True,
         "fallback_scope": "deterministic_rag_preseed_only",
         "controller_did_not_make_semantic_decision": True,
+        "is_http_500_error": is_http_500,
     }
     for key in ("backend_timeout", "backend_unreachable", "error_type", "error", "network_reason_type"):
         if response.get(key) not in (None, "", [], {}):
