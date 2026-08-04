@@ -51,7 +51,7 @@ from .application.job.terminal_response import (
 )
 from .application.job.status_response import build_compact_status_response
 from .application.job.wait_response import build_wait_timeout_response
-from .infrastructure.json_files import JsonFileStore
+from .infrastructure.json_files import BrokerError, ErrorCategory, ErrorSeverity, JsonFileStore
 from .infrastructure.job_sqlite_store import AgentJobSQLiteStore
 from .infrastructure.time_provider import TimeProvider
 

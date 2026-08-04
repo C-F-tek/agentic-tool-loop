@@ -1,13 +1,41 @@
 from __future__ import annotations
 """
+The controlled 30B planner loop.
+Responsibilities:
+- Post requests to 11434 (PLANNER_URL) with streaming
+- Detect degenerate / role-boundary-contaminated output
+- Ask Vulkan/GPU0 11435 for explicit IA repair when planner output is malformed or a tool decision is invalid
+- Run the multi-step agentic loop ``run_agentic_planner_job``
+- Manage job lifecycle transitions
+No FastAPI routes or HTTP server code here.
 aicarmine_broker.planner
-=======from aicarmine_broker.error_handling import (
+The controlled 30B planner loop.
+Responsibilities:
+- Post requests to 11434 (PLANNER_URL) with streaming
+- Detect degenerate / role-boundary-contaminated output
+- Ask Vulkan/GPU0 11435 for explicit IA repair when planner output is malformed or a tool decision is invalid
+- Run the multi-step agentic loop ``run_agentic_planner_job``
+- Manage job lifecycle transitions
+No FastAPI routes or HTTP server code here.
+aicarmine_broker.planner
+The controlled 30B planner loop.
+Responsibilities:
+- Post requests to 11434 (PLANNER_URL) with streaming
+- Detect degenerate / role-boundary-contaminated output
+- Ask Vulkan/GPU0 11435 for explicit IA repair when planner output is malformed or a tool decision is invalid
+- Run the multi-step agentic loop ``run_agentic_planner_job``
+- Manage job lifecycle transitions
+No FastAPI routes or HTTP server code here.
+"""
+
+from .error_handling import (
     BrokerError,
     ErrorCategory,
     ErrorSeverity,
     ErrorReport,
     ErrorSummary,
 )
+"""
 =================
 The controlled 30B planner loop.
 Responsibilities:
@@ -3738,6 +3766,57 @@ def _raw_planner_text_looks_like_tool_request(text: str) -> bool:
         "corrupt_json",
         "tool_like_malformed",
     }
+
+
+def _should_attempt_vulkan_repair(
+    decision: dict[str, Any],
+    validation: dict[str, Any],
+    history: list[dict[str, Any]],
+) -> bool:
+    """Determine whether to attempt vulkan_repair for a rejected decision.
+
+    Returns True when the validation indicates a rejected tool decision
+    that the vulkan_repair_invalid_planner_decision handler can address,
+    and the decision action is 'block' with a repairable reason.
+    """
+    decision = decision if isinstance(decision, dict) else {}
+    validation = validation if isinstance(validation, dict) else {}
+    history = history if isinstance(history, list) else []
+
+    if str(decision.get("action") or "").strip().lower() != "block":
+        return False
+
+    reason = str(validation.get("reason") or "")
+    invalid_sig = str(validation.get("invalid_decision_signature") or "")
+
+    repairable_reasons = [
+        "INVALID_DECISION_SIGNATURE",
+        "INVALID_TOOL_DECISION",
+        "REJECTED_TOOL_DECISION",
+        "VALIDATION_FAILED",
+        "INVALID_DECISION_REPEATED_CALL",
+        "INVALID_DECISION_REPEAT_COUNT",
+        "semantic_rewrite_required",
+        "planner_cuda_rewrite_required",
+    ]
+
+    repairable = (
+        reason in repairable_reasons
+        or reason.startswith("REJECTED_TOOL_DECISION")
+        or reason.startswith("INVALID_DECISION_SIGNATURE")
+        or invalid_sig and "invalid" in str(invalid_sig).lower()
+    )
+
+    if not repairable:
+        return False
+
+    # Do not attempt repair if the decision has no patch/code-product to repair
+    decision_args = decision.get("arguments") or {}
+    if isinstance(decision_args, dict):
+        if decision_args.get("patch") and not decision_args.get("old_text"):
+            return False
+
+    return True
 
 
 def _should_retry_incomprehensible_planner_output(

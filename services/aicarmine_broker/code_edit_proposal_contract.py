@@ -176,7 +176,7 @@ def validate_unified_diff_text(
                 parsed = PatchSet(diff_text.splitlines(True))
                 if not parsed:
                     errors.append("unidiff_parse_empty")
-            except Exception:
+            except Exception as exc:
                 pass
                 errors.append(f"unidiff_parse_failed:{type(exc).__name__}")
     return errors
@@ -238,7 +238,7 @@ def tree_sitter_parse_evidence(repo_root: Path, target_file: str, language: str)
         )
         if root.has_error:
             errors.append("tree_sitter_parse_error")
-    except Exception:
+    except Exception as exc:
         errors.append(f"tree_sitter_parse_failed:{type(exc).__name__}")
     return evidence, errors
 
@@ -337,7 +337,7 @@ def build_code_edit_proposal(
         if target_path.is_file():
             try:
                 original_text = target_path.read_text(encoding="utf-8-sig", errors="replace")
-            except Exception:
+            except Exception as exc:
                 pass
                 errors.append(f"target_file_read_failed:{type(exc).__name__}")
             else:

@@ -34,15 +34,9 @@ from ..job_store import append_agent_event
 
 def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str, Any]:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = httpx.Client(timeout=30).post(
-        url, data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    stream_timeout_seconds = max(3600, int(timeout or 3600))
     try:
-        with httpx.Client(timeout=30).get(req, timeout=stream_timeout_seconds) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        response = httpx.post(url, data=data, headers={"Content-Type": "application/json"}, timeout=timeout)
+        raw = response.text
     except (socket.timeout, TimeoutError) as exc:
         return {
             "ok": False,
@@ -50,7 +44,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "backend_unreachable": False,
             "error_type": type(exc).__name__,
             "error": str(exc),
-            "timeout_seconds": stream_timeout_seconds,
+            "timeout_seconds": timeout,
         }
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", None)
@@ -63,7 +57,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "error_type": type(exc).__name__,
             "error": str(exc),
             "network_reason_type": type(reason).__name__ if reason is not None else None,
-            "timeout_seconds": stream_timeout_seconds,
+            "timeout_seconds": timeout,
         }
     except OSError as exc:
         is_timeout = "timed out" in str(exc).lower()
@@ -73,7 +67,7 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str
             "backend_unreachable": not is_timeout,
             "error_type": type(exc).__name__,
             "error": str(exc),
-            "timeout_seconds": stream_timeout_seconds,
+            "timeout_seconds": timeout,
         }
     try:
         decoded = json.loads(raw)
@@ -283,11 +277,7 @@ def post_json_stream_to_file(
     terminal_item: dict[str, Any] = {}
 
     data = json.dumps(stream_payload, ensure_ascii=False).encode("utf-8")
-    req = httpx.Client(timeout=30).post(
-        url, data=data,
-        headers={"Content-Type": "application/json; charset=utf-8"},
-        method="POST",
-    )
+    response = httpx.post(url, data=data, headers={"Content-Type": "application/json; charset=utf-8"}, timeout=timeout)
     stream_path.parent.mkdir(parents=True, exist_ok=True)
     stream_path.write_text("", encoding="utf-8")
 
@@ -313,7 +303,8 @@ def post_json_stream_to_file(
 
     def open_response() -> None:
         try:
-            response = httpx.Client(timeout=30).get(req, timeout=stream_timeout_seconds)
+            with httpx.Client(timeout=30) as client:
+                response = client.get(response.url, timeout=stream_timeout_seconds)
             if response_abandoned.is_set():
                 try:
                     response.close()

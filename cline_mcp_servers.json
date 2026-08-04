@@ -236,21 +236,85 @@
         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
       }
     },
-    "aicarmine-wily": {
-      "type": "stdio",
-"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "args": [
-        "-u",
-        "services/codex_bridge/wily_mcp_server.py"
-      ],
-      "cwd": ".",
-      "env": {
-        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
-        "AICARMINE_LAB_REPO": ".",
-        "AICARMINE_MCP_GZIP_ENABLED": "1",
-        "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
-        "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
-      }
-    }
+     "aicarmine-ollama": {
+       "type": "stdio",
+       "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+       "args": [
+         "-u",
+         "services/codex_bridge/ollama_mcp_server.py"
+       ],
+       "cwd": ".",
+       "env": {
+         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+         "AICARMINE_LAB_REPO": ".",
+         "AICARMINE_MCP_GZIP_ENABLED": "1",
+         "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+       }
+     },
+     "aicarmine-ovms-reranker": {
+       "type": "stdio",
+       "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+       "args": [
+         "-u",
+         "services/codex_bridge/ovms_mcp_server.py"
+       ],
+       "cwd": ".",
+       "env": {
+         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+         "AICARMINE_LAB_REPO": ".",
+         "AICARMINE_MCP_GZIP_ENABLED": "1",
+         "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+       }
+     },
+     "aicarmine-rag-router": {
+       "type": "stdio",
+       "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+       "args": [
+         "-u",
+         "knowledge-RAG-UNIFIED/mcp_rag_router_server.py"
+       ],
+       "cwd": ".",
+       "env": {
+         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+         "AICARMINE_LAB_REPO": ".",
+         "AICARMINE_MCP_GZIP_ENABLED": "1",
+         "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+       }
+     },
+     "aicarmine-broker-planner": {
+       "type": "stdio",
+       "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+       "args": [
+         "-u",
+         "services/codex_bridge/broker_planner_mcp_server.py"
+       ],
+       "cwd": ".",
+       "env": {
+         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+         "AICARMINE_LAB_REPO": ".",
+         "AICARMINE_MCP_GZIP_ENABLED": "1",
+         "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+       }
+     },
+     "aicarmine-planner-components": {
+       "type": "stdio",
+       "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+       "args": [
+         "-u",
+         "services/codex_bridge/planner_components_mcp_server.py"
+       ],
+       "cwd": ".",
+       "env": {
+         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+         "AICARMINE_LAB_REPO": ".",
+         "AICARMINE_MCP_GZIP_ENABLED": "1",
+         "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+       }
+     }
   }
 }

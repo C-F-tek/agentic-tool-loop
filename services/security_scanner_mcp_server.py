@@ -1,10 +1,8 @@
 """
 Improved Security Scanner MCP Server
 ====================================
-
 This MCP server provides tools to scan the codebase for actual security vulnerabilities
 with precise patterns that reduce false positives. It focuses on:
-
 1. Hardcoded credentials/secrets
 2. Insecure HTTP patterns (urllib.request without validation)
 3. Subprocess shell injection risks
@@ -14,13 +12,10 @@ with precise patterns that reduce false positives. It focuses on:
 7. Missing input validation
 8. Missing rate limiting
 9. Missing timeout configuration
-
 Usage:
     python services/security_scanner_mcp_server.py
-
 The server starts on http://127.0.0.1:8082 by default.
 """
-
 import json
 import re
 import sys

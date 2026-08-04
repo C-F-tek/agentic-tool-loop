@@ -205,7 +205,7 @@ def evaluate_initial_orientation_shadow(
     # STAGE 3 — CANDIDATE POOL
     try:
         raw_pool = candidate_pool_fn(deepcopy(root_result))
-    except Exception:
+    except Exception as exc:
         error_type_name = type(exc).__name__
         error_text = str(exc)[:500]
         return {
