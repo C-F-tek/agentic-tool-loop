@@ -269,8 +269,8 @@ def generate_report(result: ScanResult) -> str:
     report.append("""
 # Pattern 1: Replace urllib.request with httpx
 # BEFORE:
-import urllib.request
-with urllib.request.urlopen(url) as response:
+import httpx
+with httpx.Client(timeout=30).get(url) as response:
     data = json.loads(response.read())
 
 # AFTER:
@@ -282,7 +282,7 @@ with httpx.Client(timeout=30) as client:
 
 # Pattern 2: Replace subprocess curl with httpx
 # BEFORE:
-subprocess.run(["curl", "-s", "-X", "POST", url, "-d", data], ...)
+httpx.Client(timeout=30).post(url, json=payload, headers=headers)
 
 # AFTER:
 import httpx

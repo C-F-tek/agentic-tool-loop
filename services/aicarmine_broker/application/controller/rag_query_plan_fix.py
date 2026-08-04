@@ -445,18 +445,18 @@ def _sanitize_preplanner_query_plan(value: Mapping[str, Any] | None, *, goal: st
 
 def _http_json_post(url: str, payload: Mapping[str, Any], timeout_seconds: float) -> dict[str, Any]:
     """POST JSON to an HTTP endpoint and parse the response."""
-    import urllib.request
+    import httpx
     import urllib.error
     
     body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-    request = urllib.request.Request(
+    request = httpx.Client(timeout=30).post(
         url,
         data=body,
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:
+        with httpx.Client(timeout=30).get(request, timeout=max(1, int(timeout_seconds))) as response:
             raw = response.read(64000)
             text = raw.decode("utf-8", errors="replace")
             status = getattr(response, "status", None)

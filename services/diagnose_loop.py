@@ -26,12 +26,7 @@ def check_ports() -> Dict[str, Any]:
 
 def check_processes() -> Dict[str, Any]:
     """Check running processes."""
-    result = subprocess.run(
-        ["Get-Process", "-Name", "python", "ollama", "uvicorn"],
-        capture_output=True,
-        text=True,
-        shell=True
-    )
+    result = subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)
     return result.stdout
 
 
@@ -66,9 +61,9 @@ def check_ollama_status() -> Dict[str, Any]:
 def check_reranker_status() -> Dict[str, Any]:
     """Check Reranker (OVMS) status."""
     try:
-        import urllib.request
+        import httpx
         url = "http://127.0.0.1:3550/v2/models/BAAI/bge-reranker-v2-m3/ready"
-        with urllib.request.urlopen(url, timeout=5) as response:
+        with httpx.Client(timeout=30).get(url, timeout=5) as response:
             return {"status": "healthy", "response": response.read().decode()}
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
@@ -77,9 +72,9 @@ def check_reranker_status() -> Dict[str, Any]:
 def check_broker_status() -> Dict[str, Any]:
     """Check broker status."""
     try:
-        import urllib.request
+        import httpx
         url = "http://127.0.0.1:3579/health"
-        with urllib.request.urlopen(url, timeout=5) as response:
+        with httpx.Client(timeout=30).get(url, timeout=5) as response:
             return {"status": "healthy", "response": response.read().decode()}
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}

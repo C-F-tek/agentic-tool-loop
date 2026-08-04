@@ -22,7 +22,7 @@ import os
 import sqlite3
 import time
 import urllib.error
-import urllib.request
+import httpx
 import uuid
 from pathlib import Path
 from typing import Any, Iterable
@@ -181,8 +181,8 @@ def _forward_headers(request: Request) -> dict[str, str]:
 
 
 def _open_url(method: str, path: str, body: bytes | None, headers: dict[str, str]) -> urllib.response.addinfourl:
-    req = urllib.request.Request(_target_url(path), data=body, method=method.upper(), headers=headers)
-    return urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)
+    req = httpx.Client(timeout=30).post(_target_url(path), data=body, method=method.upper(), headers=headers)
+    return httpx.Client(timeout=30).get(req, timeout=HTTP_TIMEOUT)
 
 
 def _proxy_error(exc: Exception) -> Response:

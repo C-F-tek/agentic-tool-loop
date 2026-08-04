@@ -980,7 +980,7 @@ def main():
     # Check port if provided
     if args.port:
         import subprocess
-        result = subprocess.run(f"netstat -ano | findstr ':{args.port}' | findstr 'LISTENING'", shell=True, capture_output=True, text=True)
+        result = subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)
         if result.stdout:
             print(f"Port {args.port} is in use:")
             print(result.stdout)

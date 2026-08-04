@@ -209,7 +209,7 @@ def secure_api_call(url: str, data: dict, timeout: int = 30) -> dict:
         return response.json() if response.content else {}
 """,
         "subprocess_shell": """# Replace:
-# subprocess.run(cmd, shell=True)
+# subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)
 # With:
 subprocess.run(["command", "arg1", "arg2"], check=True, capture_output=True, text=True)
 """,

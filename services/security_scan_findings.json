@@ -1,10 +1,10 @@
 {
   "scan_directory": "C:\\Users\\sanit\\agentic-tool-loop\\services",
-  "total_files_scanned": 318,
-  "total_findings": 2978,
-  "critical": 2168,
-  "high": 104,
-  "medium": 706,
+  "total_files_scanned": 319,
+  "total_findings": 2952,
+  "critical": 2165,
+  "high": 65,
+  "medium": 722,
   "low": 0,
   "findings": [
     {
@@ -954,24 +954,6 @@
     },
     {
       "file": "controller/rag_preseed.py",
-      "line": 1431,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "request = urllib.request.Request("
-    },
-    {
-      "file": "controller/rag_preseed.py",
-      "line": 1438,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:"
-    },
-    {
-      "file": "controller/rag_preseed.py",
       "line": 1275,
       "severity": "CRITICAL",
       "pattern": "sql_in_prompt",
@@ -1266,24 +1248,6 @@
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "content = str(row[5] or \"\")"
-    },
-    {
-      "file": "controller/rag_query_plan_fix.py",
-      "line": 452,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "request = urllib.request.Request("
-    },
-    {
-      "file": "controller/rag_query_plan_fix.py",
-      "line": 459,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:"
     },
     {
       "file": "controller/rag_query_plan_fix.py",
@@ -15903,42 +15867,6 @@
     },
     {
       "file": "planner_core/json_io.py",
-      "line": 37,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request("
-    },
-    {
-      "file": "planner_core/json_io.py",
-      "line": 44,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=stream_timeout_seconds) as resp:"
-    },
-    {
-      "file": "planner_core/json_io.py",
-      "line": 286,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request("
-    },
-    {
-      "file": "planner_core/json_io.py",
-      "line": 316,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "response = urllib.request.urlopen(req, timeout=stream_timeout_seconds)"
-    },
-    {
-      "file": "planner_core/json_io.py",
       "line": 113,
       "severity": "CRITICAL",
       "pattern": "command_in_prompt",
@@ -16071,24 +15999,6 @@
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "content = \"\".join(chunks)"
-    },
-    {
-      "file": "aicarmine_broker/planner_intrinsic_context.py",
-      "line": 187,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "request = urllib.request.Request(str(url), data=data, method=method.upper(), headers=headers)"
-    },
-    {
-      "file": "aicarmine_broker/planner_intrinsic_context.py",
-      "line": 189,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(request, timeout=max(0.1, float(timeout or 0.1))) as response:"
     },
     {
       "file": "aicarmine_broker/planner_intrinsic_context.py",
@@ -16713,24 +16623,6 @@
     },
     {
       "file": "tools/repo_semantic_search.py",
-      "line": 118,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "request = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)"
-    },
-    {
-      "file": "tools/repo_semantic_search.py",
-      "line": 119,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(request, timeout=timeout) as response:"
-    },
-    {
-      "file": "tools/repo_semantic_search.py",
       "line": 112,
       "severity": "CRITICAL",
       "pattern": "command_in_prompt",
@@ -17243,22 +17135,202 @@
       "code": "re.compile(r'(?i)--host(?:=|\\s+)(?P<value>\"[^\"]+\"|\\'[^\\']+\\'|\\S+)'),"
     },
     {
-      "file": "codex_bridge/agentic_loop_client_mcp_server.py",
-      "line": 217,
+      "file": "services/apply_secure_patterns.py",
+      "line": 58,
       "severity": "HIGH",
       "pattern": "urllib_request",
       "description": "Uses urllib.request which lacks built-in validation and rate limiting",
       "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "request = urllib.request.Request(url, data=body, headers=headers, method=method)"
+      "code": "# Replace urllib.request.urlopen() calls - wrap in with statement"
     },
     {
-      "file": "codex_bridge/agentic_loop_client_mcp_server.py",
-      "line": 219,
+      "file": "services/apply_secure_patterns.py",
+      "line": 61,
       "severity": "HIGH",
       "pattern": "urllib_request",
       "description": "Uses urllib.request which lacks built-in validation and rate limiting",
       "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(request, timeout=timeout_seconds) as response:"
+      "code": "old = f\"urllib.request.urlopen({match})\""
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 66,
+      "severity": "HIGH",
+      "pattern": "urllib_request",
+      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
+      "recommendation": "Replace with httpx.Client for safe HTTP communication",
+      "code": "# Replace urllib.request.Request() calls - wrap in with statement"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 69,
+      "severity": "HIGH",
+      "pattern": "urllib_request",
+      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
+      "recommendation": "Replace with httpx.Client for safe HTTP communication",
+      "code": "old = f\"urllib.request.Request({match})\""
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 122,
+      "severity": "CRITICAL",
+      "pattern": "subprocess_curl",
+      "description": "Uses subprocess to call curl/wget - command injection risk",
+      "recommendation": "Replace with httpx.Client or requests library",
+      "code": "if \"subprocess.run\" in content and \"curl\" in content:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 45,
+      "severity": "MEDIUM",
+      "pattern": "raw_subprocess",
+      "description": "Uses subprocess.run without validation wrapper",
+      "recommendation": "Use secure_subprocess wrapper with input validation",
+      "code": "\"replacement\": \"subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)\","
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 107,
+      "severity": "MEDIUM",
+      "pattern": "raw_subprocess",
+      "description": "Uses subprocess.run without validation wrapper",
+      "recommendation": "Use secure_subprocess wrapper with input validation",
+      "code": "content = content.replace(match, \"subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)\")"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 49,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "def fix_urllib_request(content: str) -> Tuple[str, int]:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 54,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "if \"import urllib.request\" in content:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 55,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = content.replace(\"import urllib.request\", \"import httpx\")"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 63,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = content.replace(old, new)"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 71,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = content.replace(old, new)"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 81,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = content.replace(old, new)"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 87,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "def fix_subprocess_curl(content: str) -> Tuple[str, int]:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 94,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = content.replace(match, \"httpx.Client(timeout=30).post(url, json=payload, headers=headers)\")"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 100,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "def fix_subprocess_shell(content: str) -> Tuple[str, int]:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 107,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = content.replace(match, \"subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)\")"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 117,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = file_path.read_text(encoding=\"utf-8\", errors=\"replace\")"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 119,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "if \"urllib.request\" in content:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 122,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "if \"subprocess.run\" in content and \"curl\" in content:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 125,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "if \"shell=True\" in content:"
+    },
+    {
+      "file": "services/apply_secure_patterns.py",
+      "line": 139,
+      "severity": "MEDIUM",
+      "pattern": "unbounded_prompt_length",
+      "description": "Prompt without length limit - potential resource exhaustion",
+      "recommendation": "Add maximum prompt length and truncate oversized inputs",
+      "code": "content = file_path.read_text(encoding=\"utf-8\", errors=\"replace\")"
     },
     {
       "file": "codex_bridge/agentic_loop_client_mcp_server.py",
@@ -17628,33 +17700,6 @@
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "content = json.loads(line.strip())"
-    },
-    {
-      "file": "codex_bridge/broker_planner_mcp_server.py",
-      "line": 91,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url, data=payload, headers={\"Content-Type\": \"application/json\"})"
-    },
-    {
-      "file": "codex_bridge/broker_planner_mcp_server.py",
-      "line": 93,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url)"
-    },
-    {
-      "file": "codex_bridge/broker_planner_mcp_server.py",
-      "line": 94,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=timeout) as resp:"
     },
     {
       "file": "codex_bridge/broker_planner_mcp_server.py",
@@ -18144,33 +18189,6 @@
     },
     {
       "file": "codex_bridge/ollama_mcp_server.py",
-      "line": 128,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url, data=payload, headers={\"Content-Type\": \"application/json\"})"
-    },
-    {
-      "file": "codex_bridge/ollama_mcp_server.py",
-      "line": 130,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url)"
-    },
-    {
-      "file": "codex_bridge/ollama_mcp_server.py",
-      "line": 131,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=timeout) as resp:"
-    },
-    {
-      "file": "codex_bridge/ollama_mcp_server.py",
       "line": 184,
       "severity": "HIGH",
       "pattern": "llm_prompt_unvalidated",
@@ -18213,24 +18231,6 @@
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "message = json.loads(line.decode(\"utf-8-sig\", errors=\"replace\"))"
-    },
-    {
-      "file": "codex_bridge/ollama_responses_bridge.py",
-      "line": 184,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(_target_url(path), data=body, method=method.upper(), headers=headers)"
-    },
-    {
-      "file": "codex_bridge/ollama_responses_bridge.py",
-      "line": 185,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "return urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)"
     },
     {
       "file": "codex_bridge/ollama_responses_bridge.py",
@@ -18639,84 +18639,12 @@
     },
     {
       "file": "codex_bridge/ovms_mcp_server.py",
-      "line": 116,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.urlopen(url, timeout=5)"
-    },
-    {
-      "file": "codex_bridge/ovms_mcp_server.py",
-      "line": 133,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.urlopen(url, timeout=5)"
-    },
-    {
-      "file": "codex_bridge/ovms_mcp_server.py",
-      "line": 152,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url, data=payload, headers={\"Content-Type\": \"application/json\"})"
-    },
-    {
-      "file": "codex_bridge/ovms_mcp_server.py",
-      "line": 153,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "resp = urllib.request.urlopen(req, timeout=30)"
-    },
-    {
-      "file": "codex_bridge/ovms_mcp_server.py",
-      "line": 163,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.urlopen(url, timeout=5)"
-    },
-    {
-      "file": "codex_bridge/ovms_mcp_server.py",
       "line": 215,
       "severity": "MEDIUM",
       "pattern": "unbounded_prompt_length",
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "message = json.loads(line.decode(\"utf-8-sig\", errors=\"replace\"))"
-    },
-    {
-      "file": "codex_bridge/planner_components_mcp_server.py",
-      "line": 105,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url, data=payload, headers={\"Content-Type\": \"application/json\"})"
-    },
-    {
-      "file": "codex_bridge/planner_components_mcp_server.py",
-      "line": 107,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url)"
-    },
-    {
-      "file": "codex_bridge/planner_components_mcp_server.py",
-      "line": 108,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=timeout) as resp:"
     },
     {
       "file": "codex_bridge/planner_components_mcp_server.py",
@@ -19311,24 +19239,6 @@
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "content='chunks',"
-    },
-    {
-      "file": "codex_bridge/rag_mcp_server.py",
-      "line": 250,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)"
-    },
-    {
-      "file": "codex_bridge/rag_mcp_server.py",
-      "line": 251,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=timeout) as res:"
     },
     {
       "file": "codex_bridge/rag_mcp_server.py",
@@ -20286,24 +20196,6 @@
     },
     {
       "file": "services/diagnose_loop.py",
-      "line": 71,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(url, timeout=5) as response:"
-    },
-    {
-      "file": "services/diagnose_loop.py",
-      "line": 82,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(url, timeout=5) as response:"
-    },
-    {
-      "file": "services/diagnose_loop.py",
       "line": 19,
       "severity": "MEDIUM",
       "pattern": "raw_subprocess",
@@ -20318,11 +20210,11 @@
       "pattern": "raw_subprocess",
       "description": "Uses subprocess.run without validation wrapper",
       "recommendation": "Use secure_subprocess wrapper with input validation",
-      "code": "result = subprocess.run("
+      "code": "result = subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)"
     },
     {
       "file": "services/diagnose_loop.py",
-      "line": 52,
+      "line": 47,
       "severity": "MEDIUM",
       "pattern": "raw_subprocess",
       "description": "Uses subprocess.run without validation wrapper",
@@ -22717,20 +22609,11 @@
     {
       "file": "launch/diagnostic_tool.py",
       "line": 983,
-      "severity": "CRITICAL",
-      "pattern": "subprocess_shell",
-      "description": "Uses shell=True in subprocess - command injection risk",
-      "recommendation": "Remove shell=True and pass command as list",
-      "code": "result = subprocess.run(f\"netstat -ano | findstr ':{args.port}' | findstr 'LISTENING'\", shell=True, capture_output=True, text=True)"
-    },
-    {
-      "file": "launch/diagnostic_tool.py",
-      "line": 983,
       "severity": "MEDIUM",
       "pattern": "raw_subprocess",
       "description": "Uses subprocess.run without validation wrapper",
       "recommendation": "Use secure_subprocess wrapper with input validation",
-      "code": "result = subprocess.run(f\"netstat -ano | findstr ':{args.port}' | findstr 'LISTENING'\", shell=True, capture_output=True, text=True)"
+      "code": "result = subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)"
     },
     {
       "file": "launch/diagnostic_tool.py",
@@ -23949,15 +23832,6 @@
     },
     {
       "file": "launch/diagnostic_tool.py",
-      "line": 983,
-      "severity": "CRITICAL",
-      "pattern": "command_in_prompt",
-      "description": "Command injection pattern in prompt/text",
-      "recommendation": "Validate and sanitize all user inputs. Never pass raw input to shell.",
-      "code": "result = subprocess.run(f\"netstat -ano | findstr ':{args.port}' | findstr 'LISTENING'\", shell=True, capture_output=True, text=True)"
-    },
-    {
-      "file": "launch/diagnostic_tool.py",
       "line": 941,
       "severity": "MEDIUM",
       "pattern": "unbounded_prompt_length",
@@ -24948,33 +24822,6 @@
     },
     {
       "file": "services/security_scan_report.py",
-      "line": 273,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(url) as response:"
-    },
-    {
-      "file": "services/security_scan_report.py",
-      "line": 285,
-      "severity": "CRITICAL",
-      "pattern": "subprocess_curl",
-      "description": "Uses subprocess to call curl/wget - command injection risk",
-      "recommendation": "Replace with httpx.Client or requests library",
-      "code": "subprocess.run([\"curl\", \"-s\", \"-X\", \"POST\", url, \"-d\", data], ...)"
-    },
-    {
-      "file": "services/security_scan_report.py",
-      "line": 285,
-      "severity": "MEDIUM",
-      "pattern": "raw_subprocess",
-      "description": "Uses subprocess.run without validation wrapper",
-      "recommendation": "Use secure_subprocess wrapper with input validation",
-      "code": "subprocess.run([\"curl\", \"-s\", \"-X\", \"POST\", url, \"-d\", data], ...)"
-    },
-    {
-      "file": "services/security_scan_report.py",
       "line": 299,
       "severity": "MEDIUM",
       "pattern": "raw_subprocess",
@@ -25174,20 +25021,11 @@
     {
       "file": "services/security_scanner_mcp_server.py",
       "line": 212,
-      "severity": "CRITICAL",
-      "pattern": "subprocess_shell",
-      "description": "Uses shell=True in subprocess - command injection risk",
-      "recommendation": "Remove shell=True and pass command as list",
-      "code": "# subprocess.run(cmd, shell=True)"
-    },
-    {
-      "file": "services/security_scanner_mcp_server.py",
-      "line": 212,
       "severity": "MEDIUM",
       "pattern": "raw_subprocess",
       "description": "Uses subprocess.run without validation wrapper",
       "recommendation": "Use secure_subprocess wrapper with input validation",
-      "code": "# subprocess.run(cmd, shell=True)"
+      "code": "# subprocess.run(['command', 'arg1', 'arg2'], check=True, capture_output=True, text=True)"
     },
     {
       "file": "services/security_scanner_mcp_server.py",
@@ -25314,42 +25152,6 @@
       "description": "Prompt without length limit - potential resource exhaustion",
       "recommendation": "Add maximum prompt length and truncate oversized inputs",
       "code": "message = {"
-    },
-    {
-      "file": "vulkan_bridge/app.py",
-      "line": 882,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request("
-    },
-    {
-      "file": "vulkan_bridge/app.py",
-      "line": 889,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS) as response:"
-    },
-    {
-      "file": "vulkan_bridge/app.py",
-      "line": 942,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request("
-    },
-    {
-      "file": "vulkan_bridge/app.py",
-      "line": 951,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=timeout) as response:"
     },
     {
       "file": "vulkan_bridge/app.py",
@@ -25953,42 +25755,6 @@
       "description": "Command injection pattern in prompt/text",
       "recommendation": "Validate and sanitize all user inputs. Never pass raw input to shell.",
       "code": "\"Large nested agent payload retained only through primary inline fields; no narrative/path substitute promoted.\""
-    },
-    {
-      "file": "vulkan_bridge/app_refactored.py",
-      "line": 529,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request("
-    },
-    {
-      "file": "vulkan_bridge/app_refactored.py",
-      "line": 536,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS) as response:"
-    },
-    {
-      "file": "vulkan_bridge/app_refactored.py",
-      "line": 585,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "req = urllib.request.Request("
-    },
-    {
-      "file": "vulkan_bridge/app_refactored.py",
-      "line": 594,
-      "severity": "HIGH",
-      "pattern": "urllib_request",
-      "description": "Uses urllib.request which lacks built-in validation and rate limiting",
-      "recommendation": "Replace with httpx.Client for safe HTTP communication",
-      "code": "with urllib.request.urlopen(req, timeout=timeout) as response:"
     },
     {
       "file": "vulkan_bridge/app_refactored.py",

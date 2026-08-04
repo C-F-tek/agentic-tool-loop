@@ -22,7 +22,7 @@ import json
 import re
 import sqlite3
 import urllib.error
-import urllib.request
+import httpx
 from pathlib import Path
 from typing import Any
 
@@ -184,9 +184,9 @@ def _http_json(method: str, url: str, payload: Any | None = None, timeout: float
         data = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         headers["Content-Type"] = "application/json; charset=utf-8"
 
-    request = urllib.request.Request(str(url), data=data, method=method.upper(), headers=headers)
+    request = httpx.Client(timeout=30).post(str(url), data=data, method=method.upper(), headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=max(0.1, float(timeout or 0.1))) as response:
+        with httpx.Client(timeout=30).get(request, timeout=max(0.1, float(timeout or 0.1))) as response:
             raw = response.read(DEFAULT_RERANK_RESPONSE_BYTES)
             text = raw.decode("utf-8", errors="replace")
             status = getattr(response, "status", None)

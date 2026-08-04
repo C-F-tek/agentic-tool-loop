@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 import urllib.error
-import urllib.request
+import httpx
 from pathlib import Path
 from typing import Any
 
@@ -34,14 +34,14 @@ from ..job_store import append_agent_event
 
 def post_json(url: str, payload: dict[str, Any], timeout: int = 120) -> dict[str, Any]:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
+    req = httpx.Client(timeout=30).post(
         url, data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     stream_timeout_seconds = max(3600, int(timeout or 3600))
     try:
-        with urllib.request.urlopen(req, timeout=stream_timeout_seconds) as resp:
+        with httpx.Client(timeout=30).get(req, timeout=stream_timeout_seconds) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except (socket.timeout, TimeoutError) as exc:
         return {
@@ -283,7 +283,7 @@ def post_json_stream_to_file(
     terminal_item: dict[str, Any] = {}
 
     data = json.dumps(stream_payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
+    req = httpx.Client(timeout=30).post(
         url, data=data,
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",
@@ -313,7 +313,7 @@ def post_json_stream_to_file(
 
     def open_response() -> None:
         try:
-            response = urllib.request.urlopen(req, timeout=stream_timeout_seconds)
+            response = httpx.Client(timeout=30).get(req, timeout=stream_timeout_seconds)
             if response_abandoned.is_set():
                 try:
                     response.close()

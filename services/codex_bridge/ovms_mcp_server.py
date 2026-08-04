@@ -8,7 +8,7 @@ Follows MCP stdio protocol with proper initialize handshake.
 import json
 import sys
 import os
-import urllib.request
+import httpx
 
 SERVER_NAME = "aicarmine-ovms-reranker-mcp"
 SERVER_VERSION = "1.0.0"
@@ -113,7 +113,7 @@ def make_error(msg_id, code, message):
 def handle_ovms_health(args):
     try:
         url = f"http://127.0.0.1:{OVMS_REST_PORT}/info"
-        req = urllib.request.urlopen(url, timeout=5)
+        req = httpx.Client(timeout=30).get(url, timeout=5)
         data = json.loads(req.read())
         return {"content": [{"type": "text", "text": json.dumps({"status": "healthy", "port": OVMS_REST_PORT, "response": data})}]}
     except Exception as e:
@@ -130,7 +130,7 @@ def handle_ovms_start(args):
 def handle_ovms_stop(args):
     try:
         url = f"http://127.0.0.1:{OVMS_REST_PORT}/shutdown"
-        req = urllib.request.urlopen(url, timeout=5)
+        req = httpx.Client(timeout=30).get(url, timeout=5)
         data = json.loads(req.read())
         return {"content": [{"type": "text", "text": json.dumps({"status": "stopped", "response": data})}]}
     except Exception as e:
@@ -149,8 +149,8 @@ def handle_ovms_rerank(args):
     try:
         url = f"http://127.0.0.1:{OVMS_REST_PORT}/rerank"
         payload = json.dumps({"query": query, "documents": documents}).encode()
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=30)
+        req = httpx.Client(timeout=30).post(url, data=payload, headers={"Content-Type": "application/json"})
+        resp = httpx.Client(timeout=30).get(req, timeout=30)
         data = json.loads(resp.read())
         return {"content": [{"type": "text", "text": json.dumps({"status": "success", "result": data})}]}
     except Exception as e:
@@ -160,7 +160,7 @@ def handle_ovms_rerank(args):
 def handle_ovms_list_models(args):
     try:
         url = f"http://127.0.0.1:{OVMS_REST_PORT}/models"
-        req = urllib.request.urlopen(url, timeout=5)
+        req = httpx.Client(timeout=30).get(url, timeout=5)
         data = json.loads(req.read())
         return {"content": [{"type": "text", "text": json.dumps({"status": "success", "models": data})}]}
     except Exception as e:

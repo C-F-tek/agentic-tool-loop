@@ -15,7 +15,7 @@ Follows MCP stdio protocol with proper initialize handshake.
 import json
 import sys
 import os
-import urllib.request
+import httpx
 
 SERVER_NAME = "aicarmine-planner-components-mcp"
 SERVER_VERSION = "1.0.0"
@@ -102,10 +102,10 @@ def make_broker_request(path, data=None, timeout=30):
     url = f"{BROKER_URL}{path}"
     if data:
         payload = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        req = httpx.Client(timeout=30).post(url, data=payload, headers={"Content-Type": "application/json"})
     else:
-        req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        req = httpx.Client(timeout=30).post(url)
+    with httpx.Client(timeout=30).get(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 
 

@@ -12,7 +12,7 @@ import sqlite3
 import json
 import os
 import urllib.error
-import urllib.request
+import httpx
 from pathlib import Path
 from typing import Any
 
@@ -115,8 +115,8 @@ def _http_json(method: str, url: str, payload: Any | None = None, timeout: int =
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         headers["Content-Type"] = "application/json; charset=utf-8"
-    request = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    request = httpx.Client(timeout=30).post(url, data=data, method=method.upper(), headers=headers)
+    with httpx.Client(timeout=30).get(request, timeout=timeout) as response:
         text = response.read().decode("utf-8", errors="replace")
     if not text.strip():
         return {}

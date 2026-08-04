@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 import urllib.error
 import urllib.parse
-import urllib.request
+import httpx
 
 from repo_mcp_common import (
     ToolSpec,
@@ -214,9 +214,9 @@ def _http_json(
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    request = httpx.Client(timeout=30).post(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with httpx.Client(timeout=30).get(request, timeout=timeout_seconds) as response:
             raw = response.read()
             text = raw.decode("utf-8", errors="replace")
             try:

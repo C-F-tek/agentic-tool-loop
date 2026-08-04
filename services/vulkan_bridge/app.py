@@ -7,7 +7,7 @@ import re
 import sys
 import time
 import urllib.error
-import urllib.request
+import httpx
 from pathlib import Path
 from typing import Any
 
@@ -879,14 +879,14 @@ def _unload_planner_model_for_openwebui() -> dict[str, Any]:
         "keep_alive": 0,
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
+    req = httpx.Client(timeout=30).post(
         endpoint,
         data=data,
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS) as response:
+        with httpx.Client(timeout=30).get(req, timeout=OPENWEBUI_FINAL_UNLOAD_TIMEOUT_SECONDS) as response:
             raw = response.read().decode("utf-8", errors="replace")
             status = getattr(response, "status", 200)
         return {
@@ -939,7 +939,7 @@ def _apply_openwebui_final_handoff(decoded: dict[str, Any]) -> None:
 
 def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
+    req = httpx.Client(timeout=30).post(
         url,
         data=data,
         headers={"Content-Type": "application/json; charset=utf-8"},
@@ -948,7 +948,7 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
     started = time.time()
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with httpx.Client(timeout=30).get(req, timeout=timeout) as response:
             raw = response.read().decode("utf-8", errors="replace")
             status = getattr(response, "status", 200)
     except urllib.error.HTTPError as exc:

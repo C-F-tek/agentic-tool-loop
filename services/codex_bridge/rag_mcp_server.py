@@ -24,7 +24,7 @@ import sys
 import time
 import traceback
 import urllib.error
-import urllib.request
+import httpx
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -247,8 +247,8 @@ def _http_json(method: str, url: str, payload: Any | None = None, timeout: int =
         data = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         headers["Content-Type"] = "application/json; charset=utf-8"
 
-    req = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as res:
+    req = httpx.Client(timeout=30).post(url, data=data, method=method.upper(), headers=headers)
+    with httpx.Client(timeout=30).get(req, timeout=timeout) as res:
         raw = res.read()
         text = raw.decode("utf-8", errors="replace")
         if not text.strip():

@@ -18,7 +18,7 @@ import os
 import re
 import sqlite3
 import urllib.error
-import urllib.request
+import httpx
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -1428,14 +1428,14 @@ def _semantic_owner_target_paths(
 
 def _http_json_post(url: str, payload: Mapping[str, Any], *, timeout_seconds: float) -> Any:
     body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-    request = urllib.request.Request(
+    request = httpx.Client(timeout=30).post(
         url,
         data=body,
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=max(1, int(timeout_seconds))) as response:
+        with httpx.Client(timeout=30).get(request, timeout=max(1, int(timeout_seconds))) as response:
             raw = response.read(_RERANK_RESPONSE_BYTES)
             text = raw.decode("utf-8", errors="replace")
             status = getattr(response, "status", None)
