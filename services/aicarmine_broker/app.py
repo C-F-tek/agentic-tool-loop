@@ -2,21 +2,17 @@
 aicarmine_broker.app
 ====================
 FastAPI application factory and HTTP route registration.
-
 The main module imports only ``app`` from here; dispatcher, planner,
 repository tools and job persistence stay in their dedicated modules.
 """
 from __future__ import annotations
-
 import sys
 from typing import Any
-
 from fastapi import Body, FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-
 from .config import (
     AGENT_JOB_DB,
     AGENT_JOB_ROOT,

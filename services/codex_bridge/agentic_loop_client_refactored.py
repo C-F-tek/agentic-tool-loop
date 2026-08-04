@@ -18,10 +18,11 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from repo_mcp_common import (
     ToolSpec,
@@ -37,6 +38,8 @@ from repo_mcp_common import (
 from .http_client import AgenticLoopHttpClient, HttpClientError
 from .endpoint_validation import (
     validate_endpoint,
+    validate_local_http_endpoint,
+    port_listening,
     safe_int,
     DEFAULT_AGENTIC_LOOP_PORT,
     DEFAULT_RERANKER_PORT,

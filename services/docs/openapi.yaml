@@ -1,0 +1,465 @@
+openapi: "3.0.0"
+info:
+  title: AI-Carmine Broker API
+  description: FastAPI application for agentic loop broker with job management, planner lab, and tool dispatch
+  version: "1.0.0"
+  contact:
+    name: AI-Carmine
+    url: https://github.com/C-F-tek/agentic-tool-loop
+
+servers:
+  - url: http://127.0.0.1:3572
+    description: Vulkan Tool Broker (internal services)
+
+paths:
+  # Health
+  /health:
+    get:
+      summary: Health check endpoint
+      tags: [system]
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  service:
+                    type: string
+
+  # Jobs Index
+  /agent-jobs:
+    get:
+      summary: List agent jobs index (HTML)
+      tags: [jobs]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: HTML job index
+
+  /agent-jobs.json:
+    get:
+      summary: List agent jobs (JSON)
+      tags: [jobs]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: JSON job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+
+  # Job Views
+  /agent-jobs/{job_id}:
+    get:
+      summary: Job dashboard view (HTML)
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job dashboard HTML
+
+  /agent-jobs/{job_id}/json:
+    get:
+      summary: Job status JSON view
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status JSON
+
+  /agent-jobs/{job_id}/json/section/{section}:
+    get:
+      summary: Job status JSON section
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: section
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: query
+          schema:
+            type: string
+        - name: index
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Job section HTML
+
+  /agent-jobs/{job_id}/events:
+    get:
+      summary: Job events view (HTML)
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job events HTML
+
+  /agent-jobs/{job_id}/events/section/{section}:
+    get:
+      summary: Job events section
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: section
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: step
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Events section HTML
+
+  /agent-jobs/{job_id}/final.json:
+    get:
+      summary: Job final JSON view
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Final JSON view
+
+  /agent-jobs/{job_id}/final.json/section/{section}:
+    get:
+      summary: Final JSON section
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: section
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: query
+          schema:
+            type: string
+        - name: index
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Final JSON section HTML
+
+  /agent-jobs/{job_id}/final.md:
+    get:
+      summary: Job final markdown view
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Final markdown view
+
+  /agent-jobs/{job_id}/ia-view:
+    get:
+      summary: Job IA (live control) view
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: IA view HTML
+
+  /agent-jobs/{job_id}/ia-view.json:
+    get:
+      summary: Job IA view payload (JSON)
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: heavy
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: IA view JSON payload
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /agent-jobs/{job_id}/ia-view/section/{section}:
+    get:
+      summary: IA view section
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: section
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: step
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: IA section HTML
+
+  /agent-jobs/{job_id}/planner-stream:
+    get:
+      summary: Job planner stream view
+      tags: [jobs, views]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Planner stream HTML
+
+  # Planner Lab
+  /planner-lab:
+    get:
+      summary: Planner lab index (HTML)
+      tags: [planner-lab]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Planner lab index HTML
+
+    post:
+      summary: Start planner lab job
+      tags: [planner-lab]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task:
+                  type: string
+                request:
+                  type: string
+                prompt:
+                  type: string
+                return_mode:
+                  type: string
+                  enum: [background, wait, fire_and_forget]
+                wait_seconds:
+                  type: integer
+                  minimum: 1
+                  maximum: 30
+                max_steps:
+                  type: integer
+                approval_mode:
+                  type: string
+                user_consent:
+                  type: string
+              required: [task]
+      responses:
+        "200":
+          description: Agent response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /agent-jobs/{job_id}/planner-lab:
+    get:
+      summary: Job planner lab view
+      tags: [planner-lab]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Planner lab HTML
+
+    get:
+      summary: Job planner lab JSON
+      tags: [planner-lab]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: summary_chars
+          in: query
+          schema:
+            type: integer
+            default: 4000
+        - name: step_limit
+          in: query
+          schema:
+            type: integer
+            default: 80
+        - name: code_product_limit
+          in: query
+          schema:
+            type: integer
+            default: 40
+      responses:
+        "200":
+          description: Planner lab JSON payload
+
+    post:
+      summary: Apply planner lab patch candidate
+      tags: [planner-lab]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                candidate_id:
+                  type: string
+                confirm_apply:
+                  type: boolean
+                user_consent:
+                  type: string
+      responses:
+        "200":
+          description: Apply result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  tool:
+                    type: string
+                  candidate_id:
+                    type: string
+                  result:
+                    type: object
+
+  /agent-jobs/{job_id}/planner-lab/compose:
+    post:
+      summary: Compose planner lab request
+      tags: [planner-lab]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Composed request
+
+tags:
+  - name: system
+    description: System health and status endpoints
+  - name: jobs
+    description: Agent job management and listing
+  - name: views
+    description: Job view endpoints (HTML/JSON sections)
+  - name: planner-lab
+    description: Planner laboratory for job inspection and patch application
