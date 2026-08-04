@@ -1,1 +1,0 @@
-"""IA-Carmine architectural namespace."""

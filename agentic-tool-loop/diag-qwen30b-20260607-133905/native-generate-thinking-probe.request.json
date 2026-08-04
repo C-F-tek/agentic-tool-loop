@@ -1,9 +1,0 @@
-﻿{
-    "options":  {
-                    "num_predict":  512,
-                    "temperature":  0
-                },
-    "prompt":  "Risolvi 17*19. Se produci thinking o reasoning, mantieni il formato nativo del modello. Alla fine scrivi FINAL=...",
-    "model":  "qwen3-coder:30b",
-    "stream":  false
-}

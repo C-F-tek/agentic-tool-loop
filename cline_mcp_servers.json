@@ -300,21 +300,72 @@
          "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
        }
      },
-     "aicarmine-planner-components": {
-       "type": "stdio",
-       "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-       "args": [
-         "-u",
-         "services/codex_bridge/planner_components_mcp_server.py"
-       ],
-       "cwd": ".",
-       "env": {
-         "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
-         "AICARMINE_LAB_REPO": ".",
-         "AICARMINE_MCP_GZIP_ENABLED": "1",
-         "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
-         "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
-       }
-     }
-  }
-}
+      "aicarmine-planner-components": {
+        "type": "stdio",
+        "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "args": [
+          "-u",
+          "services/codex_bridge/planner_components_mcp_server.py"
+        ],
+        "cwd": ".",
+        "env": {
+          "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+          "AICARMINE_LAB_REPO": ".",
+          "AICARMINE_MCP_GZIP_ENABLED": "1",
+          "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+          "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+        }
+      },
+      "aicarmine-planner-scratchpad": {
+        "type": "stdio",
+        "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "args": [
+          "-u",
+          "services/codex_bridge/planner_scratchpad_mcp_server.py"
+        ],
+        "cwd": ".",
+        "env": {
+          "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+          "AICARMINE_LAB_REPO": ".",
+          "AICARMINE_PLANNER_SCRATCHPAD_DB": "state/codex_bridge/agentic_loop_client/port-3579/workspace/planner_scratchpad.sqlite",
+          "AICARMINE_MCP_GZIP_ENABLED": "1",
+          "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+          "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+        }
+      },
+      "aicarmine-runtime-sqlite-memory": {
+        "type": "stdio",
+        "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "args": [
+          "-u",
+          "services/codex_bridge/runtime_sqlite_memory_mcp_server.py"
+        ],
+        "cwd": ".",
+        "env": {
+          "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+          "AICARMINE_LAB_REPO": ".",
+          "AICARMINE_RUNTIME_SQLITE_MEMORY_DB": "state/codex_bridge/agentic_loop_client/port-3579/workspace/runtime_sqlite_memory.sqlite",
+          "AICARMINE_MCP_GZIP_ENABLED": "1",
+          "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+          "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+        }
+      },
+      "aicarmine-evidence-builder": {
+        "type": "stdio",
+        "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "args": [
+          "-u",
+          "services/codex_bridge/evidence_builder_mcp_server.py"
+        ],
+        "cwd": ".",
+        "env": {
+          "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+          "AICARMINE_LAB_REPO": ".",
+          "AICARMINE_EVIDENCE_BUILDER_DB": "state/codex_bridge/agentic_loop_client/port-3579/workspace/evidence_builder.sqlite",
+          "AICARMINE_MCP_GZIP_ENABLED": "1",
+          "AICARMINE_MCP_GZIP_THRESHOLD": "8192",
+          "PATH": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314;C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\Scripts;%PATH%"
+        }
+      }
+   }
+ }

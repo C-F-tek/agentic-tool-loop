@@ -112,10 +112,10 @@ def make_error(msg_id, code, message):
 
 def handle_ovms_health(args):
     try:
-        url = f"http://127.0.0.1:{OVMS_REST_PORT}/info"
-        req = httpx.Client(timeout=30).get(url, timeout=5)
-        data = json.loads(req.read())
-        return {"content": [{"type": "text", "text": json.dumps({"status": "healthy", "port": OVMS_REST_PORT, "response": data})}]}
+        url = f"http://127.0.0.1:{OVMS_REST_PORT}/v2/models/bge-reranker-v2-m3/ready"
+        resp = httpx.Client(timeout=30).get(url, timeout=5)
+        data = resp.text.strip()
+        return {"content": [{"type": "text", "text": json.dumps({"status": "healthy" if data == 'true' else "unhealthy", "port": OVMS_REST_PORT, "model_ready": data})}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": json.dumps({"status": "unhealthy", "error": str(e)})}], "isError": True}
 
@@ -130,8 +130,8 @@ def handle_ovms_start(args):
 def handle_ovms_stop(args):
     try:
         url = f"http://127.0.0.1:{OVMS_REST_PORT}/shutdown"
-        req = httpx.Client(timeout=30).get(url, timeout=5)
-        data = json.loads(req.read())
+        resp = httpx.Client(timeout=30).get(url, timeout=5)
+        data = resp.text
         return {"content": [{"type": "text", "text": json.dumps({"status": "stopped", "response": data})}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": json.dumps({"status": "stop_failed", "error": str(e)})}], "isError": True}
@@ -144,14 +144,20 @@ def handle_ovms_restart(args):
 def handle_ovms_rerank(args):
     query = args.get("query", "")
     documents = args.get("documents", [])
+    model = args.get("model", "bge-reranker-v2-m3")
+    top_k = args.get("top_k", 1)
     if not query or not documents:
         return {"content": [{"type": "text", "text": json.dumps({"error": "query and documents are required"})}], "isError": True}
     try:
-        url = f"http://127.0.0.1:{OVMS_REST_PORT}/rerank"
-        payload = json.dumps({"query": query, "documents": documents}).encode()
-        req = httpx.Client(timeout=30).post(url, data=payload, headers={"Content-Type": "application/json"})
-        resp = httpx.Client(timeout=30).get(req, timeout=30)
-        data = json.loads(resp.read())
+        url = f"http://127.0.0.1:{OVMS_REST_PORT}/v3/rerank"
+        payload = json.dumps({
+            "model": model,
+            "query": query,
+            "documents": documents,
+            "top_k": top_k
+        }).encode()
+        resp = httpx.Client(timeout=30).post(url, data=payload, headers={"Content-Type": "application/json"})
+        data = json.loads(resp.text)
         return {"content": [{"type": "text", "text": json.dumps({"status": "success", "result": data})}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True}
@@ -159,9 +165,9 @@ def handle_ovms_rerank(args):
 
 def handle_ovms_list_models(args):
     try:
-        url = f"http://127.0.0.1:{OVMS_REST_PORT}/models"
-        req = httpx.Client(timeout=30).get(url, timeout=5)
-        data = json.loads(req.read())
+        url = f"http://127.0.0.1:{OVMS_REST_PORT}/v2/models"
+        resp = httpx.Client(timeout=30).get(url, timeout=5)
+        data = json.loads(resp.text)
         return {"content": [{"type": "text", "text": json.dumps({"status": "success", "models": data})}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True}
