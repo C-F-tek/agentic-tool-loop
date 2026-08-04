@@ -398,7 +398,7 @@ def _html_pre(value: Any) -> str:
 
 def _html_page(title: str, body: str, *, extra_css: str = "", extra_js: str = "") -> str:
     extra_css_attr = f'<style>{extra_css}</style>' if extra_css else ""
-    extra_js_script = f'<script>{extra_js}</script>' if extra_js else ""
+    extra_js_script = f'<script>{html.escape(extra_js)}</script>' if extra_js else ""
     return f"""<!doctype html>
 <html>
 <head>

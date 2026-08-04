@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from fastapi import FastAPI, Request
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 
 APP_NAME = "AI-Carmine Codex Ollama Responses Bridge"
@@ -48,6 +51,16 @@ def _safe_int_env(name: str, default: int, low: int, high: int) -> int:
 HTTP_TIMEOUT = _safe_int_env("AICARMINE_CODEX_BRIDGE_HTTP_TIMEOUT_SECONDS", 900, 1, 3600)
 
 app = FastAPI(title=APP_NAME, version="1.0.0")
+
+# Rate limiting middleware
+app.state.limiter = Limiter(key_func=lambda: "127.0.0.1")
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request, exc):  # type: ignore[override]
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded"},
+    )
 
 
 def _json_dumps(value: Any) -> str:

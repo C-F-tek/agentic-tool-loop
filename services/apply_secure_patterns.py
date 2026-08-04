@@ -51,14 +51,14 @@ def fix_urllib_request(content: str) -> Tuple[str, int]:
     changes = 0
     
     # Replace import
-    if "import urllib.request" in content:
-        content = content.replace("import urllib.request", "import httpx")
+    if "import httpx" in content:
+        content = content.replace("import httpx", "import httpx")
         changes += 1
     
     # Replace urllib.request.urlopen() calls - wrap in with statement
     urlopen_matches = re.findall(r"urllib\.request\.urlopen\(([^)]+)\)", content)
     for match in urlopen_matches:
-        old = f"urllib.request.urlopen({match})"
+        old = f"httpx.Client(timeout=30).get({match})"
         new = f"httpx.Client(timeout=30).get({match})"
         content = content.replace(old, new)
         changes += 1
@@ -66,7 +66,7 @@ def fix_urllib_request(content: str) -> Tuple[str, int]:
     # Replace urllib.request.Request() calls - wrap in with statement
     request_matches = re.findall(r"urllib\.request\.Request\(([^)]+)\)", content)
     for match in request_matches:
-        old = f"urllib.request.Request({match})"
+        old = f"httpx.Client(timeout=30).post({match})"
         new = f"httpx.Client(timeout=30).post({match})"
         content = content.replace(old, new)
         changes += 1

@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +22,16 @@ RUNNER = Path(
 TOKEN = os.environ.get("AICARMINE_EXECUTOR_TOKEN", "")
 
 app = FastAPI(title="AI-Carmine Codex Executor", version="2.0.0")
+
+# Rate limiting middleware
+app.state.limiter = Limiter(key_func=lambda: "127.0.0.1")
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request, exc):  # type: ignore[override]
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded"},
+    )
 
 
 class RunRequest(BaseModel):

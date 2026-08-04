@@ -5,6 +5,9 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 
 from . import __version__
 from .circuit_breaker import CircuitBreaker
@@ -45,6 +48,16 @@ def create_app(
         version=__version__,
         lifespan=lifespan,
     )
+    
+    # Rate limiting middleware
+    app.state.limiter = Limiter(key_func=lambda: "127.0.0.1")
+    
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exceeded_handler(request, exc):  # type: ignore[override]
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+        )
 
     app.state.settings = resolved_settings
     app.state.pipeline_manager = manager

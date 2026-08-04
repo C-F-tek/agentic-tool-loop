@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import Body, FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 
 from .config import (
     AGENT_JOB_DB,
@@ -143,6 +145,18 @@ def create_app() -> FastAPI:
         version=APP_VERSION,
         description=APP_DESCRIPTION,
     )
+    
+    # Rate limiting middleware
+    app.state.limiter = Limiter(
+        key_func=lambda: "127.0.0.1"  # Internal services only
+    )
+    
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exceeded_handler(request, exc):  # type: ignore[override]
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+        )
 
     @app.get(JOBS_INDEX_PATH, include_in_schema=False)
     def jobs_index(limit: int = 50) -> HTMLResponse:

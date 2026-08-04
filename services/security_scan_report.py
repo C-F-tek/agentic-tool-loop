@@ -94,6 +94,110 @@ INSECURE_PATTERNS = {
         "recommendation": "Add input validation before LLM API calls",
     },
 
+    # ---- Advanced AI Attack Patterns ----
+    "jailbreak_attempt": {
+        "pattern": r"(?:ignore\s+previous|stop\s+restrict|disregard\s+instructions|override\s+system|bypass\s+safety|break\s+rule|remove\s+guard|disable\s+filter|DAN\s+mode|jailbreak|grandpa\s+protocol|evil\s+genius|roleplay\s+unrestricted|no\s+filter|no\s+limits|no\s+rules)",
+        "severity": "CRITICAL",
+        "description": "Jailbreak pattern detected - attempt to bypass AI safety filters",
+        "recommendation": "Block jailbreak patterns at input layer. Implement content classification.",
+    },
+    "system_prompt_extraction": {
+        "pattern": r"(?:repeat\s+your|show\s+system|display\s+instructions|print\s+prompt|reveal\s+system|output\s+system|copy\s+system|paste\s+system|what\s+are\s+your|tell\s+me\s+your|describe\s+your\s+instructions)",
+        "severity": "CRITICAL",
+        "description": "System prompt extraction attempt detected",
+        "recommendation": "Never expose system prompts in responses. Implement output filtering.",
+    },
+    "instruction_override": {
+        "pattern": r"(?:instead\s+of|replace\s+your|new\s+instructions|follow\s+these|do\s+this\s+instead|ignore\s+that|forget\s+previous|new\s+rule|new\s+policy|new\s+guideline)",
+        "severity": "CRITICAL",
+        "description": "Instruction override attempt - attempt to replace system instructions",
+        "recommendation": "Lock system instructions. Reject any attempt to modify them.",
+    },
+    "role_playing_attack": {
+        "pattern": r"(?:pretend\s+you|act\s+as|roleplay\s+as|simulate|imagine\s+you|suppose\s+you|hypothetical|fictional|scenario\s+where|in\s+this\s+world)",
+        "severity": "HIGH",
+        "description": "Role-playing attack pattern - attempt to bypass safety through fictional framing",
+        "recommendation": "Classify and filter role-playing attempts that could lead to unsafe outputs.",
+    },
+    "token_smuggling": {
+        "pattern": r"(?:base64|encode|decode|hex|unicode|utf-?8|ciphertext|iv|nonce|salt|padding|block\s+cipher|stream\s+cipher)",
+        "negate": r"crypto|security|encrypt|decrypt|safe|validate",
+        "severity": "HIGH",
+        "description": "Token smuggling pattern - attempt to encode malicious content",
+        "recommendation": "Detect and block encoded content in prompts. Implement content normalization.",
+    },
+    "multi_turn_injection": {
+        "pattern": r"(?:conversation|chat\s+history|previous\s+message|earlier\s+prompt|last\s+response|context\s+window|session\s+history)",
+        "negate": r"sanitize|validate|filter|clean",
+        "severity": "HIGH",
+        "description": "Multi-turn injection risk - conversation history not sanitized",
+        "recommendation": "Sanitize all conversation history before reuse. Implement message classification.",
+    },
+    "ai_output_manipulation": {
+        "pattern": r"(?:append\s+to|prepend|inject\s+into|modify\s+output|alter\s+response|change\s+result|edit\s+generated|tamper\s+with)",
+        "severity": "CRITICAL",
+        "description": "AI output manipulation attempt - attempt to modify model outputs",
+        "recommendation": "Never allow user input to modify AI outputs directly. Implement output verification.",
+    },
+    "model_configuration_tampering": {
+        "pattern": r"(?:temperature\s*=|top_p\s*=|max_tokens\s*=|stop\s*=|model\s*=|system\s*=|prompt\s*=)\s*(?:user|request|input|data|query)",
+        "severity": "CRITICAL",
+        "description": "Model configuration tampering - user input setting model parameters",
+        "recommendation": "Never allow user input to set model configuration. Use server-side defaults.",
+    },
+    "data_exfiltration_via_ai": {
+        "pattern": r"(?:send\s+to|upload\s+to|post\s+to|submit\s+to|exfiltrat|transfer\s+data|extract\s+data|steal\s+data|leak\s+data|dump\s+data)",
+        "severity": "CRITICAL",
+        "description": "Data exfiltration attempt via AI interface",
+        "recommendation": "Block data exfiltration patterns. Implement DLP (Data Loss Prevention).",
+    },
+    "adversarial_prompt": {
+        "pattern": r"(?:optimize\s+for|bypass\s+filter|evade\s+detection|avoid\s+moderation|circumvent\s+security|exploit\s+vulnerability|hack|crack|break\s+into|unauthorized)",
+        "severity": "CRITICAL",
+        "description": "Adversarial prompt detected - attempt to exploit AI vulnerabilities",
+        "recommendation": "Implement adversarial detection. Block exploit attempts at input layer.",
+    },
+    "prompt_leakage": {
+        "pattern": r"(?:your\s+system\s+prompt|system\s+instructions|system\s+message|system\s+role|system\s+content|system\s+text|system\s+block)",
+        "negate": r"never|do\s+not|should\s+not|must\s+not|avoid|prevent",
+        "severity": "CRITICAL",
+        "description": "System prompt leakage risk - system content exposed in response",
+        "recommendation": "Never expose system prompts. Implement output filtering and monitoring.",
+    },
+    "chain_of_attack": {
+        "pattern": r"(?:step\s+\d+|step\s+\d+\.|first\s+then|next\s+step|follow\s+this|proceed\s+with|continue\s+with|execute\s+this)",
+        "negate": r"validate|sanitize|check|verify|approve",
+        "severity": "HIGH",
+        "description": "Chain attack pattern - multi-step attack sequence",
+        "recommendation": "Detect and block multi-step attack sequences. Implement attack pattern recognition.",
+    },
+    "prompt_injection_via_metadata": {
+        "pattern": r"(?:xml|html|json|yaml|toml|markdown|code\s+block|backtick|fenced\s+block)\s*(?:in\s+prompt|in\s+message|in\s+input|in\s+content)",
+        "severity": "HIGH",
+        "description": "Prompt injection via structured metadata",
+        "recommendation": "Parse and sanitize structured content in prompts. Implement metadata validation.",
+    },
+    "ai_model_poisoning": {
+        "pattern": r"(?:learn\s+from|train\s+on|update\s+model|modify\s+weights|adjust\s+parameters|retrain|fine-tune|adapt\s+model)",
+        "severity": "CRITICAL",
+        "description": "AI model poisoning attempt - attempt to modify model behavior",
+        "recommendation": "Never allow user input to modify model parameters. Implement model integrity checks.",
+    },
+    "unbounded_prompt_length": {
+        "pattern": r"(?:prompt|message|content)\s*[:=]",
+        "negate": r"max_length|max|truncate|limit|length\s*<",
+        "severity": "MEDIUM",
+        "description": "Prompt without length limit - potential resource exhaustion",
+        "recommendation": "Add maximum prompt length and truncate oversized inputs",
+    },
+    "unsafe_model_output_usage": {
+        "pattern": r"(?:model|llm|ai)\s*(?:output|response|result)\s*=\s*",
+        "negate": r"validate|sanitize|clean|escape|strip|check",
+        "severity": "HIGH",
+        "description": "Model output used without validation - potential injection from model",
+        "recommendation": "Validate and sanitize model outputs before use",
+    },
+
     # ---- Injection chain patterns (relance/repeated calls) ----
     "chained_api_calls_no_validation": {
         "pattern": r"(?:for|while)\s+.*in.*:\s*\n\s*(?:http|request|call|api)",
@@ -121,20 +225,6 @@ INSECURE_PATTERNS = {
         "severity": "CRITICAL",
         "description": "Prompt chaining without sanitization - injection can propagate through chain",
         "recommendation": "Sanitize output before using as input to next prompt",
-    },
-    "unbounded_prompt_length": {
-        "pattern": r"(?:prompt|message|content)\s*[:=]",
-        "negate": r"max_length|max|truncate|limit|length\s*<",
-        "severity": "MEDIUM",
-        "description": "Prompt without length limit - potential resource exhaustion",
-        "recommendation": "Add maximum prompt length and truncate oversized inputs",
-    },
-    "unsafe_model_output_usage": {
-        "pattern": r"(?:model|llm|ai)\s*(?:output|response|result)\s*=\s*",
-        "negate": r"validate|sanitize|clean|escape|strip|check",
-        "severity": "HIGH",
-        "description": "Model output used without validation - potential injection from model",
-        "recommendation": "Validate and sanitize model outputs before use",
     },
 }
 
