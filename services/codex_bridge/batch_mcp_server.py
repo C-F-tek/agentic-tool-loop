@@ -131,7 +131,7 @@ def main() -> None:
                 "jsonrpc": "2.0",
                 "id": content.get("id", 0),
                 "result": {
-                    "protocolVersion": "2024-11-25",
+                    "protocolVersion": "2024-11-05",
                     "serverInfo": {"name": "batch-mcp-server", "version": "1.0"},
                     "capabilities": {
                         "tools": {
@@ -201,7 +201,7 @@ def main() -> None:
                 "jsonrpc": "2.0",
                 "id": content.get("id", 0),
                 "result": {
-                    "protocolVersion": "2024-11-25",
+                    "protocolVersion": "2024-11-05",
                     "serverInfo": {"name": "batch-mcp-server", "version": "1.0"},
                     "capabilities": {"tools": {"listMethod": "tools/list", "callMethod": "tools/call"}}
                 }

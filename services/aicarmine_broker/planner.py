@@ -4833,81 +4833,8 @@ def planner_cuda_rewrite_guard_for_validation(
     return guard
 
 
-def _should_attempt_vulkan_repair(
-    decision: dict[str, Any],
-    validation: dict[str, Any],
-    history: list[dict[str, Any]],
-) -> bool:
-    """Allow explicit IA repair, but no controller fallback/normalization.
-
-    Vulkan/GPU0 11435 may be asked once to convert the planner's own malformed
-    emission or invalid tool proposal into a valid loop JSON decision. The
-    original planner text remains visible in events/history/wrapper; the
-    controller does not invent a substitute action.
-    """
-    if _vulkan_repair_seen(history) >= 1:
-        return False
-    decision = decision if isinstance(decision, dict) else {}
-    action = str(decision.get("action") or "").strip().lower()
-    reason = str(decision.get("reason") or "")
-    contract = _dict_or_empty(validation.get("evidence_contract"))
-    semantic = _dict_or_empty(contract.get("semantic_goal_classification"))
-    code_contract = _dict_or_empty(contract.get("code_product_contract"))
-    if (
-        contract.get("goal_requests_code_product")
-        or contract.get("goal_requires_code_product_report")
-        or bool(code_contract.get("required"))
-        or bool(semantic.get("must_produce_code_product"))
-    ):
-        return False
-    if action == "block":
-        raw_planner_text = _decision_raw_planner_text(decision)
-        reason_low = reason.lower()
-        if raw_planner_text and _raw_planner_text_looks_like_tool_request(raw_planner_text) and (
-            "invalid_planner_output_non_json" in reason_low
-            or "non-json" in reason_low
-            or "no_json" in reason_low
-            or "degenerate" in reason_low
-            or "timeout" in reason_low
-            or reason.startswith("PLANNER_DEGENERATE_OUTPUT")
-        ):
-            return True
-        return False
-    if action == "tool":
-        tool = _normalize_tool_name(str(decision.get("tool") or ""))
-        violations = _list_or_empty(validation.get("violations"))
-        if tool in {"repo_apply_patch", "repo_propose_code_edit"}:
-            return False
-        if any(
-            str(violation).startswith((
-                "repo_propose_code_edit_",
-                "code_product_",
-                "missing_code_product_candidate",
-                "invalid_code_product_candidate",
-                "prompt_context_continuation_required",
-                "prompt_context_window_",
-                "planner_scratchpad_window_",
-                "planner_scratchpad_read_missing_selector",
-                "repo_read_window_",
-                "non_existing_path:",
-                "repo_read_already_successful:",
-                "repo_read_path_not_from_prior_file_evidence:",
-                "repo_read_path_outside_requested_scope:",
-                "repo_list_files_on_file_path_use_repo_read:",
-                "repo_list_files_scope_mismatch:",
-                "repo_list_files_limit_mismatch:",
-                "repo_list_files_suffix_not_python:",
-                "repeated_repo_list_files_after_useful_file_list",
-                "tool_not_in_turn_surface",
-                "native_tool_not_in_turn_surface",
-                "final_required_tool_call_disallowed",
-            ))
-            for violation in violations
-        ):
-            return False
-        if "repeated_same_tool_arguments_without_progress" in violations:
-            return False
-        return True
+def _raw_planner_text_looks_like_prose(text: str) -> bool:
+    """Check if raw planner text looks like natural prose rather than structured JSON."""
     return False
 
 

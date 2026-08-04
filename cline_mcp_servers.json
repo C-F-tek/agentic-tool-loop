@@ -2,7 +2,7 @@
   "mcpServers": {
     "aicarmine-codex-app": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/mcp_server.py"
@@ -19,7 +19,7 @@
     },
     "aicarmine-repo-state": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/repo_state_mcp_server.py"
@@ -36,7 +36,7 @@
     },
     "aicarmine-repo-search-det": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/repo_search_det_mcp_server.py"
@@ -53,7 +53,7 @@
     },
     "aicarmine-rag": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/rag_mcp_server.py"
@@ -74,7 +74,7 @@
     },
     "aicarmine-repo-validate": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/repo_validate_mcp_server.py"
@@ -90,7 +90,7 @@
     },
     "aicarmine-git-readonly": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/git_readonly_mcp_server.py"
@@ -106,7 +106,7 @@
     },
     "aicarmine-sqlite-readonly": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/sqlite_readonly_mcp_server.py"
@@ -122,7 +122,7 @@
     },
     "aicarmine-job-artifact": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/job_artifact_mcp_server.py"
@@ -139,7 +139,7 @@
     },
     "aicarmine-job-view": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/job_view_mcp_server.py"
@@ -156,7 +156,7 @@
     },
     "aicarmine-project-memory": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/project_memory_mcp_server.py"
@@ -174,7 +174,7 @@
     },
     "aicarmine-local-subagent": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/local_subagent_mcp_server.py"
@@ -190,7 +190,7 @@
     },
     "aicarmine-agentic-loop-client": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/agentic_loop_client_mcp_server.py"
@@ -206,7 +206,7 @@
     },
     "aicarmine-repo-code": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/repo_code_mcp_server.py"
@@ -222,7 +222,7 @@
     },
     "aicarmine-codex-ops": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/ops_mcp_server.py"
@@ -238,7 +238,7 @@
     },
     "aicarmine-wily": {
       "type": "stdio",
-      "command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+"command": "C:\\Users\\sanit\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
       "args": [
         "-u",
         "services/codex_bridge/wily_mcp_server.py"
