@@ -10,7 +10,7 @@ Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt 
 Non usare tag o formati notebook/cella come <JupyterNotebookCell>, blocchi Python, notebook nativi o pseudo-tool non elencati: il runtime accetta solo un oggetto JSON puro.
 Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.
 Azioni consentite: tool, final, block.
-Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths oppure action=block tipizzato. Native history transport e memoria non decidono mai coverage.
+Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths per coprire i missing_owner_paths. Non scegliere action=block: il controller/validator impone block quando la copertura non è soddisfatta, non il planner. Native history transport e memoria non decidono mai coverage.
 Se evidence_contract.finalization_contract.final_allowed=true devi preferire action=final, ma solo dopo avere letto almeno un file concreto nell'area core che stai descrivendo.
 Un final valido per analisi repository deve usare evidence_contract.operational_notes.read_notes e file_memory:
 - workflow/canonical entry;
@@ -18,6 +18,17 @@ Un final valido per analisi repository deve usare evidence_contract.operational_
 - core candidates con path concreti;
 - limiti della copertura;
 - path concreti presenti nell'evidenza.
+
+PER UN GOAL DI "ANALISI REPOSITORY" O "ANALIZZA LA REPO":
+Se coverage_satisfied=true e hai letto >=10 file, DEVI produrre action=final con una sintesi delle letture effettuate.
+Non scegliere block per mancanza di perfezione: un final valido per analisi repository deve contenere:
+1. Panoramica: quante cartelle/file hai esplorato, quali sono le aree principali (clinerules, docs, services, ecc.)
+2. Struttura: come sono organizzati i file (moduli Python, script PowerShell, documenti Markdown)
+3. Scopo: cosa fanno i file principali (broker, agentic loop, MCP servers, validatori)
+4. Pattern emersi: almeno 3-5 osservazioni concrete su architettura, dipendenze, o design pattern
+5. Path letti: lista dei file chiave che hai esaminato (almeno 5 path)
+Non serve completezza perfetta: basta ciò che hai appreso dalle letture effettuate.
+Il final deve essere onesto sui limiti della copertura, non inventare informazioni.
 Se evidence_contract.code_security_coverage.required=true e verdict_allowed=false, puoi rispondere solo con analisi parziale e limiti di copertura: non dire "nessuna criticita", "no security issues", "repository secure" o equivalenti.
 Non usare il template ripetuto "core directories are ... well-structured repository ... clear separation of concerns" se non aggiungi evidenza concreta file-per-file.
 Nel final cita almeno 5 path letti o listati e spiega il ruolo di almeno 3 file concreti; se non hai letto file nell'area core, scegli repo_read o terminal_run_command_wait invece di final.
@@ -31,7 +42,7 @@ Se user_payload.invocation_context o explicit_request_context.invocation_context
 Se una finestra in required_working_set o optional_context contiene schema planner_prompt_context_window.v1, il testo completo è in SQLite job-local. Usa planner_scratchpad_read con kind=prompt_context_window, document_id, offset=window_end e max_chars solo quando prompt_context_continuation_required/required_next_tool_call lo impone oppure quando hai un gap di evidenza nominato e serve testo adiacente. Per repo_read grandi, has_more_after indica contesto opzionale: non consumare linearmente finestre cieche prima del final; preferisci repo_rg_search/repo_search/repo_semantic_search/RAG o repo_read mirato su path già evidenziati. Non trattare document_id/hash/count come sostituto del testo.
 planner_scratchpad_read/write e runtime_sqlite_memory_search/write sono primitive di supporto seriali/subturn: puoi usarle per finestre, note temporanee e gap selettivi reali, ma ogni chiamata deve passare il validator come i turni ordinari. Le primitive di sola lettura possono essere batchate solo quando micro_batch_contract.allowed=true e ogni call corrisponde a allowed_batch_actions; le scritture restano singole. Se intrinsic_context.retrieved_memory.count=0, la memoria è disponibile ma non contiene record pertinenti. Non dire mai "Long-term memory is not available".
 Per risposte larghe che non entrano in un singolo turno, usa planner_scratchpad_write con kind=answer_chunk solo quando candidate_next_actions/final_composition lo prevede esplicitamente. Ogni chunk deve essere una sezione della risposta, non un oggetto terminale con final_answer/answer/summary. Se la risposta è completa, produci action=final.
-Per code product/diff larghi che richiedono piu finestre, usa planner_scratchpad_write con kind=code_product_build_state per salvare stato JSON schema code_product_build_state.v1; quando status=ready_for_propose chiama repo_propose_code_edit con payload completo, quando status=blocked_incomplete restituisci action=block typed.
+Per code product/diff larghi che richiedono piu finestre, usa planner_scratchpad_write con kind=code_product_build_state per salvare stato JSON schema code_product_build_state.v1; quando status=ready_for_propose chiama repo_propose_code_edit con payload completo. Quando status=blocked_incomplete o evidence_contract.code_security_coverage.verdict_allowed=false, il controller/validator impone action=block: il planner non deve scegliere block ma deve produrre action=tool o action=final con analisi parziale e limiti di copertura.
 Non inventare file. Usa solo path repo-relative presenti in history/evidence_contract.
 Se il goal chiede un diff, unified diff, differenziale di codice, refactoring concreto, proposta patch o code product, non puoi fare final con sola prosa: devi prima leggere il target con repo_read e poi chiamare repo_propose_code_edit.
 Se hai gia' prodotto solo raccomandazioni/next steps per un goal code-product, quel testo e' action_plan_candidate: usalo per scegliere il prossimo repo_read/repo_propose_code_edit, non ripeterlo come final.

@@ -876,8 +876,9 @@ def planner_decision(
     }
     if AGENTIC_PLANNER_NATIVE_TOOLS:
         planner_payload["tools"] = native_tools_schema
-    else:
-        planner_payload["format"] = "json"
+    # Always include format=json as fallback so Ollama can return JSON text
+    # when it cannot produce message.tool_calls (native tool mode fallback).
+    planner_payload["format"] = "json"
     prompt_capture: dict[str, Any] = {
         "ok": False,
         "schema": "planner_payload_capture.v1",
@@ -1130,13 +1131,32 @@ def planner_decision(
                 **({"planner_stream_meta": stream_meta} if stream_meta else {}),
             }
         if raw_text_for_native_mode.strip():
+            # Try to parse raw text as a normal planner decision before blocking
+            plain_text_decision = normalize_planner_decision(
+                raw_text_for_native_mode,
+                goal,
+                step,
+                state,
+            )
+            if plain_text_decision and isinstance(plain_text_decision, dict):
+                action = str(plain_text_decision.get("action") or "").strip().lower()
+                if action in {"final", "done", "complete", "completed", "block", "blocked", "need_user", "needs_user", "tool"}:
+                    plain_text_decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
+                    plain_text_decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
+                    plain_text_decision["native_tool_calls_seen"] = 0
+                    plain_text_decision["allowed_tool_names"] = list(native_tool_names)
+                    if prompt_context_continuation_required:
+                        plain_text_decision["prompt_context_continuation_required"] = prompt_context_continuation_required
+                    if stream_meta:
+                        plain_text_decision["planner_stream_meta"] = stream_meta
+                    return plain_text_decision
             return {
                 "action": "block",
                 "reason": "planner_native_mode_non_json_output",
                 "final_answer": (
                     "Planner native tool mode received protocol-shaped text, but it was neither "
                     "message.tool_calls nor a valid terminal JSON object. Plain terminal prose "
-                    "is wrapped as action=final before validation; malformed protocol text is not."
+                    "was attempted as fallback decision; failed to extract valid action."
                 ),
                 "raw_planner_text": raw_text_for_native_mode[:12000],
                 "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),

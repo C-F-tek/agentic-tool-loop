@@ -34,16 +34,16 @@ from repo_mcp_common import (
 # ---------------------------------------------------------------------------
 # Import extracted modules
 # ---------------------------------------------------------------------------
-from .http_client import AgenticLoopHttpClient, HttpClientError
-from .endpoint_validation import (
+from codex_bridge.http_client import AgenticLoopHttpClient, HttpClientError
+from codex_bridge.endpoint_validation import (
     validate_endpoint,
     safe_int,
     DEFAULT_AGENTIC_LOOP_PORT,
     DEFAULT_RERANKER_PORT,
 )
-from .broker_manager import BrokerManager
-from .reranker_manager import RerankerManager
-from .dotenv_loader import DotEnvLoader, create_secret_manager
+from codex_bridge.broker_manager import BrokerManager
+from codex_bridge.reranker_manager import RerankerManager
+from codex_bridge.dotenv_loader import DotEnvLoader, create_secret_manager
 
 # ---------------------------------------------------------------------------
 # Costanti server
