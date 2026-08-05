@@ -119,7 +119,7 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "qwen3.5:9b"
+DEFAULT_PLANNER_MODEL = "qwen3.5:9b-coding"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -185,9 +185,9 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
             "http://127.0.0.1:11435/api/chat",
             env,
         ),
-        ollama_task_model=env_first(
+ollama_task_model=env_first(
             ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
-            "qwen3.5:9b",
+            "qwen3.5:9b-coding",
             env,
         ),
         ollama_keep_alive=env_first(

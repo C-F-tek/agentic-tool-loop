@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $OllamaExe = (Get-Command ollama.exe).Source
 
 $env:OLLAMA_HOST = "127.0.0.1:11435"
-$env:OLLAMA_MODELS = "C:\Users\carmi\AI\models-task"
+$env:OLLAMA_MODELS = "C:\Users\sanit\agentic-tool-loop\models-task"
 $env:OLLAMA_CONTEXT_LENGTH = "12288"
 $env:OLLAMA_KEEP_ALIVE = "15m"
 $env:OLLAMA_NO_CLOUD = "1"
@@ -15,6 +15,7 @@ $env:CUDA_VISIBLE_DEVICES = "-1"
 $env:OLLAMA_VULKAN = "1"
 $env:GGML_VK_VISIBLE_DEVICES = "1"
 
-New-Item -ItemType Directory -Force -Path "C:\Users\carmi\AI\models-task" | Out-Null
+# FIXED: Use the correct path for user 'sanit'
+New-Item -ItemType Directory -Force -Path "C:\Users\sanit\agentic-tool-loop\models-task" | Out-Null
 
 & $OllamaExe serve
