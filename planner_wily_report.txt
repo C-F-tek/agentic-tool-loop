@@ -1,20 +1,392 @@
-==============================================================================================================
+﻿==============================================================================================================
 CYCOMPLEXITY REPORT
 ==============================================================================================================
 File                                                                CC  Lines   Code  Funcs Classes MaxCC AvgCC
 --------------------------------------------------------------------------------------------------------------
-services\aicarmine_broker\planner.py                              1154   6004   5251    280       0    47   4.1
+services\vulkan_bridge\app.py                                     1159   4134   3681    176       2    60   6.6
+services\vulkan_bridge\app_refactored.py                          1064   3726   3311    158       2    60   6.7
+services\aicarmine_broker\application\evidence\builder.py          619   2061   2008     10       1   566  61.9
+services\aicarmine_broker\application\planner\loop.py              594   3460   3315     30       0   371  19.8
+services\aicarmine_broker\application\controller\rag_preseed.py    474   2066   1895     47       2    51  10.1
+services\aicarmine_broker\application\evidence\final_quality.py    407   1256   1131     49       0    60   8.3
+services\codex_bridge\mcp_server.py                                297   1421   1059     62       0    28   4.8
+services\aicarmine_broker\application\public_payload\evidence_materializer.py  264    993    909     28       1    43   9.4
+services\aicarmine_broker\memory_tools.py                          257   1093    935     31       0    43   8.3
+services\aicarmine_broker\application\tool_surface\turn_surface_policy.py  254   1048    973     29       1   128   8.8
+services\aicarmine_broker\application\public_payload\lab\__init__.py  252   1230   1150     33       0    24   7.6
+services\aicarmine_broker\application\planner\turn.py              243   1303   1253     15       0   168  16.2
+services\codex_bridge\job_artifact_mcp_server.py                   225   1025    917     43       0    24   5.2
+services\aicarmine_broker\application\code_product\history.py      219    693    641     19       0    36  11.5
+services\aicarmine_broker\application\replay\loop_replay.py        219    909    813     31       0    36   7.1
+services\codex_bridge\project_memory_mcp_server.py                 219   1097    458     48       0    31   4.6
+services\codex_bridge\repo_probe_profiles.py                       206   2739   2274     90       0    24   2.3
+services\aicarmine_broker\application\tool_surface\candidate_actions.py  203    650    575     19       0    62  10.7
+services\aicarmine_broker\planner_core\cache.py                    195    465    413     15       0    95  13.0
+services\codex_bridge\rag_mcp_server.py                            182    895    726     38       0    20   4.8
+services\aicarmine_broker\application\prompt\pack_builder.py       179   1059    987     16       1    77  11.2
+services\codex_bridge\repo_code_mcp_server.py                      173   1053    996     23       0    45   7.5
+services\aicarmine_broker\job_store.py                             171    583    462     32       0    36   5.3
+services\aicarmine_broker\application\prompt\context_windows.py    162    497    461     10       0    29  16.2
+services\aicarmine_broker\tools\repo_deterministic.py              161    678    637     16       0    16  10.1
+services\aicarmine_broker\planner_intrinsic_context.py             154    744    660     17       1    32   9.1
+services\codex_bridge\repo_mcp_common.py                           150    562    477     29       1    19   5.2
+services\codex_bridge\repo_code_change_set.py                      146    748    672     24       1    31   6.1
+services\codex_bridge\ops_mcp_server.py                            142    899    523     36       1    17   3.9
+services\aicarmine_broker\tool_contract.py                         138    348    300     14       0    70   9.9
+services\codex_bridge\job_view_mcp_server.py                       137    727    644     36       1    19   3.8
+services\aicarmine_broker\application\planner\decision_normalizer.py  133    464    390      9       0    28  14.8
+services\aicarmine_broker\application\evidence\repo_history.py     127    278    234     12       0    20  10.6
+services\aicarmine_broker\application\code_product\state.py        125    254    221      9       0    35  13.9
+services\aicarmine_broker\application\public_payload\tool_context.py  125    577    521     16       0    28   7.8
+services\vulkan_bridge\application\public_payload_linter.py        122    378    333     19       0    53   6.4
+services\aicarmine_broker\planner_core\json_io.py                  120    655    538      8       0    44  15.0
+services\aicarmine_broker\application\controller\orientation_lane.py  118    758    434      8       0    34  14.8
+services\aicarmine_broker\tools\repo_command.py                    117    337    299     12       0    34   9.8
+services\aicarmine_broker\tools\terminal.py                        116    490    441     15       0    27   7.7
+services\aicarmine_broker\application\replan\sanitizer.py          113    344    286     19       3    13   5.9
+services\codex_bridge\ollama_responses_bridge.py                   113    441    358     21       0    21   5.4
+services\apply_openwebui_ps1_open_terminal.py                      109    543    139     19       0    25   5.7
+services\codex_bridge\unified_planner_mcp_server.py                109    686    158     29       0    16   3.8
+services\aicarmine_broker\application\job\terminal_response.py     106    648    607     10       0    47  10.6
+services\aicarmine_broker\helper.py                                103    497    418     17       0    12   6.1
+services\codex_bridge\sqlite_readonly_mcp_server.py                100    498    418     26       0    19   3.8
+services\aicarmine_broker\application\quality\judge.py              99    566    527     11       1    47   9.0
+services\aicarmine_broker\code_edit_proposal_contract.py            99    411    375     13       0    29   7.6
+services\codex_bridge\rag_index_repo.py                             92    511    338     22       0    17   4.2
+services\model_export\cli.py                                        90    675    582     13       0    33   6.9
+services\launch\export_model.py                                     89    670    581     12       0    33   7.4
+services\aicarmine_broker\app.py                                    88    468    426     27       0    29   3.3
+services\aicarmine_broker\application\code_product\public_outputs.py   88    266    236      7       0    33  12.6
+services\aicarmine_broker\tools\repo_semantic_search.py             88    472    424     11       0    28   8.0
+services\aicarmine_broker\application\evidence\goal_classifier.py   84    391    330     17       0    15   4.9
+services\aicarmine_broker\application\evidence\repo_path_policy.py   83    259    215     14       0    14   5.9
+services\aicarmine_broker\application\evidence\execution_digest.py   82    212    192      2       0    58  41.0
+services\aicarmine_broker\application\tool_surface\result_compaction.py   81    288    266      5       0    36  16.2
+services\aicarmine_broker\application\replan\specialist.py          77    355    308     17       1    19   4.5
+services\aicarmine_broker\application\prompt\history_messages.py    76    496    468     10       0    15   7.6
+services\codex_bridge\git_readonly_mcp_server.py                    76    450    404     19       0    12   4.0
+services\aicarmine_broker\application\evidence\builder_extracted.py   73    434    379      5       0    37  14.6
+services\aicarmine_broker\application\planner\validator_quality_gate.py   73    280    240      3       1    60  24.3
+services\aicarmine_broker\application\prompt\window_signatures.py   73    160    134      7       0    16  10.4
+services\aicarmine_broker\application\replan\contract_applier.py    73    145    125      5       1    30  14.6
+services\aicarmine_broker\application\controller\preseed.py         72    343    262     11       0    11   6.5
+services\aicarmine_broker\application\memory\conflict_detector.py   72    236    189     11       0    22   6.5
+services\aicarmine_broker\application\tool_surface\required_tool_call.py   72    327    291      8       0    28   9.0
+services\aicarmine_broker\application\prompt\evidence_contract.py   70    344    327      6       0    21  11.7
+services\aicarmine_broker\application\evidence\builder_validation.py   69    199    175      7       0    35   9.9
+services\aicarmine_broker\application\planner\validation_rejections.py   69    262    236      7       0    30   9.9
+services\aicarmine_broker\tools\deterministic_common.py             69    320    282     16       1     9   4.3
+services\codex_bridge\planner_scratchpad_mcp_server.py              67    414    321     19       0    13   3.5
+services\aicarmine_broker\tools\repo_patch.py                       66    489    447      6       0    24  11.0
+tools\generate_wily_report.py                                       66    277    211      7       3    29   9.4
+services\aicarmine_broker\application\controller\rag_query_plan_fix.py   65    480    403      9       2    23   7.2
+services\aicarmine_broker\application\evidence\initial_orientation.py   64    144    132      1       0    64  64.0
+services\aicarmine_broker\application\planner\validator_pipeline.py   63    351    266     10       6    21   6.3
+services\codex_bridge\agentic_loop_client_mcp_server.py             63    598    439     19       0     9   3.3
+services\aicarmine_broker\application\public_payload\openwebui_terminal_answer.py   62    242    224      6       0    25  10.3
+services\codex_bridge\runtime_sqlite_memory_mcp_server.py           62    373    283     20       0    13   3.1
+tools\mechanical_services_dedupe.py                                 61    246    212     12       2    19   5.1
+services\aicarmine_broker\application\evidence\builder_core.py      59    189    165      7       0    17   8.4
+services\aicarmine_broker\application\evidence\required_working_set.py   59    264    253      2       0    33  29.5
+services\aicarmine_broker\application\planner\path_utils.py         59    200    132      8       0    14   7.4
+services\aicarmine_broker\application\public_payload\payload_index_resolver.py   56    233    186     12       0    11   4.7
+services\vulkan_bridge\application\payload_index_resolver.py        56    217    183     12       0    11   4.7
+services\aicarmine_broker\application\controller\memory.py          55    267    236      8       0    19   6.9
+services\aicarmine_broker\application\evidence\enricher.py          53    174    139      9       1    27   5.9
+services\codex_bridge\evidence_builder_mcp_server.py                53    307    229     16       0    13   3.3
+services\aicarmine_broker\application\job\blocked_judge.py          51    284    250     10       1    16   5.1
+services\aicarmine_broker\application\planner\validator_code_product.py   51    133    100      3       1    37  17.0
+services\aicarmine_broker\application\controller\diagnostics.py     50    143    133      1       0    50  50.0
+services\aicarmine_broker\application\shared\history_ledger.py      49    184    171      4       0    38  12.2
+services\aicarmine_broker\application\evidence\coverage_scorer.py   48    131    118      3       0    41  16.0
+services\codex_bridge\tool_surface_cache.py                         48    271    168     12       0     9   4.0
+services\aicarmine_broker\application\planner\required_progress.py   45    195    166     11       1    21   4.1
+services\aicarmine_broker\application\evidence\core_discovery.py    44    201    189      3       0    19  14.7
+services\aicarmine_broker\application\runtime_debug\debug_packet.py   43    227    194      7       0    17   6.1
+services\codex_bridge\ollama_mcp_server.py                          43    324    278     13       0     9   3.3
+services\runtime\job_lifecycle.py                                   43    327    221     19       3     7   2.3
+services\aicarmine_broker\application\controller\guards.py          41    138    114      5       0    13   8.2
+services\aicarmine_broker\application\planner\rewrite_latch.py      41    317    247     15       1    11   2.7
+services\aicarmine_broker\config\env_loader.py                      40    182    150     13       0     8   3.1
+services\aicarmine_broker\tools\repo_read.py                        40    144    133      2       0    26  20.0
+services\aicarmine_broker\application\tool_surface\result_digest.py   39    145    130      2       0    37  19.5
+services\codex_bridge\mcp_proxy\server_manager.py                   39    242    170     14       2     7   2.8
+services\codex_bridge\wily_mcp_server.py                            39    267    189     12       0    11   3.2
+services\test_all_mcp_tools.py                                      39    472    388      5       1    12   7.8
+services\aicarmine_broker\application\public_payload\terminal_result.py   38    183    161      4       0    25   9.5
+services\aicarmine_broker\infrastructure\filesystem_repo.py         38    129    110      9       1     8   4.2
+services\aicarmine_broker\application\planner\required_call_validator.py   37     94     76      3       0    22  12.3
+services\aicarmine_broker\infrastructure\json_files.py              37    170    155      5       1    16   7.4
+services\aicarmine_broker\application\evidence\goal_scope.py        36    139    112      6       0    12   6.0
+services\aicarmine_broker\application\search\search_quality.py      36    157    126      6       0    14   6.0
+services\aicarmine_broker\application\job\action_router.py          35    186    163      4       1    14   8.8
+services\aicarmine_broker\tools\repo_list_files.py                  35    152    138      2       0    33  17.5
+services\codex_bridge\endpoint_validation.py                        35    126     92      5       1    17   7.0
+services\aicarmine_broker\application\command\execution_policy.py   34    193    153      7       0    16   4.9
+services\aicarmine_broker\application\prompt\budget.py              34    131    105      7       0    10   4.9
+services\codex_bridge\broker_manager.py                             34    274    222      8       2     8   4.2
+services\aicarmine_broker\application\evidence\builder_paths.py     33     88     67      5       0    11   6.6
+services\aicarmine_broker\application\planner\validator_path_validation.py   33    110     80      4       1    14   8.2
+services\aicarmine_broker\planner\decision_simplifier.py            33    473    267     33       0     1   1.0
+services\codex_bridge\mcp_proxy\hooks.py                            33    237    151     14       3     9   2.4
+services\npu_phi_service\job_queue.py                               33    226    204     13       2     7   2.5
+services\secure_ollama_api.py                                       33    379    243     12       6     5   2.8
+services\aicarmine_broker\application\shared\evidence_contract_summary.py   32    217    189      6       0    12   5.3
+services\aicarmine_broker\job_html_assets.py                        32   1741   1442     17       0     5   1.9
+services\apply_secure_patterns.py                                   32    259    172      6       0    13   5.3
+services\codex_bridge\broker_planner_mcp_server.py                  32    250    210     10       0     9   3.2
+services\evidence\evidence_pipeline.py                              32    237    153     13       2     7   2.5
+services\launch\main_launcher.py                                    32    299    197     11       2     6   2.9
+tools\generate_symbol_reference.py                                  32    562    432      7       0    15   4.6
+services\aicarmine_broker\application\evidence\user_scope_claims.py   31    101     87      4       0    12   7.8
+services\codex_bridge\planner_components_mcp_server.py              31    306    265      7       0     9   4.4
+services\security_scanner_mcp_server.py                             31    534    328      8       2    12   3.9
+tools\mechanical_payload_surface_cut.py                             31    183    160      5       0     9   6.2
+tools\mechanical_runtime_prune.py                                   31    246    224      3       2    19  10.3
+services\aicarmine_broker\infrastructure\job_sqlite_store.py        30    177    107      7       1    10   4.3
+services\codex_bridge\ovms_mcp_server.py                            30    274    232     11       0     9   2.7
+services\aicarmine_broker\application\public_payload\terminal_context_rows.py   29    126    105      5       0     9   5.8
+services\aicarmine_broker\application\shared\payload_metadata.py    29    123     99      6       0    18   4.8
+services\aicarmine_broker\tools\repo_code_product.py                29    141    125      2       0    20  14.5
+services\codex_bridge\test_repo_code_mcp_serialization.py           29    373    341      9       0     9   3.2
+services\vulkan_bridge\app_compaction.py                            29    128    117      3       0    13   9.7
+services\aicarmine_broker\application\evidence\audit_guidance.py    28    228    203      8       0    10   3.5
+services\aicarmine_broker\application\tool_surface\manifest_builder.py   28    111     89      5       0     9   5.6
+services\codex_bridge\reranker_manager.py                           28    268    213      8       2     8   3.5
+services\vulkan_bridge\application\materialization_report.py        28    111     95      4       0    13   7.0
+services\aicarmine_broker\application\public_payload\history_ledger.py   27     94     81      2       0    25  13.5
+services\aicarmine_broker\application\tool_surface\candidate_action_gate.py   27    122     98      6       0    14   4.5
+services\aicarmine_broker\error_handling\core.py                    26    197    129     20      16     4   1.3
+services\aicarmine_broker\error_handling\integration.py             26    135     89     14       2     3   1.9
+services\codex_bridge\local_subagent_mcp_server.py                  26    265    224     12       0     6   2.2
+services\aicarmine_broker\application\job\worker.py                 25    277    254      4       1     9   6.2
+services\aicarmine_broker\domain\models.py                          25    267    161      5      11     9   5.0
+services\codex_bridge\mcp_proxy\error_wrapper.py                    25    118     65     10       1     4   2.5
+services\npu_phi_service\app.py                                     25    167    148     10       0    10   2.5
+services\aicarmine_broker\application\evidence\scope_conflict_resolution.py   24     63     55      1       0    24  24.0
+services\aicarmine_broker\infrastructure\executable_resolver.py     24     96     84      4       1    12   6.0
+services\codex_bridge\dotenv_loader.py                              24    150     76      9       3     7   2.7
+services\tools\tool_dispatcher.py                                   24    198    135     11       2     5   2.2
+services\aicarmine_broker\application\prompt\values.py              23     56     47      3       0    16   7.7
+services\codex_bridge\ovms_alternative_reranker.py                  23    164    114      7       1     9   3.3
+services\tests\conftest.py                                          23    175     89     20       2     3   1.1
+services\aicarmine_broker\application\job\lifecycle.py              22    250    236      3       1    12   7.3
+services\aicarmine_broker\tools\repo_search.py                      22    137    124      1       0    22  22.0
+services\codex_bridge\json_gzip_util.py                             22    195     97     11       0     5   2.0
+services\npu_phi_service\pipeline.py                                22    177    158     11       1     5   2.0
+services\npu_phi_service\settings.py                                22     97     83      8       1    10   2.8
+services\public_payload\payload_shaper.py                           22    134     81      5       1    10   4.4
+services\runtime\port_manager.py                                    22    208     54     11       2     5   2.0
+services\aicarmine_broker\application\planner\final_quality_route.py   21     72     58      2       0    19  10.5
+services\aicarmine_broker\application\public_payload\terminal_sanitizer.py   21    125    107      3       0    13   7.0
+services\aicarmine_broker\tools\repo_tree.py                        21    140    132      1       0    21  21.0
+services\codex_bridge\batch_mcp_server.py                           21    221    163      6       0     9   3.5
+services\diagnose_reranker.py                                       21    153    111      5       0     6   4.2
+services\mcp_server_registry.py                                     21    457    368     15       3     4   1.4
+services\vulkan_bridge\application\response_values.py               21     61     53      3       0    14   7.0
+services\security_scan_report.py                                    20    464    371      4       2     9   5.0
+services\tests\test_planner_core_json_io.py                         20    141    104     20       4     1   1.0
+services\vulkan_bridge\application\request_payload.py               20     73     60      4       0     8   5.0
+services\aicarmine_broker\application\job\response_values.py        19     85     63      4       0     8   4.8
+services\aicarmine_broker\application\planner\validator_repeated_calls.py   19     85     60      1       1    19  19.0
+services\aicarmine_broker\application\public_payload\openwebui_tool_context.py   19    388    363      5       1    13   3.8
+services\aicarmine_broker\error_handling\apply.py                   19    178    123      7       1     5   2.7
+services\aicarmine_broker\error_handling\apply_all.py               19    177    123      7       1     5   2.7
+services\aicarmine_broker\infrastructure\job_store_repository.py    19    119    103      4       1     8   4.8
+services\aicarmine_broker\tool_schemas.py                           19    932    900      4       0    14   4.8
+services\aicarmine_broker\tool_selection.py                         19     64     49      5       0     6   3.8
+services\llm\fallback.py                                            19    154     69      6       1     6   3.2
+services\aicarmine_broker\application\npu_phi\client.py             18    182    169      3       1    15   6.0
+services\aicarmine_broker\application\tool_surface\batch_contract.py   18     83     64      4       0    13   4.5
+services\aicarmine_broker\public_wrapper.py                         18    102     91      4       0     8   4.5
+services\npu_phi_service\diagnostics.py                             18    150    134      5       0    11   3.6
+tools\symbol_resolution_assistant.py                                18    538    458      3       0     9   6.0
+services\aicarmine_broker\error_handling\logging.py                 17    165     93     10       2     4   1.7
+services\aicarmine_broker\error_handling\runtime.py                 17    112     76     13       4     2   1.3
+services\aicarmine_broker\tools\repo_status.py                      17    191    183      3       0    14   5.7
+services\aicarmine_broker\application\job\status_response.py        16    100     92      2       0     9   8.0
+services\aicarmine_broker\application\planner\lane_catalog.py       16    547    459      3       1    13   5.3
+services\aicarmine_broker\error_handling\ollama.py                  16    124     86     11       5     3   1.5
+services\codex_bridge\mcp_proxy\router.py                           16     99     48      7       1     5   2.3
+services\diagnose_loop.py                                           16    131     92      7       0     7   2.3
+services\npu_phi_service\blob_lock.py                               16     70     61      5       1     9   3.2
+services\aicarmine-openwebui-serve.py                               15    134    101      6       0     3   2.5
+services\aicarmine_broker\error_handling\database.py                15    108     73     10       4     3   1.5
+services\aicarmine_broker\error_handling\display.py                 15    110     67     12       4     3   1.2
+services\aicarmine_broker\error_handling\evidence.py                15    107     72     10       4     3   1.5
+services\aicarmine_broker\error_handling\planner.py                 15    107     72     10       4     3   1.5
+services\aicarmine_broker\error_handling\preplanner.py              15    107     72     10       4     3   1.5
+services\aicarmine_broker\error_handling\reranker.py                15    106     71     10       4     3   1.5
+services\aicarmine_broker\error_handling\tools.py                   15    107     72     10       4     3   1.5
+services\aicarmine_broker\error_handling\validator.py               15    107     72     10       4     3   1.5
+services\codex_bridge\mcp_proxy\monitor.py                          15    110     70      9       1     3   1.7
+services\llm\ollama_client.py                                       15    155     74      7       1     3   2.1
+services\aicarmine_broker\application\code_product\required_working_set.py   14     72     65      1       0    14  14.0
+services\vulkan_bridge\openapi_builder.py                           14    272    261      4       0     8   3.5
+services\aicarmine_broker\application\prompt\available_tools.py     13     66     60      1       0    13  13.0
+services\aicarmine_broker\application\prompt\text_windows.py        13     75     68      2       0     7   6.5
+services\aicarmine_broker\error_handling\migrate.py                 13    150     93      8       1     5   1.6
+services\codex_bridge\http_client.py                                13    133     97      4       4     7   3.2
+services\codex_bridge\mcp_proxy\test_proxy.py                       13    176    109      5       0     4   2.6
+services\config\settings.py                                         13    336    214      9       4     2   1.4
+services\aicarmine_broker\application\public_payload\field_names.py   12    100     88      2       0    10   6.0
+services\aicarmine_broker\config\models.py                          12    299    282      4       1     5   3.0
+services\aicarmine_broker\tools\repo_validate.py                    12     90     83      1       0    12  12.0
+services\vulkan_bridge\application\public_field_names.py            12    100     88      2       0    10   6.0
+services\aicarmine_broker\application\tool_surface\dispatcher.py    11    191    170      7       3     4   1.6
+services\aicarmine_broker\application\shared\diagnostics.py         10     79     62      3       0     5   3.3
+services\aicarmine_broker\application\shared\history_queries.py     10     28     20      2       0     6   5.0
+services\aicarmine_broker\infrastructure\result_compaction.py       10     68     47      4       0     4   2.5
+services\aicarmine_broker\job_planner_lab.py                        10    182    163      4       0     6   2.5
+services\aicarmine_broker\tools\git_surface.py                      10     74     64      1       0    10  10.0
+services\vulkan_bridge\config.py                                    10    100     85      5       1     4   2.0
+services\aicarmine_broker\application\prompt\tool_contract.py        9    183    173      3       0     5   3.0
+services\aicarmine_broker\application\public_payload\final_state_result.py    9     43     36      1       0     9   9.0
+services\aicarmine_broker\infrastructure\command_runner.py           9     83     67      2       1     7   4.5
+services\aicarmine_broker\tools\command_safety.py                    9     86     75      3       1     5   3.0
+services\npu_phi_service\circuit_breaker.py                          9     45     36      6       1     3   1.5
+services\secure_subprocess.py                                        9     99     53      2       0     5   4.5
+services\vulkan_bridge\app_config.py                                 9     75     55      5       0     3   1.8
+services\aicarmine_broker\application\job\wait_response.py           8     90     85      1       0     8   8.0
+services\aicarmine_broker\application\planner\status.py              8     40     32      2       0     6   4.0
+services\aicarmine_broker\application\prompt\intrinsic_context.py    8     29     24      1       0     8   8.0
+services\codex_bridge\parallel_batch_mcp_server.py                   8     81     38      3       0     4   2.7
+services\codex_bridge\repo_validate_mcp_server.py                    8    230    209      6       0     2   1.3
+services\tests\test_port_manager.py                                  8     37     20      3       0     5   2.7
+services\tests\test_tool_dispatch.py                                 8    120     92      8       4     1   1.0
+services\tests\test_validation.py                                    8     62     34      6       3     2   1.3
+services\vulkan_bridge\bridge_config_simplifier.py                   8    131     75      8       0     1   1.0
+services\aicarmine_broker\agent_entry.py                             7    131    114      7       0     1   1.0
+services\aicarmine_broker\application\job\selector_runner.py         7    139    130      1       1     7   7.0
+services\aicarmine_broker\application\shared\path_tokens.py          7     31     17      2       0     6   3.5
+services\aicarmine_broker\application\test_ab_flow.py                7    111     70      4       0     4   1.8
+services\aicarmine_broker\tool_registry.py                           7     93     70      4       0     3   1.8
+services\codex_bridge\mcp_proxy\test_integration.py                  7     75     42      5       0     3   1.4
+services\codex_bridge\repo_search_det_mcp_server.py                  7    180    161      5       0     2   1.4
+services\aicarmine_broker\application\dispatcher.py                  6     51     32      4       1     3   1.5
+services\aicarmine_broker\application\npu_phi\policy.py              6     72     60      3       0     3   2.0
+services\aicarmine_broker\application\planner\validator_duplicate_recovery.py    6     47     27      1       1     6   6.0
+services\aicarmine_broker\application\tool_surface\action_proof_ledger.py    6     58     50      2       0     3   3.0
+services\apply_error_handling.py                                     6     45     23      1       0     6   6.0
+services\mcp_inventory_full.py                                       6    343    315      2       0     4   3.0
+services\aicarmine_broker\application\planner\state.py               5     73     52      3       1     3   1.7
+services\aicarmine_broker\infrastructure\ollama_planner_client.py    5     65     55      2       1     3   2.5
+services\vulkan_bridge\application\modules\request_utils.py          5     35     16      5       2     1   1.0
+services\aicarmine_broker\application\__init__.py                    4     35     24      1       0     4   4.0
+services\aicarmine_broker\config\compatibility.py                    4    145    128      3       0     2   1.3
+services\aicarmine_broker\contracts\repo_filesystem.py               4     21      9      4       1     1   1.0
+services\aicarmine_broker\infrastructure\time_provider.py            4     33     24      2       1     2   2.0
+services\codex_bridge\repo_state_mcp_server.py                       4     69     54      3       0     2   1.3
+services\tests\test_config.py                                        4     47     29      4       0     1   1.0
+services\aicarmine_broker\application\prompt\history_contract.py     3     23     18      1       0     3   3.0
+services\aicarmine_broker\application\shared\clean_values.py         3      8      4      1       0     3   3.0
+services\aicarmine_broker\contracts\job_repository.py                3     28     17      3       1     1   1.0
+services\aicarmine_broker\planner.py                                 3     70     43      3       0     1   1.0
+services\aicarmine_broker\planner\__init__.py                        3     56     41      3       0     1   1.0
+services\aicarmine_broker\planner\finalizer.py                       3     61     46      3       1     1   1.0
+services\aicarmine_broker\planner\loop.py                            3     37     28      3       1     1   1.0
+services\aicarmine_broker\planner\prompt_builder.py                  3     49     37      3       1     1   1.0
+services\aicarmine_broker\planner\replan.py                          3     59     44      3       1     1   1.0
+services\aicarmine_broker\planner\validator.py                       3     50     38      3       1     1   1.0
+services\vulkan_bridge\application\modules\environment_utils.py      3     20      9      3       0     1   1.0
+services\aicarmine_broker\application\code_product\__init__.py       2     28     15      1       0     2   2.0
+services\aicarmine_broker\application\controller\__init__.py         2     30     17      1       0     2   2.0
+services\aicarmine_broker\application\evidence\__init__.py           2     38     25      1       0     2   2.0
+services\aicarmine_broker\application\planner\__init__.py            2     38     25      1       0     2   2.0
+services\aicarmine_broker\application\planner\system_prompt.py       2     99     60      1       0     2   2.0
+services\aicarmine_broker\application\prompt\__init__.py             2     31     18      1       0     2   2.0
+services\aicarmine_broker\application\public_payload\__init__.py     2     32     19      1       0     2   2.0
+services\aicarmine_broker\application\replay\__init__.py             2     13      7      1       0     2   2.0
+services\aicarmine_broker\application\shared\__init__.py             2     37     24      1       0     2   2.0
+services\aicarmine_broker\application\tool_surface\__init__.py       2     38     24      1       0     2   2.0
+services\aicarmine_broker\contracts\prompt_store.py                  2     20     12      2       1     1   1.0
+services\aicarmine_broker\contracts\tool.py                          2     18      8      2       1     1   1.0
+services\aicarmine_broker\repo_tools.py                              2    124     93      2       0     1   1.0
+services\aicarmine_broker\tool_dispatch.py                           2     37     29      2       0     1   1.0
+services\model_export\exporters.py                                   2     27     16      1       0     2   2.0
+services\npu_phi_service\__main__.py                                 2     32     23      1       0     2   2.0
+services\npu_phi_service\schemas.py                                  2     50     40      1       2     2   2.0
+services\aicarmine_broker\application\planner\validator.py           1     56     20      1       0     1   1.0
+services\aicarmine_broker\contracts\command_runner.py                1     25     18      1       2     1   1.0
+services\aicarmine_broker\contracts\dispatcher.py                    1     12      5      1       1     1   1.0
+services\aicarmine_broker\contracts\planner_client.py                1     16     10      1       1     1   1.0
+services\aicarmine_broker\contracts\validator.py                     1     16      9      1       1     1   1.0
+services\aicarmine_broker\planner\config.py                          1    125    110      1       1     1   1.0
+services\aicarmine_broker\tools\powershell_runner.py                 1     21     17      1       0     1   1.0
+services\bandit_ci_config.py                                         1     62     38      1       0     1   1.0
+services\export_model.py                                             1     15      7      1       0     1   1.0
+services\__init__.py                                                 0      1      0      0       0     0   0.0
+services\aicarmine_broker\__init__.py                                0      5      2      0       0     0   0.0
+services\aicarmine_broker\application\command\__init__.py            0      5      2      0       0     0   0.0
+services\aicarmine_broker\application\evidence\contract.py           0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\evidence\core.py               0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\evidence\fields.py             0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\evidence\paths.py              0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\evidence\typing.py             0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\evidence\validate.py           0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\job\__init__.py                0      3      2      0       0     0   0.0
+services\aicarmine_broker\application\memory\__init__.py             0      5      2      0       0     0   0.0
+services\aicarmine_broker\application\npu_phi\__init__.py            0     11      8      0       0     0   0.0
+services\aicarmine_broker\application\npu_phi\state.py               0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\public_payload\lab.py          0      1      0      0       0     0   0.0
+services\aicarmine_broker\application\quality\__init__.py            0      3      2      0       0     0   0.0
+services\aicarmine_broker\application\replan\__init__.py             0      7      6      0       0     0   0.0
+services\aicarmine_broker\application\runtime_debug\__init__.py      0      7      3      0       0     0   0.0
+services\aicarmine_broker\application\search\__init__.py             0      5      2      0       0     0   0.0
+services\aicarmine_broker\config\__init__.py                         0      7      1      0       0     0   0.0
+services\aicarmine_broker\contracts\__init__.py                      0     22     19      0       0     0   0.0
+services\aicarmine_broker\domain\__init__.py                         0     27     24      0       0     0   0.0
+services\aicarmine_broker\domain\config.py                           0      3      2      0       0     0   0.0
+services\aicarmine_broker\domain\decisions.py                        0      3      2      0       0     0   0.0
+services\aicarmine_broker\domain\errors.py                           0     19     16      0       0     0   0.0
+services\aicarmine_broker\domain\evidence.py                         0      3      2      0       0     0   0.0
+services\aicarmine_broker\domain\job.py                              0      3      2      0       0     0   0.0
+services\aicarmine_broker\domain\results.py                          0      3      2      0       0     0   0.0
+services\aicarmine_broker\domain\tool.py                             0      3      2      0       0     0   0.0
+services\aicarmine_broker\error_handling\__init__.py                 0    210    172      0       0     0   0.0
+services\aicarmine_broker\infrastructure\__init__.py                 0     25     22      0       0     0   0.0
+services\aicarmine_broker\planner_core\__init__.py                   0      1      0      0       0     0   0.0
+services\aicarmine_broker\test_planner_lab_js.py                     0     24     20      0       0     0   0.0
+services\aicarmine_broker\tools\__init__.py                          0     80     77      0       0     0   0.0
+services\aicarmine_codex_ollama_responses_bridge.py                  0      5      2      0       0     0   0.0
+services\aicarmine_vulkan_bridge_server.py                           0     11      2      0       0     0   0.0
+services\aicarmine_vulkan_tool_broker.py                             0      5      3      0       0     0   0.0
+services\codex_bridge\__init__.py                                    0      2      0      0       0     0   0.0
+services\codex_bridge\jsonrpc.py                                     0      6      2      0       0     0   0.0
+services\codex_bridge\mcp_proxy\__init__.py                          0     23     15      0       0     0   0.0
+services\codex_bridge\mcp_proxy\config.py                            0    281    203      0       0     0   0.0
+services\codex_bridge\responses_proxy.py                             0      6      2      0       0     0   0.0
+services\codex_bridge\storage.py                                     0     14     10      0       0     0   0.0
+services\config\__init__.py                                          0     25     22      0       0     0   0.0
+services\evidence\__init__.py                                        0     18     12      0       0     0   0.0
+services\fix_all_corrupted_indentation.py                            0     60     49      0       0     0   0.0
+services\fix_all_except_patterns.py                                  0     50     40      0       0     0   0.0
+services\fix_except_patterns.py                                      0    110     96      0       0     0   0.0
+services\fix_remaining_syntax.py                                     0     50     32      0       0     0   0.0
+services\llm\__init__.py                                             0     16      7      0       0     0   0.0
+services\model_export\__init__.py                                    0      2      0      0       0     0   0.0
+services\model_export\config.py                                      0      7      0      0       0     0   0.0
+services\npu_phi_service\__init__.py                                 0      5      2      0       0     0   0.0
+services\public_payload\__init__.py                                  0     14      8      0       0     0   0.0
+services\runtime\__init__.py                                         0     29     20      0       0     0   0.0
+services\tests\__init__.py                                           0      1      0      0       0     0   0.0
+services\tools\__init__.py                                           0     16     10      0       0     0   0.0
+services\vulkan_bridge\__init__.py                                   0      2      0      0       0     0   0.0
+services\vulkan_bridge\agentic_v9.py                                 0     13     10      0       0     0   0.0
+services\vulkan_bridge\application\__init__.py                       0      2      0      0       0     0   0.0
+services\vulkan_bridge\client.py                                     0     11      2      0       0     0   0.0
+services\vulkan_bridge\compact.py                                    0      6      2      0       0     0   0.0
 --------------------------------------------------------------------------------------------------------------
-TOTAL                                                             1154                  280       0
+TOTAL                                                             18334                 3142     235
 
 ============================================================
 SUMMARY
 ============================================================
-Files analyzed:        1
-Total functions:       280
-Total classes:         0
-Total CC:              1154
-Avg CC per file:       1154.0
+Files analyzed:        373
+Total functions:       3142
+Total classes:         235
+Total CC:              18334
+Avg CC per file:       49.2
 
 COMPLEXITY RATINGS:
   CC 0-5:   Simple (Green)
@@ -27,42 +399,727 @@ COMPLEXITY RATINGS:
 HIGH COMPLEXITY FUNCTIONS (Max CC > 10)
 ================================================================================
 
-  File: services\aicarmine_broker\planner.py
-    Line 3103: _repo_analysis_final_answer_model_quality CC= 47
-    Line 4390: planner_replan_specialist_for_validation CC= 40
-    Line 4254: _sanitize_replan_specialist_result_against_contract CC= 37
-    Line 3017: _apply_unverified_old_text_replan_contract CC= 30
-    Line 2856: _agentic_v2_enrich_evidence_contract     CC= 27
-    Line 5565: judge_blocked_job                        CC= 25
-    Line  511: _windowed_evidence_contract_for_prompt   CC= 24
-    Line 2822: _agentic_v2_successful_read_paths        CC= 24
-    Line 1851: _paths_from_result                       CC= 23
-    Line 4763: _should_attempt_vulkan_repair            CC= 23
-    Line 4019: _sanitize_replan_required_next_tool_call CC= 20
-    Line 4960: controller_guard_result_for_validation   CC= 19
-    Line 1907: _verified_repo_read_content_rows         CC= 18
-    Line 2978: _verified_repo_read_contents_for_path    CC= 18
-    Line 3826: _controller_guard_contract_overlay       CC= 18
-    Line 1075: _repo_read_item_full_content             CC= 17
-    Line 3025: admissible_replan_candidate              CC= 17
-    Line 3516: _raw_planner_text_classification         CC= 17
-    Line 5231: _compact_evidence_guide_for_30b          CC= 15
-    Line  836: _optional_context_for_prompt             CC= 14
-    Line 3558: _raw_planner_text_has_explicit_tool_alias_invocation CC= 14
-    Line 3670: _should_retry_incomprehensible_planner_output CC= 14
-    Line 3700: _is_unrecoverable_plain_text_planner_output CC= 14
-    Line 3752: _compact_vulkan_repair_evidence_contract CC= 14
-    Line 4841: vulkan_repair_invalid_planner_decision   CC= 14
-    Line 2729: _agentic_v2_decision_paths               CC= 13
-    Line 4207: _replan_search_query_is_concrete         CC= 13
-    Line 2793: _agentic_v2_repo_list_rows               CC= 12
-    Line 4647: planner_cuda_rewrite_target              CC= 12
-    Line  780: _optional_context_window_pack            CC= 11
-    Line 2712: _agentic_v2_goal_scope                   CC= 11
-    Line 3623: _raw_planner_text_has_valid_embedded_json_with_prose CC= 11
-    Line 4185: _replan_route_token_is_prose_or_metric   CC= 11
+  File: services\vulkan_bridge\app.py
+    Line 1841: _agentic_v9_build_evidence               CC= 60
+    Line 3861: _agentic_v9_build_openwebui_response     CC= 58
+    Line 1989: _agentic_v9_build_observation_object     CC= 29
+    Line 1422: _agentic_v9_public_history_row           CC= 28
+    Line 1655: _agentic_v9_full_completed_payload       CC= 28
+    Line 1709: _agentic_v9_full_terminal_payload        CC= 23
+    Line 3505: _agentic_v9_partial_products_from_history CC= 23
+    Line 2746: _agentic_v9_successful_tool_limits       CC= 21
+    Line 3023: _agentic_v9_structured_tool_limits       CC= 20
+    Line 2562: _agentic_v9_render_repo_list_files_call  CC= 19
+    Line 3241: _agentic_v9_payload_index_context_location CC= 19
+    Line 3385: _agentic_v9_build_payload_index_for_30b  CC= 18
+    Line 2326: _agentic_v9_evidence_limits              CC= 17
+    Line 3087: _agentic_v9_priority_item_from_artifact  CC= 15
+    Line 3671: _agentic_v9_build_nonterminal_tool_context CC= 15
+    Line  628: _payload_browser_index_locations         CC= 14
+    Line 2444: _agentic_v9_result_summary               CC= 14
+    Line 3266: _agentic_v9_payload_index_item_location  CC= 14
+    Line 2789: _agentic_v9_structured_repo_list_files_result CC= 13
+    Line  937: _post_json                               CC= 12
+    Line 1747: _agentic_v9_tool_name                    CC= 12
+    Line  523: _payload_browser_resolve_tokens          CC= 11
+    Line 1383: _agentic_v9_public_sanitize_value        CC= 11
+    Line 2604: _agentic_v9_render_repo_read_call        CC= 11
+    Line 3195: _agentic_v9_build_priority_evidence_for_30b CC= 11
+
+  File: services\vulkan_bridge\app_refactored.py
+    Line 1486: _agentic_v9_build_evidence               CC= 60
+    Line 3457: _agentic_v9_build_openwebui_response     CC= 58
+    Line 1627: _agentic_v9_build_observation_object     CC= 29
+    Line 1068: _agentic_v9_public_history_row           CC= 28
+    Line 1301: _agentic_v9_full_completed_payload       CC= 28
+    Line 1355: _agentic_v9_full_terminal_payload        CC= 23
+    Line 3114: _agentic_v9_partial_products_from_history CC= 23
+    Line 2384: _agentic_v9_successful_tool_limits       CC= 21
+    Line 2656: _agentic_v9_structured_tool_limits       CC= 20
+    Line 2200: _agentic_v9_render_repo_list_files_call  CC= 19
+    Line 2867: _agentic_v9_payload_index_context_location CC= 19
+    Line 3007: _agentic_v9_build_payload_index_for_30b  CC= 18
+    Line 1964: _agentic_v9_evidence_limits              CC= 17
+    Line 2714: _agentic_v9_priority_item_from_artifact  CC= 15
+    Line 3280: _agentic_v9_build_nonterminal_tool_context CC= 15
+    Line 2082: _agentic_v9_result_summary               CC= 14
+    Line 2892: _agentic_v9_payload_index_item_location  CC= 14
+    Line  231: _agentic_v2_strip_large_for_openwebui    CC= 13
+    Line 2427: _agentic_v9_structured_repo_list_files_result CC= 13
+    Line 1393: _agentic_v9_tool_name                    CC= 12
+    Line  583: _post_json                               CC= 11
+    Line 1029: _agentic_v9_public_sanitize_value        CC= 11
+    Line 2242: _agentic_v9_render_repo_read_call        CC= 11
+    Line 2818: _agentic_v9_build_priority_evidence_for_30b CC= 11
+
+  File: services\aicarmine_broker\application\evidence\builder.py
+    Line   63: build                                    CC=566
+
+  File: services\aicarmine_broker\application\planner\loop.py
+    Line  693: run_agentic_planner_job                  CC=371
+    Line   36: evaluate_initial_orientation_shadow      CC= 40
+    Line  905: enrich_validation_with_replan_specialist CC= 25
+    Line 1202: enrich_repeated_tool_guard_feedback      CC= 21
+    Line 1359: execute_validated_tool_decision          CC= 18
+    Line 1129: successful_prior_tool_results_for_feedback CC= 14
+
+  File: services\aicarmine_broker\application\controller\rag_preseed.py
+    Line 1634: _ranked_paths_from_codex_rag             CC= 51
+    Line  236: _sanitize_preplanner_semantic_intent     CC= 42
+    Line 1488: _rerank_ranked_items                     CC= 38
+    Line 1840: controller_preplanner_rag_preseed_plan   CC= 31
+    Line 1006: _path_policy_score                       CC= 26
+    Line 1062: _select_ranked_paths                     CC= 24
+    Line  697: controller_preplanner_rag_query_plan     CC= 21
+    Line  622: _sanitize_preplanner_query_plan          CC= 19
+    Line 1312: _indexed_literal_request_paths           CC= 19
+    Line 1171: _load_codex_rag_indexer                  CC= 14
+    Line  501: _repair_preplanner_query_plan_json       CC= 13
+    Line  382: _parse_json_object_diagnostics           CC= 11
+    Line 1078: add                                      CC= 11
+    Line 1384: _semantic_owner_target_paths             CC= 11
+
+  File: services\aicarmine_broker\application\evidence\final_quality.py
+    Line  725: repo_analysis_final_answer_quality       CC= 60
+    Line 1032: _sanitize_required_next_tool_call        CC= 42
+    Line 1154: sanitize_repo_analysis_final_model_quality CC= 24
+    Line  576: _required_next_output_sections           CC= 16
+    Line  478: _search_query_is_concrete                CC= 14
+    Line  533: _normalize_required_next_tool_call_paths CC= 14
+    Line  359: _repo_read_path_allowlist                CC= 12
+    Line  403: _known_repo_paths                        CC= 12
+    Line  256: _contract_read_allowlist                 CC= 11
+    Line  334: _repo_read_completed_paths               CC= 11
+    Line  453: _route_token_is_prose_or_metric          CC= 11
+
+  File: services\codex_bridge\mcp_server.py
+    Line  672: _memory_state_packet                     CC= 28
+    Line  575: _read_memory_table                       CC= 20
+    Line 1240: _handle_rpc                              CC= 20
+    Line  358: _read_message                            CC= 15
+    Line  893: _resource_path_from_uri                  CC= 15
+    Line  782: _jobs_status                             CC= 12
+    Line 1343: self_test                                CC= 11
+
+  File: services\aicarmine_broker\application\public_payload\evidence_materializer.py
+    Line  518: _code_product_gate                       CC= 43
+    Line  338: _payload_index_row                       CC= 25
+    Line  284: _context_location_resolution             CC= 20
+    Line   69: _priority_item_from_artifact             CC= 15
+    Line  648: _owner_for_priority_item                 CC= 13
+    Line  915: _materialization_report                  CC= 12
+    Line  158: _generic_tool_result_priority_item       CC= 11
+    Line  704: _primary_payload_descriptor              CC= 11
+    Line  788: _priority_evidence                       CC= 11
+
+  File: services\aicarmine_broker\memory_tools.py
+    Line  828: planner_memory_surface                   CC= 43
+    Line  445: _planner_prompt_context_read             CC= 23
+    Line  978: runtime_sqlite_memory_cleanup            CC= 22
+    Line  581: planner_scratchpad_read                  CC= 21
+    Line  556: _read_code_product_build_state           CC= 17
+    Line  304: _write_code_product_build_state          CC= 14
+    Line  765: runtime_sqlite_memory_search             CC= 13
+    Line  373: planner_composed_answer                  CC= 12
+    Line  414: planner_scratchpad_write                 CC= 11
+    Line  672: runtime_sqlite_memory_write              CC= 11
+
+  File: services\aicarmine_broker\application\tool_surface\turn_surface_policy.py
+    Line  140: apply                                    CC=128
+    Line   73: tools_for_turn                           CC= 15
+
+  File: services\aicarmine_broker\application\public_payload\lab\__init__.py
+    Line  821: build_payload_redundancy_audit           CC= 24
+    Line  589: build_owner_payload_focus                CC= 20
+    Line  189: _code_candidate_from_dict                CC= 18
+    Line  712: build_public_tool_response_view          CC= 18
+    Line  919: build_planner_payload_lab                CC= 18
+    Line  396: _payload_shape_rows                      CC= 14
+    Line   94: _preplanner_semantic_intent_from_mapping CC= 12
+
+  File: services\aicarmine_broker\application\planner\turn.py
+    Line  398: planner_decision                         CC=168
+    Line  336: _post_final_reject_turn_tool_names       CC= 16
+    Line   88: _apply_step_budget_guidance_to_contract  CC= 12
+
+  File: services\codex_bridge\job_artifact_mcp_server.py
+    Line  712: _subturns                                CC= 24
+    Line  662: _tool_results                            CC= 14
+    Line  771: _planner_payload                         CC= 14
+    Line  479: _list_jobs                               CC= 13
+    Line  558: _events                                  CC= 12
+    Line  597: _final                                   CC= 12
+
+  File: services\aicarmine_broker\application\code_product\history.py
+    Line   80: code_product_build_state_from_result     CC= 36
+    Line  537: apply_duplicate_window_replan_contract   CC= 36
+    Line  250: code_product_source_windows_from_reads   CC= 23
+    Line  178: failed_code_edit_proposal_validation_row CC= 15
+    Line  469: code_product_source_window_candidate     CC= 14
+    Line  446: code_product_payload_rejection_count     CC= 13
+    Line   57: code_product_build_state_duplicate_write CC= 12
+
+  File: services\aicarmine_broker\application\replay\loop_replay.py
+    Line  693: _runtime_loop_artifact_audit             CC= 36
+    Line  489: target_tool_coverage_from_events         CC= 19
+    Line  434: target_tool_coverage_from_history        CC= 17
+    Line  131: _read_sqlite_events                      CC= 16
+    Line  649: _planner_prompt_audit                    CC= 14
+    Line  792: replay_loop_job                          CC= 13
+
+  File: services\codex_bridge\project_memory_mcp_server.py
+    Line  605: _upsert_verified                         CC= 31
+    Line  505: _search                                  CC= 26
+    Line  836: _supersede                               CC= 19
+    Line  349: _verify_source                           CC= 15
+    Line  768: _mark_stale                              CC= 14
+    Line  462: _resolve_record                          CC= 11
+    Line  888: _audit_sources                           CC= 11
+
+  File: services\codex_bridge\repo_probe_profiles.py
+    Line 1786: _deterministic_orientation_shadow_evaluator_profile CC= 24
+    Line 2423: case_evaluation_output_is_bounded        CC= 20
+    Line 2628: repo_probe_run                           CC= 17
+
+  File: services\aicarmine_broker\application\tool_surface\candidate_actions.py
+    Line   74: candidate_actions_from_evidence          CC= 62
+    Line  528: preserve_required_next_tool_call_for_prompt CC= 27
+    Line  351: _readonly_batch_actions_from_continuation CC= 19
+    Line  408: enforce_required_scratchpad_read_continuation_contract CC= 15
+    Line  501: decision_matches_prompt_context_continuation CC= 15
+    Line  625: _required_call_marked_satisfied          CC= 12
+
+  File: services\aicarmine_broker\planner_core\cache.py
+    Line  132: _cache_effective_args                    CC= 95
+    Line  279: _tool_cache_hit                          CC= 20
+    Line   28: _decision_paths                          CC= 13
+    Line  393: repeated_tool_call_count                 CC= 12
+    Line  330: _repo_read_result_covers_paths           CC= 11
+    Line  436: _cached_vulkan_repair_result             CC= 11
+
+  File: services\codex_bridge\rag_mcp_server.py
+    Line  440: _rerank                                  CC= 20
+    Line  185: _read_message                            CC= 15
+    Line  326: _safe_rag_metadata                       CC= 13
+    Line  839: _handle_rpc                              CC= 12
+    Line  576: _search                                  CC= 11
+
+  File: services\aicarmine_broker\application\prompt\pack_builder.py
+    Line  311: build                                    CC= 77
+    Line  187: _normalize_transport_tool_surface_state  CC= 17
+    Line  387: assemble                                 CC= 12
+    Line  387: assemble                                 CC= 12
+
+  File: services\codex_bridge\repo_code_mcp_server.py
+    Line  112: _tools                                   CC= 45
+    Line  545: _repo_code_self_test                     CC= 44
+    Line  152: propose_edit                             CC= 33
+
+  File: services\aicarmine_broker\job_store.py
+    Line  456: compact_agent_terminal_response          CC= 36
+    Line   90: _sqlite_error_category                   CC= 21
+    Line  463: repo_read_item_full_content              CC= 19
+    Line  256: _job_list_row_from_state                 CC= 15
+    Line  493: same_tool_artifact_payload               CC= 14
+    Line  302: _merge_sqlite_and_filesystem_job_rows    CC= 12
+
+  File: services\aicarmine_broker\application\prompt\context_windows.py
+    Line  226: planner_scratchpad_next_window_action_from_history CC= 29
+    Line  294: required_working_set_continuation_action CC= 24
+    Line  447: forbidden_repeated_prompt_window_calls   CC= 19
+    Line   64: bounded_prompt_context_tool_result_payload CC= 17
+    Line  114: prompt_window_consumed_offsets           CC= 16
+    Line  402: prompt_context_continuation_from_payload CC= 16
+    Line  144: prompt_window_tracking_metadata_errors   CC= 12
+    Line  181: prompt_context_continue_action           CC= 12
+
+  File: services\aicarmine_broker\tools\repo_deterministic.py
+    Line   92: repo_rg_search                           CC= 16
+    Line  211: repo_ast_grep_search                     CC= 16
+    Line  580: repo_semgrep_scan                        CC= 15
+    Line   35: repo_fd_files                            CC= 14
+    Line  622: repo_hyperfine_benchmark                 CC= 14
+    Line  540: repo_ctags_symbols                       CC= 13
+
+  File: services\aicarmine_broker\planner_intrinsic_context.py
+    Line  266: _external_rerank_items                   CC= 32
+    Line  407: _rag_sqlite_chunks                       CC= 25
+    Line  562: _memory_items                            CC= 15
+    Line  219: _rerank_order_from_response              CC= 14
+    Line  679: build_planner_intrinsic_context          CC= 14
+
+  File: services\codex_bridge\repo_mcp_common.py
+    Line  314: _validate_property                       CC= 19
+    Line  207: read_message                             CC= 15
+    Line  352: validate_arguments                       CC= 14
+    Line  485: self_test                                CC= 12
+
+  File: services\codex_bridge\repo_code_change_set.py
+    Line  159: build_structured_edit_diff               CC= 31
+    Line  438: inspect_unified_diff                     CC= 23
+    Line  607: _load_change_set                         CC= 21
+
+  File: services\codex_bridge\ops_mcp_server.py
+    Line  280: _probe_one_mcp                           CC= 17
+    Line  165: _parse_content_length                    CC= 14
+    Line  468: _run_powershell_json                     CC= 11
+
+  File: services\aicarmine_broker\tool_contract.py
+    Line  190: sanitize_tool_args                       CC= 70
+    Line  105: _paths_from_items                        CC= 14
+    Line   51: public_args                              CC= 12
+
+  File: services\codex_bridge\job_view_mcp_server.py
+    Line  376: _render_html                             CC= 19
+    Line  334: _validate_html_text                      CC= 17
+    Line  270: handle_endtag                            CC= 15
+
+  File: services\aicarmine_broker\application\planner\decision_normalizer.py
+    Line  341: parse_json_text_terminal_decision        CC= 28
+    Line  237: parse_json_text_tool_call                CC= 27
+    Line  192: _normalize_terminal_planner_decision     CC= 21
+    Line  134: _final_answer_from_content_field         CC= 12
+    Line  418: normalize_planner_decision               CC= 12
+    Line   24: _single_embedded_json_decision           CC= 11
+
+  File: services\aicarmine_broker\application\evidence\repo_history.py
+    Line  230: rank_core_candidates                     CC= 20
+    Line   34: read_items_from_history                  CC= 16
+    Line  177: successful_repo_read_paths               CC= 16
+    Line  132: repo_list_evidence                       CC= 15
+    Line   77: extract_key_lines                        CC= 11
+    Line  204: failed_repo_read_paths                   CC= 11
+
+  File: services\aicarmine_broker\application\code_product\state.py
+    Line  122: code_product_payload_violations          CC= 35
+    Line   38: code_product_build_state_ready_payload   CC= 24
+    Line   77: code_product_build_state_has_collecting_progress CC= 14
+    Line  238: code_product_action_has_complete_payload CC= 14
+    Line  176: goal_exact_text_block                    CC= 13
+
+  File: services\aicarmine_broker\application\public_payload\tool_context.py
+    Line  158: public_tool_response                     CC= 28
+    Line  361: public_tool_artifact_rows                CC= 23
+    Line  461: ollama_turn_rows                         CC= 13
+    Line  428: public_tool_context_limits               CC= 12
+
+  File: services\vulkan_bridge\application\public_payload_linter.py
+    Line  251: lint_public_payload                      CC= 53
+
+  File: services\aicarmine_broker\planner_core\json_io.py
+    Line  260: post_json_stream_to_file                 CC= 44
+    Line  100: _planner_stream_repetition_reason        CC= 38
+    Line  217: _planner_stream_repeated_path_segment_reason CC= 15
+
+  File: services\aicarmine_broker\application\controller\orientation_lane.py
+    Line  503: controller_orientation_model_select      CC= 34
+    Line   57: orientation_legacy_selected_candidate_ids CC= 29
+    Line  380: sanitize_orientation_selection           CC= 17
+    Line  307: _extract_orientation_response_object     CC= 14
+    Line  186: orientation_shadow_selection_metrics     CC= 12
+
+  File: services\aicarmine_broker\tools\repo_command.py
+    Line  100: _pyproject_compile_targets               CC= 34
+    Line  162: resolve_compile_targets                  CC= 24
+    Line  264: repo_command                             CC= 12
+
+  File: services\aicarmine_broker\tools\terminal.py
+    Line  302: terminal_search_files                    CC= 27
+    Line  399: terminal_run_command_wait                CC= 23
+    Line  159: _terminal_command_repair                 CC= 13
+    Line  240: terminal_list_files                      CC= 13
+
+  File: services\aicarmine_broker\application\replan\sanitizer.py
+    Line   66: is_concrete_query                        CC= 13
+    Line   12: extract_known_paths                      CC= 12
+    Line   49: is_prose_or_metric                       CC= 11
+    Line  310: _repo_read_allowlist                     CC= 11
+
+  File: services\codex_bridge\ollama_responses_bridge.py
+    Line  349: proxy_v1                                 CC= 21
+    Line  240: _responses_input_to_chat_messages        CC= 19
+    Line  130: _extract_response_text                   CC= 13
+    Line  278: _fallback_chat_to_response               CC= 11
+
+  File: services\apply_openwebui_ps1_open_terminal.py
+    Line  468: main                                     CC= 25
+
+  File: services\codex_bridge\unified_planner_mcp_server.py
+    Line  572: serve_handler                            CC= 16
+    Line  619: read_message                             CC= 13
+
+  File: services\aicarmine_broker\application\job\terminal_response.py
+    Line  320: build_compact_terminal_response          CC= 47
+    Line   64: _load_job_json_pointer                   CC= 15
+    Line  131: _concretize_public_json_pointers         CC= 12
+    Line  203: verify_local_final_path                  CC= 12
+    Line  270: _build_evidence_guide_for_30b            CC= 12
+
+  File: services\aicarmine_broker\helper.py
+    Line  317: answer_for_30b                           CC= 12
+
+  File: services\codex_bridge\sqlite_readonly_mcp_server.py
+    Line  339: _list_databases                          CC= 19
+    Line  178: _validate_select_sql                     CC= 11
+
+  File: services\aicarmine_broker\application\quality\judge.py
+    Line  294: final_answer_model_quality               CC= 47
+    Line   55: judge                                    CC= 17
+
+  File: services\aicarmine_broker\code_edit_proposal_contract.py
+    Line  309: build_code_edit_proposal                 CC= 29
+    Line  148: validate_unified_diff_text               CC= 13
+
+  File: services\codex_bridge\rag_index_repo.py
+    Line  373: build_index                              CC= 17
+
+  File: services\model_export\cli.py
+    Line  384: export_text_generation_model             CC= 33
+    Line  579: export_image_generation_model            CC= 13
+    Line  354: add_servable_to_config                   CC= 12
+
+  File: services\launch\export_model.py
+    Line  380: export_text_generation_model             CC= 33
+    Line  350: add_servable_to_config                   CC= 12
+    Line  575: export_image_generation_model            CC= 12
+
+  File: services\aicarmine_broker\app.py
+    Line  138: create_app                               CC= 29
+
+  File: services\aicarmine_broker\application\code_product\public_outputs.py
+    Line   89: partial_products_for_30b                 CC= 33
+    Line   37: code_product_answer_text                 CC= 18
+    Line  225: partial_product_answer_text              CC= 16
+
+  File: services\aicarmine_broker\tools\repo_semantic_search.py
+    Line  220: _query_rag_db                            CC= 28
+    Line  151: _rerank_matches                          CC= 16
+    Line  339: repo_semantic_search                     CC= 16
+
+  File: services\aicarmine_broker\application\evidence\goal_classifier.py
+    Line  287: semantic_goal_classification             CC= 15
+
+  File: services\aicarmine_broker\application\evidence\repo_path_policy.py
+    Line  122: read_candidate_sort_key                  CC= 14
+    Line  230: meaningful_read_candidates_from_evidence CC= 11
+
+  File: services\aicarmine_broker\application\evidence\execution_digest.py
+    Line   93: execution_evidence_digest_text           CC= 58
+    Line   25: repo_read_content_views                  CC= 24
+
+  File: services\aicarmine_broker\application\tool_surface\result_compaction.py
+    Line  137: compact_tool_result_for_planner          CC= 36
+    Line   26: python_static_evidence                   CC= 26
+    Line   88: summary_from_result                      CC= 15
+
+  File: services\aicarmine_broker\application\replan\specialist.py
+    Line   67: process_validation                       CC= 19
+
+  File: services\aicarmine_broker\application\prompt\history_messages.py
+    Line  332: planner_history_item_messages            CC= 15
+    Line  265: planner_tool_result_message_payload      CC= 13
+    Line   72: clean_planner_history_value              CC= 11
+
+  File: services\codex_bridge\git_readonly_mcp_server.py
+    Line  294: _branch_compare                          CC= 12
+
+  File: services\aicarmine_broker\application\evidence\builder_extracted.py
+    Line   13: compute_coverage_gates                   CC= 37
+    Line  161: compute_final_allowed_reason             CC= 22
+
+  File: services\aicarmine_broker\application\planner\validator_quality_gate.py
+    Line   63: run                                      CC= 60
+
+  File: services\aicarmine_broker\application\prompt\window_signatures.py
+    Line  113: planner_scratchpad_window_signature      CC= 16
+    Line  139: repo_read_window_range_for_target        CC= 16
+    Line   38: decision_paths                           CC= 15
+
+  File: services\aicarmine_broker\application\replan\contract_applier.py
+    Line   50: apply_unverified_old_text_replan_contract CC= 30
+    Line   70: admissible_replan_candidate              CC= 17
+    Line   70: admissible_replan_candidate              CC= 17
+
+  File: services\aicarmine_broker\application\controller\preseed.py
+    Line   23: root_surface_entries                     CC= 11
+    Line  173: controller_initial_orientation_candidate_pool CC= 11
+    Line  267: list_result_file_paths                   CC= 11
+
+  File: services\aicarmine_broker\application\memory\conflict_detector.py
+    Line  143: detect_memory_conflicts                  CC= 22
+
+  File: services\aicarmine_broker\application\tool_surface\required_tool_call.py
+    Line  156: required_next_tool_call_satisfaction     CC= 28
+    Line  121: _successful_tool_call_satisfies_required_args CC= 14
+
+  File: services\aicarmine_broker\application\prompt\evidence_contract.py
+    Line  120: compact_evidence_contract_for_prompt     CC= 21
+    Line  240: hard_budget_evidence_contract_summary    CC= 20
+    Line   84: _compact_verified_content_reads          CC= 12
+
+  File: services\aicarmine_broker\application\evidence\builder_validation.py
+    Line   77: compute_post_write_validation_contract   CC= 35
+
+  File: services\aicarmine_broker\application\planner\validation_rejections.py
+    Line   39: canonical_invalid_code_product_decision_signature CC= 30
+    Line  179: compact_validation_rejections_tail       CC= 14
+
+  File: services\codex_bridge\planner_scratchpad_mcp_server.py
+    Line  347: read_message                             CC= 13
+    Line  315: serve_handler                            CC= 11
+
+  File: services\aicarmine_broker\tools\repo_patch.py
+    Line  169: repo_apply_unified_diff                  CC= 24
+    Line  401: repo_write_file                          CC= 16
+    Line   68: repo_apply_patch                         CC= 12
+
+  File: tools\generate_wily_report.py
+    Line   42: calculate_complexity                     CC= 29
+    Line  162: generate_report                          CC= 21
+    Line   92: visit_FunctionDef                        CC= 11
+
+  File: services\aicarmine_broker\application\controller\rag_query_plan_fix.py
+    Line  352: _sanitize_preplanner_query_plan          CC= 23
+    Line  109: repair_query_plan                        CC= 15
+    Line  293: _parse_json_object_diagnostics           CC= 11
+
+  File: services\aicarmine_broker\application\evidence\initial_orientation.py
+    Line   13: initial_orientation_surface_from_history CC= 64
+
+  File: services\aicarmine_broker\application\planner\validator_pipeline.py
+    Line   89: run                                      CC= 21
+    Line  287: run                                      CC= 19
+
+  File: services\aicarmine_broker\application\public_payload\openwebui_terminal_answer.py
+    Line  100: answer_for_openwebui                     CC= 25
+    Line   33: _coverage_status                         CC= 13
+
+  File: services\codex_bridge\runtime_sqlite_memory_mcp_server.py
+    Line  306: read_message                             CC= 13
+
+  File: tools\mechanical_services_dedupe.py
+    Line   98: dict_field_removals                      CC= 19
+
+  File: services\aicarmine_broker\application\evidence\builder_core.py
+    Line  123: build_micro_batch_contract               CC= 17
+    Line   46: classify_semantic_with_preplanner        CC= 13
+    Line   20: compute_preplanner_intent                CC= 11
+
+  File: services\aicarmine_broker\application\evidence\required_working_set.py
+    Line  117: required_working_set_for_prompt          CC= 33
+    Line   20: repo_read_items_for_prompt               CC= 26
+
+  File: services\aicarmine_broker\application\planner\path_utils.py
+    Line  170: search_query_is_concrete                 CC= 14
+    Line   70: collect_repo_paths                       CC= 11
+
+  File: services\aicarmine_broker\application\public_payload\payload_index_resolver.py
+    Line  112: _resolve_tokens                          CC= 11
+
+  File: services\vulkan_bridge\application\payload_index_resolver.py
+    Line  102: _resolve_tokens                          CC= 11
+
+  File: services\aicarmine_broker\application\controller\memory.py
+    Line   45: _controller_memory_lesson_raw_text       CC= 19
+    Line  147: _loop_turn_memory_raw_text               CC= 19
+
+  File: services\aicarmine_broker\application\evidence\enricher.py
+    Line   98: agentic_v2_enrich_evidence_contract      CC= 27
+
+  File: services\codex_bridge\evidence_builder_mcp_server.py
+    Line  240: read_message                             CC= 13
+
+  File: services\aicarmine_broker\application\job\blocked_judge.py
+    Line   55: judge                                    CC= 16
+
+  File: services\aicarmine_broker\application\planner\validator_code_product.py
+    Line   17: run                                      CC= 37
+    Line  121: _old_text_verified_by_repo_read          CC= 11
+
+  File: services\aicarmine_broker\application\controller\diagnostics.py
+    Line   13: agent_flow_diagnostics                   CC= 50
+
+  File: services\aicarmine_broker\application\shared\history_ledger.py
+    Line   70: planner_history_ledger                   CC= 38
+
+  File: services\aicarmine_broker\application\evidence\coverage_scorer.py
+    Line   32: score_evidence_coverage                  CC= 41
+
+  File: services\aicarmine_broker\application\planner\required_progress.py
+    Line  141: required_next_progress_from_text         CC= 21
+
+  File: services\aicarmine_broker\application\evidence\core_discovery.py
+    Line   67: core_discovery_candidates_from_intrinsic CC= 19
+    Line  177: core_discovery_read_paths                CC= 13
+    Line   18: add_core_discovery_candidate             CC= 12
+
+  File: services\aicarmine_broker\application\runtime_debug\debug_packet.py
+    Line   54: _bounded_jsonable                        CC= 17
+
+  File: services\aicarmine_broker\application\controller\guards.py
+    Line   47: _stable_support_subturn_arguments        CC= 13
+
+  File: services\aicarmine_broker\application\planner\rewrite_latch.py
+    Line  215: clear_final_terminal_block_state         CC= 11
+
+  File: services\aicarmine_broker\tools\repo_read.py
+    Line   41: repo_read                                CC= 26
+    Line   20: _read_paths_from_items                   CC= 14
+
+  File: services\aicarmine_broker\application\tool_surface\result_digest.py
+    Line   26: planner_last_result_digest               CC= 37
+
+  File: services\codex_bridge\wily_mcp_server.py
+    Line  136: _compute_maintainability                 CC= 11
+
+  File: services\test_all_mcp_tools.py
+    Line  303: test_server_tool                         CC= 12
+    Line  433: main                                     CC= 11
+
+  File: services\aicarmine_broker\application\public_payload\terminal_result.py
+    Line   41: public_terminal_history_ledger           CC= 25
+
+  File: services\aicarmine_broker\application\planner\required_call_validator.py
+    Line   22: required_next_route_has_deterministic_proof CC= 22
+    Line   54: coalesce_required_next_tool_tool         CC= 13
+
+  File: services\aicarmine_broker\infrastructure\json_files.py
+    Line  126: same_tool_artifact_payload               CC= 16
+    Line   67: write                                    CC= 13
+
+  File: services\aicarmine_broker\application\evidence\goal_scope.py
+    Line  110: goal_requested_repo_scope                CC= 12
+
+  File: services\aicarmine_broker\application\search\search_quality.py
+    Line   84: assess_search_quality                    CC= 14
+
+  File: services\aicarmine_broker\application\job\action_router.py
+    Line  143: _job_action                              CC= 14
+    Line   56: handle                                   CC= 11
+
+  File: services\aicarmine_broker\tools\repo_list_files.py
+    Line   38: repo_list_files                          CC= 33
+
+  File: services\codex_bridge\endpoint_validation.py
+    Line   26: validate_endpoint                        CC= 17
+    Line   71: validate_local_http_endpoint             CC= 13
+
+  File: services\aicarmine_broker\application\command\execution_policy.py
+    Line   90: evaluate_command_execution_policy        CC= 16
+
+  File: services\aicarmine_broker\application\evidence\builder_paths.py
+    Line   11: collect_result_paths                     CC= 11
+
+  File: services\aicarmine_broker\application\planner\validator_path_validation.py
+    Line   73: run                                      CC= 14
+
+  File: services\aicarmine_broker\application\shared\evidence_contract_summary.py
+    Line  119: compact_evidence_contract_summary        CC= 12
+
+  File: services\apply_secure_patterns.py
+    Line  169: main                                     CC= 13
+
+  File: tools\generate_symbol_reference.py
+    Line  458: generate_symbol_reference                CC= 15
+
+  File: services\aicarmine_broker\application\evidence\user_scope_claims.py
+    Line   86: scope_claim_conflict_for_path            CC= 12
+
+  File: services\security_scanner_mcp_server.py
+    Line  260: scan_file_precise                        CC= 12
+
+  File: tools\mechanical_runtime_prune.py
+    Line  168: main                                     CC= 19
+
+  File: services\aicarmine_broker\application\shared\payload_metadata.py
+    Line   58: compact_value                            CC= 18
+
+  File: services\aicarmine_broker\tools\repo_code_product.py
+    Line   75: repo_propose_code_edit                   CC= 20
+
+  File: services\vulkan_bridge\app_compaction.py
+    Line    7: strip_large_for_openwebui                CC= 13
+    Line   43: compact_context_for_openwebui            CC= 11
+
+  File: services\vulkan_bridge\application\materialization_report.py
+    Line   54: build_materialization_report             CC= 13
+
+  File: services\aicarmine_broker\application\public_payload\history_ledger.py
+    Line   26: build_public_result_digest               CC= 25
+
+  File: services\aicarmine_broker\application\tool_surface\candidate_action_gate.py
+    Line   61: candidate_rejection_reason               CC= 14
+
+  File: services\aicarmine_broker\application\evidence\scope_conflict_resolution.py
+    Line   26: target_scope_conflict_resolved           CC= 24
+
+  File: services\aicarmine_broker\infrastructure\executable_resolver.py
+    Line   51: resolve                                  CC= 12
+
+  File: services\aicarmine_broker\application\prompt\values.py
+    Line   18: prompt_clip_value                        CC= 16
+
+  File: services\aicarmine_broker\application\job\lifecycle.py
+    Line   52: start                                    CC= 12
+
+  File: services\aicarmine_broker\tools\repo_search.py
+    Line   24: repo_search                              CC= 22
+
+  File: services\aicarmine_broker\application\planner\final_quality_route.py
+    Line   24: final_quality_repo_read_allowlist        CC= 19
+
+  File: services\aicarmine_broker\application\public_payload\terminal_sanitizer.py
+    Line   83: public_terminal_sanitize_value           CC= 13
+
+  File: services\aicarmine_broker\tools\repo_tree.py
+    Line   22: repo_tree                                CC= 21
+
+  File: services\vulkan_bridge\application\response_values.py
+    Line   24: bridge_result_digest                     CC= 14
+
+  File: services\aicarmine_broker\application\planner\validator_repeated_calls.py
+    Line   17: run                                      CC= 19
+
+  File: services\aicarmine_broker\application\public_payload\openwebui_tool_context.py
+    Line   69: _build_context                           CC= 13
+
+  File: services\aicarmine_broker\tool_schemas.py
+    Line   21: _tool_schema                             CC= 14
+
+  File: services\aicarmine_broker\application\npu_phi\client.py
+    Line   55: enqueue_scene_spec_best_effort           CC= 15
+
+  File: services\aicarmine_broker\application\tool_surface\batch_contract.py
+    Line   17: canonical_batch_value                    CC= 13
+
+  File: services\npu_phi_service\diagnostics.py
+    Line   64: build_npu_phi_doctor                     CC= 11
+
+  File: services\aicarmine_broker\tools\repo_status.py
+    Line   18: detect_stack                             CC= 14
+
+  File: services\aicarmine_broker\application\planner\lane_catalog.py
+    Line  435: validate_control_lane_catalog            CC= 13
+
+  File: services\aicarmine_broker\application\code_product\required_working_set.py
+    Line   14: latest_code_product_for_prompt           CC= 14
+
+  File: services\aicarmine_broker\application\prompt\available_tools.py
+    Line   13: available_tools_window_pack              CC= 13
+
+  File: services\aicarmine_broker\tools\repo_validate.py
+    Line   28: repo_validate                            CC= 12
 
 ================================================================================
 TOP 10 MOST COMPLEX FILES
 ================================================================================
-   1. services\aicarmine_broker\planner.py                         CC=1154
+   1. services\vulkan_bridge\app.py                                CC=1159
+   2. services\vulkan_bridge\app_refactored.py                     CC=1064
+   3. services\aicarmine_broker\application\evidence\builder.py    CC=619
+   4. services\aicarmine_broker\application\planner\loop.py        CC=594
+   5. services\aicarmine_broker\application\controller\rag_preseed.py CC=474
+   6. services\aicarmine_broker\application\evidence\final_quality.py CC=407
+   7. services\codex_bridge\mcp_server.py                          CC=297
+   8. services\aicarmine_broker\application\public_payload\evidence_materializer.py CC=264
+   9. services\aicarmine_broker\memory_tools.py                    CC=257
+  10. services\aicarmine_broker\application\tool_surface\turn_surface_policy.py CC=254
