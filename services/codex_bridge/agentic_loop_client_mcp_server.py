@@ -23,6 +23,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Ensure services/ directory is on sys.path so repo_mcp_common can be imported
+_services_root = Path(__file__).resolve().parent
+if str(_services_root) not in sys.path:
+    sys.path.insert(0, str(_services_root))
+
 from repo_mcp_common import (
     ToolSpec,
     health_payload,

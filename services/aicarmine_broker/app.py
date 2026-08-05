@@ -77,7 +77,7 @@ from .application.public_payload.lab import (
 from .planner_core.json_io import post_json
 from .tool_dispatch import dispatch_tool
 from .tool_registry import capability_map
-
+# from .tool_dispatch import get_tool_dispatcher  # REMOVE THIS LINE
 
 def _parse_planner_lab_wait_seconds(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     raw = payload.get("wait_seconds") if isinstance(payload, dict) else None

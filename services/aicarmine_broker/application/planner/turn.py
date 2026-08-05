@@ -5,17 +5,14 @@
     ErrorReport,
     ErrorSummary,
 )
-
 34 decision calls."""
-
 from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any, Mapping
-
 from ...tool_contract import TOOLS_SCHEMA
 from ..planner.lane_catalog import control_lane_event_metadata
+from .decision_normalizer import parse_json_text_tool_call, parse_json_text_terminal_decision
 from ..prompt.pack_builder import explicit_request_context_from_state
 from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
@@ -1003,7 +1000,51 @@ def planner_decision(
                 decision["planner_stream_meta"] = stream_meta
             return decision
     if AGENTIC_PLANNER_NATIVE_TOOLS and not native_calls:
+        """Multi-stage fallback when native tool_calls empty:
+        Stage A: JSON-text tool call parse
+        Stage B: JSON-text terminal decision parse
+        Stage C: Strict JSON object (existing)
+        Stage D: Plain text terminal (existing)
+        Stage E: Protocol block"""
         raw_text_for_native_mode = str(response.get("response") or response.get("partial_content") or "")
+        
+        # Stage A: JSON-text tool call parse
+        json_tool_result = parse_json_text_tool_call(raw_text_for_native_mode)
+        if json_tool_result:
+            decision = json_tool_result
+            if planner_role_override:
+                decision["planner_role"] = planner_role_override.get("role")
+                decision["planner_role_override"] = planner_role_override
+            decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
+            decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
+            decision["native_tool_calls_seen"] = 0
+            decision["json_text_fallback_used"] = True
+            decision["allowed_tool_names"] = list(native_tool_names)
+            if prompt_context_continuation_required:
+                decision["prompt_context_continuation_required"] = prompt_context_continuation_required
+            if stream_meta:
+                decision["planner_stream_meta"] = stream_meta
+            return decision
+        
+        # Stage B: JSON-text terminal decision parse
+        json_terminal_result = parse_json_text_terminal_decision(raw_text_for_native_mode)
+        if json_terminal_result:
+            decision = json_terminal_result
+            if planner_role_override:
+                decision["planner_role"] = planner_role_override.get("role")
+                decision["planner_role_override"] = planner_role_override
+            decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
+            decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
+            decision["native_tool_calls_seen"] = 0
+            decision["json_text_fallback_used"] = True
+            decision["allowed_tool_names"] = list(native_tool_names)
+            if prompt_context_continuation_required:
+                decision["prompt_context_continuation_required"] = prompt_context_continuation_required
+            if stream_meta:
+                decision["planner_stream_meta"] = stream_meta
+            return decision
+        
+        # Stage C: Strict JSON object (existing)
         decoded_text_decision = _parse_strict_json_object(raw_text_for_native_mode)
         if isinstance(decoded_text_decision, dict):
             action = str(decoded_text_decision.get("action") or "").strip().lower()
@@ -1169,7 +1210,7 @@ def planner_decision(
             "reason": "planner_native_tool_call_required",
             "final_answer": (
                 "Planner native tool mode is required for tool execution, but Ollama "
-                "did not return message.tool_calls. JSON-text tool fallback was not used."
+                "did not return message.tool_calls. JSON-text fallback attempted but no valid decision extracted."
             ),
             "raw_planner_text": raw_text_for_native_mode[:12000],
             "planner_native_tools_enabled": bool(AGENTIC_PLANNER_NATIVE_TOOLS),

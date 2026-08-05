@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+import re
+import logging
+from typing import Any
+
 from aicarmine_broker.error_handling import (
     BrokerError,
     ErrorCategory,
@@ -8,14 +13,12 @@ from aicarmine_broker.error_handling import (
     ErrorSummary,
 )
 
-import json
-import re
-from typing import Any
-
 from aicarmine_broker.planner_core.json_io import (
     _parse_strict_json_object,
     parse_strict_json_object_diagnostics,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _single_embedded_json_decision(text: str) -> dict[str, Any]:
@@ -231,6 +234,187 @@ def _normalize_terminal_planner_decision(decision: dict[str, Any]) -> dict[str, 
     return normalized
 
 
+def parse_json_text_tool_call(content: str) -> dict[str, Any] | None:
+    """
+    Parse JSON-text tool call from planner response content.
+    Expected format: {"action": "tool", "tool": "repo_read", "arguments": {...}}
+    Alternative format: {"tool": "repo_read", "arguments": {...}}
+    Returns decision dict or None if not parseable.
+    """
+    if not content or not content.strip():
+        return None
+    
+    stripped = content.strip()
+    
+    # Try direct JSON parsing first
+    try:
+        data = json.loads(stripped)
+        if not isinstance(data, dict):
+            return None
+        
+        # Check for action-based format
+        if data.get("action") == "tool":
+            tool_name = str(data.get("tool") or "").strip()
+            if tool_name:
+                return {
+                    "action": "tool",
+                    "tool": tool_name,
+                    "arguments": data.get("arguments", {}),
+                    "source": "json_text_tool_call",
+                    "raw_content": content[:2000],
+                }
+        
+        # Check for direct tool format (no action field)
+        elif data.get("tool"):
+            tool_name = str(data.get("tool") or "").strip()
+            if tool_name:
+                return {
+                    "action": "tool",
+                    "tool": tool_name,
+                    "arguments": data.get("arguments", {}),
+                    "source": "json_text_tool_call_direct",
+                    "raw_content": content[:2000],
+                }
+        
+        # Check for function call format (OpenAI style)
+        func_data = data.get("function_call") or data.get("function")
+        if isinstance(func_data, dict):
+            tool_name = str(func_data.get("name") or "").strip()
+            if tool_name:
+                args = func_data.get("arguments", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                return {
+                    "action": "tool",
+                    "tool": tool_name,
+                    "arguments": args,
+                    "source": "json_text_function_call",
+                    "raw_content": content[:2000],
+                }
+        
+        return None
+        
+    except json.JSONDecodeError as e:
+        logger.debug(f"JSON parse error in tool call fallback: {e}")
+    
+    # Try to find embedded JSON in prose text
+    # Look for JSON-like structures
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", stripped):
+        try:
+            decoded, end = decoder.raw_decode(stripped[match.start():])
+            if not isinstance(decoded, dict):
+                continue
+            
+            action = str(decoded.get("action") or "").strip().lower()
+            if action == "tool":
+                tool_name = str(decoded.get("tool") or "").strip()
+                if tool_name:
+                    return {
+                        "action": "tool",
+                        "tool": tool_name,
+                        "arguments": decoded.get("arguments", {}),
+                        "source": "json_text_embedded",
+                        "raw_content": content[:2000],
+                    }
+            
+            # Check for direct tool format
+            if decoded.get("tool"):
+                tool_name = str(decoded.get("tool") or "").strip()
+                if tool_name:
+                    return {
+                        "action": "tool",
+                        "tool": tool_name,
+                        "arguments": decoded.get("arguments", {}),
+                        "source": "json_text_embedded_direct",
+                        "raw_content": content[:2000],
+                    }
+        except json.JSONDecodeError:
+            continue
+    
+    return None
+
+
+def parse_json_text_terminal_decision(content: str) -> dict[str, Any] | None:
+    """
+    Parse JSON-text terminal decision (final/block) from planner response content.
+    """
+    if not content or not content.strip():
+        return None
+    
+    stripped = content.strip()
+    
+    try:
+        data = json.loads(stripped)
+        if not isinstance(data, dict):
+            return None
+        
+        action = str(data.get("action") or "").strip().lower()
+        
+        if action in ("final", "block"):
+            final_answer = str(data.get("final_answer") or data.get("answer") or data.get("summary") or "").strip()
+            if not final_answer:
+                # Try content field
+                content_field = data.get("content")
+                if isinstance(content_field, str):
+                    final_answer = content_field.strip()
+                elif isinstance(content_field, dict):
+                    for key in ("final_analysis", "final_answer", "answer", "summary", "message", "text"):
+                        val = content_field.get(key)
+                        if isinstance(val, str) and val.strip():
+                            final_answer = val.strip()
+                            break
+            
+            return {
+                "action": action,
+                "reason": str(data.get("reason") or ""),
+                "final_answer": final_answer,
+                "source": "json_text_terminal_decision",
+                "raw_content": content[:2000],
+            }
+        
+        # Check for legacy format (no action field but has final_answer)
+        if data.get("final_answer") and not data.get("action"):
+            return {
+                "action": "final",
+                "final_answer": str(data["final_answer"]).strip(),
+                "reason": str(data.get("reason") or ""),
+                "source": "json_text_terminal_legacy",
+                "raw_content": content[:2000],
+            }
+        
+        return None
+        
+    except json.JSONDecodeError as e:
+        logger.debug(f"JSON parse error in terminal decision fallback: {e}")
+    
+    # Try embedded JSON in prose
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", stripped):
+        try:
+            decoded, end = decoder.raw_decode(stripped[match.start():])
+            if not isinstance(decoded, dict):
+                continue
+            
+            action = str(decoded.get("action") or "").strip().lower()
+            if action in ("final", "block"):
+                final_answer = str(decoded.get("final_answer") or decoded.get("answer") or "").strip()
+                return {
+                    "action": action,
+                    "reason": str(decoded.get("reason") or ""),
+                    "final_answer": final_answer,
+                    "source": "json_text_embedded_terminal",
+                    "raw_content": content[:2000],
+                }
+        except json.JSONDecodeError:
+            continue
+    
+    return None
+
+
 def normalize_planner_decision(
     raw_text: str, goal: str, step: int, state: dict[str, Any]
 ) -> dict[str, Any]:
@@ -246,6 +430,17 @@ def normalize_planner_decision(
         return normalized
 
     raw_response = str(raw_text or "")
+    
+    # Try JSON-text tool call parsing first (for models that return JSON text instead of native tool_calls)
+    json_tool_result = parse_json_text_tool_call(raw_response)
+    if json_tool_result:
+        return json_tool_result
+    
+    # Try JSON-text terminal decision parsing
+    json_terminal_result = parse_json_text_terminal_decision(raw_response)
+    if json_terminal_result:
+        return json_terminal_result
+
     invalid_decision = {
         "action": "block",
         "reason": "INVALID_PLANNER_OUTPUT_NON_JSON_PURE",
@@ -255,8 +450,8 @@ def normalize_planner_decision(
             "normalization was executed. The raw model output is preserved in "
             "raw_planner_text. Plain text or mixed prose plus embedded JSON must "
             "be returned to the planner for a pure JSON decision; only malformed "
-            "JSON or recognizable invalid tool calls are eligible for Vulkan/GPU0 "
-            "11435 repair."
+            "JSON or recognizable invalid tool calls remain eligible for Vulkan/GPU1 "
+            "repair."
         ),
         "raw_planner_text": raw_response[:12000],
         "json_parse_error_type": diagnostics.get("error_type"),

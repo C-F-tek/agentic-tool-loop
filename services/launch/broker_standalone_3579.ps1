@@ -117,8 +117,12 @@ $env:AICARMINE_VULKAN_WORKSPACE = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan
 $env:AICARMINE_LAB_REPO = "C:\Users\sanit\AI\lab-worktrees\blender-audio-project-lab"
 $env:AICARMINE_AGENT_JOB_ROOT = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs"
 $env:AICARMINE_AGENT_JOB_DB = "C:\Users\sanit\AI\qwen-agent-workspace\vulkan-broker\agent-jobs\agent_jobs.sqlite3"
-$env:AICARMINE_AGENTIC_PLANNER_MODEL = "mio-qwen-code-toolnative:latest"
+$env:AICARMINE_AGENTIC_PLANNER_MODEL = "qwen3.5:9b-coding"
 $env:AICARMINE_AGENTIC_PLANNER_NUM_CTX = "262144"
+
+# Native tool mode: 0 = disabled (JSON-text fallback), 1 = enabled
+$env:AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS = "0"
+$env:AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = "0"
 
 Write-Host "  AICARMINE_VULKAN_WORKSPACE = $env:AICARMINE_VULKAN_WORKSPACE"
 Write-Host "  AICARMINE_LAB_REPO = $env:AICARMINE_LAB_REPO"
@@ -126,6 +130,8 @@ Write-Host "  AICARMINE_AGENT_JOB_ROOT = $env:AICARMINE_AGENT_JOB_ROOT"
 Write-Host "  AICARMINE_AGENT_JOB_DB = $env:AICARMINE_AGENT_JOB_DB"
 Write-Host "  AICARMINE_AGENTIC_PLANNER_MODEL = $env:AICARMINE_AGENTIC_PLANNER_MODEL"
 Write-Host "  AICARMINE_AGENTIC_PLANNER_NUM_CTX = $env:AICARMINE_AGENTIC_PLANNER_NUM_CTX"
+Write-Host "  AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS = $env:AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS"
+Write-Host "  AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = $env:AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS"
 Write-Host ""
 
 # ------------------------------------------------------------------

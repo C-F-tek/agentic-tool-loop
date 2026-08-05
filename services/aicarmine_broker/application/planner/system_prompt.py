@@ -82,3 +82,18 @@ def planner_system_for_current_mode(*, native_tools: bool) -> str:
             "L'azione tool nel content non e' consentita in native tool mode."
         ),
     )
+    
+    # Add explicit JSON-text format instructions for models that cannot produce native tool_calls
+    # This is critical for qwen3.5:9b-coding and similar models that return JSON text instead of tool_calls
+    json_text_instruction = """\n\nJSON-TEXT FORMAT INSTRUCTIONS (for when native tool_calls are not returned):\n"""
+    json_text_instruction += """If Ollama returns a JSON object in the response content instead of message.tool_calls, use EXACTLY these formats:\n\n"""
+    json_text_instruction += """1. TOOL CALL FORMAT:\n   {"action": "tool", "tool": "repo_read", "arguments": {"path": "services/aicarmine_broker/application/planner/turn.py"}}\n\n"""
+    json_text_instruction += """2. FINAL ANSWER FORMAT:\n   {"action": "final", "final_answer": "Your analysis conclusion here"}\n\n"""
+    json_text_instruction += """3. BLOCK FORMAT:\n   {"action": "block", "reason": "explanation", "final_answer": "why you cannot proceed"}\n\n"""
+    json_text_instruction += """IMPORTANT: Do NOT wrap JSON in markdown code blocks. Do NOT add ```json before or after. Return pure JSON only.\n"""
+    json_text_instruction += """The model should respond with one of the above formats when it cannot produce native tool_calls.\n"""
+    
+    return PLANNER_SYSTEM.replace(
+        "Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt shell o token di ruolo.",
+        json_text_instruction + PLANNER_SYSTEM.split("Rispondi SOLO con JSON valido")[0] + "Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt shell o token di ruolo.",
+    )

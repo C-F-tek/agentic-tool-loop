@@ -35,6 +35,8 @@ from .error_handling import (
     ErrorReport,
     ErrorSummary,
 )
+from .application.replan.specialist import ReplanSpecialist
+from .application.replan import ReplanSanitizer
 """
 =================
 The controlled 30B planner loop.
@@ -63,10 +65,17 @@ import re
 from pathlib import Path
 from typing import Any
 from .config import (
+    internal_tool_prompt,
+    internal_tools_list,
+    ollama_options,
+)
+from .config import (
+    internal_tool_prompt,
+    internal_tools_list,
+    ollama_options,
     WRITE_GUARDED_TOOLS,
     AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES,
     AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY,
-    AGENTIC_PLANNER_NATIVE_TOOLS,
     AGENTIC_PLANNER_HISTORY_PROMPT_TAIL,
     AGENTIC_PLANNER_NUM_CTX,
     AGENTIC_PLANNER_NUM_CTX_CAP,
@@ -99,11 +108,11 @@ from .config import (
     PLANNER_RAG_RERANKING_MODEL,
     PLANNER_URL,
     VALID_INTERNAL_TOOLS,
-    internal_tool_prompt,
-    internal_tools_list,
-    ollama_options,
     AICARMINE_ORIENTATION_LANE_MODE,
 )
+
+# Only get_planner_config comes from the new config system (services/config/)
+from config import get_planner_config
 from .job_store import (
     agent_job_planner_stream_path,
     agent_job_root,
@@ -181,6 +190,12 @@ from .application.evidence.final_quality import (
     repo_analysis_final_answer_quality as _repo_analysis_final_answer_quality,
     sanitize_repo_analysis_final_model_quality as _sanitize_repo_analysis_final_model_quality,
 )
+from .application.replan.specialist import ReplanSpecialist
+from .application.replan.contract_applier import UnverifiedOldTextReplanApplier
+from .application.replan.sanitizer import ReplanSanitizer
+from .application.quality.judge import FinalQualityJudge
+from .application.evidence.enricher import EvidenceContractEnricher
+from .application.job.blocked_judge import BlockedJobJudge
 from .application.evidence.audit_guidance import role_guidance_for_goal
 from .application.evidence.initial_orientation import (
     initial_orientation_surface_from_history as _initial_orientation_surface_from_history_impl,
@@ -559,7 +574,7 @@ def _tool_surface_names_for_turn(
 def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> Any:
     return _available_tools_for_user_payload_impl(
         compact_tools,
-        native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
+        native_tools=get_planner_config().native_tools,
     )
 
 
@@ -583,14 +598,14 @@ def _available_tools_window_pack(
 
 def _tool_shape_examples_for_prompt() -> dict[str, Any]:
     return _tool_shape_examples_for_prompt_impl(
-        native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
+        native_tools=get_planner_config().native_tools,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
 
 
 def _hard_budget_tool_shape_examples_for_prompt() -> dict[str, Any]:
     return _hard_budget_tool_shape_examples_for_prompt_impl(
-        native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
+        native_tools=get_planner_config().native_tools,
     )
 
 
@@ -949,7 +964,7 @@ def _optional_context_for_prompt(
         "planner_memory": _prompt_clip_value(planner_memory, text_limit=360, list_limit=4),
         "intrinsic_context": _compact_intrinsic_context_for_prompt(intrinsic_context),
     }
-    if AGENTIC_PLANNER_NATIVE_TOOLS:
+    if get_planner_config().native_tools:
         optional["history_transport"] = {
             "schema": "planner_history_transport.v1",
             "tool_history_and_results": "ollama_messages",
@@ -970,7 +985,7 @@ def _optional_context_for_prompt(
     if not compact_mode:
         return optional
     tool_payload_windows: list[dict[str, Any]] = []
-    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+    if not get_planner_config().native_tools:
         for row in reversed(history if isinstance(history, list) else []):
             result = _history_tool_result(row)
             if not result.get("ok"):
@@ -1435,7 +1450,7 @@ def _forbidden_repeated_prompt_window_calls(
 
 
 def _native_history_message_reserve_chars(history: list[dict[str, Any]], window_chars: int) -> int:
-    if not AGENTIC_PLANNER_NATIVE_TOOLS:
+    if not get_planner_config().native_tools:
         return 0
     if not any(_history_tool_result(item) for item in (history if isinstance(history, list) else [])):
         return 0
@@ -1498,7 +1513,7 @@ def _build_planner_user_payload(
             "internal_tool_prompt": internal_tool_prompt,
         },
         config={
-            "AGENTIC_PLANNER_NATIVE_TOOLS": AGENTIC_PLANNER_NATIVE_TOOLS,
+            "AGENTIC_PLANNER_NATIVE_TOOLS": get_planner_config().native_tools,
             "AGENTIC_PLANNER_NUM_CTX": AGENTIC_PLANNER_NUM_CTX,
             "AGENTIC_PLANNER_NUM_CTX_CAP": AGENTIC_PLANNER_NUM_CTX_CAP,
             "AGENTIC_PLANNER_NUM_CTX_REQUESTED": AGENTIC_PLANNER_NUM_CTX_REQUESTED,
@@ -1612,7 +1627,7 @@ def _planner_history_messages_for_ollama(
         goal=goal,
         window_chars=window_chars,
         max_chars=max_chars,
-        native_tools_enabled=AGENTIC_PLANNER_NATIVE_TOOLS,
+        native_tools_enabled=get_planner_config().native_tools,
         code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
         store_prompt_text_window=_store_prompt_text_window,
     )
@@ -3071,7 +3086,7 @@ def _native_required_tool_decision_has_transport_provenance(decision: dict[str, 
 def _native_required_repaired_tool_decision_disallowed(decision: dict[str, Any]) -> bool:
     action = str((decision if isinstance(decision, dict) else {}).get("action") or "").strip().lower()
     return bool(
-        AGENTIC_PLANNER_NATIVE_TOOLS
+        get_planner_config().native_tools
         and action == "tool"
     )
 
@@ -3527,7 +3542,7 @@ def validate_planner_decision_against_evidence(
             "validate_unified_diff_text": validate_unified_diff_text,
         },
         config={
-            "AGENTIC_PLANNER_NATIVE_TOOLS": AGENTIC_PLANNER_NATIVE_TOOLS,
+            "AGENTIC_PLANNER_NATIVE_TOOLS": get_planner_config().native_tools,
             "CODE_PRODUCT_BUILD_STATE_KIND": CODE_PRODUCT_BUILD_STATE_KIND,
             "VALID_INTERNAL_TOOLS": VALID_INTERNAL_TOOLS,
             "AICARMINE_ORIENTATION_LANE_MODE": AICARMINE_ORIENTATION_LANE_MODE,
@@ -4377,12 +4392,6 @@ def _replan_search_query_is_concrete(value: Any) -> bool:
     return bool(useful_tokens)
 
 
-def _mark_replan_required_call_validated(
-    result: dict[str, Any],
-    required_call: dict[str, Any],
-    *,
-    source: str = "planner_replan_specialist_sanitizer",
-) -> dict[str, Any]:
     required_call["validated"] = True
     required_call["validation_source"] = source
     result["required_next_tool_call"] = required_call
@@ -4391,167 +4400,6 @@ def _mark_replan_required_call_validated(
     return result
 
 
-def _replan_required_repo_read_paths(args: dict[str, Any]) -> list[Any]:
-    out: list[Any] = []
-    if not isinstance(args, dict):
-        return out
-    if args.get("path") not in (None, "", [], {}):
-        out.append(args.get("path"))
-    raw_paths = args.get("paths")
-    if isinstance(raw_paths, list):
-        out.extend(raw_paths)
-    return out
-
-
-def _sanitize_replan_specialist_result_against_contract(
-    result: dict[str, Any],
-    contract: dict[str, Any],
-) -> dict[str, Any]:
-    """Do not let replan specialist turn prose/metrics into required routes."""
-    result = result if isinstance(result, dict) else {}
-    if result.get("ok") is not True:
-        return result
-
-    required_call = (
-        result.get("required_next_tool_call")
-        if isinstance(result.get("required_next_tool_call"), dict)
-        else {}
-    )
-    tool = _normalize_tool_name(str(required_call.get("tool") or ""))
-    if not tool:
-        return result
-
-    args = (
-        required_call.get("arguments")
-        if isinstance(required_call.get("arguments"), dict)
-        else {}
-    )
-    known_paths = _replan_contract_known_repo_paths(contract)
-    known_dirs = _replan_known_repo_dirs(known_paths)
-
-    if tool == "repo_read":
-        raw_paths = _replan_required_repo_read_paths(args)
-        allowed_paths = _replan_contract_repo_read_allowlist(contract)
-
-        valid_paths: list[str] = []
-        invalid_paths: list[str] = []
-        for raw_path in raw_paths:
-            token = _replan_repo_path_token(raw_path)
-            if token and token in allowed_paths:
-                if token not in valid_paths:
-                    valid_paths.append(token)
-            elif token and token not in invalid_paths:
-                invalid_paths.append(token)
-
-        if invalid_paths:
-            result["invalid_required_next_tool_call_paths"] = invalid_paths[:12]
-            result["invalid_required_next_tool_call_reason"] = (
-                "planner_replan_specialist proposed repo_read paths that are not "
-                "known/admissible repo paths in the current evidence contract"
-            )
-
-        if valid_paths:
-            required_call["arguments"] = {"paths": valid_paths[:12]}
-            return _mark_replan_required_call_validated(result, required_call)
-
-        result["required_next_tool_call"] = {}
-        result["required_next_tool_call_validated"] = False
-        if invalid_paths:
-            result["decision"] = "block_recommended"
-            result["required_next_progress"] = (
-                "Replan specialist proposed no valid existing repo_read path. "
-                "Do not call repo_read for prose, metrics, headings, or non-existing paths. "
-                "Use verified evidence for a terminal answer if allowed, or return a typed block."
-            )
-        return result
-
-    if tool == "repo_list_files":
-        path_token = _replan_repo_path_token(args.get("path") or ".") or "."
-        if path_token == "." or (path_token in known_dirs and not _replan_route_token_is_prose_or_metric(path_token)):
-            args["path"] = path_token
-            required_call["arguments"] = args
-            return _mark_replan_required_call_validated(result, required_call)
-        result["invalid_required_next_tool_call_paths"] = [path_token]
-        result["invalid_required_next_tool_call_reason"] = (
-            "planner_replan_specialist proposed repo_list_files path that is not "
-            "a known concrete repo directory in the current evidence contract"
-        )
-        result["required_next_tool_call"] = {}
-        result["required_next_tool_call_validated"] = False
-        result["required_next_progress"] = (
-            "Do not list files for prose, metrics, headings, or unknown path tokens. "
-            "Use verified evidence for final/block, or provide a concrete search query."
-        )
-        return result
-
-    if tool in {"repo_semantic_search", "repo_rg_search", "repo_search"}:
-        query_value = args.get("query") or args.get("pattern") or args.get("symbol")
-        if _replan_search_query_is_concrete(query_value):
-            path_token = _replan_repo_path_token(args.get("path")) if args.get("path") else ""
-            if path_token and path_token not in known_dirs and path_token not in known_paths:
-                result["invalid_required_next_tool_call_paths"] = [path_token]
-                args.pop("path", None)
-            required_call["arguments"] = args
-            return _mark_replan_required_call_validated(result, required_call)
-        result["invalid_required_next_tool_call_query"] = str(query_value or "").strip()[:260]
-        result["invalid_required_next_tool_call_reason"] = (
-            "planner_replan_specialist proposed a search query that looks like a "
-            "heading, metric, violation label, or path token rather than a concrete query"
-        )
-        result["required_next_tool_call"] = {}
-        result["required_next_tool_call_validated"] = False
-        result["required_next_progress"] = (
-            "Do not lock the next turn on a weak search query. Rewrite from verified "
-            "evidence if possible, or provide a concrete semantic query in prose-free form."
-        )
-        return result
-
-    if tool == "planner_scratchpad_read":
-        document_id = str(args.get("document_id") or "").strip()
-        target_file = _replan_repo_path_token(args.get("target_file")) if args.get("target_file") else ""
-        section = str(args.get("section") or "").strip()
-        if document_id and not _replan_route_token_is_prose_or_metric(document_id):
-            return _mark_replan_required_call_validated(result, required_call)
-        if target_file and target_file in known_paths:
-            return _mark_replan_required_call_validated(result, required_call)
-        result["invalid_required_next_tool_call_reason"] = (
-            "planner_replan_specialist proposed planner_scratchpad_read without a "
-            "known document_id or verified target_file"
-        )
-        if target_file:
-            result["invalid_required_next_tool_call_paths"] = [target_file]
-        elif section:
-            result["invalid_required_next_tool_call_query"] = section[:260]
-        result["required_next_tool_call"] = {}
-        result["required_next_tool_call_validated"] = False
-        result["required_next_progress"] = (
-            "Do not lock rewrite recovery on an unverified scratchpad selector. "
-            "Use verified evidence for final/block, or request a concrete known window."
-        )
-        return result
-
-    result["required_next_tool_call"] = {}
-    result["required_next_tool_call_validated"] = False
-    result["invalid_required_next_tool_call_reason"] = (
-        "planner_replan_specialist proposed a route that has no deterministic validator proof"
-    )
-    return result
-
-
-
-def planner_replan_specialist_for_validation(
-    *,
-    goal: str,
-    decision: dict[str, Any],
-    validation: dict[str, Any],
-    prevalidation_feedback: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    violations = _list_or_empty(validation.get("violations"))
-    contract = _dict_or_empty(validation.get("evidence_contract"))
-    if not _validation_needs_replan_specialist(violations, contract, decision):
-        return {}
-    code_contract = _dict_or_empty(contract.get("code_product_contract"))
-    replan_role = "code_product_replan" if code_contract.get("required") else "planner_replan"
     request_payload = {
         "schema": "planner_replan_specialist_request.v1",
         "task": "route_next_planner_turn_after_validator_rejection",
@@ -4749,8 +4597,6 @@ def planner_replan_specialist_for_validation(
             if parse_diagnostics.get("error") not in (None, "", [], {}):
                 result["json_parse_error"] = parse_diagnostics.get("error")
     return result
-
-
 _PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS = {
     "repo_apply_patch_missing_path_or_paths",
     "repo_apply_patch_old_text_not_from_verified_read",
@@ -4769,13 +4615,11 @@ _PLANNER_CUDA_REWRITE_EXACT_VIOLATIONS = {
     "missing_code_product_candidate",
     "planner_final_required_empty_output",
 }
-
 _PLANNER_CUDA_REWRITE_PATCH_PREFIXES = (
     "repo_apply_patch_",
     "repo_propose_code_edit_",
     "code_product_",
 )
-
 _PLANNER_CUDA_REWRITE_FINAL_PREFIXES = (
     "final_not_allowed_by_evidence_contract:",
     "final_without_",
@@ -5149,7 +4993,7 @@ def controller_guard_result_for_validation(
 
 def _planner_system_for_current_mode() -> str:
     return _planner_system_for_current_mode_impl(
-        native_tools=AGENTIC_PLANNER_NATIVE_TOOLS,
+        native_tools=get_planner_config().native_tools,
     )
 
 
@@ -5199,7 +5043,7 @@ def planner_decision(
             "write_json": write_json,
         },
         config={
-            "AGENTIC_PLANNER_NATIVE_TOOLS": AGENTIC_PLANNER_NATIVE_TOOLS,
+            "AGENTIC_PLANNER_NATIVE_TOOLS": get_planner_config().native_tools,
             "AGENTIC_PLANNER_NUM_CTX": AGENTIC_PLANNER_NUM_CTX,
             "AGENTIC_PLANNER_NUM_CTX_CAP": AGENTIC_PLANNER_NUM_CTX_CAP,
             "AGENTIC_PLANNER_NUM_CTX_REQUESTED": AGENTIC_PLANNER_NUM_CTX_REQUESTED,
@@ -5401,7 +5245,7 @@ def _agent_flow_diagnostics(
         goal,
         history,
         planner_memory,
-        native_tools_enabled=AGENTIC_PLANNER_NATIVE_TOOLS,
+        native_tools_enabled=get_planner_config().native_tools,
         evidence_contract_builder=planner_evidence_contract,
         planner_incomprehensible_retry_count=_planner_incomprehensible_retry_count,
     )
@@ -6009,13 +5853,13 @@ def run_agentic_planner_job(job_id: str) -> dict[str, Any]:
             "controller_preseed_plan": _controller_preseed_plan,
             "decision_memory_claim_text": _decision_memory_claim_text,
             "decision_raw_planner_text": _decision_raw_planner_text,
-              "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
-              "controller_initial_orientation_candidate_pool": _controller_initial_orientation_candidate_pool,
-              "controller_orientation_model_select": _controller_orientation_model_select,
-              "orientation_shadow_effective_mode": _orientation_shadow_effective_mode_impl,
-              "orientation_legacy_selected_candidate_ids": _orientation_legacy_selected_candidate_ids_impl,
-              "orientation_shadow_selection_metrics": _orientation_shadow_selection_metrics_impl,
-              "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
+            "initial_orientation_surface_from_history": _initial_orientation_surface_from_history,
+            "controller_initial_orientation_candidate_pool": _controller_initial_orientation_candidate_pool,
+            "controller_orientation_model_select": _controller_orientation_model_select,
+            "orientation_shadow_effective_mode": _orientation_shadow_effective_mode_impl,
+            "orientation_legacy_selected_candidate_ids": _orientation_legacy_selected_candidate_ids_impl,
+            "orientation_shadow_selection_metrics": _orientation_shadow_selection_metrics_impl,
+            "is_unrecoverable_plain_text_planner_output": _is_unrecoverable_plain_text_planner_output,
             "native_required_repaired_tool_decision_disallowed": _native_required_repaired_tool_decision_disallowed,
             "normalize_terminal_planner_decision": _normalize_terminal_planner_decision,
             "planner_cuda_rewrite_guard_for_validation": planner_cuda_rewrite_guard_for_validation,

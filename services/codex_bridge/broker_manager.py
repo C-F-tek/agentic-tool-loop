@@ -73,6 +73,8 @@ class BrokerManager:
             "AICARMINE_BROKER_SERVICE_NAME": f"aicarmine-codex-agentic-loop-{port}",
             "AICARMINE_BROKER_APP_TITLE": f"AI-Carmine Codex Agentic Loop {port}",
             "AICARMINE_BROKER_UVICORN_RELOAD": "0",
+            "AICARMINE_OLLAMA_TASK_MODEL": "llama3.1:8b",
+            "AICARMINE_OLLAMA_TASK_URL": "http://127.0.0.1:11435/api/chat",
         })
         
         command = [

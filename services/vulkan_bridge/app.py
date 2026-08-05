@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import hashlib
 import json
 import os
@@ -10,10 +9,8 @@ import urllib.error
 import httpx
 from pathlib import Path
 from typing import Any
-
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict, Field
-
 from .config import BridgeConfig, int_env, bool_env, load_bridge_config_from_env
 from .application.request_payload import (
     first_dict,
@@ -30,7 +27,7 @@ from .application.materialization_report import build_materialization_report
 from .application.public_field_names import normalize_public_payload_field_names
 from .application.public_payload_linter import lint_public_payload
 from .openapi_builder import build_native_helper_openapi
-
+from ..public_payload import get_payload_shaper
 _agentic_v9_hashlib = hashlib
 _agentic_v9_json = json
 _agentic_v9_os = os
