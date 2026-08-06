@@ -150,8 +150,8 @@ public payload contract.
 
 The active repository for planner repo tools is `AICARMINE_LAB_REPO`. A job can
 therefore analyze a lab worktree such as
-`C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab` even when the Codex
-thread cwd is `C:\Users\carmi\AI`.
+`C:\Users\sanit\agentic-tool-loop\lab-worktrees\blender-audio-project-lab` even when the Codex
+thread cwd is `C:\Users\sanit\agentic-tool-loop`.
 
 Do not infer repo-tool validity from the Codex cwd. For every job, use
 `user_payload.lab_repo` in the captured planner payload to identify the active
@@ -613,12 +613,12 @@ stopping anything:
 Do not infer that the service venv is broken from a stalled GPU/task process.
 There are two separate runtime families:
 
-- 3571/3572 use Python from `C:\Users\carmi\AI\venvs\labtools` unless a launcher
+- 3571/3572 use Python from `C:\Users\sanit\agentic-tool-loop\venvs\labtools` unless a launcher
   override changes it;
 - 11435 is the dedicated Ollama task instance for GPU0 Intel via Vulkan. It is
   a separate `ollama.exe serve` process launched by
   `services\ollama-task-vulkan.ps1` with `OLLAMA_HOST=127.0.0.1:11435`,
-  `OLLAMA_MODELS=C:\Users\carmi\AI\models-task`, `OLLAMA_VULKAN=1` and
+  `OLLAMA_MODELS=C:\Users\sanit\agentic-tool-loop\models-task`, `OLLAMA_VULKAN=1` and
   `GGML_VK_VISIBLE_DEVICES`. GPU0 here means the Intel device role; the Vulkan
   visible-device index must be the resolved Intel Vulkan index, not assumed from
   the Windows/NVIDIA numbering.
@@ -626,7 +626,7 @@ There are two separate runtime families:
 Use the active 3571/3572 venv path directly when checking bridge/broker imports:
 
 ```powershell
-& 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe' -c "import fastapi, uvicorn; import aicarmine_broker.app, vulkan_bridge.app; print('labtools_runtime_import_ok')"
+& 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe' -c "import fastapi, uvicorn; import aicarmine_broker.app, vulkan_bridge.app; print('labtools_runtime_import_ok')"
 ```
 
 Use process, port ownership and Vulkan/Intel device env, not Python imports, to

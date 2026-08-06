@@ -57,34 +57,34 @@ The project-local memory MCP is write-capable but semantic and isolated:
 
 The shared implementation lives in:
 
-- `C:\Users\carmi\AI\services\codex_bridge\repo_mcp_common.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_mcp_common.py`
 
 Server entrypoints:
 
-- `C:\Users\carmi\AI\services\codex_bridge\repo_state_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\repo_search_det_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\repo_validate_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\repo_code_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py`
-- `C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_state_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_search_det_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_validate_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_code_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\ops_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\sqlite_readonly_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\job_artifact_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\job_view_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\git_readonly_mcp_server.py`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\project_memory_mcp_server.py`
 
 ## Runtime Requirements
 
 Required Python executable:
 
 ```text
-C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe
+C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe
 ```
 
 Required environment:
 
 ```text
-AICARMINE_CODEX_MCP_REPO_ROOT=C:\Users\carmi\AI
-AICARMINE_USEFUL_TOOLS_ROOT=C:\Users\carmi\AI\services\useful_tools
+AICARMINE_CODEX_MCP_REPO_ROOT=C:\Users\sanit\agentic-tool-loop
+AICARMINE_USEFUL_TOOLS_ROOT=C:\Users\sanit\agentic-tool-loop\services\useful_tools
 AICARMINE_REPO_MCP_MAX_TEXT_CHARS=24000
 ```
 
@@ -97,11 +97,11 @@ This does not require the OpenWebUI lab shadow to equal the Codex repo root.
 
 The effective health gate must report:
 
-- `python_executable`: `C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe`
-- `repo_root`: `C:\Users\carmi\AI`
-- `codex_mcp_repo_root`: `C:\Users\carmi\AI`
-- `aicarmine_lab_repo`: `C:\Users\carmi\AI` after MCP process-local sync.
-- `cwd`: `C:\Users\carmi\AI`
+- `python_executable`: `C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe`
+- `repo_root`: `C:\Users\sanit\agentic-tool-loop`
+- `codex_mcp_repo_root`: `C:\Users\sanit\agentic-tool-loop`
+- `aicarmine_lab_repo`: `C:\Users\sanit\agentic-tool-loop` after MCP process-local sync.
+- `cwd`: `C:\Users\sanit\agentic-tool-loop`
 - `git_root_ok`: `true`
 - `branch`: the current Codex work branch for the selected repo root.
 
@@ -204,64 +204,64 @@ Example TOML only, for local documentation:
 
 ```toml
 [mcp_servers.aicarmine_repo_state]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\repo_state_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\carmi\AI\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_state_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\sanit\agentic-tool-loop\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_repo_search_det]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\repo_search_det_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\carmi\AI\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_search_det_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\sanit\agentic-tool-loop\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_repo_validate]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\repo_validate_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\carmi\AI\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_validate_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\sanit\agentic-tool-loop\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_repo_code]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\repo_code_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\carmi\AI\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\repo_code_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\sanit\agentic-tool-loop\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_codex_ops]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\ops_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\carmi\AI\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\ops_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_USEFUL_TOOLS_ROOT = 'C:\Users\sanit\agentic-tool-loop\services\useful_tools', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_sqlite_readonly]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\sqlite_readonly_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\sqlite_readonly_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_job_artifact]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\job_artifact_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\job_artifact_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_job_view]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\job_view_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\job_view_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_git_readonly]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\git_readonly_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\git_readonly_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_project_memory]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\project_memory_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\project_memory_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.aicarmine_local_subagent]
-command = 'C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe'
-args = ['C:\Users\carmi\AI\services\codex_bridge\local_subagent_mcp_server.py']
-env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\carmi\AI', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
+command = 'C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe'
+args = ['C:\Users\sanit\agentic-tool-loop\services\codex_bridge\local_subagent_mcp_server.py']
+env = { AICARMINE_CODEX_MCP_REPO_ROOT = 'C:\Users\sanit\agentic-tool-loop', AICARMINE_REPO_MCP_MAX_TEXT_CHARS = '24000' }
 
 [mcp_servers.playwright]
 command = 'npx'
-args = ['-y', '@playwright/mcp@latest', '--headless', '--isolated', '--output-dir', 'C:\Users\carmi\AI\state\playwright_mcp']
-cwd = 'C:\Users\carmi\AI'
+args = ['-y', '@playwright/mcp@latest', '--headless', '--isolated', '--output-dir', 'C:\Users\sanit\agentic-tool-loop\state\playwright_mcp']
+cwd = 'C:\Users\sanit\agentic-tool-loop'
 ```
 
 The Playwright MCP entry is a local Codex convenience server, not an

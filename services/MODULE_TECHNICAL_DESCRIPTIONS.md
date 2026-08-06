@@ -9,7 +9,7 @@ Regole operative non negoziabili:
 Updated: 2026-06-15
 
 This file is the detailed per-module technical reference for
-`C:\Users\carmi\AI\services`. It complements the higher-level maps:
+`C:\Users\sanit\agentic-tool-loop\services`. It complements the higher-level maps:
 
 - `SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 - `RUNTIME_SCRIPT_REFERENCE.md`
@@ -20,7 +20,7 @@ Generated/runtime areas are intentionally excluded: `.venv`, `openwebui-data`,
 
 ## Reading Order For Future Changes
 
-1. `C:\Users\carmi\AI\AGENTS.md`
+1. `C:\Users\sanit\agentic-tool-loop\AGENTS.md`
 2. `services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
 3. `services/SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 4. `services/END_TO_END_AGENTIC_FLOW.md`

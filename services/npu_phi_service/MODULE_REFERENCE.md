@@ -6,7 +6,7 @@
 Runtime boundary:
 
 - Runs as a separate process on `127.0.0.1:3551`.
-- Uses `C:\Users\carmi\AI\venvs\openvino`.
+- Uses `C:\Users\sanit\agentic-tool-loop\venvs\openvino`.
 - Does not replace the existing OpenVINO reranker on `3550`.
 - Does not expose a public OpenWebUI tool.
 - Does not block the broker/planner loop.

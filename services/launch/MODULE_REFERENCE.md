@@ -15,8 +15,8 @@ tools.
 
 Read before edits:
 
-- `C:\Users\carmi\AI\AGENTS.md`
-- `C:\Users\carmi\AI\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\AGENTS.md`
+- `C:\Users\sanit\agentic-tool-loop\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 
 ## Required Runtime Order
 
@@ -55,13 +55,13 @@ minimal change:
 
 | Component | Expected venv/runtime |
 | --- | --- |
-| 3571 public bridge | `C:\Users\carmi\AI\venvs\labtools` |
-| 3572 broker/runtime | `C:\Users\carmi\AI\venvs\labtools` |
-| safe command executor | `C:\Users\carmi\AI\venvs\labtools` unless `AICARMINE_EXECUTOR_PYTHON` overrides it |
-| OpenWebUI | `C:\Users\carmi\AI\venvs\openwebui` |
-| Open Terminal | `C:\Users\carmi\AI\venvs\openwebui` |
-| OpenVINO reranker provider 3550 | `C:\Users\carmi\AI\venvs\openvino` through `OPENVINO_PYTHON_EXE` |
-| Phi-3.5 NPU diagnostic sidecar 3551 | `C:\Users\carmi\AI\venvs\openvino` through `NPU_PHI_PYTHON_EXE`; disabled by default until explicitly enabled |
+| 3571 public bridge | `C:\Users\sanit\agentic-tool-loop\venvs\labtools` |
+| 3572 broker/runtime | `C:\Users\sanit\agentic-tool-loop\venvs\labtools` |
+| safe command executor | `C:\Users\sanit\agentic-tool-loop\venvs\labtools` unless `AICARMINE_EXECUTOR_PYTHON` overrides it |
+| OpenWebUI | `C:\Users\sanit\agentic-tool-loop\venvs\openwebui` |
+| Open Terminal | `C:\Users\sanit\agentic-tool-loop\venvs\openwebui` |
+| OpenVINO reranker provider 3550 | `C:\Users\sanit\agentic-tool-loop\venvs\openvino` through `OPENVINO_PYTHON_EXE` |
+| Phi-3.5 NPU diagnostic sidecar 3551 | `C:\Users\sanit\agentic-tool-loop\venvs\openvino` through `NPU_PHI_PYTHON_EXE`; disabled by default until explicitly enabled |
 | Ollama 11434/11435 | external `ollama.exe` process, not a Python venv |
 
 ## Repository Workdir Env Coupling
