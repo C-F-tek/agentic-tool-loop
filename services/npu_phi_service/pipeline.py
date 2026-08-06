@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any
 from .blob_lock import BlobBuildLock
 from .settings import NpuPhiSettings
 
+
+logger = logging.getLogger(__name__)
 
 PipelineFactory = Callable[[str, str, dict[str, object]], Any]
 
@@ -68,6 +71,7 @@ class PipelineManager:
             status = self.settings.model_status()
             if not status["model_ready"]:
                 self._last_error = "model_files_missing"
+                logger.error("NPU Phi model files are missing: %s", status)
                 raise RuntimeError("NPU Phi model files are missing")
             self.settings.ensure_runtime_dirs()
             start = time.perf_counter()
@@ -75,6 +79,7 @@ class PipelineManager:
                 self._pipeline = await asyncio.to_thread(self._build_pipeline_with_optional_lock)
             except Exception as exc:
                 self._last_error = f"{type(exc).__name__}: {str(exc)[:1000]}"
+                logger.error("NPU Phi pipeline build failed: %s", self._last_error)
                 raise
             self._build_count += 1
             self._last_build_seconds = time.perf_counter() - start

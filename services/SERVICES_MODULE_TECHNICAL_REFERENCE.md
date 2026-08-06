@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # Services Module Technical Reference
 
-Updated: 2026-06-05
+Updated: 2026-06-15
 
 This document is a source map for `C:\Users\carmi\AI\services`. It documents
 the modules that are part of the runtime or developer tooling. It intentionally
@@ -54,10 +54,13 @@ OpenWebUI
   -> 3571 /vulkan_helper
   -> 3572 /vulkan/agent
   -> 3572 agent job worker
+  -> 3572 controller preplanner RAG query plan on 11434 when useful
   -> 11434 planner turn
   -> 3572 validator
+      -> repo/semantic final: 11434 final-quality judge, then validator route
+      -> selected validator rejection: 11434 replan specialist, then new planner route
       -> valid tool: 3572 dispatch_tool(...)
-      -> invalid/dirty planner emission: optional 11435 repair, then validation again
+      -> invalid/dirty non-code-product planner emission: optional 11435 repair, then validation again
       -> semantic tool-contract failure: controller_guard, no hidden substitute
       -> valid final: finalize_agentic_job(...)
   -> 3572 materialized terminal payload
@@ -78,6 +81,12 @@ Critical protocol notes:
 - 3571 is a public helper facade. It must not expose 3572 internal routes as
   OpenWebUI tools.
 - 3572 owns the internal agentic loop and validator/finalization contract.
+- Preplanner, final-quality judge and replan specialist are model-assisted
+  guidance lanes on 11434. They may repair malformed JSON with the planner
+  model, but their output is routed through the validator/controller guard; the
+  controller still does not execute a hidden replacement step.
+- 11435 repair is not a second planner. It is explicit repair support for
+  malformed planner emissions or invalid non-code-product proposals only.
 - Codex MCP servers under `codex_bridge/` are outside the OpenWebUI ->
   3571 -> 3572 chain. They expose host-side Codex tools over MCP stdio and
   must not be described as planner-selectable tools or as a shortcut into the
@@ -104,6 +113,11 @@ Critical protocol notes:
   `payload_index_for_30b`, `priority_evidence_for_30b`,
   `materialization_report`, `openwebui_usage` and `tool_context_for_30b` ahead
   of the optional generic `result` field.
+- Large public payloads are deduplicated pointer-first. Complete `content`,
+  `unified_diff` and `structured_operations` live canonically in
+  `tool_context_for_30b.artifacts[*].artifact`; `priority_evidence_for_30b`
+  carries bounded metadata/hash/location and `payload_index_for_30b` points to
+  the canonical inline field.
 - 3572 is the primary owner for materializing OpenWebUI public evidence.
   `aicarmine_broker.application.public_payload.evidence_materializer` builds
   `priority_evidence_for_30b`, `payload_index_for_30b` and
@@ -122,9 +136,11 @@ Critical protocol notes:
   index plus a real SQLite text window for the complete compact manifest.
   Optional memory/RAG/history context can be omitted only after real
   SQLite-windowing and serialized prompt counting. `num_ctx` is
-  requested/capped/effective, not assumed. Current documented defaults are
-  `num_ctx_requested=12288`, `num_ctx_cap=12288`,
-  `prompt_char_budget=48000`, with compaction beginning at 50% of that budget.
+  requested/capped/effective, not assumed. Current code defaults are
+  `num_ctx_requested=262144`, `num_ctx_cap=262144`,
+  `prompt_char_budget=max(48000, effective_num_ctx)`, with compaction beginning
+  at 50% of that budget. Launcher/process env may override these defaults; a
+  live job's prompt capture is the operational proof.
   The 50% compaction threshold is a soft trigger for SQLite windowing, not a
   hard no-headroom blocker; the hard generation headroom budget is the prompt
   char budget minus the reserved generation margin.
@@ -259,8 +275,12 @@ planner history, validation, finalization and job dashboards.
 | `aicarmine_broker/job_html.py` | HTML renderer for job dashboard pages and the 3572-only IA Live Control View. | Reads job state/events, planner prompt captures, stream files and same-job tool artifacts for display. | Display-only; avoid changing job semantics here. |
 | `aicarmine_broker/job_store.py` | Job persistence: filesystem JSON state and NDJSON events are primary; SQLite metadata/events are secondary dashboard indexes. It also writes final result files and compact terminal responses. | Writes under agent job workspace and broker DB. If SQLite fails, it records typed filesystem warnings and list fallback markers instead of hiding jobs. | State schema and compact responses are consumed by 3571 and dashboards. Do not make SQLite the only source of truth. |
 | `aicarmine_broker/memory_tools.py` | Scratchpad and SQLite-backed planner memory tools. Planner memory surfaces report feature availability separately from query success. Cleanup is dry-run unless `apply=true` has explicit consent. | Reads/writes broker memory tables and scratchpad files. | Keep memory distinct from proof/evidence used by finalization gates. |
-| `aicarmine_broker/planner.py` | Controlled planner loop, prompt/history construction, intrinsic-context injection, preseed evidence, validation, repair routing, code-product/apply intent split, turn-specific native tool surface, tool execution and finalization. | Talks to Ollama 11434/11435, dispatches internal tools, writes job state/events. | Highest-risk module. Do not change max step, model, ctx, launcher or validator flow without direct evidence. The exposed native tools must match `required_next_progress`; do not leave repo navigation tools visible when the contract requires a build-state write, code-product proposal, typed block or final. |
+| `aicarmine_broker/planner.py` | Controlled planner loop, prompt/history construction, intrinsic-context injection, preplanner query-plan wiring, final-quality judge wiring, replan-specialist wiring, validation, repair routing, code-product/apply intent split, turn-specific native tool surface, tool execution and finalization. | Talks to Ollama 11434/11435, dispatches internal tools, writes job state/events. | Highest-risk module. Do not change max step, model, ctx, launcher or validator flow without direct evidence. The exposed native tools must match `required_next_progress`; do not leave repo navigation tools visible when the contract requires a build-state write, code-product proposal, typed block or final. 11435 repair must not mask code-product contract failures. |
 | `aicarmine_broker/planner_intrinsic_context.py` | Internal optional-context builder. It bounds controller memory, reads optional `rag.sqlite`/FTS5 chunks in read-only mode, summarizes repo evidence, failure patterns, tool purposes and `num_ctx` requested/cap/effective. | Reads planner memory surface and optional SQLite RAG DB. Writes nothing and is not a tool surface. | Keep it controller-injected only; do not register RAG/chunks as planner tools or import lab runtime modules. |
+| `aicarmine_broker/application/controller/rag_preseed.py` | Controller preseed and preplanner RAG query-plan owner. It asks 11434 for bounded query/path intent when useful, repairs malformed query-plan JSON with the planner model and falls back to typed deterministic preseed diagnostics on backend timeout/unavailability. | Reads repo/preseed context and optional model responses through injected dependencies. | Must not auto-finalize, invent paths or block a job merely because query planning timed out. |
+| `aicarmine_broker/application/evidence/final_quality.py` | Evidence-owned final-quality judge request builder and deterministic quality checks for repo/semantic audit finals. | Produces bounded judge payloads and route requirements; model call wiring remains in `planner.py`. | Judge guidance can reject or request more evidence, but validator/finalization remains authoritative. |
+| `aicarmine_broker/application/evidence/required_working_set.py` | Required working-set builder for planner prompt content. | Rehydrates same-job tool artifacts and stores/returns bounded text windows through injected prompt-window helpers. | Required content must be real text/diff windows, not local path metadata. |
+| `aicarmine_broker/application/prompt/pack_builder.py` | Measured prompt-pack owner for 11434 calls. It budgets required working set, optional context, available-tool windows and history transport. | Writes only prompt-window documents through injected storage. | Prompt compaction is internal to planner calls and must not shrink the public OpenWebUI payload. |
 | `aicarmine_broker/public_wrapper.py` | Deterministic public wrapper helpers for public answers and selector failures. | Pure formatting/normalization helpers. | Keep deterministic; no hidden tool calls. |
 | `aicarmine_broker/repo_tools.py` | Compatibility facade for deterministic filesystem, search, read, report-only code edit proposal, patch, validation, terminal and command tools. Concrete behavior lives in `tools/*`: command classification in `tools/command_safety.py`, compile/build target resolution in `tools/repo_command.py`, terminal metrics/repair in `tools/terminal.py`. | Reads/writes repo files only through explicit write/apply tool paths and approval rules; shells via classified/guarded commands. Deterministic adapters resolve from the active service venv or installed CLI paths and return structured payloads. | Security-sensitive and evidence-sensitive. Tool results must contain real output, not only artifact paths. External adapters are internal evidence/validation tools; do not expose them as 3571 OpenWebUI tools. |
 | `aicarmine_broker/code_edit_proposal_contract.py` | Local stable contract builder for report-only code products. It validates `unified_diff`, `structured_edit` and `no_op`, generates diffs from `old_text/new_text`, and attaches AST evidence through deterministic tooling. | Reads target files and optional AST/diff dependencies from the active venv/CLI. Writes no source files. | Diff/code-product payload must stay complete; dependency failures are typed errors, not heuristic fallbacks. |
@@ -275,7 +295,7 @@ planner history, validation, finalization and job dashboards.
 | --- | --- | --- | --- |
 | `planner_core/__init__.py` | Subpackage marker. | No runtime behavior expected. | Keep import-light. |
 | `planner_core/cache.py` | Per-job read-only tool cache and repair cache helpers used by planner. | Operates on in-memory/job history payloads. | Caches must not invent evidence or turn failed tools into successful ones. |
-| `planner_core/json_io.py` | Ollama JSON transport, stream capture and strict planner JSON parsing. | HTTP calls to Ollama; writes stream files when requested. | Do not treat Ollama `done_reason` as controller finalization. It is turn metadata. |
+| `planner_core/json_io.py` | Ollama JSON transport, stream capture and strict planner JSON parsing. It guards both waiting for response headers and reading stream frames, emitting typed planner stream timeout diagnostics instead of silent zero-byte streams. | HTTP calls to Ollama; writes stream files when requested. | Do not treat Ollama `done_reason` as controller finalization. It is turn metadata. |
 
 ## `vulkan_bridge` Package
 
@@ -301,7 +321,8 @@ to the model.
 | `codex_bridge/repo_state_mcp_server.py` | Deterministic Codex repo-state MCP server. | Imports broker repo-status helpers after common root sync. | Must remain read-only and no-loop. |
 | `codex_bridge/repo_search_det_mcp_server.py` | Deterministic Codex repo-search MCP server. | Imports broker deterministic search helpers after common root sync. | Must remain read-only and no-loop. |
 | `codex_bridge/repo_validate_mcp_server.py` | Deterministic Codex repo-validation MCP server. | Imports broker validation helpers after common root sync. | Must remain validation-only and no-loop. |
-| `codex_bridge/repo_code_mcp_server.py` | Incubating Codex repo-code MCP server for candidate code edit tools. | Imports broker code-proposal, deterministic diff-check and exact patch helpers after common root sync. | Must stay isolated from stable MCPs; source writes require explicit `allow_source_write=true`. |
+| `codex_bridge/repo_code_change_set.py` | Content-addressed structured-edit and change-set owner for Codex/Cline. | Reads UTF-8 preimages, applies exact bounded operations, generates canonical LF diffs, persists repository/commit/preimage metadata and resolves integrity-checked IDs. | Maximum 2 MiB/100 files; no arbitrary paths, regex, binary/delete/rename operations or source writes during proposal. |
+| `codex_bridge/repo_code_mcp_server.py` | Incubating Codex repo-code MCP server for candidate code edit tools. | Prefers multi-file `structured_edit`, generates diffs through the change-set owner, and preserves unified-diff/change-set/exact legacy compatibility. | Must keep the same five tool names, reject mixed authoring modes and require `allow_source_write=true` for source changes. |
 | `codex_bridge/ops_mcp_server.py` | Incubating Codex ops MCP server for read-only service-state inspection. | Reads process, TCP listener and repo-local log state. | Must not become a command runner, must not call HTTP health routes and must redact command-line secrets. |
 | `codex_bridge/rag_index_repo.py` | Git-surface SQLite/FTS5 index builder for Codex RAG. | Reads `git ls-files --cached --others --exclude-standard` and writes `state/codex_rag/`. | Keep independent from OpenWebUI/Chroma and broker runtime state. |
 | `codex_bridge/rag_mcp_server.py` | Dedicated Codex RAG MCP server exposing context, index status and reindex tools. | Reads the Codex RAG SQLite index and optionally calls the local OVMS `/v3/rerank` endpoint. | Must not import broker dispatchers, edit/validate tools, 3571 or 3572 agentic-loop paths. |
@@ -355,16 +376,16 @@ determine whether 3571, 3572, Ollama and OpenWebUI are connected correctly.
 
 | File | Purpose |
 | --- | --- |
+| `../docs/START_HERE_RUNTIME.md` | Guided first-read map for runtime roles, debug paths and source-of-truth rules. |
 | `VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md` | Operational contract for 3571/3572 agentic loop, validator, finalization and OpenWebUI evidence transport. |
 | `END_TO_END_AGENTIC_FLOW.md` | Code-backed end-to-end flow: OpenWebUI -> 3571 -> 3572 -> 11434/11435 -> dispatcher -> validated terminal result -> 3571 wrapper. |
-| `AGENTIC_LOOP_PATCH_NOTES.md` | Patch notes and technical memory for current agentic loop changes. |
-| `AGENTIC_LOOP_V5_OPERATIONAL_MEMORY_NOTES.md` | Operational notes for planner turn memory, done reasons and tool-result transport. |
 | `SERVICES_MODULE_TECHNICAL_REFERENCE.md` | This module-level source reference. |
 | `MODULE_TECHNICAL_DESCRIPTIONS.md` | Detailed per-file technical descriptions: purpose, inputs, outputs, side effects, risks and verification notes. |
 | `RUNTIME_SCRIPT_REFERENCE.md` | Detailed reference for top-level Python and PowerShell service scripts. |
 | `aicarmine_broker/MODULE_REFERENCE.md` | Detailed module reference for the 3572 broker/runtime package. |
 | `vulkan_bridge/MODULE_REFERENCE.md` | Detailed module reference for the 3571 OpenWebUI-facing bridge package. |
 | `codex_bridge/MODULE_REFERENCE.md` | Detailed module reference for Codex MCP/Responses bridge modules. |
+| `codex_bridge/MCP_GUIDE.md` | Operator-facing guide for Codex MCP server selection, stdio client JSON compatibility, confirmation gates and debug playbooks. |
 | `model_export/MODULE_REFERENCE.md` | Detailed module reference for model export modules. |
 | `npu_phi_service/MODULE_REFERENCE.md` | Detailed module reference for the Phi-3.5 OpenVINO/NPU diagnostic sidecar. |
 | `launch/MODULE_REFERENCE.md` | Detailed module reference for launcher helpers and runtime order. |

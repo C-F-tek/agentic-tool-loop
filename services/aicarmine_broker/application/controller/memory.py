@@ -12,8 +12,29 @@ MemoryWriter = Callable[[dict[str, Any], Path], dict[str, Any]]
 TargetKeyBuilder = Callable[[str, dict[str, Any]], str]
 ValueClipper = Callable[..., Any]
 
+CONTROLLER_MEMORY_LESSON_TEXT_LIMIT = 1200
+LOOP_TURN_MEMORY_TEXT_LIMIT = 4000
 
-def controller_memory_lesson_text(
+
+def _clip_memory_text(text: str, *, limit: int) -> str:
+    value = str(text or "")
+    if len(value) <= limit:
+        return value
+    suffix = f"\n...[truncated {len(value) - limit} chars]"
+    return value[: max(0, limit - len(suffix))] + suffix
+
+
+def _memory_text_diagnostics(text: str, *, limit: int) -> tuple[str, dict[str, Any]]:
+    raw = str(text or "")
+    clipped = _clip_memory_text(raw, limit=limit)
+    return clipped, {
+        "text_chars_before_clip": len(raw),
+        "text_truncated": len(raw) > limit,
+        "text_limit": limit,
+    }
+
+
+def _controller_memory_lesson_raw_text(
     job_id: str,
     state: dict[str, Any],
     status: str,
@@ -47,7 +68,23 @@ def controller_memory_lesson_text(
         lines.append("blocker=" + str(blocker)[:240])
     lines.append("correct_next=" + str(final_summary or final_contract.get("reason") or "")[:260])
     lines.append(f"history_count={len(history)}")
-    return "\n".join(lines)[:1200]
+    return "\n".join(lines)
+
+
+def controller_memory_lesson_text(
+    job_id: str,
+    state: dict[str, Any],
+    status: str,
+    final_summary: str,
+    result: dict[str, Any],
+    contract: dict[str, Any],
+    target_key: str,
+) -> str:
+    text, _metadata = _memory_text_diagnostics(
+        _controller_memory_lesson_raw_text(job_id, state, status, final_summary, result, contract, target_key),
+        limit=CONTROLLER_MEMORY_LESSON_TEXT_LIMIT,
+    )
+    return text
 
 
 def write_controller_memory_lesson(
@@ -67,7 +104,10 @@ def write_controller_memory_lesson(
     goal = str(state.get("goal") or "")
     contract = planner_evidence_contract(goal, history)
     target_key = controller_memory_target_key(goal, contract)
-    text = controller_memory_lesson_text(job_id, state, status, final_summary, result, contract, target_key)
+    text, text_metadata = _memory_text_diagnostics(
+        _controller_memory_lesson_raw_text(job_id, state, status, final_summary, result, contract, target_key),
+        limit=CONTROLLER_MEMORY_LESSON_TEXT_LIMIT,
+    )
     try:
         written = runtime_sqlite_memory_write({
             "kind": "controller_job_lesson",
@@ -80,6 +120,7 @@ def write_controller_memory_lesson(
                 "target_kind": contract.get("target_kind"),
                 "resolved_goal_scope": contract.get("resolved_goal_scope"),
                 "resolved_goal_file": contract.get("resolved_goal_file"),
+                **text_metadata,
             },
         }, root)
     except Exception as exc:  # pragma: no cover - memory must not block job finalization
@@ -95,7 +136,7 @@ def write_controller_memory_lesson(
     return written
 
 
-def loop_turn_memory_text(
+def _loop_turn_memory_raw_text(
     job_id: str,
     state: dict[str, Any],
     row: dict[str, Any],
@@ -129,7 +170,30 @@ def loop_turn_memory_text(
         f"required_next_progress={str(contract.get('required_next_progress') or '')[:320]}",
         f"history_count_after_turn={contract.get('history_count') or ''}",
     ]
-    return "\n".join(line for line in lines if not line.endswith("="))[:4000]
+    return "\n".join(line for line in lines if not line.endswith("="))
+
+
+def loop_turn_memory_text(
+    job_id: str,
+    state: dict[str, Any],
+    row: dict[str, Any],
+    contract: dict[str, Any],
+    target_key: str,
+    *,
+    prompt_clip_value: ValueClipper,
+) -> str:
+    text, _metadata = _memory_text_diagnostics(
+        _loop_turn_memory_raw_text(
+            job_id,
+            state,
+            row,
+            contract,
+            target_key,
+            prompt_clip_value=prompt_clip_value,
+        ),
+        limit=LOOP_TURN_MEMORY_TEXT_LIMIT,
+    )
+    return text
 
 
 def write_loop_turn_memory(
@@ -148,13 +212,16 @@ def write_loop_turn_memory(
     goal = str(state.get("goal") or "")
     contract = planner_evidence_contract(goal, history)
     target_key = controller_memory_target_key(goal, contract)
-    text = loop_turn_memory_text(
-        job_id,
-        state,
-        row,
-        contract,
-        target_key,
-        prompt_clip_value=prompt_clip_value,
+    text, text_metadata = _memory_text_diagnostics(
+        _loop_turn_memory_raw_text(
+            job_id,
+            state,
+            row,
+            contract,
+            target_key,
+            prompt_clip_value=prompt_clip_value,
+        ),
+        limit=LOOP_TURN_MEMORY_TEXT_LIMIT,
     )
     try:
         written = runtime_sqlite_memory_write({
@@ -175,6 +242,7 @@ def write_loop_turn_memory(
                 if isinstance(row.get("tool_result"), dict) else None,
                 "result_ok": (row.get("tool_result") or {}).get("ok")
                 if isinstance(row.get("tool_result"), dict) else None,
+                **text_metadata,
             },
         }, root)
     except Exception as exc:  # pragma: no cover - loop memory must not block routing

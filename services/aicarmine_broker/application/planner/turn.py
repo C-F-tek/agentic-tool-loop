@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
+from ..planner.lane_catalog import control_lane_event_metadata
 from ..prompt.pack_builder import explicit_request_context_from_state
+from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
 
 
@@ -32,6 +34,50 @@ def _planner_step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str,
     if mode not in {"prepare_terminal_decision", "force_terminal_decision"}:
         return {}
     return _dict_from_mapping(guidance)
+
+
+def _planner_role_override_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    value = state.get("planner_role_override")
+    if not isinstance(value, dict):
+        return {}
+    role = str(value.get("role") or "").strip().lower()
+    if role != "planner_cuda_rewrite":
+        return {}
+    out = {
+        key: value.get(key)
+        for key in (
+            "schema",
+            "role",
+            "rewrite_target",
+            "source_step",
+            "instruction",
+            "rejected_decision",
+            "validator_violations",
+            "evidence_contract_sha256",
+        )
+        if value.get(key) not in (None, "", [], {})
+    }
+    out["role"] = role
+    out["one_shot"] = True
+    out["provider"] = "gpu1_planner"
+    return out
+
+
+def _planner_role_system_suffix(role_override: dict[str, Any]) -> str:
+    if str(role_override.get("role") or "") != "planner_cuda_rewrite":
+        return ""
+    rewrite_target = str(role_override.get("rewrite_target") or "decision")
+    instruction = str(role_override.get("instruction") or "").strip()
+    return (
+        "ACTIVE SPECIALIST ROLE: planner_cuda_rewrite on the same GPU1 planner model. "
+        f"Rewrite target={rewrite_target}. This is a one-shot continuation of a "
+        "validator-rejected planner decision, not a fresh planning episode. Use the "
+        "verified evidence and validator feedback already supplied. Do not restart broad "
+        "discovery, do not call Vulkan/GPU0, and do not claim success unless the candidate "
+        "satisfies the current evidence contract. Return exactly one normal planner decision; "
+        "the validator remains authoritative."
+        + (f" Specialist instruction: {instruction}" if instruction else "")
+    )
 
 
 def _apply_step_budget_guidance_to_contract(
@@ -75,7 +121,8 @@ def _apply_step_budget_guidance_to_contract(
         return out
 
     required = _dict_from_mapping(out.get("required_next_tool_call"))
-    if required.get("tool") == "planner_scratchpad_read":
+    required_tool = str(required.get("tool") or "").strip()
+    if required_tool == "planner_scratchpad_read":
         guidance_payload["terminal_decision_deferred_by_required_continuation"] = True
         out["planner_step_budget_guidance"] = guidance_payload
         out = enforce_required_scratchpad_read_continuation_contract(
@@ -94,6 +141,31 @@ def _apply_step_budget_guidance_to_contract(
                 "Step budget is exhausted, but an exact planner_scratchpad_read "
                 "continuation is still required. Consume that continuation before "
                 "any terminal final/block decision."
+            ),
+        }
+        out["operational_notes"] = operational
+        return out
+    if required_tool in {
+        "repo_read",
+        "repo_semantic_search",
+        "repo_rg_search",
+        "repo_search",
+        "repo_list_files",
+    }:
+        guidance_payload["terminal_decision_deferred_by_required_tool_call"] = True
+        out["planner_step_budget_guidance"] = guidance_payload
+        out["planner_may_choose_final"] = False
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["reason"] = "step_budget_deferred_by_required_tool_call"
+        out["finalization_contract"] = final_contract
+        operational = _dict_from_mapping(out.get("operational_notes"))
+        operational["step_budget_hint"] = {
+            "mode": mode,
+            "remaining_steps": guidance_payload["remaining_steps"],
+            "instruction": (
+                "Step budget is tight, but a model-selected required_next_tool_call is pending. "
+                "Execute that exact read-only tool before any terminal final/block decision."
             ),
         }
         out["operational_notes"] = operational
@@ -181,6 +253,35 @@ def _looks_like_malformed_native_protocol(text: str) -> bool:
     )
 
 
+def _planner_payload_capture_view(
+    planner_payload: dict[str, Any],
+    user_payload: dict[str, Any],
+) -> dict[str, Any]:
+    capture = dict(planner_payload)
+    messages = planner_payload.get("messages") if isinstance(planner_payload.get("messages"), list) else []
+    capture_messages: list[dict[str, Any]] = []
+    last_user_index = len(messages) - 1
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            continue
+        row = dict(message)
+        if index == last_user_index and row.get("role") == "user":
+            content = str(row.get("content") or "")
+            row["content"] = {
+                "schema": "planner_payload_user_message_ref.v1",
+                "ref": "user_payload",
+                "chars": len(content),
+                "sha256": sha256_text(content),
+                "content_omitted_from_capture": True,
+            }
+            row["user_payload_sha256"] = sha256_text(stable_json_text(user_payload))
+        capture_messages.append(row)
+    capture["messages"] = capture_messages
+    capture["capture_compacted"] = True
+    capture["runtime_request_unchanged"] = True
+    return capture
+
+
 def _native_plain_text_final_decision(
     raw_text: str,
     *,
@@ -232,6 +333,69 @@ def _degenerate_output_block_decision(
     if stream_meta:
         decision["planner_stream_meta"] = dict(stream_meta)
     return decision
+
+
+def _post_final_reject_turn_tool_names(
+    evidence_contract: dict[str, Any],
+    tool_names: list[str],
+    *,
+    known_tool_names: set[str] | None = None,
+) -> list[str]:
+    known_by_lower = {}
+    for name in known_tool_names or tool_names:
+        canonical_name = str(name or "").strip()
+        if canonical_name:
+            known_by_lower[canonical_name.lower()] = canonical_name
+    if not isinstance(evidence_contract, dict):
+        return tool_names
+    final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
+    supported_latches = {
+        "rewrite_required",
+        "required_gap_only",
+        "terminal_block_required",
+    }
+    if final_rewrite_latch not in supported_latches:
+        if not bool(evidence_contract.get("planner_cuda_rewrite_required")):
+            return tool_names
+        rewrite_count = int(evidence_contract.get("planner_final_quality_reject_count") or 0)
+        if rewrite_count < 1:
+            return tool_names
+    if final_rewrite_latch == "terminal_block_required":
+        return []
+    required = evidence_contract.get("required_next_tool_call")
+    required_tool_raw = str(required.get("tool") or "").strip() if isinstance(required, dict) else ""
+    required_tool_key = required_tool_raw.lower()
+    if required_tool_key:
+        canonical_required_tool = known_by_lower.get(required_tool_key)
+        if canonical_required_tool:
+            return [canonical_required_tool]
+
+        evidence_contract["required_next_tool_call_invalid_tool"] = required_tool_raw
+        evidence_contract["required_next_tool_call_invalid_reason"] = (
+            "required_next_tool_call.tool is not present in the planner tool registry"
+        )
+        evidence_contract.pop("required_next_tool_call", None)
+        evidence_contract["planner_may_choose_final"] = False
+        evidence_contract["planner_may_choose_block"] = True
+        evidence_contract["required_next_progress"] = (
+            f"required_next_tool_call references unknown tool {required_tool_raw!r}. "
+            "Return action=block with invalid contract diagnostic instead of calling "
+            "an unknown tool."
+        )
+        final_contract = (
+            evidence_contract.get("finalization_contract")
+            if isinstance(evidence_contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_contract["planner_may_choose_final"] = False
+        final_contract["planner_may_choose_block"] = True
+        final_contract["final_allowed"] = False
+        final_contract["reason"] = "required_next_tool_call_unknown_tool"
+        evidence_contract["finalization_contract"] = final_contract
+        return []
+    if final_rewrite_latch in {"rewrite_required", "required_gap_only"}:
+        return []
+    return []
 
 
 def planner_decision(
@@ -298,6 +462,22 @@ def planner_decision(
     write_json = deps["write_json"]
 
     goal = str(state.get("goal") or "")
+    planner_role_override = _planner_role_override_from_state(state)
+
+    # Compute planner_lane_id based on planner_role_override
+    if planner_role_override and planner_role_override.get("role") == "planner_cuda_rewrite":
+        planner_lane_id = "planner.cuda_rewrite"
+        trigger = "planner_role_override"
+    else:
+        planner_lane_id = "planner.primary"
+        trigger = "planner_turn"
+
+    planner_lane_metadata = control_lane_event_metadata(
+        planner_lane_id,
+        step=step,
+        attempt=1,
+        trigger=trigger,
+    )
     if _input_error_goal(goal):
         return {
             "action": "block",
@@ -318,6 +498,11 @@ def planner_decision(
         if isinstance(item.get("function"), dict)
         and item["function"].get("name") in internal_tools_list(exclude_vulkan=False)
     ]
+    known_tool_names = {
+        str(item.get("name") or "").strip()
+        for item in all_tool_manifest
+        if str(item.get("name") or "").strip()
+    }
 
     last_step = history[-1] if history else {}
     last_tool_result = last_step.get("tool_result") if isinstance(last_step, dict) else {}
@@ -353,11 +538,44 @@ def planner_decision(
         intrinsic_context["explicit_request_context"] = explicit_request_context
     evidence_contract = planner_evidence_contract(goal, history, intrinsic_context=intrinsic_context)
     evidence_contract = _apply_step_budget_guidance_to_contract(evidence_contract, state)
+    if planner_role_override:
+        evidence_contract["planner_role_override"] = planner_role_override
 
-    native_tool_names = _tool_surface_names_for_turn(
+    base_tool_names = _tool_surface_names_for_turn(
         goal=goal,
         evidence_contract=evidence_contract,
         intrinsic_context=intrinsic_context,
+    )
+    native_tool_names = _post_final_reject_turn_tool_names(
+        evidence_contract,
+        base_tool_names,
+        known_tool_names=known_tool_names,
+    )
+    final_rewrite_latch = str(evidence_contract.get("final_rewrite_latch") or "inactive").strip().lower()
+    if "base_tool_surface_reason" not in evidence_contract:
+        turn_tool_surface_policy = (
+            evidence_contract.get("turn_tool_surface_policy")
+            if isinstance(evidence_contract.get("turn_tool_surface_policy"), dict)
+            else {}
+        )
+        evidence_contract["base_tool_surface_reason"] = (
+            str(
+                turn_tool_surface_policy.get("reason") or "tool_surface_policy"
+            ).strip()
+            if final_rewrite_latch == "inactive"
+            else "final_rewrite_latch"
+        )
+    evidence_contract["surface_filter_source"] = (
+        "final_rewrite_latch"
+        if final_rewrite_latch != "inactive"
+        else "tool_surface_policy"
+    )
+    planner_may_choose_final = bool(evidence_contract.get("planner_may_choose_final"))
+    planner_may_choose_block = bool(evidence_contract.get("planner_may_choose_block"))
+    surface_filter_source = (
+        "final_rewrite_latch"
+        if final_rewrite_latch != "inactive"
+        else "tool_surface_policy"
     )
 
     def build_payload_for_native_tool_names(tool_names: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
@@ -391,12 +609,81 @@ def planner_decision(
         intrinsic_context=intrinsic_context,
         prompt_context_continuation_required=prompt_context_continuation_required,
     )
+    refined_native_tool_names = _post_final_reject_turn_tool_names(
+        evidence_contract,
+        refined_native_tool_names,
+        known_tool_names=known_tool_names,
+    )
     if AGENTIC_PLANNER_NATIVE_TOOLS and refined_native_tool_names != native_tool_names:
         native_tool_names = refined_native_tool_names
         user_payload, prompt_budget, native_tools_schema = build_payload_for_native_tool_names(
             native_tool_names
         )
         prompt_context_continuation_required = _prompt_context_continuation_from_payload(user_payload)
+    runtime_roots = user_payload.get("runtime_roots") if isinstance(user_payload, dict) else {}
+
+    def _normalized_root_root(value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return ""
+        normalized = str(Path(normalized).resolve()).lower().replace("\\", "/").rstrip("/")
+        return normalized
+
+    def _is_terminal_runtime_tool(name: str) -> bool:
+        lowered = str(name or "").strip().lower()
+        return (
+            lowered.startswith("terminal_")
+            or lowered.startswith("open_terminal_")
+            or lowered in {"run_command", "terminal_run_command", "terminal_run_command_wait"}
+        )
+
+    runtime_roots_mismatch = False
+    if isinstance(runtime_roots, dict):
+        lab_root = str(runtime_roots.get("AICARMINE_LAB_REPO") or "").strip()
+        open_terminal_cwd = str(runtime_roots.get("OPEN_TERMINAL_CWD") or "").strip()
+        open_terminal_workdir = str(runtime_roots.get("AICARMINE_OPEN_TERMINAL_WORKDIR") or "").strip()
+        if open_terminal_cwd and lab_root:
+            normalized_cwd = _normalized_root_root(open_terminal_cwd)
+            normalized_lab = _normalized_root_root(lab_root)
+            runtime_roots_mismatch = not (
+                normalized_cwd == normalized_lab or normalized_cwd.startswith(f"{normalized_lab}/")
+            )
+        if not runtime_roots_mismatch and open_terminal_workdir and lab_root:
+            normalized_workdir = _normalized_root_root(open_terminal_workdir)
+            normalized_lab = _normalized_root_root(lab_root)
+            runtime_roots_mismatch = not (
+                normalized_workdir == normalized_lab or normalized_workdir.startswith(f"{normalized_lab}/")
+            )
+    evidence_contract["runtime_roots_mismatch"] = runtime_roots_mismatch
+    terminal_runtime_surface = any(
+        _is_terminal_runtime_tool(name)
+        for name in base_tool_names + native_tool_names
+    )
+    runtime_roots_mismatch_blocks_final = bool(runtime_roots_mismatch and terminal_runtime_surface)
+    evidence_contract["runtime_roots_mismatch_blocks_final"] = runtime_roots_mismatch_blocks_final
+    evidence_contract["runtime_roots_mismatch_diagnostic_only"] = bool(
+        runtime_roots_mismatch and not runtime_roots_mismatch_blocks_final
+    )
+    if runtime_roots_mismatch_blocks_final:
+        final_contract = (
+            evidence_contract.get("finalization_contract")
+            if isinstance(evidence_contract.get("finalization_contract"), dict)
+            else {}
+        )
+        final_contract["final_allowed"] = False
+        final_contract["planner_may_choose_final"] = False
+        final_contract["planner_may_choose_block"] = True
+        final_contract["reason"] = "runtime_roots_mismatch"
+        evidence_contract["finalization_contract"] = final_contract
+        evidence_contract["planner_may_choose_final"] = False
+        evidence_contract["planner_may_choose_block"] = True
+        planner_may_choose_final = False
+        planner_may_choose_block = True
+        evidence_contract["required_next_progress"] = (
+            "Runtime root mismatch detected between lab/workdir and terminal runtime. "
+            "Return action=block with explicit root-drift diagnosis and requested alignment, "
+            "then continue after root metadata is coherent."
+        )
 
     required_errors = prompt_budget.get("required_working_set_errors") if isinstance(prompt_budget, dict) else []
     if isinstance(prompt_budget, dict):
@@ -488,6 +775,16 @@ def planner_decision(
             "prompt_budget_report": prompt_budget,
         }
     planner_system_prompt = _planner_system_for_current_mode()
+    planner_role_suffix = _planner_role_system_suffix(planner_role_override)
+    if planner_role_suffix:
+        planner_system_prompt = f"{planner_system_prompt}\n\n{planner_role_suffix}"
+        user_payload["planner_role_override"] = planner_role_override
+        if isinstance(prompt_budget, dict):
+            prompt_budget["planner_role_override"] = {
+                "role": planner_role_override.get("role"),
+                "rewrite_target": planner_role_override.get("rewrite_target"),
+                "chars": len(json.dumps(planner_role_override, ensure_ascii=False, default=str)),
+            }
     history_messages: list[dict[str, Any]] = []
     history_messages_report: dict[str, Any] = {
         "schema": "planner_history_messages.v1",
@@ -607,10 +904,12 @@ def planner_decision(
                 "step": step,
                 "planner_url": PLANNER_URL,
                 "planner_model": PLANNER_MODEL,
+                "planner_role": planner_role_override.get("role") or "main_planner",
+                "planner_role_override": planner_role_override,
                 "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
                 "prompt_budget_report": prompt_budget,
                 "user_payload": user_payload,
-                "planner_payload": planner_payload,
+                "planner_payload": _planner_payload_capture_view(planner_payload, user_payload),
             },
         )
         prompt_capture.update({
@@ -625,12 +924,17 @@ def planner_decision(
             "details": str(exc)[:1000],
         })
 
+    planner_stream_timeout_seconds = max(3600, int(AGENTIC_PLANNER_STEP_TIMEOUT or 3600))
+
     append_agent_event(
         job_id, "planner_request_started",
-        f"Planner request step={step} timeout={AGENTIC_PLANNER_STEP_TIMEOUT}s.",
+        f"Planner request step={step} timeout={planner_stream_timeout_seconds}s.",
         {
             "planner_url": PLANNER_URL,
             "planner_model": PLANNER_MODEL,
+            "planner_role": planner_role_override.get("role") or "main_planner",
+            "planner_role_source_step": planner_role_override.get("source_step"),
+            "planner_role_rewrite_target": planner_role_override.get("rewrite_target"),
             "num_ctx_requested": AGENTIC_PLANNER_NUM_CTX_REQUESTED,
             "num_ctx_cap": AGENTIC_PLANNER_NUM_CTX_CAP,
             "num_ctx_effective": AGENTIC_PLANNER_NUM_CTX,
@@ -644,10 +948,29 @@ def planner_decision(
             "prompt_payload_chars": prompt_budget.get("total_user_payload_chars") if isinstance(prompt_budget, dict) else None,
             "prompt_over_budget": prompt_budget.get("over_budget") if isinstance(prompt_budget, dict) else None,
             "prompt_over_generation_headroom_budget": prompt_budget.get("over_generation_headroom_budget") if isinstance(prompt_budget, dict) else None,
+            "planner_step_timeout_requested_seconds": int(AGENTIC_PLANNER_STEP_TIMEOUT or 0),
             "required_working_set_chars": prompt_budget.get("required_working_set_chars") if isinstance(prompt_budget, dict) else None,
-            "tool_surface_names": native_tool_names,
+            "tool_surface_names": base_tool_names,
             "native_tool_surface_names": native_tool_names if AGENTIC_PLANNER_NATIVE_TOOLS else [],
+            "planner_may_choose_final": planner_may_choose_final,
+            "planner_may_choose_block": planner_may_choose_block,
+            "surface_filter_source": surface_filter_source,
+            "base_tool_surface_reason": str(evidence_contract.get("base_tool_surface_reason") or ""),
+            "surface_lock_reason": (
+                f"final_rewrite_latch:{final_rewrite_latch}"
+                if final_rewrite_latch != "inactive"
+                else ""
+            ),
+            "required_next_tool_call": (
+                evidence_contract["required_next_tool_call"]
+                if isinstance(evidence_contract.get("required_next_tool_call"), dict)
+                else {}
+            ),
+            "post_filter_applied": base_tool_names != native_tool_names,
+            "runtime_roots": runtime_roots,
+            "runtime_roots_mismatch": runtime_roots_mismatch,
             "planner_payload_capture": prompt_capture,
+            "lane": planner_lane_metadata,
         },
         step=step,
     )
@@ -655,7 +978,7 @@ def planner_decision(
     stream_path = agent_job_planner_stream_path(job_id, step)
     response = post_json_stream_to_file(
         PLANNER_URL, planner_payload,
-        timeout=AGENTIC_PLANNER_STEP_TIMEOUT,
+        timeout=planner_stream_timeout_seconds,
         job_id=job_id, step=step, stream_path=stream_path,
         allow_plain_text_without_json=bool(AGENTIC_PLANNER_NATIVE_TOOLS),
     )
@@ -681,6 +1004,9 @@ def planner_decision(
     if native_calls:
         decision = _native_tool_calls_decision(native_calls, str(response.get("response") or ""))
         if decision:
+            if planner_role_override:
+                decision["planner_role"] = planner_role_override.get("role")
+                decision["planner_role_override"] = planner_role_override
             decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
             decision["native_tool_calls_seen"] = len(native_calls)
             decision["allowed_tool_names"] = list(native_tool_names)
@@ -697,6 +1023,9 @@ def planner_decision(
             action = str(decoded_text_decision.get("action") or "").strip().lower()
             if action in {"final", "done", "complete", "completed", "block", "blocked", "need_user", "needs_user"}:
                 decision = _normalize_terminal_planner_decision(decoded_text_decision)
+                if planner_role_override:
+                    decision["planner_role"] = planner_role_override.get("role")
+                    decision["planner_role_override"] = planner_role_override
                 decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
                 decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
                 decision["native_tool_calls_seen"] = 0
@@ -709,6 +1038,9 @@ def planner_decision(
                 return decision
             if action == "tool":
                 decision = normalize_planner_decision(raw_text_for_native_mode, goal, step, state)
+                if planner_role_override:
+                    decision["planner_role"] = planner_role_override.get("role")
+                    decision["planner_role_override"] = planner_role_override
                 decision.setdefault("raw_planner_text_preview", raw_text_for_native_mode[:2000])
                 decision["planner_native_tools_enabled"] = bool(AGENTIC_PLANNER_NATIVE_TOOLS)
                 decision["native_tool_calls_seen"] = 0
@@ -722,12 +1054,16 @@ def planner_decision(
         if raw_text_for_native_mode.strip() and not _looks_like_malformed_native_protocol(
             raw_text_for_native_mode
         ):
-            return _native_plain_text_final_decision(
+            decision = _native_plain_text_final_decision(
                 raw_text_for_native_mode,
                 native_tool_names=list(native_tool_names),
                 prompt_context_continuation_required=prompt_context_continuation_required,
                 stream_meta=stream_meta,
             )
+            if planner_role_override:
+                decision["planner_role"] = planner_role_override.get("role")
+                decision["planner_role_override"] = planner_role_override
+            return decision
         prompt_eval_count = 0
         try:
             prompt_eval_count = int(response.get("ollama_prompt_eval_count") or 0)
@@ -843,10 +1179,11 @@ def planner_decision(
 
     # --- timeout: surface, do not force a fallback decision ---
     if response.get("backend_timeout"):
+        stream_timeout_seconds = int(response.get("timeout_seconds") or planner_stream_timeout_seconds)
         append_agent_event(
             job_id,
             "planner_timeout",
-            f"Timeout after {AGENTIC_PLANNER_STEP_TIMEOUT}s; no forced retry/fallback.",
+            f"Timeout after {stream_timeout_seconds}s; no forced retry/fallback.",
             {
                 "error": response.get("error"),
                 "partial_content_chars": len(str(response.get("partial_content") or "")),

@@ -9,7 +9,20 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 
-AI_ROOT = Path(os.environ.get("AI_ROOT", r"C:\Users\carmi\AI"))
+# Resolve AI_ROOT dynamically: env var > current script parent > current working directory
+_ai_root_env = os.environ.get("AI_ROOT")
+if _ai_root_env:
+    AI_ROOT = Path(_ai_root_env)
+else:
+    # Try parent of this file (services/) going up to find repo root
+    _candidate = Path(__file__).resolve().parents[1]
+    if (_candidate / ".git").exists():
+        AI_ROOT = _candidate
+    elif (_candidate / "services").exists() and (_candidate / "services" / "aicarmine_vulkan_bridge_server.py").exists():
+        AI_ROOT = _candidate
+    else:
+        AI_ROOT = Path.cwd()
+
 RUNNER = Path(
     os.environ.get(
         "AICARMINE_SAFE_COMMAND_RUNNER",
@@ -111,7 +124,12 @@ def run_command(req: RunRequest, authorization: Optional[str] = Header(default=N
 # File-backed payload transport
 # ------------------------------------------------------------------
 
-PAYLOAD_ROOT = Path(os.environ.get("AICARMINE_PAYLOAD_ROOT", r"C:\Users\carmi\AI\payloads\executor")).resolve()
+# Resolve PAYLOAD_ROOT dynamically: env var > AI_ROOT / payloads / executor
+_payload_root_env = os.environ.get("AICARMINE_PAYLOAD_ROOT")
+if _payload_root_env:
+    PAYLOAD_ROOT = Path(_payload_root_env)
+else:
+    PAYLOAD_ROOT = (AI_ROOT / "payloads" / "executor").resolve(strict=False)
 
 
 class RunPayloadFileRequest(BaseModel):

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from .response_values import event_digest, strip_narrative_duplicates_from_context
+from ..shared.evidence_contract_summary import compact_evidence_contract_summary
 
 
 def _running_evidence_guide(job_id: str, state: dict[str, Any], memory: dict[str, Any]) -> str:
@@ -20,7 +21,7 @@ def _running_evidence_guide(job_id: str, state: dict[str, Any], memory: dict[str
         "GUIDA STATO LOOP INTERNO PER IL 30B.",
         f"Agent job {job_id} status={state.get('status')} step={state.get('current_step')} message={state.get('status_message') or ''}.",
         f"candidate_next_actions={len(candidates)} recent_rejections={len(rejections)}.",
-        "Usa working_memory_for_30b, evidence_contract e tool_context_for_30b nello stesso payload; non usare path locali come contenuto.",
+        "Usa working_memory_for_30b, evidence_contract summary e tool_context_for_30b nello stesso payload; non usare path locali come contenuto.",
     ]
     if legacy_text:
         parts.extend(["", "Nota legacy convertita in guida unica:", legacy_text])
@@ -43,6 +44,10 @@ def build_compact_status_response(
         state.get("evidence_contract")
         if isinstance(state.get("evidence_contract"), dict)
         else {}
+    )
+    evidence = compact_evidence_contract_summary(
+        evidence,
+        schema="planner_evidence_contract_status_summary.v1",
     )
     running_context = {
         "type": "agentic_loop_running_structured_context",
@@ -83,7 +88,7 @@ def build_compact_status_response(
         "evidence_guide_for_30b": evidence_guide,
         "next_action_for_30b": state.get("next_action_for_30b", {}),
         "working_memory_for_30b": state.get("working_memory_for_30b", {}),
-        "evidence_contract": state.get("evidence_contract", {}),
+        "evidence_contract": evidence,
         "planner_emission_interpreter": state.get("planner_emission_interpreter", {}),
         "current_step": state.get("current_step"),
         "status_message": state.get("status_message", ""),

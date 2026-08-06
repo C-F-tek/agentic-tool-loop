@@ -51,7 +51,12 @@ function Assert-OvmsRerankerDeviceContract {
         if ([string]::IsNullOrWhiteSpace($basePath)) {
             throw "OVMS reranker config '$name' senza base_path."
         }
-        $graphPath = Join-Path (Join-Path $ModelsRoot $basePath) "graph.pbtxt"
+        # base_path may be absolute or relative; handle both
+        if ([System.IO.Path]::IsPathRooted($basePath)) {
+            $graphPath = Join-Path $basePath "graph.pbtxt"
+        } else {
+            $graphPath = Join-Path (Join-Path $ModelsRoot $basePath) "graph.pbtxt"
+        }
         if (-not (Test-Path -LiteralPath $graphPath)) {
             throw "OVMS reranker graph non trovato per '$name': $graphPath"
         }
@@ -63,23 +68,149 @@ function Assert-OvmsRerankerDeviceContract {
     }
 }
 
+# Use dynamic path relative to current working directory instead of hardcoded paths
+$CurrentDir = Split-Path -Parent (Get-Location)
+
+# Determine the actual repo root:
+# - Always prefer C:\Users\sanit\progeetsbat\agentic-tool-loop as the canonical repo root
+# - Fall back to CurrentDir if .git exists there
+$CanonicalRepoRoot = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
+if (Test-Path (Join-Path $CanonicalRepoRoot ".git")) {
+    $ActualRepoRoot = $CanonicalRepoRoot
+} elseif (Test-Path (Join-Path $CurrentDir ".git")) {
+    # Already at repo root
+    $ActualRepoRoot = $CurrentDir
+} elseif ((Split-Path -Leaf $CurrentDir) -eq "agentic-tool-loop") {
+    $PotentialRoot = Split-Path -Parent $CurrentDir
+    if (Test-Path (Join-Path $PotentialRoot ".git")) {
+        $ActualRepoRoot = $PotentialRoot
+    } else {
+        $ActualRepoRoot = $CurrentDir
+    }
+}
+
 $OVMS_ROOT = Get-AICarmineEnvValue "OVMS_ROOT"
 $OVMS_EXE = Get-AICarmineEnvValue "OVMS_EXE"
 $OVMS_SETUP = Get-AICarmineEnvValue "OVMS_SETUP"
 $MODELS = Get-AICarmineEnvValue "OVMS_RERANK_MODELS"
-$TARGET_DEVICE = Get-AICarmineEnvValue "OPENVINO_PROVIDER_DEVICE" "GPU.0"
+# Override env var if it points to wrong/stale location (not under progeetsbat)
+if ($MODELS -and $MODELS -notlike "*progeetsbat*") {
+    $MODELS = Join-Path $ActualRepoRoot "services\launch\models-ovms-rerank"
+}
+# Read OPENVINO_PROVIDER_DEVICE from User/Machine scope only (skip Process to avoid stale values)
+$TARGET_DEVICE = ""
+foreach ($scope in @("User", "Machine")) {
+    $val = [Environment]::GetEnvironmentVariable("OPENVINO_PROVIDER_DEVICE", $scope)
+    if (-not [string]::IsNullOrWhiteSpace($val)) {
+        $TARGET_DEVICE = $val
+        break
+    }
+}
+if ([string]::IsNullOrWhiteSpace($TARGET_DEVICE)) {
+    # Read from config.json if env var not set
+    $ConfigPath = Join-Path $MODELS "config.json"
+    if (Test-Path $ConfigPath) {
+        $ConfigJson = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $TARGET_DEVICE = [string]$ConfigJson.model_config_list[0].config.target_device
+    }
+}
+if ([string]::IsNullOrWhiteSpace($TARGET_DEVICE)) {
+    $TARGET_DEVICE = "GPU.0"
+}
 
 if ([string]::IsNullOrWhiteSpace($OVMS_ROOT)) {
-    $OVMS_ROOT = "C:\Users\carmi\AI\ovms-runtime\ovms"
+    # Path 1: ovms-runtime/ovms at project root (C:\Users\sanit\progeetsbat\agentic-tool-loop\ovms-runtime\ovms)
+    $CandidateOVMSRoot = Join-Path $ActualRepoRoot "ovms-runtime\ovms"
+    if (Test-Path $CandidateOVMSRoot) {
+        $OVMS_ROOT = $CandidateOVMSRoot
+    } else {
+        # Path 2: ovms-runtime/ovms relative to current dir
+        $CandidateOVMSRoot2 = Join-Path $CurrentDir "ovms-runtime\ovms"
+        if (Test-Path $CandidateOVMSRoot2) {
+            $OVMS_ROOT = $CandidateOVMSRoot2
+        } else {
+            # Path 3: services/launch/ovms-runtime
+            $CandidateOVMSRoot3 = Join-Path $ActualRepoRoot "services\launch\ovms-runtime"
+            if (Test-Path $CandidateOVMSRoot3) {
+                $OVMS_ROOT = $CandidateOVMSRoot3
+            } else {
+                throw "OVMS root non trovato in nessun percorso noto"
+            }
+        }
+    }
 }
 if ([string]::IsNullOrWhiteSpace($OVMS_EXE)) {
-    $OVMS_EXE = Join-Path $OVMS_ROOT "bin\ovms.exe"
+    # Path 1: ovms-runtime\ovms\ovms.exe (actual structure)
+    $Candidate1 = Join-Path $OVMS_ROOT "ovms\ovms.exe"
+    if (Test-Path $Candidate1) {
+        $OVMS_EXE = $Candidate1
+    } else {
+        # Path 2: ovms-runtime\bin\ovms.exe (legacy structure)
+        $OVMS_EXE = Join-Path $OVMS_ROOT "bin\ovms.exe"
+    }
 }
 if ([string]::IsNullOrWhiteSpace($OVMS_SETUP)) {
     $OVMS_SETUP = Join-Path $OVMS_ROOT "setupvars.ps1"
 }
 if ([string]::IsNullOrWhiteSpace($MODELS)) {
-    $MODELS = "C:\Users\carmi\AI\models-ovms-rerank"
+    function Test-OvmsConfigValid {
+        param([string]$Path)
+        if (-not (Test-Path (Join-Path $Path "config.json"))) { return $false }
+        try {
+            $raw = Get-Content -LiteralPath (Join-Path $Path "config.json") -Raw -Encoding UTF8
+            $j = $raw | ConvertFrom-Json
+            if ($null -eq $j.model_config_list -or $j.model_config_list.Count -lt 1) { return $false }
+            foreach ($entry in $j.model_config_list) {
+                if ($null -eq $entry.config) { return $false }
+                $cn = [string]$entry.config.name
+                if ([string]::IsNullOrWhiteSpace($cn)) { return $false }
+                $bp = [string]$entry.config.base_path
+                if ([string]::IsNullOrWhiteSpace($bp)) { return $false }
+                $td = [string]$entry.config.target_device
+                if ([string]::IsNullOrWhiteSpace($td)) { return $false }
+                # Verify graph file exists for this entry
+                if ([System.IO.Path]::IsPathRooted($bp)) {
+                    $gp = Join-Path $bp "graph.pbtxt"
+                } else {
+                    $gp = Join-Path (Join-Path $Path $bp) "graph.pbtxt"
+                }
+                if (-not (Test-Path -LiteralPath $gp)) { return $false }
+            }
+            return $true
+        } catch {
+            return $false
+        }
+    }
+
+    # Path 1: services/launch/models-ovms-rerank at repo root
+    $CandidateModels = Join-Path $ActualRepoRoot "services\launch\models-ovms-rerank"
+    if (Test-OvmsConfigValid $CandidateModels) {
+        $MODELS = $CandidateModels
+    }
+    if ([string]::IsNullOrWhiteSpace($MODELS)) {
+        # Path 2: services/launch/models-ovms-rerank relative to current dir
+        $CandidateModels2 = Join-Path $CurrentDir "services\launch\models-ovms-rerank"
+        if (Test-OvmsConfigValid $CandidateModels2) {
+            $MODELS = $CandidateModels2
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($MODELS)) {
+        # Path 3: launch/models-ovms-rerank relative to current dir
+        $CandidateModels3 = Join-Path $CurrentDir "launch\models-ovms-rerank"
+        if (Test-OvmsConfigValid $CandidateModels3) {
+            $MODELS = $CandidateModels3
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($MODELS)) {
+        # Path 4: models-ovms-rerank at current dir
+        $CandidateModels4 = Join-Path $CurrentDir "models-ovms-rerank"
+        if (Test-OvmsConfigValid $CandidateModels4) {
+            $MODELS = $CandidateModels4
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($MODELS)) {
+        throw "OVMS models non trovato o config.json invalido in nessun percorso noto"
+    }
 }
 
 $Config = Join-Path $MODELS "config.json"

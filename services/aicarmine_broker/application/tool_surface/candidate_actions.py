@@ -1,18 +1,28 @@
 """Candidate next-action helpers for planner turn surface policy."""
 from __future__ import annotations
 
-import json
 from typing import Any, Callable
 
 from ...tool_contract import normalize_tool_name
 from ..code_product.state import CODE_PRODUCT_BUILD_STATE_KIND
+from ..shared.diagnostics import safe_json_text, safe_text
 from .batch_contract import canonical_batch_call_key
+from .required_tool_call import canonical_required_tool_call_key
+
+
+def _stable_action_key(action: Any) -> str:
+    text, _diagnostic = safe_json_text(
+        action,
+        reason="candidate_action_key_json_failed",
+        separators=(",", ":"),
+    )
+    return text
 
 
 def candidate_action_tool(action: Any) -> str:
     if not isinstance(action, dict):
         return ""
-    return normalize_tool_name(str(action.get("tool") or ""))
+    return normalize_tool_name(safe_text(action.get("tool"), limit=160))
 
 
 def candidate_action_args(action: Any) -> dict[str, Any]:
@@ -25,7 +35,7 @@ def candidate_action_args(action: Any) -> dict[str, Any]:
 def candidate_action_is_build_state_write(action: Any) -> bool:
     return (
         candidate_action_tool(action) == "planner_scratchpad_write"
-        and str(candidate_action_args(action).get("kind") or "").strip() == CODE_PRODUCT_BUILD_STATE_KIND
+        and safe_text(candidate_action_args(action).get("kind"), limit=160).strip() == CODE_PRODUCT_BUILD_STATE_KIND
     )
 
 
@@ -33,7 +43,7 @@ def candidate_action_is_build_state_read(action: Any) -> bool:
     args = candidate_action_args(action)
     return (
         candidate_action_tool(action) == "planner_scratchpad_read"
-        and str(args.get("kind") or args.get("mode") or "").strip() == CODE_PRODUCT_BUILD_STATE_KIND
+        and safe_text(args.get("kind") or args.get("mode"), limit=160).strip() == CODE_PRODUCT_BUILD_STATE_KIND
     )
 
 
@@ -43,7 +53,7 @@ def dedupe_candidate_actions(actions: list[Any], *, limit: int = 16) -> list[dic
     for action in actions:
         if not isinstance(action, dict):
             continue
-        key = json.dumps(action, ensure_ascii=False, sort_keys=True, default=str)
+        key = _stable_action_key(action)
         if key in seen:
             continue
         seen.add(key)
@@ -88,7 +98,7 @@ def candidate_actions_from_evidence(
     doc_reads = [p for p in read_ok if repo_doc_or_config(p)]
 
     def readable_repo_path(path: Any, *, scope: str = "") -> str:
-        p = repo_rel_token(str(path or ""))
+        p = repo_rel_token(path)
         if not p or p in already:
             return ""
         if scope and not path_under_scope(p, scope):
@@ -110,9 +120,9 @@ def candidate_actions_from_evidence(
         return out
 
     def add(action: dict[str, Any]) -> None:
-        key = json.dumps(action, sort_keys=True, default=str)
+        key = _stable_action_key(action)
         for existing in candidates:
-            if json.dumps(existing, sort_keys=True, default=str) == key:
+            if _stable_action_key(existing) == key:
                 return
         candidates.append(action)
 
@@ -125,7 +135,7 @@ def candidate_actions_from_evidence(
     meaningful_rows = [
         row for row in list_rows
         if row.get("path") not in (None, "", ".")
-        and not low_signal_top_dir(str(row.get("path")))
+        and not low_signal_top_dir(safe_text(row.get("path"), limit=1000))
     ]
 
     def add_core_list_candidates(limit: int = 5) -> None:
@@ -133,7 +143,7 @@ def candidate_actions_from_evidence(
             rank_core_candidates(file_memory, list_rows),
             key=lambda item: (
                 -int(item.get("score") or 0),
-                str(item.get("path") or "").lower(),
+                safe_text(item.get("path"), limit=1000).lower(),
             ),
         )
         for core in ranked_core[:limit]:
@@ -141,7 +151,7 @@ def candidate_actions_from_evidence(
             if (
                 p
                 and p not in failed_lists
-                and path_exists_repo_relative(str(p))
+                and path_exists_repo_relative(safe_text(p, limit=1000))
                 and all((row.get("path") != p) for row in list_rows)
             ):
                 add({
@@ -171,7 +181,11 @@ def candidate_actions_from_evidence(
         add({
             "action": "tool",
             "tool": "repo_read",
-            "arguments": {"paths": discovery_selected, "max_chars": multi_file_prompt_read_chars()},
+            "arguments": {
+                "paths": discovery_selected,
+                "max_chars": multi_file_prompt_read_chars(),
+                "max_paths": len(discovery_selected),
+            },
             "reason": (
                 "Read core_discovery_candidates from RAG/rerank or rebuilt LAB_REPO ranking; "
                 "ranking is discovery-only and does not authorize a patch."
@@ -181,8 +195,8 @@ def candidate_actions_from_evidence(
     if target_scope and not input_error_goal(goal):
         scoped_rows = [
             row for row in list_rows
-            if path_under_scope(str(row.get("path") or ""), target_scope)
-            and str(row.get("path") or ".") not in ("", ".")
+            if path_under_scope(safe_text(row.get("path"), limit=1000), target_scope)
+            and safe_text(row.get("path") or ".", limit=1000) not in ("", ".")
         ]
         if not scoped_rows:
             add({
@@ -202,7 +216,11 @@ def candidate_actions_from_evidence(
                 add({
                     "action": "tool",
                     "tool": "repo_read",
-                    "arguments": {"paths": selected, "max_chars": multi_file_prompt_read_chars()},
+                    "arguments": {
+                        "paths": selected,
+                        "max_chars": multi_file_prompt_read_chars(),
+                        "max_paths": len(selected),
+                    },
                     "reason": (
                         f"Read up to {scoped_concrete_read_target} dynamically discovered "
                         f"readable files inside requested scope {target_scope} before finalizing."
@@ -225,7 +243,11 @@ def candidate_actions_from_evidence(
             add({
                 "action": "tool",
                 "tool": "repo_read",
-                "arguments": {"paths": selected, "max_chars": multi_file_prompt_read_chars()},
+                "arguments": {
+                    "paths": selected,
+                    "max_chars": multi_file_prompt_read_chars(),
+                    "max_paths": len(selected),
+                },
                 "reason": (
                     f"Read up to {repo_concrete_read_target} dynamically discovered "
                     "readable files from already listed meaningful non-root areas before finalizing."
@@ -250,10 +272,15 @@ def candidate_actions_from_evidence(
     # document. After a small baseline, spend budget on core directories/files.
     if not (repo_goal and len(doc_reads) >= 6):
         if docs:
+            doc_paths = docs[:scoped_concrete_read_target]
             add({
                 "action": "tool",
                 "tool": "repo_read",
-                "arguments": {"paths": docs[:scoped_concrete_read_target], "max_chars": multi_file_prompt_read_chars()},
+                "arguments": {
+                    "paths": doc_paths,
+                    "max_chars": multi_file_prompt_read_chars(),
+                    "max_paths": len(doc_paths),
+                },
                 "reason": "Read repository documentation/config already discovered in evidence before finalizing.",
             })
 
@@ -290,7 +317,7 @@ def final_composition_tool_names_from_candidates(contract: dict[str, Any]) -> se
             continue
         name = candidate_action_tool(action)
         args = candidate_action_args(action)
-        if name == "planner_scratchpad_write" and str(args.get("kind") or "").strip() == "answer_chunk":
+        if name == "planner_scratchpad_write" and safe_text(args.get("kind"), limit=160).strip() == "answer_chunk":
             names.add(name)
     return names
 
@@ -351,7 +378,7 @@ def _readonly_batch_actions_from_continuation(action: dict[str, Any]) -> list[di
         call_args["max_chars"] = max_chars
         action_id_parts = [
             "required_scratchpad_read_continuation",
-            str(call_args.get("document_id") or call_args.get("section") or ""),
+            safe_text(call_args.get("document_id") or call_args.get("section"), limit=300),
             str(current_offset),
             str(max_chars),
         ]
@@ -383,10 +410,11 @@ def enforce_required_scratchpad_read_continuation_contract(
     if tool != "planner_scratchpad_read" or not args:
         return out
 
-    reason = str(
+    reason = safe_text(
         continuation.get("reason")
         or out.get("required_next_progress")
-        or "Required planner scratchpad continuation must be consumed before final/block."
+        or "Required planner scratchpad continuation must be consumed before final/block.",
+        limit=900,
     )
     action = {
         "action": "tool",
@@ -470,14 +498,14 @@ def decision_matches_prompt_context_continuation(
         return True
     if continuation.get("tool") != "planner_scratchpad_read":
         return True
-    if normalize_tool_name(str(decision.get("tool") or "")) != "planner_scratchpad_read":
+    if normalize_tool_name(safe_text(decision.get("tool"), limit=160)) != "planner_scratchpad_read":
         return False
     args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
     expected = continuation.get("arguments") if isinstance(continuation.get("arguments"), dict) else {}
-    expected_kind = str(expected.get("kind") or "prompt_context_window")
-    if str(args.get("kind") or "") != expected_kind:
+    expected_kind = safe_text(expected.get("kind") or "prompt_context_window", limit=160)
+    if safe_text(args.get("kind"), limit=160) != expected_kind:
         return False
-    if str(args.get("document_id") or "") != str(expected.get("document_id") or ""):
+    if safe_text(args.get("document_id"), limit=300) != safe_text(expected.get("document_id"), limit=300):
         return False
     try:
         if int(args.get("offset") or 0) != int(expected.get("offset") or 0):
@@ -511,6 +539,17 @@ def preserve_required_next_tool_call_for_prompt(
             required = required_next_tool_call_from_action(candidates[0])
     if not required:
         return
+    if _required_call_marked_satisfied(previous_evidence_contract, required):
+        evidence["required_next_tool_call_satisfied"] = (
+            previous_evidence_contract.get("required_next_tool_call_satisfied")
+            if isinstance(previous_evidence_contract.get("required_next_tool_call_satisfied"), dict)
+            else {}
+        )
+        stale = previous_evidence_contract.get("stale_required_next_tool_calls")
+        if isinstance(stale, list) and stale:
+            evidence["stale_required_next_tool_calls"] = stale[:8]
+        payload["evidence_contract"] = evidence
+        return
     evidence["required_next_tool_call"] = required
     payload["required_next_tool_call"] = required
     for key in ("forbidden_repeated_tool_calls",):
@@ -524,20 +563,20 @@ def preserve_required_next_tool_call_for_prompt(
         else []
     )
     current_actions = evidence.get("candidate_next_actions") if isinstance(evidence.get("candidate_next_actions"), list) else []
-    required_key = json.dumps(required, ensure_ascii=False, sort_keys=True, default=str)
+    required_key = _stable_action_key(required)
     matched_action = {}
     for action in prev_actions:
         if not isinstance(action, dict):
             continue
         action_required = required_next_tool_call_from_action(action)
-        if json.dumps(action_required, ensure_ascii=False, sort_keys=True, default=str) == required_key:
+        if _stable_action_key(action_required) == required_key:
             matched_action = action
             break
     if matched_action:
-        action_key = json.dumps(matched_action, ensure_ascii=False, sort_keys=True, default=str)
+        action_key = _stable_action_key(matched_action)
         evidence["candidate_next_actions"] = [matched_action] + [
             item for item in current_actions
-            if json.dumps(item, ensure_ascii=False, sort_keys=True, default=str) != action_key
+            if _stable_action_key(item) != action_key
         ][:10]
     progress = previous_evidence_contract.get("required_next_progress")
     if progress not in (None, "", [], {}):
@@ -573,3 +612,31 @@ def preserve_required_next_tool_call_for_prompt(
         evidence["planner_may_choose_final"] = False
     evidence["finalization_contract"] = final_contract
     payload["evidence_contract"] = evidence
+
+
+def _required_call_marked_satisfied(contract: dict[str, Any], required: dict[str, Any]) -> bool:
+    if not isinstance(contract, dict) or not isinstance(required, dict) or not required:
+        return False
+    key = canonical_required_tool_call_key(required.get("tool"), required.get("arguments"))
+    current = (
+        contract.get("required_next_tool_call_satisfied")
+        if isinstance(contract.get("required_next_tool_call_satisfied"), dict)
+        else {}
+    )
+    current_key = current.get("key") or canonical_required_tool_call_key(
+        current.get("tool"),
+        current.get("arguments"),
+    )
+    if current.get("satisfied") is True and current_key == key:
+        return True
+    stale = contract.get("stale_required_next_tool_calls")
+    for item in stale if isinstance(stale, list) else []:
+        if not isinstance(item, dict):
+            continue
+        item_key = item.get("key") or canonical_required_tool_call_key(
+            item.get("tool"),
+            item.get("arguments"),
+        )
+        if item.get("satisfied") is True and item_key == key:
+            return True
+    return False

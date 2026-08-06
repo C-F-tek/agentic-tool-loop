@@ -54,6 +54,7 @@ CACHEABLE_READ_TOOLS = frozenset({
     "repo_tree",
     "repo_list_files",
     "repo_search",
+    "repo_rg_search",
     "repo_semantic_search",
     "repo_read",
     "terminal_list_files",
@@ -156,6 +157,13 @@ def _cache_effective_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
         effective["path"] = _cache_normalized_path(effective.get("path") or ".")
         effective["mode"] = str(effective.get("mode") or "rg")
         effective["max_results"] = _cache_int(effective.get("max_results") or 80, 80)
+    elif tool == "repo_rg_search":
+        if "pattern" not in effective and "query" in effective:
+            effective["pattern"] = effective.pop("query")
+        effective = {
+            "pattern": str(effective.get("pattern") or ""),
+            "path": _cache_normalized_path(effective.get("path") or "."),
+        }
     elif tool == "repo_semantic_search":
         effective["query"] = str(effective.get("query") or "")
         effective["path"] = _cache_normalized_path(effective.get("path") or ".")

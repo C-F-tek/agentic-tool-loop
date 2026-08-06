@@ -7,13 +7,64 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.tools.deterministic_common import (
+    bounded_int_arg,
+    deterministic_input_error,
+    resolve_deterministic_executable,
+    run_argv,
+)
+
+
+def _newline_policy_bytes(data: bytes) -> str:
+    crlf_count = data.count(b"\r\n")
+    lf_count = data.count(b"\n") - crlf_count
+    cr_count = data.count(b"\r") - crlf_count
+    policies = [
+        name
+        for name, count in (
+            ("crlf", crlf_count),
+            ("lf", lf_count),
+            ("cr", cr_count),
+        )
+        if count
+    ]
+    if not policies:
+        return "none"
+    if len(policies) > 1:
+        return "mixed"
+    return policies[0]
+
+
+def _apply_newline_policy_bytes(data: bytes, policy: str) -> bytes:
+    if policy not in {"crlf", "lf", "cr"}:
+        return data
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if policy == "crlf":
+        return normalized.replace(b"\n", b"\r\n")
+    if policy == "cr":
+        return normalized.replace(b"\n", b"\r")
+    return normalized
+
+
+def _rollback_change_set_files(root: Path, records: list[dict[str, Any]]) -> None:
+    for record in records:
+        full_path = (root / record["path"]).resolve(strict=False)
+        full_path.relative_to(root.resolve())
+        if record["existed"]:
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_bytes(Path(str(record["backup_path"])).read_bytes())
+        elif full_path.exists() and full_path.is_file():
+            full_path.unlink()
 
 
 def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or "").strip()
     old_text = args.get("old_text")
     new_text = args.get("new_text")
-    max_replacements = max(1, int(args.get("max_replacements") or 1))
+    try:
+        max_replacements = bounded_int_arg(args, "max_replacements", default=1, minimum=1, maximum=100)
+    except Exception as exc:
+        return deterministic_input_error("repo_apply_patch", exc)
 
     if not path:
         return {"ok": False, "tool": "repo_apply_patch", "error": "missing path"}
@@ -49,6 +100,18 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "path": rel,
             "error": "old_text_not_found",
             "old_text_preview": old_text[:1000],
+            "repair_hints": [
+                "read_current_file_before_retry",
+                "old_text_must_be_exact",
+                "use_repo_read_with_max_chars_80000",
+            ],
+            "suggested_next_tool_calls": [
+                {
+                    "tool": "repo_read",
+                    "arguments": {"path": rel, "max_chars": 80000},
+                    "reason": "read_file_to_verify_old_text",
+                },
+            ],
         }
 
     replacements = min(occurrences, max_replacements)
@@ -57,8 +120,8 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     safe_name = rel.replace("/", "__").replace("\\", "__")
     backup = root / "artifacts" / f"{safe_name}.{now()}.before.txt"
     backup.parent.mkdir(parents=True, exist_ok=True)
-    backup.write_text(original, encoding="utf-8")
-    full.write_text(updated, encoding="utf-8")
+    backup.write_bytes(original_bytes)
+    full.write_text(updated, encoding="utf-8", newline="")
     after_bytes = full.read_bytes()
     after_sha256 = hashlib.sha256(after_bytes).hexdigest()
 
@@ -91,6 +154,237 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "backup_artifact": str(backup),
     }
     write_json(root / "tool-results" / f"{now()}-repo_apply_patch.json", payload)
+    return payload
+
+
+def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    from repo_code_change_set import (
+        normalize_unified_diff_text,
+        verify_change_set_preimages,
+    )
+
+    diff_text = args.get("unified_diff")
+    metadata = args.get("_change_set_metadata")
+    change_set_id = str(args.get("change_set_id") or "").strip()
+    if not isinstance(diff_text, str) or not diff_text.strip():
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "missing_unified_diff",
+        }
+    if not isinstance(metadata, dict) or not change_set_id:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "missing_resolved_change_set",
+        }
+
+    mismatches = verify_change_set_preimages(root, metadata)
+    if mismatches:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "change_set_preimage_mismatch",
+            "change_set_id": change_set_id,
+            "mismatches": mismatches,
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    git_executable = resolve_deterministic_executable("git")
+    if not git_executable:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "git_not_available",
+        }
+
+    normalized_diff = normalize_unified_diff_text(diff_text)
+    diff_bytes = normalized_diff.encode("utf-8")
+    matching_args = (
+        ["--ignore-space-change"]
+        if args.get("_verified_change_set") is True
+        else []
+    )
+    check_result = run_argv(
+        [
+            git_executable,
+            "apply",
+            "--check",
+            *matching_args,
+            "--whitespace=error",
+            "-",
+        ],
+        cwd=root,
+        timeout=120,
+        stdin_bytes=diff_bytes,
+    )
+    if check_result.get("returncode") != 0:
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "git_apply_check_failed",
+            "change_set_id": change_set_id,
+            "returncode": check_result.get("returncode"),
+            "stdout_tail": check_result.get("stdout_tail", ""),
+            "stderr_tail": check_result.get("stderr_tail", ""),
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    backup_root = root / "state" / "repo_code" / "backups" / f"{change_set_id}-{now()}"
+    backup_root.mkdir(parents=True, exist_ok=True)
+    backup_records: list[dict[str, Any]] = []
+    for item in metadata.get("files") if isinstance(metadata.get("files"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        relative_path = str(item.get("path") or "")
+        full_path = (root / relative_path).resolve(strict=False)
+        full_path.relative_to(root.resolve())
+        if full_path.is_file():
+            backup_path = backup_root / f"{relative_path}.before"
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            before_bytes = full_path.read_bytes()
+            backup_path.write_bytes(before_bytes)
+            backup_records.append(
+                {
+                    "path": relative_path,
+                    "existed": True,
+                    "backup_path": str(backup_path),
+                    "newline_policy": _newline_policy_bytes(before_bytes),
+                }
+            )
+        else:
+            backup_records.append(
+                {
+                    "path": relative_path,
+                    "existed": False,
+                    "backup_path": None,
+                    "newline_policy": "lf",
+                }
+            )
+
+    apply_result = run_argv(
+        [
+            git_executable,
+            "apply",
+            *matching_args,
+            "--whitespace=error",
+            "-",
+        ],
+        cwd=root,
+        timeout=120,
+        stdin_bytes=diff_bytes,
+    )
+    rollback_performed = False
+    if apply_result.get("returncode") != 0:
+        _rollback_change_set_files(root, backup_records)
+        rollback_performed = True
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "git_apply_failed",
+            "change_set_id": change_set_id,
+            "returncode": apply_result.get("returncode"),
+            "stdout_tail": apply_result.get("stdout_tail", ""),
+            "stderr_tail": apply_result.get("stderr_tail", ""),
+            "rollback_performed": rollback_performed,
+            "backup_root": str(backup_root),
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    try:
+        for record in backup_records:
+            full_path = (root / record["path"]).resolve(strict=False)
+            full_path.relative_to(root.resolve())
+            if not full_path.is_file():
+                continue
+            after_apply_bytes = full_path.read_bytes()
+            normalized_bytes = _apply_newline_policy_bytes(
+                after_apply_bytes,
+                str(record.get("newline_policy") or ""),
+            )
+            if normalized_bytes != after_apply_bytes:
+                full_path.write_bytes(normalized_bytes)
+    except Exception as exc:
+        _rollback_change_set_files(root, backup_records)
+        rollback_performed = True
+        return {
+            "ok": False,
+            "tool": "repo_apply_unified_diff",
+            "error": "newline_policy_restore_failed",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+            "change_set_id": change_set_id,
+            "rollback_performed": rollback_performed,
+            "backup_root": str(backup_root),
+            "source_writes_performed": False,
+            "patch_application_performed": False,
+        }
+
+    modified_paths: list[str] = []
+    added_paths: list[str] = []
+    file_results: list[dict[str, Any]] = []
+    changed = False
+    for item in metadata.get("files") if isinstance(metadata.get("files"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        relative_path = str(item.get("path") or "")
+        full_path = (root / relative_path).resolve(strict=False)
+        full_path.relative_to(root.resolve())
+        after_bytes = full_path.read_bytes()
+        after_sha256 = hashlib.sha256(after_bytes).hexdigest()
+        before_sha256 = item.get("preimage_sha256")
+        item_changed = before_sha256 != after_sha256
+        changed = changed or item_changed
+        if item.get("change_type") == "added":
+            added_paths.append(relative_path)
+        else:
+            modified_paths.append(relative_path)
+        file_results.append(
+            {
+                "path": relative_path,
+                "change_type": item.get("change_type"),
+                "before_sha256": before_sha256,
+                "after_sha256": after_sha256,
+                "line_count_before": item.get("preimage_line_count"),
+                "line_count_after": len(
+                    after_bytes.decode("utf-8", errors="replace").splitlines()
+                ),
+            }
+        )
+
+    payload = {
+        "ok": True,
+        "tool": "repo_apply_unified_diff",
+        "change_set_id": change_set_id,
+        "write_scope": "unified_diff",
+        "changed": changed,
+        "modified_paths": modified_paths,
+        "added_paths": added_paths,
+        "files": file_results,
+        "backup_root": str(backup_root),
+        "rollback_performed": rollback_performed,
+        "post_write_validation_required": changed,
+        "validation_candidates": (
+            [
+                {
+                    "tool": "repo_validate",
+                    "arguments": {
+                        "paths": [*modified_paths, *added_paths],
+                        "timeout_seconds": 300,
+                    },
+                    "reason": "validate_modified_files_after_repo_apply_unified_diff",
+                }
+            ]
+            if changed
+            else []
+        ),
+    }
+    artifact = root / "tool-results" / f"{now()}-repo_apply_unified_diff.json"
+    write_json(artifact, payload)
+    payload["artifact"] = str(artifact)
     return payload
 
 
@@ -163,6 +457,20 @@ def repo_write_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "before_sha256": before_sha256,
         "after_sha256": after_sha256,
         "line_count_after": len(full.read_text(encoding=encoding, errors="replace").splitlines()),
+        "post_write_validation_required": True,
+        "validation_candidates": [
+            {
+                "tool": "repo_validate",
+                "arguments": {"paths": [rel], "timeout_seconds": 300},
+                "reason": "validate_file_after_repo_write",
+            }
+        ] + ([
+            {
+                "tool": "repo_ruff_check",
+                "arguments": {"paths": [rel], "timeout_seconds": 180},
+                "reason": "python_static_validation_after_repo_write",
+            }
+        ] if rel.endswith(".py") else []),
     }
     artifact = root / "tool-results" / f"{now()}-repo_write_file.json"
     write_json(artifact, payload)

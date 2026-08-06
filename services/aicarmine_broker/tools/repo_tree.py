@@ -7,13 +7,17 @@ from typing import Any
 from aicarmine_broker.config import LAB_REPO
 from aicarmine_broker.infrastructure.filesystem_repo import repo_rel, safe_rel_path
 from aicarmine_broker.job_store import now, write_json
+from aicarmine_broker.tools.deterministic_common import bounded_int_arg, deterministic_input_error
 from aicarmine_broker.tools.git_surface import git_candidate_files
 
 
 def repo_tree(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or ".").strip()
-    max_files = max(1, int(args.get("max_files") or 200))
-    max_depth = max(0, int(args.get("max_depth") or 3))
+    try:
+        max_files = bounded_int_arg(args, "max_files", default=200, minimum=1, maximum=2000)
+        max_depth = bounded_int_arg(args, "max_depth", default=3, minimum=0, maximum=100)
+    except Exception as exc:
+        return deterministic_input_error("repo_tree", exc)
     excluded_dirs = {
         ".git",
         "__pycache__",
@@ -104,6 +108,23 @@ def repo_tree(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "truncated": entries_total > len(entries),
         "source": source,
         "gitignore_respected": source == "git_ls_files_exclude_standard",
+        "coverage_status": "truncated" if entries_total > len(entries) else "complete",
+        "suggested_next_actions": (
+            [
+                {
+                    "tool": "repo_semantic_search",
+                    "argument_hints": {
+                        "path": rel,
+                        "query": "derive_from_current_goal",
+                    },
+                    "reason": "directory_or_file_list_truncated_use_goal_specific_query",
+                    "requires_goal_specific_query": True,
+                    "not_runnable_without_query": True,
+                }
+            ]
+            if entries_total > len(entries)
+            else []
+        ),
     }
     artifact = root / "tool-results" / f"{now()}-repo_tree.json"
     write_json(artifact, payload)

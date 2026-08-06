@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -10,6 +11,214 @@ from typing import Any, Mapping
 def _dict_field(mapping: Mapping[str, Any], key: str) -> dict[str, Any]:
     value = mapping.get(key)
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _runtime_roots_payload(config: Mapping[str, Any], job_root: Any) -> dict[str, str]:
+    return {
+        "AICARMINE_LAB_REPO": str(config.get("LAB_REPO", "")),
+        "AICARMINE_REAL_REPO": str(config.get("REAL_REPO", "")),
+        "AICARMINE_AGENT_JOB_ROOT": str(job_root),
+        "agent_job_root": str(job_root),
+        "OPEN_TERMINAL_CWD": str(os.environ.get("OPEN_TERMINAL_CWD", "")),
+        "AICARMINE_OPEN_TERMINAL_WORKDIR": str(os.environ.get("AICARMINE_OPEN_TERMINAL_WORKDIR", "")),
+        "codex_root": str(os.environ.get("CODEX_ROOT", "")),
+    }
+
+
+def _base_tool_surface_reason(evidence_contract: Mapping[str, Any]) -> str:
+    existing = str(evidence_contract.get("base_tool_surface_reason") or "").strip()
+    if existing:
+        return existing
+
+    final_rewrite_latch = str(
+        evidence_contract.get("final_rewrite_latch") or "inactive"
+    ).strip().lower()
+    if final_rewrite_latch in {
+        "rewrite_required",
+        "required_gap_only",
+        "terminal_block_required",
+    }:
+        return "final_rewrite_latch"
+
+    surface_policy = (
+        evidence_contract.get("turn_tool_surface_policy")
+        if isinstance(evidence_contract.get("turn_tool_surface_policy"), dict)
+        else {}
+    )
+    return str(surface_policy.get("reason") or "tool_surface_policy").strip() or "tool_surface_policy"
+
+
+def _allowed_actions_from_contract(evidence_contract: Mapping[str, Any]) -> list[str]:
+    final_contract = (
+        evidence_contract.get("finalization_contract")
+        if isinstance(evidence_contract.get("finalization_contract"), dict)
+        else {}
+    )
+
+    may_final = (
+        evidence_contract.get("planner_may_choose_final") is True
+        or final_contract.get("planner_may_choose_final") is True
+        or final_contract.get("final_allowed") is True
+    )
+    may_block = (
+        evidence_contract.get("planner_may_choose_block") is True
+        or final_contract.get("planner_may_choose_block") is True
+    )
+    if may_final and may_block:
+        return ["final", "block"]
+    if may_final:
+        return ["final"]
+    if may_block:
+        return ["block"]
+    return ["block"]
+
+
+def _tool_names_from_available_tools_payload(available_tools: Mapping[str, Any]) -> set[str]:
+    if not isinstance(available_tools, Mapping):
+        return set()
+    return {
+        str(name).strip()
+        for name in available_tools.get("tool_names", [])
+        if str(name).strip()
+    }
+
+
+def _tool_shape_examples_for_transport(
+    *,
+    tool_shape_examples: Any,
+    available_tool_names: set[str],
+) -> dict[str, Any]:
+    if not isinstance(tool_shape_examples, Mapping):
+        return {}
+    if available_tool_names:
+        return dict(tool_shape_examples)
+    examples = {
+        key: value
+        for key, value in tool_shape_examples.items()
+        if key != "examples"
+    }
+    examples["tool_shape_examples_hidden_reason"] = "transport_tool_surface_empty"
+    examples["examples"] = []
+    return examples
+
+
+def _filter_candidate_actions_by_available_tools(
+    candidate_actions: list[Any],
+    available_tool_names: set[str],
+    hidden_reason: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    visible_actions: list[dict[str, Any]] = []
+    hidden_actions: list[dict[str, Any]] = []
+
+    transport_surface_empty = not available_tool_names
+    for action in candidate_actions if isinstance(candidate_actions, list) else []:
+        if not isinstance(action, dict):
+            continue
+        tool = str(action.get("tool") or "").strip()
+        if not tool:
+            if not transport_surface_empty:
+                visible_actions.append(action)
+            else:
+                action["hidden_from_payload"] = True
+                action["hidden_from_payload_reason"] = hidden_reason
+                hidden_actions.append(action)
+            continue
+        if transport_surface_empty or tool not in available_tool_names:  # Patch P1: tools=[] è il caso più restrittivo
+            action["hidden_from_payload"] = True
+            action["hidden_from_payload_reason"] = hidden_reason
+            hidden_actions.append(action)
+            continue
+        visible_actions.append(action)
+
+    return visible_actions, hidden_actions
+
+
+def _normalize_candidates_for_available_tools(
+    *,
+    evidence_contract: dict[str, Any],
+    available_tool_names: set[str],
+) -> None:
+    hidden_reason = "tool_not_available_in_transport_surface"
+    evidence_candidates = list(evidence_contract.get("candidate_next_actions") or [])
+    kept_candidates, hidden_candidates = _filter_candidate_actions_by_available_tools(
+        evidence_candidates,
+        available_tool_names,
+        hidden_reason=hidden_reason,
+    )
+    evidence_contract["candidate_next_actions"] = kept_candidates
+    if hidden_candidates:
+        evidence_contract["candidate_next_actions_hidden"] = hidden_candidates
+        evidence_contract["candidate_next_actions_hidden_reason"] = hidden_reason
+    else:
+        evidence_contract.pop("candidate_next_actions_hidden", None)
+        evidence_contract.pop("candidate_next_actions_hidden_reason", None)
+
+    operational_notes = (
+        evidence_contract.get("operational_notes")
+        if isinstance(evidence_contract.get("operational_notes"), dict)
+        else {}
+    )
+    if operational_notes:
+        operational_candidates = list(operational_notes.get("candidate_next_actions") or [])
+        kept_operational, hidden_operational = _filter_candidate_actions_by_available_tools(
+            operational_candidates,
+            available_tool_names,
+            hidden_reason=hidden_reason,
+        )
+        if hidden_operational or kept_operational != operational_candidates:
+            operational_notes["candidate_next_actions"] = kept_operational
+        if hidden_operational:
+            operational_notes["candidate_next_actions_hidden_reason"] = hidden_reason
+            operational_notes["candidate_next_actions_hidden"] = hidden_operational
+        elif "candidate_next_actions_hidden" in operational_notes:
+            operational_notes.pop("candidate_next_actions_hidden", None)
+            operational_notes.pop("candidate_next_actions_hidden_reason", None)
+        evidence_contract["operational_notes"] = operational_notes
+
+
+def _normalize_transport_tool_surface_state(
+    *,
+    evidence_contract: dict[str, Any],
+    available_tool_names: set[str],
+) -> None:
+    _normalize_candidates_for_available_tools(
+        evidence_contract=evidence_contract,
+        available_tool_names=available_tool_names,
+    )
+
+    required_next_tool_call = evidence_contract.get("required_next_tool_call")
+    if not available_tool_names:
+        if isinstance(required_next_tool_call, dict):
+            required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            if required_tool and required_tool not in available_tool_names:
+                evidence_contract["required_next_tool_call"] = {}
+            elif not required_tool:
+                evidence_contract["required_next_tool_call"] = {}
+        if not evidence_contract.get("candidate_next_actions"):
+            evidence_contract["candidate_next_actions"] = []
+
+        planner_may_choose_final = bool(evidence_contract.get("planner_may_choose_final"))
+        planner_may_choose_block = bool(evidence_contract.get("planner_may_choose_block"))
+        final_contract = evidence_contract.get("finalization_contract")
+        if isinstance(final_contract, dict):
+            planner_may_choose_final = planner_may_choose_final or bool(final_contract.get("planner_may_choose_final"))
+            planner_may_choose_block = planner_may_choose_block or bool(final_contract.get("planner_may_choose_block"))
+            final_contract["planner_may_choose_block"] = planner_may_choose_block
+            evidence_contract["finalization_contract"] = final_contract
+        if not planner_may_choose_final and not planner_may_choose_block:
+            evidence_contract["planner_may_choose_block"] = True
+            planner_may_choose_block = True
+            evidence_contract["required_next_progress"] = (
+                "No tool calls are available. Return action=block with the remaining blocker."
+            )
+
+        evidence_contract["planner_may_choose_final"] = planner_may_choose_final
+        evidence_contract["planner_may_choose_block"] = planner_may_choose_block
+    elif isinstance(required_next_tool_call, dict):
+        required_tool = str(required_next_tool_call.get("tool") or "").strip()
+        if required_tool and required_tool not in available_tool_names:
+            evidence_contract["required_next_tool_call"] = {}
+
 
 
 def explicit_request_context_from_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -168,6 +377,23 @@ class PromptPackBuilder:
         )
 
         def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
+            required_repo_read_window_budget = None
+            required_repo_read_item_limit = None
+            if compact_mode:
+                if headroom_char_budget > 0:
+                    required_repo_read_window_budget = max(
+                        12000,
+                        min(36000, headroom_char_budget // 6),
+                    )
+                else:
+                    required_repo_read_window_budget = max(
+                        12000,
+                        min(36000, int(window_chars or 3000) * 3),
+                    )
+                required_repo_read_item_limit = max(
+                    1,
+                    min(16, required_repo_read_window_budget // 800),
+                )
             required_working_set = _required_working_set_for_prompt(
                 goal,
                 history,
@@ -175,6 +401,8 @@ class PromptPackBuilder:
                 job_root=root,
                 window_chars=window_chars,
                 compact_mode=compact_mode,
+                max_repo_read_items=required_repo_read_item_limit,
+                max_total_repo_read_window_chars=required_repo_read_window_budget,
             )
             required_chars_local = _json_char_len(required_working_set)
             required_errors_local = list(required_working_set.get("errors") or [])
@@ -211,7 +439,18 @@ class PromptPackBuilder:
                 else {}
             )
             micro_batch_allowed = bool(micro_batch_contract.get("allowed"))
-            tool_shape_examples = _tool_shape_examples_for_prompt()
+            available_tool_names = _tool_names_from_available_tools_payload(
+                available_tools_for_payload if isinstance(available_tools_for_payload, Mapping) else {}
+            )
+            payload_evidence = evidence_for_prompt
+            _normalize_transport_tool_surface_state(
+                evidence_contract=payload_evidence,
+                available_tool_names=available_tool_names,
+            )
+            tool_shape_examples = _tool_shape_examples_for_transport(
+                tool_shape_examples=_tool_shape_examples_for_prompt(),
+                available_tool_names=available_tool_names,
+            )
             payload_local = {
                 "job_id": job_id,
                 "goal": goal,
@@ -236,6 +475,8 @@ class PromptPackBuilder:
                     "native_history_messages_reserve_chars": native_history_reserve_chars,
                     "required_working_set_not_truncated": True,
                     "required_working_set_uses_real_sqlite_windows_when_compacted": True,
+                    "required_working_set_repo_read_global_window_budget_chars": required_repo_read_window_budget,
+                    "required_working_set_repo_read_item_limit": required_repo_read_item_limit,
                     "optional_context_may_be_omitted_not_used_as_required_payload": True,
                     "step_budget_terminal_guidance_active": bool(step_budget_guidance),
                     "required_window_continuation_suppressed_by_step_budget": False,
@@ -253,6 +494,17 @@ class PromptPackBuilder:
                         "Native Open Terminal run_command may return status=running and exit_code=null; terminal_run_command_wait returns final output.",
                     ],
                 },
+                "runtime_roots": _runtime_roots_payload(config, root),
+                "base_tool_surface_reason": _base_tool_surface_reason(payload_evidence),
+                "surface_filter_source": str(payload_evidence.get("surface_filter_source") or "tool_surface_policy"),
+                "planner_may_choose_final": bool(payload_evidence.get("planner_may_choose_final")),
+                "planner_may_choose_block": bool(payload_evidence.get("planner_may_choose_block")),
+                "allowed_actions": _allowed_actions_from_contract(payload_evidence),
+                "required_next_tool_call": (
+                    payload_evidence["required_next_tool_call"]
+                    if isinstance(payload_evidence.get("required_next_tool_call"), dict)
+                    else {}
+                ),
                 "available_tools": available_tools_for_payload,
                 "tool_shape_examples": tool_shape_examples,
                 "required_working_set": required_working_set,
@@ -276,7 +528,7 @@ class PromptPackBuilder:
                     compact_mode=compact_mode,
                     window_chars=window_chars,
                 ),
-                "evidence_contract": evidence_for_prompt,
+                "evidence_contract": payload_evidence,
                 "required_response_format": (
                     {
                         "native_tool_calls_required_for_tools": True,
@@ -323,10 +575,10 @@ class PromptPackBuilder:
             }
             if step_budget_guidance:
                 payload_local["planner_step_budget_guidance"] = step_budget_guidance
-            if isinstance(evidence_for_prompt.get("required_next_tool_call"), dict):
-                payload_local["required_next_tool_call"] = evidence_for_prompt["required_next_tool_call"]
-            if isinstance(evidence_for_prompt.get("forbidden_repeated_tool_calls"), list):
-                payload_local["forbidden_repeated_tool_calls"] = evidence_for_prompt["forbidden_repeated_tool_calls"]
+            if isinstance(payload_evidence.get("required_next_tool_call"), dict):
+                payload_local["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
+            if isinstance(payload_evidence.get("forbidden_repeated_tool_calls"), list):
+                payload_local["forbidden_repeated_tool_calls"] = payload_evidence["forbidden_repeated_tool_calls"]
             report_local = _prompt_budget_report(
                 payload_local,
                 system_prompt=system_prompt_for_budget,
@@ -374,7 +626,7 @@ class PromptPackBuilder:
                 prompt_contract["hard_budget_optional_context_windowed"] = True
                 prompt_contract["hard_budget_optional_context_window_chars"] = hard_window_chars
                 payload["prompt_pack_contract"] = prompt_contract
-                payload["evidence_contract"] = _hard_budget_evidence_contract_for_prompt(
+                payload_evidence = _hard_budget_evidence_contract_for_prompt(
                     root,
                     goal=goal,
                     contract=evidence_contract,
@@ -382,13 +634,26 @@ class PromptPackBuilder:
                     history=history,
                     reason="planner_prompt_pack_over_budget_after_compact_mode",
                 )
+                payload["evidence_contract"] = dict(payload_evidence)
+                available_tool_names = _tool_names_from_available_tools_payload(
+                    _dict_field(payload, "available_tools")
+                )
+                _normalize_transport_tool_surface_state(
+                    evidence_contract=payload["evidence_contract"],
+                    available_tool_names=available_tool_names,
+                )
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
-                payload["tool_shape_examples"] = _hard_budget_tool_shape_examples_for_prompt()
+                # Rileggi evidence_contract normalizzato dopo _preserve_required_next_tool_call_for_prompt
                 payload_evidence = _dict_field(payload, "evidence_contract")
+                payload["tool_shape_examples"] = _tool_shape_examples_for_transport(
+                    tool_shape_examples=_hard_budget_tool_shape_examples_for_prompt(),
+                    available_tool_names=available_tool_names,
+                )
                 if isinstance(payload_evidence.get("required_next_tool_call"), dict):
                     payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
                 elif "required_next_tool_call" in payload:
                     payload.pop("required_next_tool_call", None)
+                payload["allowed_actions"] = _allowed_actions_from_contract(payload_evidence)
                 if isinstance(payload_evidence.get("forbidden_repeated_tool_calls"), list):
                     payload["forbidden_repeated_tool_calls"] = payload_evidence["forbidden_repeated_tool_calls"]
                 elif "forbidden_repeated_tool_calls" in payload:
@@ -418,6 +683,24 @@ class PromptPackBuilder:
                     window_chars=hard_window_chars,
                     reason="planner_prompt_pack_over_budget_available_tools_windowed",
                 )
+                payload_evidence = _dict_field(payload, "evidence_contract")
+                available_tool_names = _tool_names_from_available_tools_payload(
+                    _dict_field(payload, "available_tools")
+                )
+                _normalize_transport_tool_surface_state(
+                    evidence_contract=payload_evidence,
+                    available_tool_names=available_tool_names,
+                )
+                payload["evidence_contract"] = payload_evidence
+                payload["allowed_actions"] = _allowed_actions_from_contract(payload_evidence)
+                payload["tool_shape_examples"] = _tool_shape_examples_for_transport(
+                    tool_shape_examples=payload.get("tool_shape_examples"),
+                    available_tool_names=available_tool_names,
+                )
+                if isinstance(payload_evidence.get("required_next_tool_call"), dict):
+                    payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
+                elif "required_next_tool_call" in payload:
+                    payload.pop("required_next_tool_call", None)
                 prompt_contract = _dict_field(payload, "prompt_pack_contract")
                 prompt_contract["compact_mode"] = True
                 prompt_contract["available_tools_windowed"] = True
@@ -513,8 +796,20 @@ class PromptPackBuilder:
                     reason="planner_prompt_pack_over_budget_after_budget_report",
                 )
                 _preserve_required_next_tool_call_for_prompt(payload, evidence_before_hard_budget)
-                payload["tool_shape_examples"] = _hard_budget_tool_shape_examples_for_prompt()
+                available_tool_names = _tool_names_from_available_tools_payload(
+                    _dict_field(payload, "available_tools")
+                )
+                _normalize_transport_tool_surface_state(
+                    evidence_contract=payload["evidence_contract"],
+                    available_tool_names=available_tool_names,
+                )
+                # Rileggi evidence_contract normalizzato dopo _normalize_transport_tool_surface_state
                 payload_evidence = _dict_field(payload, "evidence_contract")
+                payload["tool_shape_examples"] = _tool_shape_examples_for_transport(
+                    tool_shape_examples=_hard_budget_tool_shape_examples_for_prompt(),
+                    available_tool_names=available_tool_names,
+                )
+                payload["allowed_actions"] = _allowed_actions_from_contract(payload_evidence)
                 if isinstance(payload_evidence.get("required_next_tool_call"), dict):
                     payload["required_next_tool_call"] = payload_evidence["required_next_tool_call"]
                 elif "required_next_tool_call" in payload:

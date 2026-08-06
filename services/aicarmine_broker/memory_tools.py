@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -10,6 +11,81 @@ from pathlib import Path
 from typing import Any
 
 from .config import PLANNER_MEMORY_DB, PLANNER_MEMORY_RETENTION_DAYS
+
+
+logger = logging.getLogger(__name__)
+
+
+def _memory_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:
+    """Helper locale per parsing bounded int senza dipendenze circolari."""
+    keys = (names,) if isinstance(names, str) else names
+    selected: Any = None
+    for key in keys:
+        value = args.get(key)
+        if value is not None and str(value).strip() != "":
+            selected = value
+            break
+    if selected is None:
+        selected = default
+    try:
+        parsed = int(selected)
+    except (TypeError, ValueError, OverflowError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+def _preview(value: Any, *, limit: int = 500) -> str:
+    try:
+        return str(value)[:limit]
+    except Exception as exc:
+        return f"<unstringifiable:{type(exc).__name__}>"
+
+
+def _memory_sqlite_diagnostic(db_path: Path, exc: Exception, *, stage: str) -> dict[str, Any]:
+    return {
+        "schema": "runtime_sqlite_memory_diagnostic.v1",
+        "diagnostic_only": True,
+        "stage": stage,
+        "db_path": str(db_path),
+        "error_type": type(exc).__name__,
+        "error_preview": _preview(exc, limit=1000),
+    }
+
+
+def _memory_sqlite_error_result(
+    tool: str,
+    db_path: Path,
+    exc: Exception,
+    *,
+    stage: str,
+    error: str,
+) -> dict[str, Any]:
+    diagnostic = _memory_sqlite_diagnostic(db_path, exc, stage=stage)
+    if isinstance(exc, (PermissionError, sqlite3.DatabaseError)):
+        logger.warning(
+            "Runtime SQLite memory operation failed. tool=%s stage=%s db=%s error_type=%s",
+            tool,
+            stage,
+            db_path,
+            type(exc).__name__,
+        )
+    else:
+        logger.debug(
+            "Runtime SQLite memory operation failed. tool=%s stage=%s db=%s error_type=%s",
+            tool,
+            stage,
+            db_path,
+            type(exc).__name__,
+        )
+    return {
+        "ok": False,
+        "tool": tool,
+        "db": str(db_path),
+        "error": error,
+        "error_type": type(exc).__name__,
+        "details": _preview(exc, limit=1000),
+        "memory_sqlite_diagnostics": [diagnostic],
+    }
 
 
 def _dict_from_value(value: Any) -> dict[str, Any]:
@@ -372,14 +448,20 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
     document_id = str(args.get("document_id") or args.get("id") or "").strip()
     section = str(args.get("section") or args.get("tag") or "").strip()
     query = str(args.get("query") or "").strip()
-    limit = max(1, int(args.get("limit") or 3))
-    max_chars = max(500, int(args.get("max_chars") or 3000))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=3, minimum=1, maximum=100)
+    except Exception:
+        limit = 3
+    try:
+        max_chars = max(500, _memory_bounded_int_arg(args, ("max_chars",), default=3000, minimum=500, maximum=100000))
+    except Exception:
+        max_chars = 3000
     offset_arg = args.get("offset")
     offset = None
     if offset_arg not in (None, ""):
         try:
-            offset = max(0, int(offset_arg))
-        except (TypeError, ValueError):
+            offset = _memory_bounded_int_arg(args, ("offset",), default=0, minimum=0, maximum=1000000)
+        except Exception:
             return {
                 "ok": False,
                 "tool": "planner_scratchpad_read",
@@ -501,7 +583,10 @@ def planner_scratchpad_read(args: dict[str, Any], root: Path) -> dict[str, Any]:
     rows = _read_scratchpad(root)
     query = str(args.get("query") or "").lower()
     tag = str(args.get("tag") or "")
-    limit = max(1, int(args.get("limit") or 50))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=50, minimum=1, maximum=500)
+    except Exception:
+        limit = 50
     selected: list[dict[str, Any]] = []
     for row in reversed(rows):
         text = str(row.get("text") or "")
@@ -529,46 +614,50 @@ def _memory_db(args: dict[str, Any]) -> Path:
 
 def _connect_memory(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS broker_memory_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            expires_at REAL,
-            kind TEXT NOT NULL,
-            tag TEXT,
-            text TEXT NOT NULL,
-            metadata_json TEXT,
-            pinned INTEGER NOT NULL DEFAULT 0
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS broker_memory_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                expires_at REAL,
+                kind TEXT NOT NULL,
+                tag TEXT,
+                text TEXT NOT NULL,
+                metadata_json TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0
+            )
+            """
         )
-        """
-    )
-    conn.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS broker_memory_records_fts "
-        "USING fts5(text, kind, tag, content='broker_memory_records', content_rowid='id')"
-    )
-    conn.executescript(
-        """
-        CREATE TRIGGER IF NOT EXISTS broker_memory_records_ai AFTER INSERT ON broker_memory_records BEGIN
-            INSERT INTO broker_memory_records_fts(rowid, text, kind, tag)
-            VALUES (new.id, new.text, new.kind, coalesce(new.tag, ''));
-        END;
-        CREATE TRIGGER IF NOT EXISTS broker_memory_records_ad AFTER DELETE ON broker_memory_records BEGIN
-            INSERT INTO broker_memory_records_fts(broker_memory_records_fts, rowid, text, kind, tag)
-            VALUES('delete', old.id, old.text, old.kind, coalesce(old.tag, ''));
-        END;
-        CREATE TRIGGER IF NOT EXISTS broker_memory_records_au AFTER UPDATE ON broker_memory_records BEGIN
-            INSERT INTO broker_memory_records_fts(broker_memory_records_fts, rowid, text, kind, tag)
-            VALUES('delete', old.id, old.text, old.kind, coalesce(old.tag, ''));
-            INSERT INTO broker_memory_records_fts(rowid, text, kind, tag)
-            VALUES (new.id, new.text, new.kind, coalesce(new.tag, ''));
-        END;
-        """
-    )
-    conn.commit()
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS broker_memory_records_fts "
+            "USING fts5(text, kind, tag, content='broker_memory_records', content_rowid='id')"
+        )
+        conn.executescript(
+            """
+            CREATE TRIGGER IF NOT EXISTS broker_memory_records_ai AFTER INSERT ON broker_memory_records BEGIN
+                INSERT INTO broker_memory_records_fts(rowid, text, kind, tag)
+                VALUES (new.id, new.text, new.kind, coalesce(new.tag, ''));
+            END;
+            CREATE TRIGGER IF NOT EXISTS broker_memory_records_ad AFTER DELETE ON broker_memory_records BEGIN
+                INSERT INTO broker_memory_records_fts(broker_memory_records_fts, rowid, text, kind, tag)
+                VALUES('delete', old.id, old.text, old.kind, coalesce(old.tag, ''));
+            END;
+            CREATE TRIGGER IF NOT EXISTS broker_memory_records_au AFTER UPDATE ON broker_memory_records BEGIN
+                INSERT INTO broker_memory_records_fts(broker_memory_records_fts, rowid, text, kind, tag)
+                VALUES('delete', old.id, old.text, old.kind, coalesce(old.tag, ''));
+                INSERT INTO broker_memory_records_fts(rowid, text, kind, tag)
+                VALUES (new.id, new.text, new.kind, coalesce(new.tag, ''));
+            END;
+            """
+        )
+        conn.commit()
+    except Exception:
+        conn.close()
+        raise
     return conn
 
 
@@ -579,10 +668,51 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
         return {"ok": False, "tool": "runtime_sqlite_memory_write", "error": "missing_text"}
     now = time.time()
     ttl_days = args.get("ttl_days")
-    retention_days = int(ttl_days if ttl_days not in (None, "") else PLANNER_MEMORY_RETENTION_DAYS)
+    try:
+        retention_days = _memory_bounded_int_arg(args, ("ttl_days",), default=PLANNER_MEMORY_RETENTION_DAYS, minimum=0, maximum=36500)
+    except Exception:
+        return {
+            "ok": False,
+            "tool": "runtime_sqlite_memory_write",
+            "db": str(db_path),
+            "error": "invalid_ttl_days",
+            "error_type": type(ttl_days).__name__,
+            "received_preview": _preview(ttl_days),
+        }
     expires_at = None if retention_days <= 0 else now + retention_days * 86400
     metadata = args.get("metadata") if isinstance(args.get("metadata"), dict) else {}
-    conn = _connect_memory(db_path)
+    try:
+        metadata_json = json.dumps(metadata, ensure_ascii=False, default=str)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "tool": "runtime_sqlite_memory_write",
+            "db": str(db_path),
+            "error": "memory_metadata_json_serialization_failed",
+            "error_type": type(exc).__name__,
+            "details": _preview(exc, limit=1000),
+            "memory_sqlite_diagnostics": [
+                {
+                    "schema": "runtime_sqlite_memory_diagnostic.v1",
+                    "diagnostic_only": True,
+                    "stage": "metadata_json",
+                    "db_path": str(db_path),
+                    "error_type": type(exc).__name__,
+                    "error_preview": _preview(exc, limit=1000),
+                    "metadata_type": type(metadata).__name__,
+                }
+            ],
+        }
+    try:
+        conn = _connect_memory(db_path)
+    except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
+        return _memory_sqlite_error_result(
+            "runtime_sqlite_memory_write",
+            db_path,
+            exc,
+            stage="connect_or_schema",
+            error="sqlite_memory_connect_error",
+        )
     try:
         cur = conn.execute(
             """
@@ -597,7 +727,7 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
                 str(args.get("kind") or "planner_note"),
                 str(args.get("tag") or ""),
                 text,
-                json.dumps(metadata, ensure_ascii=False, default=str),
+                metadata_json,
                 1 if bool(args.get("pinned")) else 0,
             ),
         )
@@ -605,6 +735,14 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
             raise RuntimeError("sqlite_insert_missing_lastrowid")
         record_id = int(cur.lastrowid)
         conn.commit()
+    except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
+        return _memory_sqlite_error_result(
+            "runtime_sqlite_memory_write",
+            db_path,
+            exc,
+            stage="insert_or_commit",
+            error="sqlite_memory_write_error",
+        )
     finally:
         conn.close()
     return {
@@ -619,7 +757,10 @@ def runtime_sqlite_memory_write(args: dict[str, Any], root: Path) -> dict[str, A
 def runtime_sqlite_memory_search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     db_path = _memory_db(args)
     query = str(args.get("query") or "").strip()
-    limit = max(1, int(args.get("limit") or 50))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=50, minimum=1, maximum=500)
+    except Exception:
+        limit = 50
     kind = str(args.get("kind") or "")
     tag = str(args.get("tag") or "")
     if not db_path.exists():
@@ -652,14 +793,14 @@ def runtime_sqlite_memory_search(args: dict[str, Any], root: Path) -> dict[str, 
             rows = [dict(row) for row in conn.execute(sql, params)]
         finally:
             conn.close()
-    except sqlite3.Error as exc:
-        return {
-            "ok": False,
-            "tool": "runtime_sqlite_memory_search",
-            "db": str(db_path),
-            "error": "sqlite_memory_search_error",
-            "details": str(exc)[:1000],
-        }
+    except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
+        return _memory_sqlite_error_result(
+            "runtime_sqlite_memory_search",
+            db_path,
+            exc,
+            stage="search",
+            error="sqlite_memory_search_error",
+        )
     for row in rows:
         row["text"] = str(row.get("text") or "")[:2000]
     return {"ok": True, "tool": "runtime_sqlite_memory_search", "db": str(db_path), "count": len(rows), "items": rows}
@@ -684,7 +825,10 @@ def planner_memory_surface(args: dict[str, Any], root: Path) -> dict[str, Any]:
     merely because it has not called a memory tool yet.
     """
     goal = str(args.get("goal") or "")
-    limit = max(1, int(args.get("limit") or 12))
+    try:
+        limit = _memory_bounded_int_arg(args, ("limit",), default=12, minimum=1, maximum=100)
+    except Exception:
+        limit = 12
     target_key = str(args.get("target_key") or args.get("tag") or "").strip()
     db_path = _memory_db(args)
     scratchpad = planner_scratchpad_read({"limit": limit}, root)
@@ -843,8 +987,20 @@ def runtime_sqlite_memory_cleanup(
         where.append("expires_at IS NOT NULL AND expires_at <= ?")
         params.append(now)
     if older_than_days not in (None, ""):
+        try:
+            older_than_days_int = int(older_than_days)
+        except (TypeError, ValueError):
+            return {
+                "ok": False,
+                "tool": "runtime_sqlite_memory_cleanup",
+                "db": str(db_path),
+                "error": "invalid_older_than_days",
+                "error_type": type(older_than_days).__name__,
+                "received_preview": _preview(older_than_days),
+                "dry_run": dry_run,
+            }
         where.append("updated_at <= ?")
-        params.append(now - int(older_than_days) * 86400)
+        params.append(now - older_than_days_int * 86400)
     if kind:
         where.append("kind = ?")
         params.append(kind)
@@ -858,7 +1014,18 @@ def runtime_sqlite_memory_cleanup(
             "error": "cleanup_requires_filter",
             "dry_run": dry_run,
         }
-    conn = _connect_memory(db_path)
+    try:
+        conn = _connect_memory(db_path)
+    except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
+        result = _memory_sqlite_error_result(
+            "runtime_sqlite_memory_cleanup",
+            db_path,
+            exc,
+            stage="connect_or_schema",
+            error="sqlite_memory_cleanup_error",
+        )
+        result["dry_run"] = dry_run
+        return result
     try:
         rows = [dict(row) for row in conn.execute(
             f"SELECT id, kind, tag, updated_at, expires_at, pinned FROM broker_memory_records WHERE {' AND '.join(where)} ORDER BY updated_at LIMIT 500",
@@ -895,6 +1062,16 @@ def runtime_sqlite_memory_cleanup(
             placeholders = ",".join("?" for _ in ids)
             conn.execute(f"DELETE FROM broker_memory_records WHERE id IN ({placeholders})", ids)
             conn.commit()
+    except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
+        result = _memory_sqlite_error_result(
+            "runtime_sqlite_memory_cleanup",
+            db_path,
+            exc,
+            stage="select_or_delete",
+            error="sqlite_memory_cleanup_error",
+        )
+        result["dry_run"] = dry_run
+        return result
     finally:
         conn.close()
     return {

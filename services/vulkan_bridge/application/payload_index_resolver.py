@@ -22,6 +22,36 @@ def _parse_tool_context(value: Any) -> Any:
     return parsed if isinstance(parsed, dict) else value
 
 
+def _parse_tool_context_diagnostic(field: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, str):
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        return {
+            "field": field,
+            "reason": "invalid_json",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "value_preview": value[:500],
+        }
+    except (TypeError, ValueError) as exc:
+        return {
+            "field": field,
+            "reason": "parse_error",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:500],
+            "value_preview": value[:500],
+        }
+    if not isinstance(parsed, dict):
+        return {
+            "field": field,
+            "reason": "parsed_value_not_object",
+            "decoded_type": type(parsed).__name__,
+        }
+    return {}
+
+
 def _payload_for_resolution(payload: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(payload)
     if "tool_context" in resolved:
@@ -29,21 +59,43 @@ def _payload_for_resolution(payload: dict[str, Any]) -> dict[str, Any]:
     return resolved
 
 
+def _payload_for_resolution_with_diagnostics(payload: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    resolved = dict(payload)
+    diagnostics: list[dict[str, Any]] = []
+    if "tool_context" in resolved:
+        diagnostic = _parse_tool_context_diagnostic("tool_context", resolved.get("tool_context"))
+        if diagnostic:
+            diagnostics.append(diagnostic)
+        resolved["tool_context"] = _parse_tool_context(resolved.get("tool_context"))
+    return resolved, diagnostics
+
+
 def _is_empty(value: Any) -> bool:
     return value in (None, "", [], {})
 
 
-def _tokenize(path: str) -> list[tuple[str, str | None]]:
+def _tokenize_with_diagnostics(path: str) -> tuple[list[tuple[str, str | None]], list[dict[str, Any]]]:
     tokens: list[tuple[str, str | None]] = []
-    for raw in str(path or "").split("."):
+    diagnostics: list[dict[str, Any]] = []
+    for position, raw in enumerate(str(path or "").split(".")):
         raw = raw.strip()
         if not raw:
             continue
         match = _TOKEN_RE.match(raw)
         if not match:
             tokens.append((raw, None))
+            diagnostics.append({
+                "position": position,
+                "token": raw,
+                "reason": "invalid_token_syntax",
+            })
             continue
         tokens.append((match.group("name"), match.group("index")))
+    return tokens, diagnostics
+
+
+def _tokenize(path: str) -> list[tuple[str, str | None]]:
+    tokens, _diagnostics = _tokenize_with_diagnostics(path)
     return tokens
 
 
@@ -76,14 +128,19 @@ def _resolve_tokens(current: Any, tokens: list[tuple[str, str | None]]) -> list[
 def resolve_field_path(payload: dict[str, Any], path: str) -> dict[str, Any]:
     """Resolve one payload field path and report missing/empty targets."""
 
-    normalized = _payload_for_resolution(payload)
-    values = _resolve_tokens(normalized, _tokenize(path))
+    normalized, parse_diagnostics = _payload_for_resolution_with_diagnostics(payload)
+    tokens, token_diagnostics = _tokenize_with_diagnostics(path)
+    values = _resolve_tokens(normalized, tokens)
     non_empty = [value for value in values if not _is_empty(value)]
     return {
         "path": path,
+        "normalized_path": str(path or "").strip(),
         "exists": bool(values),
         "non_empty": bool(non_empty),
         "match_count": len(values),
+        "token_count": len(tokens),
+        "tokenization_errors": token_diagnostics,
+        "parse_diagnostics": parse_diagnostics,
     }
 
 
@@ -135,9 +192,19 @@ def resolve_payload_index(payload: dict[str, Any]) -> dict[str, Any]:
             "path": location,
         }
         if not result["exists"]:
-            unresolved.append({**record, "reason": "missing_target"})
+            unresolved.append({
+                **record,
+                "reason": "missing_target",
+                "tokenization_errors": result.get("tokenization_errors") or [],
+                "parse_diagnostics": result.get("parse_diagnostics") or [],
+            })
         elif not result["non_empty"]:
-            empty_targets.append({**record, "reason": "empty_target"})
+            empty_targets.append({
+                **record,
+                "reason": "empty_target",
+                "match_count": result["match_count"],
+                "parse_diagnostics": result.get("parse_diagnostics") or [],
+            })
         else:
             resolved.append({**record, "match_count": result["match_count"]})
     return {

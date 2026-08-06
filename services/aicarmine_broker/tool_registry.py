@@ -11,32 +11,37 @@ from __future__ import annotations
 from typing import Any
 
 from .tool_schemas import (
+    COMMAND_EXEC_TOOLS,
     HELPER_PUBLIC_ALIASES,
     MCP_PUBLIC_TOOLS,
     OPENWEBUI_PUBLIC_TOOLS,
     PLANNER_INTERNAL_TOOLS,
+    PURE_READ_TOOLS,
     READ_ONLY_TOOLS,
+    STATE_MUTATING_TOOLS,
     TOOL_ALIASES,
     TOOL_ARGUMENT_CONTRACTS,
-    TOOLS_SCHEMA,
     VALID_INTERNAL_TOOLS,
     VALID_INTERNAL_TOOLS_LIST,
     VALID_INTERNAL_TOOLS_LIST_EXCLUDING_VULKAN,
     VALID_INTERNAL_TOOLS_PROMPT,
     VALID_INTERNAL_TOOLS_PROMPT_EXCLUDING_VULKAN,
     WRITE_GUARDED_TOOLS,
+    REGISTRY_VERSION as _registry_version,
+    RUNTIME_CONTRACT as _runtime_contract,
 )
 
-REGISTRY_VERSION = "2026-06-01.registry-v2"
-RUNTIME_CONTRACT = (
-    "3571 receives OpenWebUI tool call -> 3571 forwards to 3572 and waits -> "
-    "3572 runs the agentic planner loop -> 3572 wraps the terminal result -> "
-    "3572 returns wrapper to 3571 -> 3571 returns ok/result wrapper to OpenWebUI"
-)
+REGISTRY_VERSION = _registry_version
+RUNTIME_CONTRACT = _runtime_contract
 
 
 def tools_schema() -> list[dict[str, Any]]:
-    return TOOLS_SCHEMA
+    from .tool_schemas import tools_schema as _tools_schema
+
+    return _tools_schema()
+
+
+TOOLS_SCHEMA: list[dict[str, Any]] = tools_schema()
 
 
 def registry_hash() -> str:
@@ -45,6 +50,7 @@ def registry_hash() -> str:
 
 
 def capability_map() -> dict[str, Any]:
+    schemas = tools_schema()
     return {
         "registry_version": REGISTRY_VERSION,
         "registry_hash": registry_hash(),
@@ -55,6 +61,14 @@ def capability_map() -> dict[str, Any]:
             "mcp_public": list(MCP_PUBLIC_TOOLS),
             "write_guarded": sorted(WRITE_GUARDED_TOOLS),
             "read_only": sorted(READ_ONLY_TOOLS),
+            "pure_read": sorted(PURE_READ_TOOLS),
+            "state_mutating": sorted(STATE_MUTATING_TOOLS),
+            "command_exec": sorted(COMMAND_EXEC_TOOLS),
+        },
+        "tool_effect_notes": {
+            "read_only": "Compatibility alias for pure_read; excludes state-mutating memory/RAG writes.",
+            "repo_semantic_search": "Planner-internal RAG search; default reindex=true writes the RAG SQLite index.",
+            "mcp_rag": "Codex MCP RAG is exposed by services/codex_bridge/rag_mcp_server.py, not by MCP_PUBLIC_TOOLS here.",
         },
         "surface_policy": {
             "3571": "OpenWebUI public surface; forwards to 3572 and waits for the wrapped terminal result.",
@@ -64,5 +78,5 @@ def capability_map() -> dict[str, Any]:
             "terminal_tools_public_on_openwebui": False,
         },
         "module": __name__,
-        "schema_tools": [item["function"]["name"] for item in TOOLS_SCHEMA],
+        "schema_tools": [item["function"]["name"] for item in schemas],
     }

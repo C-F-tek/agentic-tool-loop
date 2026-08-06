@@ -19,8 +19,22 @@ import os
 import jinja2
 import json
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
+
+
+def _normalize_template_params(params):
+    """Keep Jinja rendering stable when optional CLI values are not supplied."""
+    normalized = {}
+    for key, value in params.items():
+        normalized[key] = "" if value is None else value
+    return normalized
+
+
+def _render_template(template, **params):
+    return template.render(**_normalize_template_params(params))
+
 
 def add_common_arguments(parser):
     parser.add_argument('--model_repository_path', required=False, default='models', help='Where the model should be exported to', dest='model_repository_path')
@@ -381,9 +395,10 @@ def export_text_generation_model(model_repository_path, source_model, model_name
     elif source_model.startswith("OpenVINO/"):
         if precision:
             print("Precision change is not supported for OpenVINO models. Parameter --weight-format {} will be ignored.".format(precision))
-        hugging_face_cmd = "huggingface-cli download {} --local-dir {} ".format(source_model, os.path.join(model_repository_path, model_name))
-        if os.system(hugging_face_cmd):
-            raise ValueError("Failed to download llm model", source_model)
+        hf_download_cmd = ["huggingface-cli", "download", source_model, "--local-dir", os.path.join(model_repository_path, model_name)]
+        result = subprocess.run(hf_download_cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to download llm model: {result.stderr}")
     else: # assume HF model name or local pytorch model folder
         llm_model_path = os.path.join(model_repository_path, model_name)
         print("Exporting LLM model to ", llm_model_path)
@@ -395,14 +410,16 @@ def export_text_generation_model(model_repository_path, source_model, model_name
                 if task_parameters['extra_quantization_params'] == "":
                     print("Using default quantization parameters for NPU: --sym --ratio 1.0 --group-size -1")
                     task_parameters['extra_quantization_params'] = "--sym --ratio 1.0 --group-size -1"
-            optimum_command = "optimum-cli export openvino --model {} --weight-format {} {} --trust-remote-code {}".format(source_model, precision, task_parameters['extra_quantization_params'], llm_model_path)
-            if os.system(optimum_command):
-                raise ValueError("Failed to export llm model", source_model)
+            optimum_export_cmd = ["optimum-cli", "export", "openvino", "--model", source_model, "--weight-format", precision, task_parameters['extra_quantization_params'], "--trust-remote-code", llm_model_path]
+            result = subprocess.run(optimum_export_cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                raise ValueError(f"Failed to export llm model: {result.stderr}")
             if not (os.path.isfile(os.path.join(llm_model_path, 'openvino_detokenizer.xml'))):
                 print("Tokenizer and detokenizer not found in the exported model. Exporting tokenizer and detokenizer from HF model")
-                convert_tokenizer_command = "convert_tokenizer --with-detokenizer -o {} {}".format(llm_model_path, source_model)
-                if os.system(convert_tokenizer_command):
-                    raise ValueError("Failed to export tokenizer and detokenizer", source_model)
+                convert_tokenizer_cmd = ["convert_tokenizer", "--with-detokenizer", "-o", llm_model_path, source_model]
+                result = subprocess.run(convert_tokenizer_cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode != 0:
+                    raise ValueError(f"Failed to export tokenizer and detokenizer: {result.stderr}")
     ### Export draft model for speculative decoding 
     draft_source_model = task_parameters.get("draft_source_model", None)
     draft_model_dir_name = None   
@@ -414,15 +431,17 @@ def export_text_generation_model(model_repository_path, source_model, model_name
         elif draft_source_model.startswith("OpenVINO/"):
             if precision:
                 print("Precision change is not supported for OpenVINO models. Parameter --weight-format {} will be ignored.".format(precision))
-            hugging_face_cmd = "huggingface-cli download {} --local-dir {} ".format(draft_source_model, draft_llm_model_path)
-            if os.system(hugging_face_cmd):
-                raise ValueError("Failed to download draft llm model", draft_source_model)
+            hf_download_draft_cmd = ["huggingface-cli", "download", draft_source_model, "--local-dir", draft_llm_model_path]
+            result = subprocess.run(hf_download_draft_cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                raise ValueError(f"Failed to download draft llm model: {result.stderr}")
         else: # assume HF model name or local pytorch model folder
             print("Exporting draft LLM model to ", draft_llm_model_path)
             if not os.path.isdir(draft_llm_model_path) or args['overwrite_models']:
-                optimum_command = "optimum-cli export openvino --model {} --weight-format {} --trust-remote-code {}".format(draft_source_model, precision, draft_llm_model_path)
-                if os.system(optimum_command):
-                    raise ValueError("Failed to export draft llm model", draft_source_model)
+                optimum_export_draft_cmd = ["optimum-cli", "export", "openvino", "--model", draft_source_model, "--weight-format", precision, "--trust-remote-code", draft_llm_model_path]
+                result = subprocess.run(optimum_export_draft_cmd, capture_output=True, text=True, timeout=600)
+                if result.returncode != 0:
+                    raise ValueError(f"Failed to export draft llm model: {result.stderr}")
 
     ### Prepare plugin config string for jinja rendering
     plugin_config = {}
@@ -450,7 +469,7 @@ def export_text_generation_model(model_repository_path, source_model, model_name
     os.makedirs(os.path.join(model_repository_path, model_name), exist_ok=True)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(text_generation_graph_template)
     print("task_parameters", task_parameters)
-    graph_content = gtemplate.render(model_path=model_path, draft_model_dir_name=draft_model_dir_name, **task_parameters)
+    graph_content = _render_template(gtemplate, model_path=model_path, draft_model_dir_name=draft_model_dir_name, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -461,17 +480,19 @@ def export_embeddings_model_ov(model_repository_path, source_model, model_name, 
     destination_path = os.path.join(model_repository_path, model_name)
     print("Exporting embeddings model to ",destination_path)
     if not os.path.isdir(destination_path) or args['overwrite_models']:
-        optimum_command = "optimum-cli export openvino --model {} --disable-convert-tokenizer --task feature-extraction --weight-format {} {} --trust-remote-code {}".format(source_model, precision, task_parameters['extra_quantization_params'], destination_path)
-        print('Running command:', optimum_command)  # for debug purposes
-        if os.system(optimum_command):
-            raise ValueError("Failed to export embeddings model", source_model)
+        optimum_embeddings_cmd = ["optimum-cli", "export", "openvino", "--model", source_model, "--disable-convert-tokenizer", "--task", "feature-extraction", "--weight-format", precision, task_parameters['extra_quantization_params'], "--trust-remote-code", destination_path]
+        print('Running command:', " ".join(optimum_embeddings_cmd))  # for debug purposes
+        result = subprocess.run(optimum_embeddings_cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to export embeddings model: {result.stderr}")
         print("Exporting tokenizer to ", destination_path)
-        convert_tokenizer_command = "convert_tokenizer -o {} {} {}".format(destination_path, source_model, set_max_context_length) 
-        print('Running command:', convert_tokenizer_command)  # for debug purposes
-        if (os.system(convert_tokenizer_command)):
-            raise ValueError("Failed to export tokenizer model", source_model)
+        convert_tokenizer_emb_cmd = ["convert_tokenizer", "-o", destination_path, source_model, set_max_context_length] 
+        print('Running command:', " ".join(convert_tokenizer_emb_cmd))  # for debug purposes
+        result = subprocess.run(convert_tokenizer_emb_cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to export tokenizer model: {result.stderr}")
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(embedding_graph_ov_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -481,11 +502,12 @@ def export_text2speech_model(model_repository_path, source_model, model_name, pr
     destination_path = os.path.join(model_repository_path, model_name)
     print("Exporting text2speech model to ",destination_path)
     if not os.path.isdir(destination_path) or args['overwrite_models']:
-        optimum_command = "optimum-cli export openvino --model {} --weight-format {} --trust-remote-code --model-kwargs \"{{\\\"vocoder\\\": \\\"{}\\\"}}\" {}".format(source_model, precision, task_parameters['vocoder'], destination_path)
-        if os.system(optimum_command):
-            raise ValueError("Failed to export text2speech model", source_model)
+        optimum_t2s_cmd = ["optimum-cli", "export", "openvino", "--model", source_model, "--weight-format", precision, "--trust-remote-code", "--model-kwargs", '{"vocoder": "' + task_parameters['vocoder'] + '"}', destination_path]
+        result = subprocess.run(optimum_t2s_cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to export text2speech model: {result.stderr}")
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(t2s_graph_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -495,11 +517,12 @@ def export_speech2text_model(model_repository_path, source_model, model_name, pr
     destination_path = os.path.join(model_repository_path, model_name)
     print("Exporting speech2text model to ",destination_path)
     if not os.path.isdir(destination_path) or args['overwrite_models']:
-        optimum_command = "optimum-cli export openvino --model {} --weight-format {} --trust-remote-code {}".format(source_model, precision, destination_path)
-        if os.system(optimum_command):
-            raise ValueError("Failed to export speech2text model", source_model)
+        optimum_s2t_cmd = ["optimum-cli", "export", "openvino", "--model", source_model, "--weight-format", precision, "--trust-remote-code", destination_path]
+        result = subprocess.run(optimum_s2t_cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to export speech2text model: {result.stderr}")
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(s2t_graph_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -509,13 +532,14 @@ def export_rerank_model_ov(model_repository_path, source_model, model_name, prec
     destination_path = os.path.join(model_repository_path, model_name)
     print("Exporting rerank model to ",destination_path)
     if not os.path.isdir(destination_path) or args['overwrite_models']:
-        optimum_command = "optimum-cli export openvino --model {} --disable-convert-tokenizer --task text-classification --weight-format {} {} --trust-remote-code {}".format(source_model, precision, task_parameters['extra_quantization_params'], destination_path)
-        if os.system(optimum_command):
-            raise ValueError("Failed to export rerank model", source_model)
+        optimum_rerank_cmd = ["optimum-cli", "export", "openvino", "--model", source_model, "--disable-convert-tokenizer", "--task", "text-classification", "--weight-format", precision, task_parameters['extra_quantization_params'], "--trust-remote-code", destination_path]
+        result = subprocess.run(optimum_rerank_cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to export rerank model: {result.stderr}")
         print("Exporting tokenizer to ", destination_path)
         export_rerank_tokenizer(source_model, destination_path, max_doc_length)
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(rerank_graph_ov_template)
-    graph_content = gtemplate.render(model_path="./", **task_parameters)
+    graph_content = _render_template(gtemplate, model_path="./", **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
@@ -535,9 +559,10 @@ def export_rerank_model(model_repository_path, source_model, model_name, precisi
             embeddings_path = os.path.join(model_repository_path, model_name, 'rerank', version)
             print("Exporting rerank model to ",embeddings_path)
             if not os.path.isdir(embeddings_path) or args['overwrite_models']:
-                optimum_command = "optimum-cli export openvino --disable-convert-tokenizer --model {} --task text-classification --weight-format {} {} --trust-remote-code {}".format(source_model, precision, task_parameters['extra_quantization_params'], tmpdirname)
-                if os.system(optimum_command):
-                    raise ValueError("Failed to export rerank model", source_model)
+                optimum_rerank_tmp_cmd = ["optimum-cli", "export", "openvino", "--disable-convert-tokenizer", "--model", source_model, "--task", "text-classification", "--weight-format", precision, task_parameters['extra_quantization_params'], "--trust-remote-code", tmpdirname]
+                result = subprocess.run(optimum_rerank_tmp_cmd, capture_output=True, text=True, timeout=600)
+                if result.returncode != 0:
+                    raise ValueError(f"Failed to export rerank model: {result.stderr}")
                 set_rt_info(tmpdirname, 'openvino_model.xml', 'config.json')
                 os.makedirs(embeddings_path, exist_ok=True)
                 shutil.move(os.path.join(tmpdirname, 'openvino_model.xml'), os.path.join(embeddings_path, 'model.xml'))
@@ -551,12 +576,12 @@ def export_rerank_model(model_repository_path, source_model, model_name, precisi
                 shutil.move(os.path.join(tmpdirname, 'openvino_tokenizer.xml'), os.path.join(tokenizer_path, 'model.xml'))
                 shutil.move(os.path.join(tmpdirname, 'openvino_tokenizer.bin'), os.path.join(tokenizer_path, 'model.bin'))
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(rerank_graph_template)
-    graph_content = gtemplate.render(model_name=model_name, **task_parameters)
+    graph_content = _render_template(gtemplate, model_name=model_name, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
         f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))
     stemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(rerank_subconfig_template)
-    subconfig_content = stemplate.render(model_name=model_name, **task_parameters)
+    subconfig_content = _render_template(stemplate, model_name=model_name, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'subconfig.json'), 'w') as f:
         f.write(subconfig_content)
     print("Created subconfig {}".format(os.path.join(model_repository_path, model_name, 'subconfig.json')))
@@ -571,10 +596,11 @@ def export_image_generation_model(model_repository_path, source_model, model_nam
     if os.path.isfile(model_index_path):
         print("Model index file already exists. Skipping conversion, re-generating graph only.")
     else:
-        optimum_command = "optimum-cli export openvino --model {} --weight-format {} {} {}".format(source_model, precision, task_parameters['extra_quantization_params'], target_path)
-        print(f'optimum cli command: {optimum_command}')
-        if os.system(optimum_command):
-            raise ValueError("Failed to export image generation model", source_model)
+        optimum_img_cmd = ["optimum-cli", "export", "openvino", "--model", source_model, "--weight-format", precision, task_parameters['extra_quantization_params'], target_path]
+        print(f'optimum cli command: {" ".join(optimum_img_cmd)}')
+        result = subprocess.run(optimum_img_cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to export image generation model: {result.stderr}")
 
     plugin_config = {}
     if num_streams < 0:
@@ -598,7 +624,7 @@ def export_image_generation_model(model_repository_path, source_model, model_nam
             task_parameters[param] = '{}x{}'.format(int(width), int(height))
 
     gtemplate = jinja2.Environment(loader=jinja2.BaseLoader).from_string(image_generation_graph_template)
-    graph_content = gtemplate.render(model_path=model_path, **task_parameters)
+    graph_content = _render_template(gtemplate, model_path=model_path, **task_parameters)
     with open(os.path.join(model_repository_path, model_name, 'graph.pbtxt'), 'w') as f:
          f.write(graph_content)
     print("Created graph {}".format(os.path.join(model_repository_path, model_name, 'graph.pbtxt')))

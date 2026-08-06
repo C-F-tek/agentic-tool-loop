@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import threading
 import time
@@ -17,6 +18,9 @@ AppendEvent = Callable[..., None]
 JobUrl = Callable[[str], str]
 WaitForTerminal = Callable[[str, int], dict[str, Any]]
 Worker = Callable[[str], None]
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -127,7 +131,56 @@ class AgentJobLifecycle:
     def _ensure_worker_thread(self, job_id: str) -> None:
         with self.lock:
             existing = self.background_threads.get(job_id)
-            if not existing or not existing.is_alive():
+            existing_alive = False
+            existing_daemon = False
+            if existing:
+                try:
+                    existing_alive = bool(existing.is_alive())
+                    existing_daemon = bool(getattr(existing, "daemon", False))
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to inspect worker thread for job_id=%s error_type=%s",
+                        job_id,
+                        type(exc).__name__,
+                    )
+                    self.append_event(
+                        job_id,
+                        "worker_thread_status_unknown",
+                        "Existing worker thread status could not be inspected; starting a replacement.",
+                        {"error_type": type(exc).__name__, "error": str(exc)[:500]},
+                        step=None,
+                    )
+            if existing_alive and existing_daemon:
+                return
+            if existing_alive and not existing_daemon:
+                logger.warning(
+                    "Existing worker thread for job_id=%s is alive but not daemon; refusing duplicate start.",
+                    job_id,
+                )
+                self.append_event(
+                    job_id,
+                    "worker_thread_alive_non_daemon",
+                    "Existing worker thread is alive but not daemon; duplicate start refused.",
+                    {
+                        "thread_name": getattr(existing, "name", ""),
+                        "thread_ident": getattr(existing, "ident", None),
+                    },
+                    step=None,
+                )
+                return
+            if existing:
+                self.background_threads.pop(job_id, None)
+                self.append_event(
+                    job_id,
+                    "worker_thread_replaced",
+                    "Previous worker thread for this job was not alive; starting a replacement.",
+                    {
+                        "previous_thread_name": getattr(existing, "name", ""),
+                        "previous_thread_ident": getattr(existing, "ident", None),
+                    },
+                    step=None,
+                )
+            try:
                 thread = self.thread_factory(
                     target=self.worker,
                     args=(job_id,),
@@ -136,6 +189,21 @@ class AgentJobLifecycle:
                 )
                 self.background_threads[job_id] = thread
                 thread.start()
+            except Exception as exc:
+                self.background_threads.pop(job_id, None)
+                logger.warning(
+                    "Failed to start worker thread for job_id=%s error_type=%s",
+                    job_id,
+                    type(exc).__name__,
+                )
+                self.append_event(
+                    job_id,
+                    "worker_thread_start_failed",
+                    "Failed to start worker thread.",
+                    {"error_type": type(exc).__name__, "error": str(exc)[:500]},
+                    step=None,
+                )
+                raise
 
     def _started_response(
         self,

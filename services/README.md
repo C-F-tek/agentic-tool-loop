@@ -5,12 +5,42 @@ loop. It contains the public bridge, internal broker, launcher modules, model
 export helpers, Codex bridge helpers, operational scripts and contract
 documentation.
 
+## Current Verified Runtime Highlights
+
+As of 2026-06-15, the active 3572 loop uses these model-assisted lanes without
+changing the validator-only contract:
+
+- `controller_preplanner_rag_query_plan` runs before the first 11434 planner
+  turn and may repair malformed JSON with the same planner model. If the model
+  times out or is unavailable, that is recorded as typed diagnostics and the
+  controller continues only with deterministic preseed evidence.
+- `repo_analysis_final_answer_model_quality` is the final-quality judge for
+  repository and semantic-audit finals. It can repair malformed judge JSON and
+  can route a final back to `repo_read`, `repo_semantic_search` or a typed
+  rejection; the controller still only validates and records the route.
+- `planner_replan_specialist_for_validation` is called for selected validator
+  rejections, including code-product/support-subturn loops. It can now repair
+  malformed specialist JSON before returning the next required planner route.
+- `vulkan_repair_invalid_planner_decision` on 11435 is limited to malformed
+  planner emissions or invalid non-code-product tool proposals. It is not used
+  to hide code-product contract failures such as missing complete diffs.
+- `planner_core/json_io.py` guards the wait for HTTP response headers before
+  streaming frames, so a stuck `urlopen()` produces visible timeout events
+  instead of a silent zero-byte stream.
+
+Public payload materialization is pointer-first: complete tool payloads live in
+`tool_context_for_30b.artifacts[*].artifact`; priority evidence and payload
+index sections point to those payloads instead of duplicating large content.
+
 ## Initial Reading Index
 
 Start from these documents before changing runtime behavior:
 
 - [AGENTS.md](../AGENTS.md)
   - Workspace operating rules and non-negotiable runtime contract notes.
+- [docs/START_HERE_RUNTIME.md](../docs/START_HERE_RUNTIME.md)
+  - Guided first-read map for runtime roles, debug paths and source-of-truth
+    rules.
 - [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
   - Core validator/controller contract for the agentic loop.
 - [services/END_TO_END_AGENTIC_FLOW.md](END_TO_END_AGENTIC_FLOW.md)
@@ -27,6 +57,9 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](codex_bridge/MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](codex_bridge/MCP_GUIDE.md)
+  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+    and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](model_export/MODULE_REFERENCE.md)
@@ -68,7 +101,8 @@ Core code entry points:
 - [codex_bridge/](codex_bridge/)
   - Optional Codex-facing MCP and Responses-compatible bridge helpers. These
     are host-side Codex integrations, not 3571 OpenWebUI tools and not 3572
-    planner-native tools.
+    planner-native tools. Use [codex_bridge/MCP_GUIDE.md](codex_bridge/MCP_GUIDE.md)
+    for the MCP server matrix, stdio client JSON shape and confirmation gates.
 - [launch/](launch/)
   - PowerShell launcher modules and runtime process/env helpers.
 - [model_export/](model_export/)

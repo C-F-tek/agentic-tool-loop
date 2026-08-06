@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # Module Technical Descriptions
 
-Updated: 2026-06-01
+Updated: 2026-06-15
 
 This file is the detailed per-module technical reference for
 `C:\Users\carmi\AI\services`. It complements the higher-level maps:
@@ -275,14 +275,29 @@ the planner prompt pack.
 Main controlled planner loop. It normalizes planner decisions, compacts tool
 results for model context, builds intrinsic pre-turn context, builds history
 ledgers, records Ollama turns, expands
-successful tool artifacts, validates finalization, handles repair, dispatches
-tools and writes terminal job state. It also separates code-product intent from
-apply intent: diff/refactoring/code-product goals require a successful
+successful tool artifacts, validates finalization, calls final-quality and
+replan guidance lanes, handles repair, dispatches tools and writes terminal job
+state. It also separates code-product intent from apply intent:
+diff/refactoring/code-product goals require a successful
 `repo_propose_code_edit` proposal, while apply/edit/fix/write goals still
 require `repo_apply_patch`. Its planner prompt pack measures the exact
 serialized prompt and, above the configured compaction threshold, moves large
 file/diff/history/result sections into job-local SQLite prompt documents and
 injects only small real windows that the planner can read recursively.
+
+Planner-adjacent model lanes are explicit:
+
+- preplanner RAG query-plan wiring calls `application/controller/rag_preseed.py`
+  before the first turn and keeps timeout/unavailability non-blocking;
+- final-quality judge wiring calls
+  `application/evidence/final_quality.py` request builders for repo and
+  semantic-audit finals, then routes any `continue_required` result through the
+  validator contract;
+- planner replan specialist wiring handles selected validator rejections and
+  repairs malformed specialist JSON before updating the next required route;
+- Vulkan/GPU0 repair on 11435 is limited to malformed planner emissions or
+  invalid non-code-product tool proposals and must not mask code-product
+  contract failures.
 
 - Reads: config, job history, tool registry/dispatch, Ollama responses,
   successful tool artifacts.
@@ -291,7 +306,8 @@ injects only small real windows that the planner can read recursively.
   validator flow without direct evidence. Do not route semantic
   `repo_propose_code_edit` contract failures to GPU0/11435 repair. Prompt
   compaction must remain internal to 11434 planner calls and must not degrade
-  OpenWebUI `tool_context_for_30b`.
+  OpenWebUI `tool_context_for_30b`. Do not patch this module from intuition:
+  confirm the owner, active process and runtime artifact first.
 - Verify: real job events show planner step, decision, tool result, turn memory
   and terminal status in expected order; code-product jobs show
   `repo_read -> repo_propose_code_edit -> final`, with no `repo_apply_patch`
@@ -321,6 +337,78 @@ purpose manifest and budget report.
 - Verify: payload includes `intrinsic_context`, `budget_report.num_ctx_effective`
   and typed RAG/rerank status; `PLANNER_INTERNAL_TOOLS` has no
   RAG/chunk/intrinsic tool additions.
+
+### `aicarmine_broker/application/controller/rag_preseed.py`
+
+Controller-owned preseed and preplanner query-plan module. It performs
+deterministic initial repo orientation and, when useful, asks the 11434 planner
+model for a bounded RAG query/path plan before the first planner turn. It
+validates semantic intent, repairs malformed query-plan JSON through the same
+planner model and records typed non-blocking fallback metadata when the backend
+times out or is unavailable.
+
+- Reads: goal text, repo/preseed surfaces, injected planner model response and
+  optional reranker/index diagnostics.
+- Writes: no source files; returns JSON-serializable preseed/query-plan
+  payloads to the loop.
+- Risk: must not become a hidden deterministic planner or auto-finalizer.
+  Timeout/unavailable query planning can only reduce semantic preplanner
+  guidance to deterministic preseed; it cannot authorize invented paths or
+  broad uncontrolled repo reads.
+- Verify: events include `controller_preplanner_rag_query_plan_result` with
+  `status=ready` or typed unavailable/invalid diagnostics and the job still
+  proceeds through normal planner turns.
+
+### `aicarmine_broker/application/evidence/final_quality.py`
+
+Evidence-owned final-quality checks and model judge request builder. It
+combines deterministic red flags with a structured model request for
+repo-analysis and semantic-audit finals. The actual 11434 call and malformed
+JSON repair are wired by `planner.py`; this module owns the bounded request
+shape, role guidance and route vocabulary.
+
+- Reads: final answer text, evidence contract, goal/audit guidance.
+- Writes: none.
+- Risk: judge output is guidance for validator routing, not a controller
+  finalizer. It can request `repo_read`, `repo_semantic_search` or a typed
+  rejection, but the planner must still produce the next accepted action.
+- Verify: validator evidence contract contains
+  `repo_analysis_final_quality` for repo/semantic-audit finals and violations
+  include final-quality route reasons when the judge rejects.
+
+### `aicarmine_broker/application/evidence/required_working_set.py`
+
+Required working-set builder for planner prompt content. It collects concrete
+file, diff and tool-result windows needed for the next planner decision,
+rehydrates same-job repo-read/code-product artifacts through injected helpers
+and stores oversized windows through injected prompt-window storage.
+
+- Reads: planner history, evidence contract, file memory and injected artifact
+  rehydration callbacks.
+- Writes: no files directly; prompt-window storage is injected by the caller.
+- Risk: must never replace required text/diff evidence with path-only metadata.
+  It can bound item counts/window chars for the planner prompt, but public
+  OpenWebUI payload completeness is handled elsewhere.
+- Verify: working-set entries include concrete text/diff windows with offsets,
+  chars and hashes, not only `artifact` paths.
+
+### `aicarmine_broker/application/prompt/pack_builder.py`
+
+Measured prompt-pack builder for one 11434 planner turn. It combines the
+required working set, optional intrinsic context, history messages, available
+tool windows and budget reports. It performs hard-budget compaction by moving
+large sections into job-local SQLite prompt windows and exposing real bounded
+windows to the planner.
+
+- Reads: runtime prompt config, required working set, optional context and
+  history.
+- Writes: prompt-window documents through injected storage only.
+- Risk: compaction is only for planner input. It must not remove successful
+  tool payloads from `tool_context_for_30b` or make local SQLite ids part of
+  the public evidence contract.
+- Verify: planner prompt captures show `prompt_budget_report`,
+  `required_working_set`, optional-context omission/window diagnostics and
+  recursive `planner_prompt_context_window.v1` references when needed.
 
 ### `aicarmine_broker/public_wrapper.py`
 
@@ -448,14 +536,19 @@ successful results.
 
 Ollama HTTP JSON and streaming helper module. It posts JSON, streams planner
 responses to files, detects malformed/repetitive streams and parses strict JSON
-objects.
+objects. The streaming path guards both phases separately: waiting for HTTP
+response headers and reading stream frames. If `urlopen()` never returns
+headers, the job emits typed `planner_stream_waiting` /
+`planner_stream_header_timeout` diagnostics instead of leaving a silent
+zero-byte stream.
 
 - Reads: Ollama stream frames and response payloads.
 - Writes: optional planner stream files.
 - Risk: stream `done`/`done_reason` is turn metadata. Controller validation in
-  `planner.py` decides job state.
+  `planner.py` decides job state. Do not rely only on a readline deadline; the
+  response-header wait must also be bounded and visible.
 - Verify: valid streamed JSON is captured and parsed without truncating the
-  final frame.
+  final frame; a simulated header wait timeout produces typed diagnostics.
 
 ## vulkan_bridge Modules
 
@@ -690,20 +783,23 @@ Dedicated project-local persistent memory MCP server.
 
 ### `codex_bridge/local_subagent_mcp_server.py`
 
-Dedicated local Ollama-backed read-only subagent MCP server for Codex-side
-delegation. It accepts bounded tasks, calls only the 11434 Ollama `/api/chat`
-endpoint and mediates a small explicit read-only tool surface for repo reads,
-repo search, Git diff, RAG context and memory search.
+Codex local subagent MCP facade over the dedicated 3579 agentic-loop client.
+It does not implement a direct Ollama/chat loop and does not host a parallel
+local tool surface; `aicarmine_local_subagent_run_readonly` delegates bounded
+read-only work to `agentic_loop_client_mcp_server.py`, so the broker
+planner/controller/validator path remains the enforcement boundary.
 
-- Reads: selected Codex MCP repo root, local Ollama 11434 when a run tool is
-  invoked, repo files, Git diff output, RAG index and project memory through
-  bounded local handlers.
-- Writes: none.
-- Risk: must not use 11435/GPU0 task models, 3571, 3572, OpenWebUI,
-  `vulkan_helper`, service launchers or source-write tools. Codex MCP root
-  handling stays process-local through `repo_mcp_common.py`.
-- Verify: `aicarmine_local_subagent_health` and
-  `aicarmine_local_subagent_capabilities`.
+- Reads: MCP stdio frames, selected Codex MCP repo root and, only through the
+  delegated 3579 client path, dedicated broker job status/result payloads.
+- Writes: MCP stdio frames only. Any job artifacts are produced by the
+  dedicated broker client path, not by this facade directly.
+- Risk: must not call Ollama 11434/11435 directly, use shared 3571/3572,
+  OpenWebUI, `vulkan_helper`, service launchers or source-write tools. It also
+  must not inherit Codex app `/subagents`; execution goes through the explicit
+  MCP client and its confirmation tokens.
+- Verify: `aicarmine_local_subagent_health`,
+  `aicarmine_local_subagent_capabilities` and the delegated-tool metadata from
+  `aicarmine_local_subagent_run_readonly` when a confirmed run is requested.
 
 ### `codex_bridge/rag_index_repo.py`
 
@@ -1036,25 +1132,6 @@ Code-backed runtime chain documentation for OpenWebUI -> 3571 -> 3572 ->
   `aicarmine_broker/app.py`, `agent_entry.py`, `planner.py`,
   `tool_dispatch.py` and `job_store.py`.
 
-### `AGENTIC_LOOP_PATCH_NOTES.md`
-
-Patch notes and operational memory for recent agentic loop behavior.
-
-- Reads: by maintainers/agents.
-- Writes: documentation only.
-- Risk: stale notes can mislead debugging.
-- Verify: update when behavior changes.
-
-### `AGENTIC_LOOP_V5_OPERATIONAL_MEMORY_NOTES.md`
-
-Notes for planner turn memory, `done_reason` capture and real tool-result
-transport.
-
-- Reads: by maintainers/agents.
-- Writes: documentation only.
-- Risk: stale notes can mislead protocol/debug work.
-- Verify: update with planner memory changes.
-
 ### `SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 
 Central source map for all `services` modules and runtime boundaries.
@@ -1073,6 +1150,17 @@ Detailed reference for top-level service scripts.
 - Risk: must stay aligned with launcher/script behavior.
 - Verify: compare against root script inventory.
 
+### `../docs/START_HERE_RUNTIME.md`
+
+Guided first-read runtime map for maintainers and agents.
+
+- Reads: by maintainers/agents before choosing a deeper contract or reference.
+- Writes: documentation only.
+- Risk: must stay short and must not duplicate or override the technical
+  contracts.
+- Verify: every linked owner document exists and role descriptions match the
+  package references.
+
 ### Package `MODULE_REFERENCE.md` files
 
 Package-local technical references exist for:
@@ -1080,9 +1168,12 @@ Package-local technical references exist for:
 - `aicarmine_broker/MODULE_REFERENCE.md`
 - `vulkan_bridge/MODULE_REFERENCE.md`
 - `codex_bridge/MODULE_REFERENCE.md`
+- `codex_bridge/MCP_GUIDE.md`
 - `model_export/MODULE_REFERENCE.md`
 - `npu_phi_service/MODULE_REFERENCE.md`
 - `launch/MODULE_REFERENCE.md`
 
 They document runtime contracts, module responsibilities, data flow and safe
-edit checklists near the modules they describe.
+edit checklists near the modules they describe. `codex_bridge/MCP_GUIDE.md`
+is the operator-facing MCP map for server selection, client JSON compatibility,
+confirmation gates and read-only/debug playbooks.

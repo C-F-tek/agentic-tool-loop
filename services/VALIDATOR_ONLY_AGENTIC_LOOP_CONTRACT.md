@@ -19,9 +19,14 @@ OpenWebUI / 30B
   -> 3571 bridge pubblico /vulkan_helper
   -> 3572 broker /vulkan/agent
   -> 3572 crea il job e avvia agent_job_worker
+  -> 3572 puo' chiedere al planner 11434 un preplanner RAG query plan
+      -> se il JSON e' malformato, 11434 lo ripara
+      -> se il backend non risponde, il controller registra il gap e continua solo con preseed deterministico
   -> 11434 planner 30B sceglie il prossimo step
   -> 3572 validator-only gate controlla la decisione
       -> se tool valido: 3572 dispatch_tool(...) esegue il tool interno
+      -> se final repo/semantic-audit: 11434 final-quality judge valuta e puo' instradare
+      -> se rigetto validator richiede guida: 11434 replan specialist propone la prossima route
       -> se emissione invalida/sporca: eventuale repair 11435, poi nuova validazione
       -> se contratto tool/validator fallisce: controller_guard e nuovo turno planner
       -> se final valido: finalize_agentic_job(..., status="completed")
@@ -72,6 +77,45 @@ rotto. Se invece un `final`/`block` JSON testuale o una prosa terminale wrapped
 come `final_answer` viene rifiutata solo perche' non e' un tool call nativo, il
 gate e' troppo stretto.
 
+## Model-assisted guidance lanes
+
+Il controller puo' chiedere al modello supporto di guida, ma il risultato resta
+input al validator/controller guard e non diventa dispatch automatico.
+
+Ruoli correnti:
+
+- `preplanner`: `controller_preplanner_rag_query_plan` usa 11434 prima del
+  primo turno per classificare semanticamente il goal e proporre query/path
+  RAG. Se il JSON e' malformato, lo stesso planner model riceve una richiesta
+  di repair del JSON. Se 11434 e' timeout/unavailable, il job non deve restare
+  bloccato sulla query plan: il controller registra diagnostica tipizzata e
+  continua solo con preseed deterministico.
+- `final_quality_judge`: per final repo-analysis o semantic-audit, il validator
+  chiama il judge 11434. Il judge puo' accettare, rifiutare o restituire
+  `continue_required` con `required_next_tool_call`. JSON malformato viene
+  riparato/rivalutato dal modello prima che il controller applichi la route.
+- `planner_replan_specialist`: dopo rigetti validator selezionati, inclusi
+  support-subturn e code-product loop, lo specialist 11434 traduce il rigetto
+  in `required_next_progress` e, quando serve, in `required_next_tool_call`.
+  Anche qui JSON malformato viene riparato dal modello prima di aggiornare il
+  guard/evidence contract.
+- `repair`: 11435/Vulkan/GPU0 e' solo lane di riparazione esplicita per una
+  emissione planner malformata/tool-like o una proposta tool invalida e
+  riparabile. Non deve coprire fallimenti semantici del code-product contract:
+  target non letto, diff incompleto, payload preview-only o proposta mancante
+  restano feedback validator per il planner/specialist.
+
+Sequenza ammessa quando piu' ruoli servono nello stesso job:
+
+```text
+preplanner -> planner turn -> validator/final-quality judge -> replan specialist -> next planner turn
+```
+
+Il controller puo' registrare la guida del modello nel guard e nel contratto,
+ma non puo' eseguire direttamente la tool call proposta dallo specialist o dal
+judge. Serve sempre un nuovo output planner valido, salvo un final gia'
+accettato dal validator.
+
 ## Preseed iniziale dinamico
 
 Per richieste generiche di analisi repository, il controller può raccogliere
@@ -97,6 +141,11 @@ contenuto.
 Il risultato terminale espone `initial_orientation_surface` dentro
 `tool_context_for_30b`, così OpenWebUI/30B riceve struttura, doc letti, aree
 listate e file concreti senza dipendere solo da `job_url` o path locali.
+
+Il preplanner RAG query plan non sostituisce il preseed iniziale dinamico: lo
+arricchisce con query/path candidati quando 11434 risponde in modo valido. Un
+timeout o JSON invalido non riparabile e' diagnostica, non autorizzazione a
+inventare path, leggere tutto il repo o auto-finalizzare.
 
 ## Validator-only gate
 
@@ -288,12 +337,12 @@ Schema minimo:
   "failure_patterns": [],
   "tool_purpose_manifest": [],
   "budget_report": {
-    "num_ctx_requested": 12288,
-    "num_ctx_cap": 12288,
-    "num_ctx_effective": 12288,
-    "prompt_char_budget": 48000,
-    "prompt_compact_threshold_chars": 24000,
-    "generation_headroom_char_budget": 40000,
+    "num_ctx_requested": 262144,
+    "num_ctx_cap": 262144,
+    "num_ctx_effective": 262144,
+    "prompt_char_budget": 262144,
+    "prompt_compact_threshold_chars": 131072,
+    "generation_headroom_char_budget": 254144,
     "generation_headroom_reserve_chars": 8000
   }
 }
@@ -303,7 +352,9 @@ Regole:
 
 - `AICARMINE_AGENTIC_PLANNER_NUM_CTX` e' il valore richiesto; il valore
   operativo e' cappato da `AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP` per evitare
-  spill CPU/RAM. Health/eventi espongono requested/cap/effective.
+  spill CPU/RAM. Health/eventi espongono requested/cap/effective. I valori nel
+  blocco sopra sono un esempio coerente con i default codice correnti; launcher
+  e process env restano fonte di verita' per un job gia' avviato.
 - `AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET` governa il prompt pack. Il
   controller misura il prompt reale, incluso system prompt e report stesso.
 - `AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO`, default `0.5`, e' la soglia
@@ -433,7 +484,12 @@ non riferimenti locali:
 
 `priority_evidence_for_30b` e' una vista prioritaria navigabile per OpenWebUI.
 Non sostituisce `tool_context_for_30b` e non puo' contenere preview, path locali
-o sommari come payload primario. I casi ammessi sono:
+o sommari come payload primario. La forma corrente e' pointer-first:
+`payload_index_for_30b.concrete_results[*].primary_location` punta al campo
+canonico sotto `tool_context_for_30b.artifacts[*].artifact`, mentre
+`priority_evidence_for_30b.items[*]` conserva metadata, hash, line count,
+`payload_is_complete`, `artifact_index` e `content_not_duplicated_here=true`
+quando il contenuto completo vive gia' nel contesto. I casi ammessi sono:
 
 - `code_edit_proposal`: diff completo in `unified_diff` oppure operazioni
   complete in `structured_operations`;

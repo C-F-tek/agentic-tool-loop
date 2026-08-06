@@ -47,6 +47,8 @@ from aicarmine_broker.repo_tools import (
 )
 from aicarmine_broker.tool_contract import normalize_tool_name
 
+from ..shared.diagnostics import diagnostic_row, safe_text
+
 
 @dataclass(frozen=True)
 class DispatchRequest:
@@ -88,7 +90,39 @@ class RegistryToolDispatcher:
             allow_command=request.allow_command,
             user_consent=request.user_consent,
         )
-        return tool.execute(normalized_request)
+        try:
+            result = tool.execute(normalized_request)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error": "tool execution failed",
+                "error_type": type(exc).__name__,
+                "tool_dispatch_diagnostics": [
+                    diagnostic_row(
+                        "tool_handler_exception",
+                        schema="tool_dispatch_diagnostic.v1",
+                        exc=exc,
+                        tool=tool_name,
+                        root=safe_text(request.root, limit=500),
+                    )
+                ],
+            }
+        return result if isinstance(result, dict) else {
+            "ok": False,
+            "tool": tool_name,
+            "error": "tool handler returned non-object result",
+            "error_type": type(result).__name__,
+            "tool_dispatch_diagnostics": [
+                diagnostic_row(
+                    "tool_handler_result_not_object",
+                    schema="tool_dispatch_diagnostic.v1",
+                    tool=tool_name,
+                    result_type=type(result).__name__,
+                    result_preview=safe_text(result, limit=500),
+                )
+            ],
+        }
 
 
 def _simple(handler: Callable[[dict[str, Any], Path], dict[str, Any]]) -> ToolHandler:

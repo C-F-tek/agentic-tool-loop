@@ -26,6 +26,9 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](../codex_bridge/MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](../codex_bridge/MCP_GUIDE.md)
+  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+    and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](../launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](../model_export/MODULE_REFERENCE.md)
@@ -89,6 +92,28 @@ Core code entry points:
 - [memory_tools.py](memory_tools.py)
   - Scratchpad, SQLite memory and prompt-window support.
 
+## Current Planner Guidance Lanes
+
+The 3572 loop remains planner-led and validator-gated. Specialist model calls
+are guidance lanes, not controller replacements:
+
+- Preplanner/RAG query planning may propose search/read orientation before the
+  planner turn. If its JSON is malformed, the owner path is model JSON repair
+  or bounded fallback metadata, not a hard stop that replaces the planner.
+- Final-quality/judge evaluation is the semantic check for attempted finals.
+  It should accept, reject or redirect the planner after a final request; the
+  controller must not synthesize a final answer on its own.
+- Replan/repair specialists are used after validator feedback or malformed
+  planner emissions. They return strict JSON decisions or diagnostics that are
+  fed back into the normal loop.
+- Vulkan/GPU0 repair is limited to explicit malformed planner emissions. It is
+  not a semantic patch generator and not a hidden controller fallback.
+
+When debugging these lanes, verify the job events and owner artifacts first:
+preplanner events, final-quality/judge results, validator rejection summaries,
+repair attempts and the next planner payload. A missing specialist call is a
+flow bug only after the triggering condition is confirmed in the persisted job.
+
 ## Persistent History Vs Planner Messages
 
 `aicarmine_broker` owns the internal 3572 loop and must keep two records
@@ -114,3 +139,17 @@ even when many files are involved.
 If a regression is suspected, test the two surfaces separately: inspect the
 planner prompt capture for native message loss, then inspect final
 `tool_context_for_30b.artifacts` for complete public reconstruction.
+
+## Public Payload Materialization
+
+The canonical complete public payload is
+`tool_context_for_30b.artifacts[*].artifact`. `priority_evidence_for_30b`,
+`payload_index_for_30b` and `evidence_guide_for_30b` are navigation and guide
+surfaces over that canonical artifact set; they must not reintroduce large
+duplicate `content`, `unified_diff` or `structured_operations` copies.
+
+For completed and non-completed terminal states, preserve successful concrete
+tool artifacts in the persistent history and expose pointers/metadata that
+resolve back to `tool_context_for_30b`. Local job paths, raw `reads/*.json`,
+SQLite document ids and previews are operator diagnostics, not model-usable
+evidence.

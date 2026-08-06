@@ -74,16 +74,19 @@ def build_npu_phi_doctor(
         warnings.append({
             "rule": "port_collides_with_openvino_reranker",
             "message": "NPU Phi sidecar must not reuse the existing 3550 OpenVINO/reranker port.",
+            "severity": "error",
         })
     if resolved.host not in {"127.0.0.1", "localhost"}:
         warnings.append({
             "rule": "non_local_bind",
             "message": "Default sidecar bind should stay local-only.",
+            "severity": "warning",
         })
     if str(resolved.device).upper() != "NPU":
         warnings.append({
             "rule": "device_not_npu",
             "message": "The Phi sidecar contract is diagnostic NPU serving, not CPU/GPU fallback.",
+            "severity": "error",
         })
     missing_deps = [
         name
@@ -94,6 +97,7 @@ def build_npu_phi_doctor(
         warnings.append({
             "rule": "missing_runtime_dependencies",
             "packages": missing_deps,
+            "severity": "error",
         })
     ready_to_start = (
         bool(model_status.get("model_ready"))

@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Any
+
+from ..shared.diagnostics import diagnostic_row, safe_json_text
 
 
 def stable_action_id(action: dict[str, Any]) -> str:
+    source = dict(action) if isinstance(action, dict) else {
+        "invalid_action_type": type(action).__name__,
+    }
     normalized = {
         key: value
-        for key, value in dict(action or {}).items()
+        for key, value in source.items()
         if key not in {"action_id", "action_proof"}
     }
-    raw = json.dumps(normalized, ensure_ascii=False, sort_keys=True, default=str)
+    raw, _diagnostic = safe_json_text(normalized, reason="stable_action_id_json_failed")
     return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
@@ -28,8 +32,18 @@ def attach_action_proof(
     source_step: int | None = None,
     source_hash: str = "",
 ) -> dict[str, Any]:
-    if not isinstance(action, dict) or not action.get("tool"):
-        return dict(action or {})
+    if not isinstance(action, dict):
+        return diagnostic_row(
+            "invalid_action_for_proof",
+            schema="action_proof_diagnostic.v1",
+            received_type=type(action).__name__,
+        )
+    if not action.get("tool"):
+        out = dict(action)
+        out["action_proof_diagnostics"] = [
+            diagnostic_row("action_tool_missing", schema="action_proof_diagnostic.v1")
+        ]
+        return out
     out = dict(action)
     out["action_id"] = stable_action_id(action)
     out["action_proof"] = {

@@ -26,6 +26,9 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](../codex_bridge/MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](../codex_bridge/MCP_GUIDE.md)
+  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+    and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](../launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](../model_export/MODULE_REFERENCE.md)
@@ -93,3 +96,10 @@ payload source and is not an acceptable reason to omit successful artifacts from
 3571. If final OpenWebUI evidence is incomplete, verify the 3572 persistent
 `history` and raw `tool-results` rehydration path before changing the public
 schema.
+
+`tool_context_for_30b.artifacts[*].artifact` is the canonical complete payload
+location. `priority_evidence_for_30b` and `payload_index_for_30b` are
+pointer-first navigation surfaces over those artifacts; they should carry
+metadata, hashes, locations and bounded summaries, not duplicate large file
+content or diffs. 3571 may lint and rehydrate 3572 materialization, but it
+should preserve `materialization_report owner=3572_broker` when present.

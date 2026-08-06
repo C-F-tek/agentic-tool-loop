@@ -81,28 +81,34 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "repo_search": _tool_schema(
         "repo_search",
-        "Search repo code/docs by query/pattern/symbol. Requires query, pattern or symbol.",
+        "Search repo code/docs by query/pattern/symbol/needle/text. Requires one of query, pattern, symbol, needle or text.",
         {
             "query": {"type": "string"},
             "pattern": {"type": "string"},
             "symbol": {"type": "string"},
+            "needle": {"type": "string"},
+            "text": {"type": "string"},
             "path": {"type": "string", "default": "."},
             "mode": {"type": "string", "enum": ["rg", "git_grep", "fd"], "default": "rg"},
             "max_results": {"type": "integer", "default": 80},
         },
         argument_contract={
-            "requires_one_of": [["query"], ["pattern"], ["symbol"]],
-            "violation": "repo_search_missing_query_pattern_or_symbol",
+            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["needle"], ["text"]],
+            "violation": "repo_search_missing_query_pattern_symbol_needle_or_text",
         },
     ),
     "repo_semantic_search": _tool_schema(
         "repo_semantic_search",
         (
             "Semantic repo search over the delta RAG index. Use before targeted repo_read "
-            "when lexical search or repo_tree is too broad. Requires query."
+            "when lexical search or repo_tree is too broad. Requires query or one of pattern, symbol, text, needle."
         ),
         {
             "query": {"type": "string"},
+            "pattern": {"type": "string"},
+            "symbol": {"type": "string"},
+            "needle": {"type": "string"},
+            "text": {"type": "string"},
             "path": {"type": "string", "default": "."},
             "limit": {"type": "integer", "default": 8},
             "top_k": {"type": "integer", "default": 8},
@@ -115,8 +121,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "rerank_doc_chars": {"type": "integer", "default": 2500},
             "rerank_timeout_seconds": {"type": "number", "default": 30.0},
         },
-        ["query"],
-        argument_contract={"required": ["query"]},
+        argument_contract={
+            "requires_one_of": [["query"], ["pattern"], ["symbol"], ["needle"], ["text"]],
+            "violation": "repo_semantic_search_missing_query",
+        },
     ),
     "repo_fd_files": _tool_schema(
         "repo_fd_files",
@@ -310,6 +318,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "item": {"type": "object"},
             "items": {"type": "array", "items": {"type": "object"}},
             "max_chars": {"type": "integer", "default": 80000},
+            "max_paths": {"type": "integer", "default": 200},
             "line": {"type": "integer"},
             "before": {"type": "integer", "default": 40},
             "after": {"type": "integer", "default": 120},
@@ -703,8 +712,8 @@ MCP_PUBLIC_TOOLS: tuple[str, ...] = (
 )
 
 # Write-guarded tools: these change repo filesystem state (creates, overwrites,
-# patches, or runs commands that may produce output files). Does not include
-# scratchpad/memory/state writes (those are session-scoped, not repo-scoped).
+# patches, or runs commands that may produce output files). State writes are
+# classified separately so read-only does not silently include persistent writes.
 
 WRITE_GUARDED_TOOLS: frozenset[str] = frozenset(
     {
@@ -717,7 +726,41 @@ WRITE_GUARDED_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-READ_ONLY_TOOLS: frozenset[str] = frozenset(PLANNER_INTERNAL_TOOLS) - WRITE_GUARDED_TOOLS
+STATE_MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_write",
+        "runtime_sqlite_memory_cleanup",
+        # Default repo_semantic_search performs a delta RAG reindex unless
+        # the caller explicitly disables it.
+        "repo_semantic_search",
+    }
+)
+
+COMMAND_EXEC_TOOLS: frozenset[str] = frozenset(
+    {
+        "repo_command",
+        "terminal_run_command_wait",
+        "repo_ctags_symbols",
+        "repo_git_apply_check",
+        "repo_hyperfine_benchmark",
+        "repo_pyright_check",
+        "repo_pytest_run",
+        "repo_ruff_check",
+        "repo_semgrep_scan",
+        "repo_shellcheck",
+        "repo_validate",
+    }
+)
+
+PURE_READ_TOOLS: frozenset[str] = (
+    frozenset(PLANNER_INTERNAL_TOOLS)
+    - WRITE_GUARDED_TOOLS
+    - STATE_MUTATING_TOOLS
+    - COMMAND_EXEC_TOOLS
+)
+
+READ_ONLY_TOOLS: frozenset[str] = PURE_READ_TOOLS
 
 TOOL_ALIASES: dict[str, str] = {
     "capabilities": "repo_capabilities",
@@ -845,14 +888,18 @@ def registry_hash() -> str:
         "openwebui_public": OPENWEBUI_PUBLIC_TOOLS,
         "mcp_public": MCP_PUBLIC_TOOLS,
         "write_guarded": sorted(WRITE_GUARDED_TOOLS),
+        "pure_read": sorted(PURE_READ_TOOLS),
+        "state_mutating": sorted(STATE_MUTATING_TOOLS),
+        "command_exec": sorted(COMMAND_EXEC_TOOLS),
         "aliases": TOOL_ALIASES,
-        "schemas": TOOLS_SCHEMA,
+        "schemas": tools_schema(),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
 def capability_map() -> dict[str, Any]:
+    schemas = tools_schema()
     return {
         "registry_version": REGISTRY_VERSION,
         "registry_hash": registry_hash(),
@@ -863,6 +910,14 @@ def capability_map() -> dict[str, Any]:
             "mcp_public": list(MCP_PUBLIC_TOOLS),
             "write_guarded": sorted(WRITE_GUARDED_TOOLS),
             "read_only": sorted(READ_ONLY_TOOLS),
+            "pure_read": sorted(PURE_READ_TOOLS),
+            "state_mutating": sorted(STATE_MUTATING_TOOLS),
+            "command_exec": sorted(COMMAND_EXEC_TOOLS),
+        },
+        "tool_effect_notes": {
+            "read_only": "Compatibility alias for pure_read; excludes state-mutating memory/RAG writes.",
+            "repo_semantic_search": "Planner-internal RAG search; default reindex=true writes the RAG SQLite index.",
+            "mcp_rag": "Codex MCP RAG is exposed by services/codex_bridge/rag_mcp_server.py, not by MCP_PUBLIC_TOOLS here.",
         },
         "surface_policy": {
             "3571": "OpenWebUI public surface; forwards to 3572 and waits for the wrapped terminal result.",
@@ -872,5 +927,5 @@ def capability_map() -> dict[str, Any]:
             "terminal_tools_public_on_openwebui": False,
         },
         "module": __name__,
-        "schema_tools": [item["function"]["name"] for item in TOOLS_SCHEMA],
+        "schema_tools": [item["function"]["name"] for item in schemas],
     }

@@ -26,6 +26,9 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](../codex_bridge/MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](../codex_bridge/MCP_GUIDE.md)
+  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+    and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](../launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](MODULE_REFERENCE.md)

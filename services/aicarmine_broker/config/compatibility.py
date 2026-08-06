@@ -5,7 +5,10 @@ import threading
 from .env_loader import env_bool, env_float, env_int, env_int_any, parse_bool  # noqa: F401
 from .models import BrokerConfig, load_broker_config_from_env
 from ..tool_registry import (
+    COMMAND_EXEC_TOOLS,  # noqa: F401
     HELPER_PUBLIC_ALIASES,  # noqa: F401
+    PURE_READ_TOOLS,  # noqa: F401
+    STATE_MUTATING_TOOLS,  # noqa: F401
     VALID_INTERNAL_TOOLS,  # noqa: F401
     VALID_INTERNAL_TOOLS_LIST,
     VALID_INTERNAL_TOOLS_LIST_EXCLUDING_VULKAN,
@@ -60,6 +63,10 @@ AGENTIC_PLANNER_NATIVE_TOOLS: bool = BROKER_CONFIG.native_tools
 AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS: bool = BROKER_CONFIG.require_native_tools
 AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY: int = (
     BROKER_CONFIG.native_max_parallel_readonly
+)
+
+AICARMINE_ORIENTATION_LANE_MODE: str = (
+    BROKER_CONFIG.orientation_lane_mode
 )
 
 AGENT_DEFAULT_MAX_STEPS: int = BROKER_CONFIG.agent_default_max_steps

@@ -26,6 +26,9 @@ Start from these documents before changing runtime behavior:
   - Public bridge module reference.
 - [services/codex_bridge/MODULE_REFERENCE.md](../../codex_bridge/MODULE_REFERENCE.md)
   - Codex bridge module reference.
+- [services/codex_bridge/MCP_GUIDE.md](../../codex_bridge/MCP_GUIDE.md)
+  - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+    and debug playbooks.
 - [services/launch/MODULE_REFERENCE.md](../../launch/MODULE_REFERENCE.md)
   - Launch-script module reference.
 - [services/model_export/MODULE_REFERENCE.md](../../model_export/MODULE_REFERENCE.md)
@@ -63,7 +66,8 @@ Core code entry points:
 - [cache.py](cache.py)
   - Per-job cache helpers for read-only tool results and repair outcomes.
 - [json_io.py](json_io.py)
-  - Ollama HTTP streaming, stream capture and strict planner JSON parsing.
+  - Ollama HTTP streaming, response-header wait guarding, stream capture and
+    strict planner JSON parsing.
 - [__init__.py](__init__.py)
   - Package marker.
 
@@ -84,3 +88,17 @@ protocol:
 Any change in this subpackage must preserve that boundary: transport/parsing
 support belongs here; planner policy, validator gates, native provenance checks
 and finalization remain owned by `planner.py`.
+
+## Streaming Header Wait Guard
+
+`post_json_stream_to_file()` owns both phases of planner streaming:
+
+- awaiting HTTP response headers from Ollama;
+- reading streamed token lines after headers arrive.
+
+A zero-byte `step-*.txt` with `planner_stream_started` but no token progress
+means the loop is blocked before streaming lines exist, during the header wait
+phase. The expected behavior is to emit `planner_stream_waiting` while waiting
+and return a typed `PlannerStreamHeaderTimeout` with
+`timeout_phase=awaiting_response_headers` if Ollama does not return headers in
+time. Readline deadlines alone are insufficient for this failure mode.

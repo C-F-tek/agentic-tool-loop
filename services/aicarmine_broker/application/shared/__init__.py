@@ -10,9 +10,18 @@ from __future__ import annotations
 
 _PUBLIC_EXPORTS = {
     'drop_empty_dict_values': 'clean_values',
+    'compact_evidence_contract_summary': 'evidence_contract_summary',
+    'coverage_status_from_contract': 'evidence_contract_summary',
+    'diagnostic_row': 'diagnostics',
+    'evidence_contract_summary_triplet': 'evidence_contract_summary',
     'history_tool_result': 'history_queries',
     'planner_ollama_turn_from_decision': 'history_ledger',
+    'repo_path_token': 'path_tokens',
     'repo_rel_token': 'path_tokens',
+    'safe_json_text': 'diagnostics',
+    'safe_text': 'diagnostics',
+    'sha256_text': 'payload_metadata',
+    'stable_json_fingerprint': 'payload_metadata',
 
 }
 

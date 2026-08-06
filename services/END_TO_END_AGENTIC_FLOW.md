@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # End-To-End Agentic Flow
 
-Updated: 2026-06-05
+Updated: 2026-06-15
 
 This document describes the real runtime chain verified against the current
 code. It is documentation only. It must not be used to justify changing
@@ -39,6 +39,12 @@ sequenceDiagram
     B3572->>B3572: create job + start worker
     B3572->>Store: write job.json/events.ndjson primary
     B3572->>Store: update SQLite secondary index if available
+    B3572->>P11434: controller_preplanner_rag_query_plan(goal)
+    alt query plan JSON malformed
+        B3572->>P11434: repair preplanner query-plan JSON
+    else planner unavailable or timed out
+        B3572->>B3572: record typed unavailable and continue with deterministic preseed
+    end
     loop planner steps until terminal state
         B3572->>B3572: build measured prompt pack(required_working_set + optional intrinsic_context)
         opt prompt > compaction threshold
@@ -48,6 +54,20 @@ sequenceDiagram
         B3572->>P11434: planner_decision(prompt pack + evidence_contract)
         P11434-->>B3572: JSON decision or native tool call
         B3572->>B3572: validate_planner_decision_against_evidence()
+        alt final candidate for repo/semantic audit
+            B3572->>P11434: final-quality judge
+            alt judge JSON malformed
+                B3572->>P11434: repair/re-evaluate final-quality JSON
+            end
+            B3572->>B3572: apply judge route through validator contract
+        end
+        alt validator rejection needs specialist guidance
+            B3572->>P11434: planner_replan_specialist_for_validation()
+            alt specialist JSON malformed
+                B3572->>P11434: repair specialist JSON
+            end
+            B3572->>B3572: store specialist route in controller guard/evidence contract
+        end
         alt invalid planner decision and repair applies
             B3572->>R11435: repair/normalize invalid decision
             R11435-->>B3572: repaired decision candidate
@@ -84,8 +104,8 @@ requiring the OpenWebUI/3572 lab shadow to equal the Codex root.
 | OpenWebUI -> 3571 | `services/vulkan_bridge/app.py` | Generated OpenAPI exposes only `/vulkan_helper` through `OPENWEBUI_VISIBLE_TOOL_ALIASES`. |
 | 3571 -> 3572 | `services/vulkan_bridge/app.py` | `_handle_helper()` posts the normalized agent payload to `AGENT_URL`, default `http://127.0.0.1:3572/vulkan/agent`. |
 | 3572 route -> job worker | `services/aicarmine_broker/app.py`, `services/aicarmine_broker/agent_entry.py` | `/vulkan/agent` delegates to `agent()`, `vulkan_helper` starts a job, and `agent_job_worker()` calls `run_agentic_planner_job()`. |
-| 3572 -> 11434 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/turn.py`, `services/aicarmine_broker/application/prompt/pack_builder.py`, `services/aicarmine_broker/planner_intrinsic_context.py`, `services/aicarmine_broker/memory_tools.py`, `services/aicarmine_broker/config/` | `planner_decision()` is still the compatibility entrypoint, but the measured prompt pack and one-turn 11434 call are owned by the application planner/prompt modules. Above the prompt compaction threshold it stores large sections in job-local SQLite and injects `planner_prompt_context_window.v1` windows that can be read recursively with `planner_scratchpad_read`; default `PLANNER_URL` is `http://127.0.0.1:11434/api/chat`. |
-| 3572 -> 11435 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_selection.py`, `services/aicarmine_broker/config/` | Repair/selector paths use `OLLAMA_TASK_URL`; default is `http://127.0.0.1:11435/api/chat`. |
+| 3572 -> 11434 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/turn.py`, `services/aicarmine_broker/application/prompt/pack_builder.py`, `services/aicarmine_broker/application/controller/rag_preseed.py`, `services/aicarmine_broker/application/evidence/final_quality.py`, `services/aicarmine_broker/planner_intrinsic_context.py`, `services/aicarmine_broker/planner_core/json_io.py`, `services/aicarmine_broker/memory_tools.py`, `services/aicarmine_broker/config/` | `planner_decision()` is still the compatibility entrypoint, but measured prompt packing, one-turn calls, preplanner query-plan repair, final-quality judging and replan-specialist guidance are owned by application modules and orchestrated by `planner.py`. Above the prompt compaction threshold it stores large sections in job-local SQLite and injects `planner_prompt_context_window.v1` windows. The stream transport records both response-header wait and stream-read timeouts; default `PLANNER_URL` is `http://127.0.0.1:11434/api/chat`. |
+| 3572 -> 11435 | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/tool_selection.py`, `services/aicarmine_broker/config/` | Repair/selector paths use `OLLAMA_TASK_URL`; default is `http://127.0.0.1:11435/api/chat`. GPU0 repair is explicit and bounded: it may repair malformed planner emissions or invalid non-code-product proposals, but it must not mask code-product contract failures. |
 | 3572 -> internal tools | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/validator.py`, `services/aicarmine_broker/tool_dispatch.py`, `services/aicarmine_broker/application/tool_surface/dispatcher.py`, `services/aicarmine_broker/tools/*` | Validated tool decisions call `dispatch_tool()`, which is a compatibility facade over the registry dispatcher. Concrete repo, terminal, memory and helper behavior lives in the owning tool modules. |
 | 3572 -> terminal compact result | `services/aicarmine_broker/planner.py`, `services/aicarmine_broker/application/planner/loop.py`, `services/aicarmine_broker/job_store.py`, `services/aicarmine_broker/application/job/terminal_response.py` | `finalize_agentic_job()` writes final state; `wait_for_agent_terminal()` returns `compact_agent_terminal_response()`, whose terminal payload shaping is delegated to the job/public payload application modules. |
 | 3571 -> OpenWebUI terminal response | `services/vulkan_bridge/app.py` | `_agentic_v9_build_openwebui_response()` returns the stable public surface for both ok and non-ok terminal jobs: primary metadata, `payload_index_for_30b`, `priority_evidence_for_30b`, `openwebui_usage` and pretty JSON `tool_context_for_30b`. It does not promote blocked/prose narrative fields as the primary answer. |
@@ -107,6 +127,13 @@ public payload contract.
   content is transported inline through `payload_index_for_30b`,
   `priority_evidence_for_30b`, `openwebui_usage`, `tool_context_for_30b` and
   `result` when present.
+- Complete payloads are canonical under
+  `tool_context_for_30b.artifacts[*].artifact`. `priority_evidence_for_30b`
+  is pointer-first and bounded: it keeps metadata, hashes, item locations and
+  small summaries, but it must not duplicate large `content`,
+  `unified_diff` or `structured_operations` already present in tool context.
+  `payload_index_for_30b.concrete_results[*].primary_location` must point to
+  the canonical inline payload field.
 - The public shape is stable across `completed`, `blocked_needs_attention`,
   `max_steps_reached`, `failed` and `cancelled`. Internal completion/block
   status is payload metadata under `openwebui_usage.internal_job_status` and
@@ -187,6 +214,27 @@ The view also audits payload transport. If a raw tool result contains required
 fields but the compact payload only carries previews, metadata or a local
 artifact path, the view marks the violation explicitly.
 
+## Contract Proof Bundle
+
+For significant run diagnosis, use a proof bundle assembled from already
+persisted, read-only sources:
+
+- `job.json` for job status, goal, workspace and current step;
+- `events.ndjson` for planner request/decision, validator guard, tool start and
+  tool result events;
+- `final.json` for the terminal payload actually available at job completion;
+- terminal `payload_index_for_30b`, `priority_evidence_for_30b` and
+  `tool_context_for_30b` for OpenWebUI-visible inline evidence;
+- planner prompt capture and planner stream for what 11434 received and
+  returned;
+- compact tool result plus the raw same-job `tool-results` artifact for what
+  was fed back, compacted or rehydrated;
+- `/jobs/{job_id}/ia-view.json` as the operator index over those sources.
+
+Do not diagnose from rendered HTML, local artifact paths or model intuition
+alone. HTML and IA view rendering are navigation/presentation layers; the proof
+is the raw artifact or inline public payload field they point to.
+
 ## Code-Backed Proof Points
 
 ### 1. OpenWebUI sees only `vulkan_helper`
@@ -255,6 +303,14 @@ Verified behavior:
   `turn_memory`, `evidence_contract`, tool schemas and response protocol
   instructions.
 - It calls `post_json_stream_to_file(PLANNER_URL, planner_payload, ...)`.
+- The stream helper records both `planner_stream_started` and typed waiting or
+  timeout events for the response-header phase. If `urlopen()` blocks before
+  headers, the internal readline deadline cannot help; the header wait guard is
+  the owner for that failure mode.
+- Preplanner query-plan, final-quality judge and replan-specialist repair
+  requests also use 11434. They are guidance lanes, not hidden controller
+  dispatch: malformed JSON can be repaired by the planner model, but accepted
+  actions still pass through the normal planner/validator sequence.
 
 Implication: 11434 chooses the next planner action. Its Ollama
 `done_reason` is turn metadata; it does not by itself complete the 3572 job.
@@ -428,6 +484,9 @@ Verified behavior:
   complete diff, target not read, or invalid `repo_propose_code_edit` payload do
   not route to 11435 repair. They remain validator guard feedback for the next
   planner turn.
+- `code_product_contract.required=true` blocks 11435 repair even if the
+  rejected decision is a tool proposal. Code-product loops should be guided by
+  validator feedback and the 11434 replan specialist, not by GPU0 repair.
 
 Implication: 11435 does not replace 11434 as planner and does not decide job
 completion.

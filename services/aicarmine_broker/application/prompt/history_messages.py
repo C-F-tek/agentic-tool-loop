@@ -138,23 +138,44 @@ def planner_history_reason(item: dict[str, Any], result: dict[str, Any]) -> str:
 
 def planner_controller_guard_history_payload(item: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     contract = result.get("evidence_contract") if isinstance(result.get("evidence_contract"), dict) else {}
+    if not contract:
+        contract = (
+            result.get("evidence_contract_summary")
+            if isinstance(result.get("evidence_contract_summary"), dict)
+            else {}
+        )
     rejected = result.get("rejected_decision") if isinstance(result.get("rejected_decision"), dict) else {}
     operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
     coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+    required_tool_call = contract.get("required_next_tool_call") if isinstance(contract.get("required_next_tool_call"), dict) else {}
     content = rejected.get("content")
     payload: dict[str, Any] = {
         "schema": "planner_controller_guard_history.v1",
+        "kind": "validator_feedback",
+        "source": result.get("source") or "validator",
         "step": item.get("step"),
         "substep": item.get("substep"),
-        "tool": "controller_guard",
+        "guard_label": "controller_guard",
+        "not_a_tool": True,
         "ok": result.get("ok"),
         "guard_type": result.get("guard_type"),
+        "contract_state": {
+            "planner_cuda_rewrite_required": bool(contract.get("planner_cuda_rewrite_required")),
+            "final_rewrite_latch": contract.get("final_rewrite_latch"),
+            "planner_may_choose_final": contract.get("planner_may_choose_final"),
+            "planner_may_choose_block": contract.get("planner_may_choose_block"),
+            "required_next_progress": contract.get("required_next_progress"),
+            "required_next_tool_call": required_tool_call or None,
+        },
         "violations": result.get("violations"),
         "summary": planner_history_summary(result.get("summary")),
         "rejected_action": rejected.get("action"),
         "rejected_final_answer_source": rejected.get("final_answer_source"),
         "rejected_content_keys": list(content.keys()) if isinstance(content, dict) else None,
         "required_next_progress": contract.get("required_next_progress"),
+        "required_next_tool_call": contract.get("required_next_tool_call"),
+        "required_next_missing_evidences": contract.get("required_next_missing_evidences"),
+        "required_next_output_sections": contract.get("required_next_output_sections"),
         "planner_may_choose_final": contract.get("planner_may_choose_final"),
         "coverage_satisfied": contract.get("coverage_satisfied"),
         "missing_owner_paths": contract.get("missing_owner_paths"),
@@ -209,7 +230,18 @@ def planner_repo_read_history_payload(item: dict[str, Any], result: dict[str, An
             "full_content_not_repeated_in_history": True,
             "primary_context": "required_working_set.repo_reads",
             "history_contains_path_listing_only": True,
-            "planner_can_use_required_working_set_or_read_selectively": True,
+            "forbidden_full_path_repo_read_paths": [
+                row.get("path")
+                for row in read_items
+                if isinstance(row, dict) and row.get("path")
+            ][:24],
+            "planner_must_not_repeat_full_path_repo_read_for_listed_paths": True,
+            "planner_can_use_required_working_set": True,
+            "planner_additional_context_policy": [
+                "planner_scratchpad_read window",
+                "repo_read explicit line/window",
+                "search tools with concrete query",
+            ],
             "artifact_payload_available": bool(result.get("artifact")),
         },
     }
@@ -241,6 +273,8 @@ def planner_tool_result_message_payload(
     store_prompt_text_window: StorePromptTextWindow,
 ) -> dict[str, Any]:
     tool = str(result.get("tool") or (item.get("decision") or {}).get("tool") or "")
+    if tool == "controller_guard":
+        return planner_controller_guard_history_payload(item, result)
     direct_payload = bounded_prompt_context_tool_result_payload(
         result,
         code_product_build_state_kind=code_product_build_state_kind,
@@ -255,8 +289,6 @@ def planner_tool_result_message_payload(
         return direct_payload
     if tool == "repo_read":
         return planner_repo_read_history_payload(item, result)
-    if tool == "controller_guard":
-        return planner_controller_guard_history_payload(item, result)
     raw_payload = planner_history_evidence_payload(item, result)
     raw_text = json.dumps(raw_payload, ensure_ascii=False, indent=2, default=str)
     if len(raw_text) <= max(1200, int(window_chars or 0)):
@@ -316,6 +348,28 @@ def planner_history_item_messages(
         and isinstance(decision.get("raw_native_tool_call"), dict)
     ):
         raw_native_call = decision["raw_native_tool_call"]
+        raw_tool_name = str(
+            raw_native_call.get("function", {}).get("name")
+            or raw_native_call.get("name")
+            or decision.get("tool")
+            or ""
+        ).strip().lower()
+        result_tool = str((result or {}).get("tool") if isinstance(result, dict) else "").strip().lower()
+        if raw_tool_name == "controller_guard" or result_tool == "controller_guard":
+            payload = planner_tool_result_message_payload(
+                item,
+                result,
+                root=root,
+                goal=goal,
+                window_chars=window_chars,
+                code_product_build_state_kind=code_product_build_state_kind,
+                store_prompt_text_window=store_prompt_text_window,
+            )
+            messages.append({
+                "role": "user",
+                "content": json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            })
+            return messages
         messages.append({
             "role": "assistant",
             "content": "",
@@ -372,12 +426,18 @@ def planner_history_messages_for_ollama(
     code_product_build_state_kind: str,
     store_prompt_text_window: StorePromptTextWindow,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    history_items = history if isinstance(history, list) else []
     if max_chars <= 0:
         return [], {
             "schema": "planner_history_messages.v1",
             "enabled": bool(native_tools_enabled),
             "included_history_items": 0,
-            "skipped_history_items": len(history if isinstance(history, list) else []),
+            "skipped_history_items": len(history_items),
+            "considered_history_items": len(history_items),
+            "transportable_history_items": 0,
+            "empty_history_items": 0,
+            "oversized_history_items": 0,
+            "candidate_message_chars": 0,
             "message_chars": 0,
             "max_chars": max_chars,
         }
@@ -385,7 +445,11 @@ def planner_history_messages_for_ollama(
     total_chars = 0
     included = 0
     skipped = 0
-    for item in reversed(history if isinstance(history, list) else []):
+    empty = 0
+    oversized = 0
+    transportable = 0
+    candidate_message_chars = 0
+    for item in reversed(history_items):
         item_messages = planner_history_item_messages(
             item,
             root=root,
@@ -395,13 +459,18 @@ def planner_history_messages_for_ollama(
             store_prompt_text_window=store_prompt_text_window,
         )
         if not item_messages:
+            empty += 1
             continue
+        transportable += 1
         item_chars = json_char_len(item_messages)
+        candidate_message_chars += item_chars
         if selected_reversed and total_chars + item_chars > max_chars:
             skipped += 1
+            oversized += 1
             continue
         if total_chars + item_chars > max_chars:
             skipped += 1
+            oversized += 1
             continue
         selected_reversed.append(item_messages)
         total_chars += item_chars
@@ -414,6 +483,12 @@ def planner_history_messages_for_ollama(
         "enabled": bool(native_tools_enabled),
         "included_history_items": included,
         "skipped_history_items": skipped,
+        "considered_history_items": len(history_items),
+        "transportable_history_items": transportable,
+        "empty_history_items": empty,
+        "oversized_history_items": oversized,
+        "candidate_message_chars": candidate_message_chars,
+        "omitted_history_items": max(0, transportable - included),
         "message_count": len(messages),
         "message_chars": json_char_len(messages),
         "max_chars": max_chars,

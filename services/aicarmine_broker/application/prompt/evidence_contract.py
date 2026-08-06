@@ -34,12 +34,87 @@ EVIDENCE_PROMPT_KEEP_KEYS = (
     "code_product_contract",
     "finalization_contract",
     "required_next_progress",
+    "required_next_tool_call",
     "validation_rejections_tail",
     "failed_repo_read_paths",
     "failed_repo_list_files_paths",
+    "forbidden_repeated_repo_read_paths",
     "read_admissible_paths",
     "validator_admissible_repo_read_paths",
 )
+
+
+def _counted_top_list(
+    value: Any,
+    *,
+    item_limit: int,
+    text_limit: int,
+) -> tuple[list[Any], int, int]:
+    if not isinstance(value, list):
+        return [], 0, 0
+    shown = prompt_clip_value(
+        value[: max(0, int(item_limit or 0))],
+        text_limit=text_limit,
+        list_limit=item_limit,
+    )
+    shown_list = shown if isinstance(shown, list) else []
+    return shown_list, len(value), max(0, len(value) - len(shown_list))
+
+
+def _apply_counted_top_list(
+    out: dict[str, Any],
+    key: str,
+    *,
+    item_limit: int,
+    text_limit: int,
+) -> None:
+    if key not in out or not isinstance(out.get(key), list):
+        return
+    shown, count, omitted = _counted_top_list(
+        out.get(key),
+        item_limit=item_limit,
+        text_limit=text_limit,
+    )
+    out[key] = shown
+    out[f"{key}_count"] = count
+    if omitted:
+        out[f"{key}_omitted_count"] = omitted
+
+
+def _compact_verified_content_reads(value: Any, *, item_limit: int) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    compact: list[dict[str, Any]] = []
+    for row in value[: max(0, int(item_limit or 0))]:
+        if not isinstance(row, dict):
+            continue
+        item: dict[str, Any] = {}
+        for key in (
+            "path",
+            "repo_path",
+            "line_count",
+            "truncated",
+            "preview_only",
+            "content_chars",
+            "sha256",
+            "source",
+            "document_id",
+            "offset",
+            "max_chars",
+            "complete",
+        ):
+            if row.get(key) not in (None, "", [], {}):
+                item[key] = prompt_clip_value(row.get(key), text_limit=220, list_limit=4)
+        if "content_chars" not in item:
+            for content_key in ("content", "content_preview", "content_excerpt", "text"):
+                content = row.get(content_key)
+                if isinstance(content, str) and content:
+                    item["content_chars"] = len(content)
+                    item["content_not_duplicated_here"] = True
+                    break
+        if item:
+            compact.append(item)
+    return compact
 
 
 def compact_evidence_contract_for_prompt(
@@ -54,18 +129,57 @@ def compact_evidence_contract_for_prompt(
         for key in EVIDENCE_PROMPT_KEEP_KEYS
         if contract.get(key) not in (None, "", [], {})
     }
+    if isinstance(out.get("verified_content_reads"), list):
+        raw_reads = out["verified_content_reads"]
+        compact_reads = _compact_verified_content_reads(raw_reads, item_limit=8)
+        out["verified_content_reads"] = compact_reads
+        out["verified_content_reads_count"] = len(raw_reads)
+        if len(raw_reads) > len(compact_reads):
+            out["verified_content_reads_omitted_count"] = len(raw_reads) - len(compact_reads)
+    for key in (
+        "successful_repo_read_paths",
+        "covered_owner_paths",
+        "missing_owner_paths",
+        "candidate_owner_paths",
+        "failed_repo_read_paths",
+        "failed_repo_list_files_paths",
+        "forbidden_repeated_repo_read_paths",
+        "read_admissible_paths",
+        "validator_admissible_repo_read_paths",
+    ):
+        _apply_counted_top_list(out, key, item_limit=24, text_limit=180)
+    for key in (
+        "candidate_next_actions",
+        "core_discovery_candidates",
+        "validation_rejections_tail",
+    ):
+        _apply_counted_top_list(out, key, item_limit=8, text_limit=320)
+    if out.get("forbidden_repeated_repo_read_paths"):
+        out["forbidden_repeated_repo_read_paths_note"] = (
+            "Do not repeat full-path repo_read for forbidden_repeated_repo_read_paths."
+        )
+    if isinstance(out.get("initial_orientation_surface"), dict):
+        out["initial_orientation_surface"] = prompt_clip_value(
+            out["initial_orientation_surface"],
+            text_limit=360,
+            list_limit=6,
+        )
+        out["initial_orientation_surface_compacted"] = True
     file_memory = contract.get("file_memory") if isinstance(contract.get("file_memory"), list) else []
+    out["file_memory_count"] = len(file_memory)
     out["file_memory"] = [
         {
             "path": row.get("path"),
             "line_count": row.get("line_count"),
             "truncated": row.get("truncated"),
             "key_lines": prompt_clip_value(row.get("key_lines") or [], text_limit=220, list_limit=8),
-            "content_excerpt": prompt_clip_text(row.get("content_excerpt"), 500),
+            "content_excerpt": prompt_clip_text(row.get("content_excerpt"), 240),
         }
         for row in file_memory[:6]
         if isinstance(row, dict)
     ]
+    if len(file_memory) > len(out["file_memory"]):
+        out["file_memory_omitted_count"] = len(file_memory) - len(out["file_memory"])
     operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
     if operational:
         out["operational_notes"] = {

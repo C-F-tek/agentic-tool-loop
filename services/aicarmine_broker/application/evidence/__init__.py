@@ -10,16 +10,19 @@ from __future__ import annotations
 
 _PUBLIC_EXPORTS = {
     'EvidenceBuilder': 'builder',
+    'effective_repo_analysis_goal': 'goal_classifier',
     'execution_evidence_digest_text': 'execution_digest',
     'goal_requests_apply': 'goal_classifier',
     'goal_requests_code_product': 'goal_classifier',
     'planner_evidence_contract': 'builder',
+    'repo_analysis_final_answer_model_quality_request': 'final_quality',
     'repo_analysis_final_answer_quality': 'final_quality',
     'repo_analysis_final_answer_too_shallow': 'final_quality',
     'repo_path_kind': 'repo_path_policy',
     'required_working_set_for_prompt': 'required_working_set',
     'score_evidence_coverage': 'coverage_scorer',
     'semantic_goal_classification': 'goal_classifier',
+    'sanitize_repo_analysis_final_model_quality': 'final_quality',
 
 }
 

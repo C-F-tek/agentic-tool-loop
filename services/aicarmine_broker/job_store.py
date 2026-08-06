@@ -12,7 +12,9 @@ Nothing in this module makes HTTP calls or runs subprocesses.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import sqlite3
 import time
 import uuid
 from pathlib import Path
@@ -46,6 +48,9 @@ from .infrastructure.job_sqlite_store import AgentJobSQLiteStore
 from .infrastructure.time_provider import TimeProvider
 
 
+logger = logging.getLogger(__name__)
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
@@ -74,17 +79,73 @@ def _job_sqlite_store() -> AgentJobSQLiteStore:
     return AgentJobSQLiteStore(AGENT_JOB_DB, AGENT_JOB_ROOT)
 
 
+def _sqlite_error_category(exc: Exception) -> str:
+    text = str(exc or "").lower()
+    error_type = type(exc).__name__.lower()
+    if "no such table" in text or "no such column" in text or "schema" in text:
+        return "schema"
+    if "readonly" in text or "read-only" in text or "attempt to write a readonly database" in text:
+        return "readonly"
+    if "permission denied" in text or "access is denied" in text or "operation not permitted" in text:
+        return "permission"
+    if "database is locked" in text or "database table is locked" in text or "locked" in text:
+        return "locked"
+    if isinstance(exc, sqlite3.IntegrityError) or "integrity" in error_type or "constraint" in text:
+        return "integrity"
+    if (
+        "unable to open database file" in text
+        or "not a database" in text
+        or "file is not a database" in text
+        or "database disk image is malformed" in text
+    ):
+        return "configuration"
+    return "runtime"
+
+
+def _sqlite_operator_hint(category: str) -> str:
+    return {
+        "schema": "SQLite schema missing or incompatible; verify DB initialization and broker version.",
+        "permission": "SQLite path is not writable by the broker process; verify filesystem permissions.",
+        "readonly": "SQLite database opened read-only; verify volume mount and file attributes.",
+        "locked": "SQLite database is locked; verify concurrent writers or stale process state.",
+        "integrity": "SQLite constraint/integrity failure; compare filesystem job state with SQLite index.",
+        "configuration": "SQLite path or database file is invalid; verify AGENT_JOB_DB and parent directory.",
+        "runtime": "SQLite secondary index failed at runtime; filesystem job state remains primary evidence.",
+    }.get(category, "SQLite secondary index failed; inspect filesystem job state and broker logs.")
+
+
 def _sqlite_warning(exc: Exception, *, filesystem_state_written: bool = True) -> dict[str, Any]:
+    category = _sqlite_error_category(exc)
     return {
         "sqlite_write_failed": True,
         "sqlite_error_type": type(exc).__name__,
+        "sqlite_error_category": category,
         "sqlite_error": str(exc)[:1000],
+        "sqlite_db_path": str(AGENT_JOB_DB),
+        "agent_job_root": str(AGENT_JOB_ROOT),
         "filesystem_state_written": filesystem_state_written,
         "sqlite_is_secondary_index": True,
         "sqlite_required": True,
         "sqlite_failure_requires_investigation": True,
+        "sqlite_configuration_issue": category in {"schema", "permission", "readonly", "configuration"},
+        "operator_hint": _sqlite_operator_hint(category),
         "ts": time.time(),
     }
+
+
+def _log_sqlite_warning(job_id: str, operation: str, warning: dict[str, Any], exc: Exception) -> None:
+    if not bool(warning.get("filesystem_state_written") or warning.get("filesystem_event_written")):
+        return
+    logger.warning(
+        "SQLite secondary index write failed; operation=%s job_id=%s category=%s db=%s fs_fallback=%s error_type=%s error=%s",
+        operation,
+        job_id,
+        warning.get("sqlite_error_category"),
+        warning.get("sqlite_db_path"),
+        bool(warning.get("filesystem_state_written") or warning.get("filesystem_event_written")),
+        type(exc).__name__,
+        str(exc)[:500],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +219,7 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
         _job_sqlite_store().upsert_job_state(state, root)
     except Exception as exc:
         warning = _sqlite_warning(exc)
+        _log_sqlite_warning(job_id, "job_state_upsert", warning, exc)
         state["_persistence_warning"] = warning
         write_json(agent_job_state_path(job_id), state)
         append_agent_event_filesystem_only(
@@ -293,18 +355,15 @@ def append_agent_event(
     try:
         _job_sqlite_store().append_event(event)
     except Exception as exc:
+        warning = _sqlite_warning(exc)
+        warning["filesystem_event_written"] = True
+        warning["event_type"] = event_type
+        _log_sqlite_warning(job_id, "event_append", warning, exc)
         append_agent_event_filesystem_only(
             job_id,
             "sqlite_event_write_failed",
             "Filesystem event was written but SQLite event index update failed.",
-            {
-                "sqlite_error_type": type(exc).__name__,
-                "sqlite_error": str(exc)[:1000],
-                "filesystem_event_written": True,
-                "sqlite_is_secondary_index": True,
-                "sqlite_required": True,
-                "sqlite_failure_requires_investigation": True,
-            },
+            warning,
             step=step,
         )
 

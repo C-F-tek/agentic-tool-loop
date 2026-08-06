@@ -123,6 +123,16 @@ TOOL_PURPOSE_MANIFEST: tuple[dict[str, Any], ...] = (
 )
 
 
+class ExternalRerankerHTTPError(RuntimeError):
+    """Typed HTTP error from the optional external reranker."""
+
+    def __init__(self, *, status: int, reason: str, body_preview: str) -> None:
+        super().__init__(f"external reranker HTTP {status}: {reason}")
+        self.status = status
+        self.reason = reason
+        self.body_preview = body_preview
+
+
 def _compact_text(value: Any, limit: int) -> tuple[str, bool]:
     text = str(value or "")
     if limit <= 0 or len(text) <= limit:
@@ -167,15 +177,30 @@ def _http_json(method: str, url: str, payload: Any | None = None, timeout: float
         headers["Content-Type"] = "application/json; charset=utf-8"
 
     request = urllib.request.Request(str(url), data=data, method=method.upper(), headers=headers)
-    with urllib.request.urlopen(request, timeout=max(0.1, float(timeout or 0.1))) as response:
-        raw = response.read(DEFAULT_RERANK_RESPONSE_BYTES)
+    try:
+        with urllib.request.urlopen(request, timeout=max(0.1, float(timeout or 0.1))) as response:
+            raw = response.read(DEFAULT_RERANK_RESPONSE_BYTES)
+            text = raw.decode("utf-8", errors="replace")
+            status = getattr(response, "status", None)
+            content_type = (response.headers.get("Content-Type") or "").lower()
+    except urllib.error.HTTPError as exc:
+        raw = exc.read(DEFAULT_RERANK_RESPONSE_BYTES)
         text = raw.decode("utf-8", errors="replace")
-        if not text.strip():
-            return {"status": getattr(response, "status", None)}
-        content_type = (response.headers.get("Content-Type") or "").lower()
-        if "application/json" in content_type or text.strip().startswith(("{", "[")):
-            return json.loads(text)
-        return {"status": getattr(response, "status", None), "text": text[:2000]}
+        raise ExternalRerankerHTTPError(
+            status=int(exc.code or 0),
+            reason=str(exc.reason or exc),
+            body_preview=text[:2000],
+        ) from exc
+    if not text.strip():
+        return {"status": status}
+    if "application/json" in content_type or text.strip().startswith(("{", "[")):
+        return json.loads(text)
+    return {
+        "status": status,
+        "content_type": content_type,
+        "text": text[:2000],
+        "non_json_response": True,
+    }
 
 
 def _rerank_payload_documents(items: list[dict[str, Any]], doc_chars: int) -> list[str]:
@@ -276,16 +301,66 @@ def _external_rerank_items(
     }
     try:
         decoded = _http_json("POST", str(url), body, timeout=float(timeout_seconds or 0.1))
-    except (TimeoutError, urllib.error.URLError, OSError, ValueError) as exc:
+    except ExternalRerankerHTTPError as exc:
+        http_status = int(exc.status or 0)
+        status = "unavailable" if http_status == 429 or http_status >= 500 else "error"
+        rerank.update({
+            "status": status,
+            "error": "external_reranker_http_error",
+            "details": f"http_{http_status}",
+            "http_status": http_status,
+            "http_reason": exc.reason[:200],
+            "body_preview": exc.body_preview[:1000],
+        })
+        return _items_with_missing_rerank_scores(items), rerank
+    except TimeoutError as exc:
+        rerank.update({
+            "status": "unavailable",
+            "error": "external_reranker_timeout",
+            "details": type(exc).__name__,
+        })
+        return _items_with_missing_rerank_scores(items), rerank
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", None)
+        error_name = "external_reranker_timeout" if isinstance(reason, TimeoutError) else "external_reranker_unavailable"
+        rerank.update({
+            "status": "unavailable",
+            "error": error_name,
+            "details": type(reason).__name__ if reason is not None else type(exc).__name__,
+        })
+        return _items_with_missing_rerank_scores(items), rerank
+    except json.JSONDecodeError as exc:
+        rerank.update({
+            "status": "error",
+            "error": "external_reranker_invalid_json",
+            "details": type(exc).__name__,
+            "json_error": str(exc)[:300],
+        })
+        return _items_with_missing_rerank_scores(items), rerank
+    except (OSError, ValueError) as exc:
         rerank.update({"status": "unavailable", "error": "external_reranker_unavailable", "details": type(exc).__name__})
         return _items_with_missing_rerank_scores(items), rerank
     except Exception as exc:
         rerank.update({"status": "error", "error": "external_reranker_response_error", "details": type(exc).__name__})
         return _items_with_missing_rerank_scores(items), rerank
 
+    if isinstance(decoded, dict) and decoded.get("non_json_response"):
+        rerank.update({
+            "status": "error",
+            "error": "external_reranker_non_json_response",
+            "http_status": decoded.get("status"),
+            "content_type": decoded.get("content_type"),
+            "body_preview": str(decoded.get("text") or "")[:1000],
+        })
+        return _items_with_missing_rerank_scores(items), rerank
+
     order = _rerank_order_from_response(decoded, len(rerank_candidates))
     if not order:
-        rerank.update({"status": "error", "error": "external_reranker_no_scores"})
+        rerank.update({
+            "status": "error",
+            "error": "external_reranker_no_scores",
+            "response_shape": type(decoded).__name__,
+        })
         return _items_with_missing_rerank_scores(items), rerank
 
     seen: set[int] = set()

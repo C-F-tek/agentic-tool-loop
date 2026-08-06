@@ -823,11 +823,11 @@ def repo_command_public(req: HelperForAllRequest) -> dict[str, Any]:
         "Single OpenWebUI public tool for local repository work. For a new task, send the full "
         "user request once and wait for the completed response. The completed response contains "
         "a top-level payload_index_for_30b before the large evidence blocks. Use that index to "
-        "find concrete results: code diffs live in priority_evidence_for_30b.items[*].unified_diff "
-        "and tool_context_for_30b.artifacts[*].artifact.unified_diff; file contents live in "
-        "priority_evidence_for_30b.items[*].content and tool_context_for_30b.artifacts[*].artifact.content. "
-        "content/summary fields are descriptions; validation_commands, manual_review_required and "
-        "limits are review/navigation metadata, not reasons to repeat the same call. "
+        "find concrete results: first read primary_payload_for_30b.primary_location and "
+        "payload_index_for_30b.concrete_results[*].primary_location, then read the referenced "
+        "tool_context_for_30b.artifacts[*].artifact field. priority_evidence_for_30b.items "
+        "is metadata/hash/location, not the primary concrete payload. validation_commands, "
+        "manual_review_required and limits are review/navigation metadata, not reasons to repeat the same call. "
         "Do not call again after a completed result unless the user explicitly asks a new task "
         "or explicitly gives an existing job_id for status/result."
     ),
@@ -2740,11 +2740,19 @@ def _agentic_v9_priority_item_from_artifact(row):
         if edit_kind == "unified_diff":
             diff = artifact.get("unified_diff")
             item["payload_is_complete"] = isinstance(diff, str) and bool(diff.strip())
-            item["unified_diff"] = diff
+            if isinstance(diff, str):
+                item["chars"] = len(diff)
+                item["sha256"] = _agentic_v9_hashlib.sha256(diff.encode("utf-8", errors="replace")).hexdigest()
+                item["content_not_duplicated_here"] = True
         elif edit_kind == "structured_edit":
             operations = artifact.get("structured_operations")
             item["payload_is_complete"] = bool(operations)
-            item["structured_operations"] = operations
+            if operations not in (None, "", [], {}):
+                operations_text = _agentic_v9_json_dumps(operations, indent=None)
+                item["chars"] = len(operations_text)
+                item["sha256"] = _agentic_v9_hashlib.sha256(operations_text.encode("utf-8", errors="replace")).hexdigest()
+                item["structured_operations_count"] = len(operations) if isinstance(operations, list) else None
+                item["content_not_duplicated_here"] = True
         elif edit_kind == "no_op":
             rationale = artifact.get("rationale")
             item["payload_is_complete"] = isinstance(rationale, str) and bool(rationale.strip())
@@ -2764,7 +2772,8 @@ def _agentic_v9_priority_item_from_artifact(row):
             "payload_is_complete": True,
             "chars": len(content),
             "line_count": artifact.get("line_count"),
-            "content": content,
+            "sha256": _agentic_v9_hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest(),
+            "content_not_duplicated_here": True,
         })
     return {}
 
@@ -2794,7 +2803,14 @@ def _agentic_v9_repo_analysis_priority_item(tool_context, planner_text):
     return _agentic_v9_clean({
         "kind": "repo_analysis_summary",
         "payload_is_complete": bool(planner_text),
-        "summary": planner_text,
+        "guide_chars": len(planner_text) if planner_text else None,
+        "guide_sha256": (
+            _agentic_v9_hashlib.sha256(planner_text.encode("utf-8", errors="replace")).hexdigest()
+            if planner_text else None
+        ),
+        "primary_payload_location": "evidence_guide_for_30b",
+        "summary_not_duplicated_here": True,
+        "content_not_duplicated_here": True,
         "evidence_files": evidence_files[:80],
     })
 
@@ -2830,15 +2846,19 @@ def _agentic_v9_build_priority_evidence_for_30b(tool_context, planner_text, *, c
         priority_items.append(analysis_item)
     return _agentic_v9_clean({
         "schema": "openwebui.priority_evidence_for_30b.v1",
+        "purpose": (
             "High-priority evidence for the 30B model. Complete payloads here "
-            "are real inline payloads selected from successful tool artifacts. "
+            "are pointer-first metadata selected from successful tool artifacts. "
             "Partial products are explicitly marked validator_accepted=false and "
             "must not be treated as completed diffs."
-            "Read priority_evidence_for_30b.items before opening the artifact "
+        ),
+        "navigation_hint": (
+            "Read primary_payload_for_30b.primary_location and "
+            "payload_index_for_30b.concrete_results before opening the artifact "
             "mirror in tool_context_for_30b.artifacts[*].artifact. When the internal job did not complete, useful status or "
             "partial products are intentionally first; do not stop at the "
             "terminal warning."
-        
+        ),
         "items": priority_items,
         "limits": tool_context.get("limits"),
     })
@@ -2932,6 +2952,136 @@ def _agentic_v9_payload_index_item_location(item, index, tool_context):
             "primary_location": primary_location,
         })
     return {}
+
+
+def _agentic_v9_iter_location_strings(value):
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _agentic_v9_iter_location_strings(child)
+
+
+def _agentic_v9_first_location_value(row):
+    row = _agentic_v9_as_dict(row)
+    for key in ("primary_location", "field", "full_context_location"):
+        for location in _agentic_v9_iter_location_strings(row.get(key)):
+            if location:
+                return location
+    return ""
+
+
+def _agentic_v9_metadata_location_from_priority_field(location):
+    text = str(location or "")
+    if text.startswith("priority_evidence_for_30b.items[") and "]." in text:
+        return text.split("].", 1)[0] + "]"
+    return text
+
+
+def _agentic_v9_append_unique(values, value):
+    value = str(value or "").strip()
+    if value and value not in values:
+        values.append(value)
+
+
+def _agentic_v9_payload_search_order(concrete_results, partial_results, descriptive_only):
+    order = []
+    _agentic_v9_append_unique(order, "evidence_guide_for_30b")
+    _agentic_v9_append_unique(order, "primary_payload_for_30b.primary_location")
+    if concrete_results:
+        _agentic_v9_append_unique(order, "payload_index_for_30b.concrete_results")
+        for row in concrete_results:
+            _agentic_v9_append_unique(order, _agentic_v9_first_location_value(row))
+    if partial_results:
+        _agentic_v9_append_unique(order, "payload_index_for_30b.partial_results")
+        for row in partial_results:
+            _agentic_v9_append_unique(order, _agentic_v9_first_location_value(row))
+    for row in descriptive_only:
+        _agentic_v9_append_unique(order, _agentic_v9_first_location_value(row))
+    if not concrete_results and not partial_results:
+        _agentic_v9_append_unique(order, "tool_context_for_30b.artifacts[*].artifact")
+    return order
+
+
+def _agentic_v9_build_payload_index_for_30b(priority_evidence, tool_context, *, completed=True):
+    priority_evidence = _agentic_v9_as_dict(priority_evidence)
+    tool_context = _agentic_v9_as_dict(tool_context)
+    concrete_results = []
+    partial_results = []
+    descriptive_only = []
+    suggestions_only = []
+    for index, item in enumerate(_agentic_v9_as_list(priority_evidence.get("items"))):
+        item = _agentic_v9_as_dict(item)
+        location = _agentic_v9_payload_index_item_location(item, index, tool_context)
+        if location:
+            context_location = _agentic_v9_payload_index_context_location(tool_context, item)
+            if context_location and not location.get("full_context_location"):
+                location["full_context_location"] = context_location
+            is_partial = (
+                str(location.get("kind") or "").startswith("partial_")
+                or location.get("validator_accepted") is False
+                or (
+                    str(location.get("payload_type") or "").startswith("partial_")
+                    and location.get("payload_is_complete") is not True
+                )
+            )
+            if is_partial:
+                partial_results.append(location)
+            else:
+                if (
+                    context_location
+                    and context_location != "tool_context_for_30b.artifacts[*].artifact"
+                    and location.get("primary_location") != context_location
+                ):
+                    location["metadata_location"] = _agentic_v9_metadata_location_from_priority_field(
+                        location.get("primary_location")
+                    )
+                    location["primary_location"] = context_location
+                    location["full_context_location"] = context_location
+                    location["content_not_duplicated_here"] = True
+                concrete_results.append(location)
+            if item.get("kind") == "code_edit_proposal":
+                base = f"priority_evidence_for_30b.items[{index}]"
+                suggestions_only.extend([
+                    {"field": f"{base}.manual_review_required"},
+                    {"field": f"{base}.validation_commands"},
+                ])
+            continue
+        if item.get("kind") == "repo_analysis_summary":
+            descriptive_only.append({
+                "field": "evidence_guide_for_30b",
+                "metadata_location": f"priority_evidence_for_30b.items[{index}]",
+                "full_context_location": "evidence_guide_for_30b",
+            })
+
+    descriptive_rows = descriptive_only
+    has_indexed_payload = bool(concrete_results or partial_results or descriptive_only)
+    return _agentic_v9_clean({
+        "index_kind": "openwebui_payload_index.v1",
+        "job_completed": bool(completed),
+        "same_request_rule": (
+            "Rispondi usando i campi indicizzati qui quando esistono concrete_results, "
+            "partial_results o descriptive_only. Non richiamare vulkan_helper per la "
+            "stessa richiesta solo perche' job_completed=false; quello e' uno stato "
+            "del job interno, non assenza di payload."
+            if has_indexed_payload else
+            "Nessun payload indicizzato disponibile; solo in questo caso una nuova "
+            "chiamata puo' essere necessaria per la stessa richiesta."
+        ),
+        "concrete_results": concrete_results,
+        "partial_results": partial_results,
+        "descriptive_only": descriptive_rows,
+        "suggestions_or_review_metadata_only": suggestions_only + [
+            {"field": "priority_evidence_for_30b.limits"},
+            {"field": "openwebui_usage"},
+        ],
+        "search_order": _agentic_v9_payload_search_order(
+            concrete_results,
+            partial_results,
+            descriptive_rows,
+        ),
+    })
 
 
 def _agentic_v9_partial_products_from_decoded(decoded):
@@ -3221,7 +3371,7 @@ def _agentic_v9_terminal_planner_text(decoded, answer):
 def _agentic_v9_build_completed_content_text(planner_text, evidence_text):
     parts = [
         "GUIDA ALL'EVIDENZA INLINE DEL PAYLOAD.",
-        "Il sommario seguente non sostituisce il payload: usalo per orientarti, poi rispondi leggendo payload_index_for_30b.concrete_results, quindi priority_evidence_for_30b.items[0].content quando presente, e solo dopo tool_context_for_30b.artifacts[*].artifact.",
+        "Il sommario seguente non sostituisce il payload: usalo per orientarti, poi rispondi leggendo primary_payload_for_30b.primary_location, payload_index_for_30b.concrete_results e tool_context_for_30b.artifacts[*].artifact.",
     ]
     planner = str(planner_text or "").strip()
     evidence = str(evidence_text or "").strip()
@@ -3419,6 +3569,7 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "mode",
             "required_top_level_keys",
             "evidence_guide_for_30b",
+            "primary_payload_for_30b",
             "payload_index_for_30b",
             "priority_evidence_for_30b",
             "materialization_report",
@@ -3448,14 +3599,44 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
         })
         if isinstance(payload_index, dict):
             payload_index["internal_job_status"] = internal_job_status
+        primary_payload = {}
+        if isinstance(payload_index, dict):
+            for section in ("concrete_results", "partial_results"):
+                rows = payload_index.get(section)
+                if not isinstance(rows, list) or not rows:
+                    continue
+                row = rows[0] if isinstance(rows[0], dict) else {}
+                primary_location = row.get("primary_location")
+                if primary_location not in (None, "", [], {}):
+                    primary_payload = _agentic_v9_clean({
+                        "schema": "openwebui.primary_payload_for_30b.v1",
+                        "primary_location": primary_location,
+                        "source_index_section": section,
+                        "payload_kind": row.get("payload_type") or row.get("kind"),
+                        "path": row.get("path"),
+                        "target_file": row.get("target_file"),
+                        "payload_is_complete": row.get("payload_is_complete"),
+                        "content_not_duplicated_here": True,
+                    })
+                    break
+        sealed["primary_payload_for_30b"] = primary_payload or {
+            "schema": "openwebui.primary_payload_for_30b.v1",
+            "primary_location": "payload_index_for_30b.concrete_results",
+            "payload_is_complete": False,
+            "content_not_duplicated_here": True,
+            "reason": "No concrete item was selected; inspect payload_index_for_30b.",
+        }
         external_tool_context = _agentic_v9_build_external_tool_context_for_30b(tool_context)
         sealed["openwebui_usage"] = {
             "primary_payload_fields": [
                 "evidence_guide_for_30b",
+                "primary_payload_for_30b.primary_location",
                 "payload_index_for_30b.concrete_results",
-                "priority_evidence_for_30b.items[0].content",
+                "payload_index_for_30b.concrete_results[*].primary_location",
                 "tool_context_for_30b.artifacts[*].artifact",
             ],
+            "primary_payload_field": "primary_payload_for_30b",
+            "primary_payload_location_field": "primary_payload_for_30b.primary_location",
             "payload_index_field": "payload_index_for_30b",
             "evidence_guide_field": "evidence_guide_for_30b",
             "concrete_results_field": "payload_index_for_30b.concrete_results",
@@ -3465,9 +3646,9 @@ def _agentic_v9_build_openwebui_response(decoded, previous=None):
             "rule": (
                 "Prima leggi evidence_guide_for_30b: e' una guida corposa "
                 "all'evidenza, non una frase conclusiva statica. Poi leggi "
+                "primary_payload_for_30b.primary_location e "
                 "payload_index_for_30b.concrete_results. Poi leggi il payload "
-                "concreto indicato, per i repo_read di solito "
-                "priority_evidence_for_30b.items[0].content. Solo dopo usa "
+                "concreto indicato dai primary_location. Solo dopo usa "
                 "tool_context_for_30b.artifacts[*].artifact come mirror completo "
                 "degli artifact, non come dump completo del job. "
                 "I risultati concreti sono nei campi indicati in concrete_results; "

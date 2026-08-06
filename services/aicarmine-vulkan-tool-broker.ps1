@@ -24,7 +24,7 @@ function Set-EnvDefault {
 # Vulkan/task Ollama backend. This model selects/corrects the internal repo tool.
 # The public OpenWebUI tool wrapper is deterministic inside the 3572 broker.
 Set-EnvDefault "AICARMINE_VULKAN_BROKER_OLLAMA_URL" "http://127.0.0.1:11435/api/chat"
-Set-EnvDefault "AICARMINE_VULKAN_BROKER_MODEL" "qwen3-task-8k"
+Set-EnvDefault "AICARMINE_VULKAN_BROKER_MODEL" "qwen2.5:7b"
 Set-EnvDefault "AICARMINE_LAB_REPO" "C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab"
 Set-EnvDefault "AICARMINE_REAL_REPO" "C:\Users\carmi\ProjectsDir\blender-audio-project"
 Set-EnvDefault "AICARMINE_VULKAN_MAX_TOOL_RESULT_CHARS" "9000"

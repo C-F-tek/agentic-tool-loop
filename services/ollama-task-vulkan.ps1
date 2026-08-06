@@ -6,8 +6,30 @@ if ($null -eq $OllamaCommand) {
 }
 $OllamaExe = $OllamaCommand.Source
 
+# Find repo root by walking up from current location
+$SearchDir = Split-Path -Parent (Get-Location)
+$AI_ROOT = $null
+
+while ($SearchDir -and $SearchDir.Length -gt 3) {
+    if (Test-Path (Join-Path $SearchDir "agentic-tool-loop")) {
+        $AI_ROOT = Join-Path $SearchDir "agentic-tool-loop"
+        break
+    }
+    if (Test-Path (Join-Path $SearchDir ".git")) {
+        $AI_ROOT = $SearchDir
+        break
+    }
+    $SearchDir = Split-Path -Parent $SearchDir
+}
+
+if (-not $AI_ROOT) {
+    $AI_ROOT = Split-Path -Parent (Get-Location)
+}
+
+$ModelsTaskDir = Join-Path $AI_ROOT "models-task"
+
 $env:OLLAMA_HOST = "127.0.0.1:11435"
-$env:OLLAMA_MODELS = "C:\Users\carmi\AI\models-task"
+$env:OLLAMA_MODELS = $ModelsTaskDir
 $env:OLLAMA_CONTEXT_LENGTH = "12288"
 $env:OLLAMA_KEEP_ALIVE = "15m"
 $env:OLLAMA_NO_CLOUD = "1"
@@ -19,6 +41,7 @@ $env:CUDA_VISIBLE_DEVICES = "-1"
 $env:OLLAMA_VULKAN = "1"
 $env:GGML_VK_VISIBLE_DEVICES = "1"
 
-New-Item -ItemType Directory -Force -Path "C:\Users\carmi\AI\models-task" | Out-Null
+# Create models-task directory dynamically
+New-Item -ItemType Directory -Force -Path $ModelsTaskDir | Out-Null
 
 & $OllamaExe serve

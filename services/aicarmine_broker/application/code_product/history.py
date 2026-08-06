@@ -22,6 +22,7 @@ from ..prompt.window_signatures import (
     repo_read_window_range_for_target,
     repo_read_window_signature,
 )
+from ..evidence.audit_guidance import role_guidance_text
 from ...tool_contract import normalize_tool_name
 
 
@@ -204,7 +205,8 @@ def failed_code_edit_proposal_validation_row(item: dict[str, Any]) -> dict[str, 
         "next_instruction": (
             "Previous repo_propose_code_edit returned ok=false. Do not repeat that proposal. "
             "Change decision now: provide a parser-valid complete unified_diff, complete "
-            "old_text/new_text, write code_product_build_state with real progress, or typed block."
+            "old_text/new_text, or typed block. "
+            + role_guidance_text("code_product_replan")
         ),
         "action_plan_candidate": "",
         "raw_planner_text_preview": "",
@@ -551,6 +553,13 @@ def apply_duplicate_window_replan_contract(
         tool=tool,
         signature=signature,
     )
+    code_contract = _dict_or_empty(contract.get("code_product_contract"))
+    apply_goal = bool(contract.get("goal_requests_apply"))
+    code_product_goal = bool(
+        code_contract.get("required")
+        or contract.get("goal_requires_code_product")
+        or contract.get("goal_requests_code_product")
+    )
     next_actions: list[dict[str, Any]] = []
     if tool == "planner_scratchpad_read":
         next_window = planner_scratchpad_next_window_action_from_history(args, history)
@@ -559,14 +568,15 @@ def apply_duplicate_window_replan_contract(
         contract["required_next_progress"] = (
             "The requested SQLite window was already consumed. Replan now: read the next "
             "unconsumed SQLite window if candidate_next_actions provides one; otherwise use "
-            "the already-read window evidence to produce a complete payload, write real "
-            "code_product_build_state progress, or return a typed block. Do not repeat the "
-            "same planner_scratchpad_read arguments."
+            "the already-read window evidence to produce a complete payload or return a typed "
+            "block. "
+            + role_guidance_text("code_product_replan")
+            + " Do not repeat the same planner_scratchpad_read arguments."
         )
     elif tool == "repo_read":
         target_paths = decision_paths(args)
         target = repo_rel_token(target_paths[0]) if target_paths else ""
-        if contract.get("goal_requests_apply"):
+        if apply_goal:
             existing = [
                 item for item in existing
                 if normalize_tool_name(str(item.get("tool") or "")) != "planner_scratchpad_write"
@@ -578,6 +588,37 @@ def apply_duplicate_window_replan_contract(
                 "only with old_text exactly equal to verified repo_read content, or return a typed block "
                 "if a valid patch cannot be built."
             )
+        elif not code_product_goal:
+            required = _dict_or_empty(contract.get("required_next_tool_call"))
+            required_args = _dict_or_empty(required.get("arguments"))
+            required_paths = [repo_rel_token(path) for path in decision_paths(required_args)]
+            if normalize_tool_name(str(required.get("tool") or "")) == "repo_read" and (
+                not target or target in required_paths
+            ):
+                contract.pop("required_next_tool_call", None)
+                contract["required_next_tool_call_satisfied"] = {
+                    "satisfied": True,
+                    "tool": "repo_read",
+                    "arguments": required_args,
+                    "paths": required_paths or target_paths,
+                    "reason": "duplicate_repo_read_already_successful",
+                    "window_signature": signature,
+                }
+            contract["required_next_progress"] = (
+                "The requested repo_read already succeeded and repeating it is not progress. "
+                "This is a repository analysis/audit flow: use verified_content_reads and "
+                "successful_repo_read_paths already in the evidence contract to answer with "
+                "action=final if coverage is sufficient; otherwise choose a different concrete "
+                "repo_semantic_search, repo_rg_search, or repo_read gap that is not already "
+                "satisfied. Do not call repo_propose_code_edit or write code_product_build_state."
+            )
+            contract["duplicate_window_replan"] = {
+                "schema": "duplicate_window_replan.v1",
+                "tool": tool,
+                "violation": violation,
+                "target_paths": target_paths,
+                "analysis_flow": True,
+            }
         else:
             line_count = 0
             for row in contract.get("verified_content_reads") or []:
@@ -608,8 +649,9 @@ def apply_duplicate_window_replan_contract(
                 "The requested repo_read window already succeeded and a cache hit would not be progress. "
                 "Replan now: read a different unconsumed source window if candidate_next_actions provides "
                 "one; otherwise use verified_content_reads/required_working_set for the target and call "
-                "repo_propose_code_edit only with a complete unified_diff or old_text/new_text, write "
-                "code_product_build_state with real progress, or return a typed block."
+                "repo_propose_code_edit only with a complete unified_diff or old_text/new_text, or return "
+                "a typed block. "
+                + role_guidance_text("code_product_replan")
             )
     merged: list[dict[str, Any]] = []
     for item in [*next_actions, *existing]:
@@ -620,10 +662,10 @@ def apply_duplicate_window_replan_contract(
             continue
         merged.append(item)
     contract["candidate_next_actions"] = merged[:16]
-    code_contract = _dict_or_empty(contract.get("code_product_contract"))
-    code_contract["duplicate_window_replan_required"] = True
-    code_contract["duplicate_window_violation"] = violation
-    contract["code_product_contract"] = code_contract
+    if tool != "repo_read" or apply_goal or code_product_goal:
+        code_contract["duplicate_window_replan_required"] = True
+        code_contract["duplicate_window_violation"] = violation
+        contract["code_product_contract"] = code_contract
     return contract
 
 

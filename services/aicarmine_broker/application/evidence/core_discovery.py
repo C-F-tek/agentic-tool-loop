@@ -98,10 +98,16 @@ def core_discovery_candidates_from_intrinsic(
     rag_items = rag.get("items") if isinstance(rag.get("items"), list) else []
     ranking_source = str(rag.get("ranking_source") or "")
     stale_or_unusable = 0
+    intrinsic_rag_status = str(rag.get("status") or "") if rag else "not_populated"
     status.update({
-        "rag_status": rag.get("status") if rag else None,
+        "rag_status": intrinsic_rag_status,
+        "rag_status_scope": "intrinsic_context.retrieved_rag_chunks",
+        "intrinsic_context_rag_status": intrinsic_rag_status,
+        "intrinsic_context_rag_status_scope": "intrinsic_context.retrieved_rag_chunks",
         "rag_ranking_source": ranking_source or None,
         "rag_item_count": len(rag_items),
+        "repo_semantic_search_available_as_planner_tool": True,
+        "global_rag_status_not_represented_here": True,
     })
     for rank, item in enumerate(rag_items, start=1):
         if not isinstance(item, dict):

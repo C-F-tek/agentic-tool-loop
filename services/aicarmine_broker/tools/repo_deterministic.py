@@ -376,12 +376,21 @@ def repo_git_apply_check(args: dict[str, Any], root: Path) -> dict[str, Any]:
     diff_text = args.get("unified_diff") or args.get("diff") or args.get("patch")
     if not isinstance(diff_text, str) or not diff_text.strip():
         return {"ok": False, "tool": "repo_git_apply_check", "error": "missing_unified_diff"}
-    argv = [exe, "apply", "--check", "--whitespace=error", "-"]
+    diff_text = diff_text.replace("\r\n", "\n").replace("\r", "\n")
+    argv = [exe, "apply", "--check"]
+    if args.get("_verified_change_set") is True:
+        argv.append("--ignore-space-change")
+    argv.extend(["--whitespace=error", "-"])
     try:
         timeout = _bounded_int_arg(args, "timeout_seconds", default=120, minimum=1, maximum=600)
     except Exception as exc:
         return _deterministic_input_error("repo_git_apply_check", exc)
-    result = _run_argv(argv, timeout=timeout, stdin=diff_text)
+    result = _run_argv(
+        argv,
+        cwd=root,
+        timeout=timeout,
+        stdin_bytes=diff_text.encode("utf-8"),
+    )
     payload = {
         "ok": result["returncode"] == 0,
         "tool": "repo_git_apply_check",
