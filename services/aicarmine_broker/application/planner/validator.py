@@ -1507,7 +1507,32 @@ def validate_planner_decision_against_evidence(
                 violations.append(f"final_without_in_scope_concrete_read:{target_scope}")
         if (effective_repo_goal or semantic_audit_goal) and not final_answer.strip():
             violations.append("final_empty_answer")
-        elif effective_repo_goal or semantic_audit_goal:
+        if effective_repo_goal or semantic_audit_goal:
+            verified_rows = contract.get("verified_content_reads") if isinstance(contract.get("verified_content_reads"), list) else []
+            verified_paths = {
+                _repo_rel_token(row.get("path"))
+                for row in verified_rows
+                if isinstance(row, dict) and row.get("path")
+            }
+            if verified_paths and final_answer.strip():
+                final_lower = final_answer.lower()
+                anchored = False
+                for path in verified_paths:
+                    if path.lower().split("/")[-1] in final_lower or path.lower() in final_lower:
+                        anchored = True
+                        break
+                if not anchored:
+                    violations.append("final_answer_evidence_anchoring_failed")
+                    contract["final_answer_evidence_anchoring"] = {
+                        "ok": False,
+                        "verified_paths_count": len(verified_paths),
+                        "verified_paths_sample": list(verified_paths)[:5],
+                        "reason": (
+                            "Final answer provided but does not reference any verified_read_path. "
+                            "Anchor the answer to at least one verified path or return a typed block."
+                        ),
+                    }
+        if effective_repo_goal or semantic_audit_goal:
             deterministic_quality = _repo_analysis_final_answer_quality(final_answer, contract)
             contract["repo_analysis_final_deterministic_quality"] = deterministic_quality
             deterministic_violations = (
@@ -1560,6 +1585,16 @@ def validate_planner_decision_against_evidence(
                 violations.append(f"final_before_required_read_count:{len(read_ok)}/{expected}")
         if not violations:
             contract = _clear_final_terminal_block_state(contract)
+        # Fix 2: Integrate coverage_scorer diagnostic results into rejection reasoning
+        coverage_diag = contract.get("evidence_coverage") if isinstance(contract.get("evidence_coverage"), dict) else None
+        if coverage_diag:
+            contract["validator_coverage_diagnostic"] = {
+                "coverage_score": coverage_diag.get("coverage_score"),
+                "coverage_score_ready": coverage_diag.get("coverage_score_ready"),
+                "weaknesses": coverage_diag.get("weaknesses") or [],
+                "reason": coverage_diag.get("reason") or "",
+                "missing": coverage_diag.get("missing") or [],
+            }
         result = {
             "ok": not violations,
             "violations": violations,
@@ -1567,6 +1602,7 @@ def validate_planner_decision_against_evidence(
             "quality_gate_internal_inconsistency": internal_inconsistencies,
             "coverage_satisfied": _minimum_read_coverage_satisfied(),
             "missing_owner_paths": _minimum_read_coverage_missing_owner_paths(),
+            "coverage_diagnostic": coverage_diag,
         }
         if action_plan_candidate:
             result["action_plan_candidate"] = action_plan_candidate

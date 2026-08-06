@@ -95,6 +95,8 @@ def _job_roots(root: Path) -> list[Path]:
     candidates = [
         _env_path("AICARMINE_AGENT_JOB_ROOT"),
         root / "qwen-agent-workspace" / "vulkan-broker" / "agent-jobs",
+        # Alternative workspace root (C:\Users\sanit\AI)
+        Path(r"C:\Users\sanit\AI") / "qwen-agent-workspace" / "vulkan-broker" / "agent-jobs",
         *codex_agentic_loop_roots,
         root / "output" / "agent-jobs",
         root / "output" / "agent_jobs",

@@ -1198,6 +1198,38 @@ def run_agentic_planner_job(
         raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
         return [str(path) for path in raw] if isinstance(raw, list) else []
 
+    def enrich_guard_with_repeated_feedback(
+        guard_result: dict[str, Any],
+        planner_decision: dict[str, Any],
+        validation: dict[str, Any],
+        diagnostic: dict[str, Any] | None = None,
+    ) -> None:
+        """Enrich guard result with repeated rejection diagnostic feedback.
+        
+        This function adds explicit diagnostic information to help the planner
+        understand why it keeps getting rejected and what to do next.
+        """
+        if not isinstance(diagnostic, dict):
+            return
+        evidence_contract = guard_result.get("evidence_contract")
+        if not isinstance(evidence_contract, dict):
+            evidence_contract = (
+                validation.get("evidence_contract")
+                if isinstance(validation.get("evidence_contract"), dict)
+                else {}
+            )
+        if isinstance(evidence_contract, dict):
+            evidence_contract["repeated_rejection_diagnostic"] = diagnostic
+            evidence_contract["required_next_progress"] = str(
+                diagnostic.get("next_instruction") or evidence_contract.get("required_next_progress") or ""
+            ).strip()
+            guard_result["evidence_contract"] = evidence_contract
+            operational = evidence_contract.get("operational_notes")
+            operational = operational if isinstance(operational, dict) else {}
+            operational["diagnostic"] = diagnostic
+            operational["next_instruction"] = str(diagnostic.get("next_instruction") or "").strip()
+            evidence_contract["operational_notes"] = operational
+
     def enrich_repeated_tool_guard_feedback(
         guard_result: dict[str, Any],
         planner_decision: dict[str, Any],
@@ -2090,7 +2122,6 @@ def run_agentic_planner_job(
                     ),
                 },
             )
-
         if (
             str(decision.get("action") or "").strip().lower() == "tool_batch"
             and not force_terminal_decision_active()
@@ -2895,6 +2926,65 @@ def run_agentic_planner_job(
                 guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
                 guard_result["retry_limit"] = repeated_rejection_limit
                 enrich_repeated_tool_guard_feedback(guard_result, decision, validation)
+
+                # OPTION B FIX: Inject explicit diagnostic feedback for repeated rejection
+                # This tells the planner exactly what went wrong and what to do next
+                action_str = str(decision.get("action") or "").strip().lower()
+                if action_str in {"final", "done", "complete", "completed"}:
+                    # Check if there are any successful tool reads in history
+                    successful_reads = [
+                        h for h in history
+                        if isinstance(h, dict)
+                        and h.get("tool_result", {}).get("ok") is True
+                        and h.get("tool_result", {}).get("tool") in ("repo_read", "repo_rg_search", "repo_search")
+                    ]
+                    read_paths = [
+                        str(r.get("tool_result", {}).get("path") or r.get("tool_result", {}).get("file_path") or "")
+                        for r in successful_reads if isinstance(r, dict)
+                    ]
+                    if read_paths:
+                        guard_result["repeated_rejection_diagnostic"] = {
+                            "schema": "repeated_rejection_diagnostic.v1",
+                            "diagnosis": (
+                                f"Planner returned action=final {repeated_rejection_count + 1} times without valid evidence. "
+                                f"Successful reads in history: {read_paths}. "
+                                f"The planner cannot produce valid final because it does not know what question to answer about the read content."
+                            ),
+                            "next_instruction": (
+                                "You have already read file(s) " + ", ".join(read_paths[:5]) + " but cannot produce valid final "
+                                "because you don't know what question to answer about them. Read a different file OR return "
+                                "action=block with the diagnostic 'non so rispondere al goal con l'evidenza disponibile'."
+                            ),
+                            "evidence_contract_injected": True,
+                        }
+                    else:
+                        guard_result["repeated_rejection_diagnostic"] = {
+                            "schema": "repeated_rejection_diagnostic.v1",
+                            "diagnosis": (
+                                f"Planner returned action=final {repeated_rejection_count + 1} times without any successful tool reads. "
+                                "No verified content exists to base a final answer on."
+                            ),
+                            "next_instruction": (
+                                "You have NO successful tool reads. Do not emit action=final. "
+                                "Call repo_read on a file relevant to the goal, or return action=block."
+                            ),
+                            "evidence_contract_injected": True,
+                        }
+                elif action_str == "tool":
+                    tool_name = str(decision.get("tool") or "").strip()
+                    guard_result["repeated_rejection_diagnostic"] = {
+                        "schema": "repeated_rejection_diagnostic.v1",
+                        "diagnosis": (
+                            f"Planner repeated identical rejected decision {repeated_rejection_count + 1} times. "
+                            f"Repeated action: tool {tool_name} with same arguments."
+                        ),
+                        "next_instruction": (
+                            f"Do not call '{tool_name}' again with the same arguments. "
+                            "Choose a different tool that adds new evidence, or return action=block."
+                        ),
+                        "evidence_contract_injected": True,
+                    }
+                enrich_guard_with_repeated_feedback(guard_result, decision, validation, guard_result.get("repeated_rejection_diagnostic"))
                 append_agent_event(
                     job_id,
                     "planner_decision_rejected",

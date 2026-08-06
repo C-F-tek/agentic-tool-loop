@@ -8,28 +8,28 @@ Regole operative non negoziabili:
 
 Updated: 2026-06-15
 
-This document is a source map for `C:\Users\carmi\AI\services`. It documents
+This document is a source map for `C:\Users\sanit\agentic-tool-loop\services`. It documents
 the modules that are part of the runtime or developer tooling. It intentionally
 excludes generated/runtime data such as `.venv`, `openwebui-data`, `BCKUP`,
 `__pycache__`, job workspaces, uploads and model caches.
 
 Before changing runtime behavior, also read:
 
-- `C:\Users\carmi\AI\AGENTS.md`
-- `C:\Users\carmi\AI\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
-- `C:\Users\carmi\AI\services\END_TO_END_AGENTIC_FLOW.md`
+- `C:\Users\sanit\agentic-tool-loop\AGENTS.md`
+- `C:\Users\sanit\agentic-tool-loop\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
+- `C:\Users\sanit\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`
 
 Detailed local references:
 
-- `C:\Users\carmi\AI\services\aicarmine_broker\MODULE_REFERENCE.md`
-- `C:\Users\carmi\AI\services\vulkan_bridge\MODULE_REFERENCE.md`
-- `C:\Users\carmi\AI\services\codex_bridge\MODULE_REFERENCE.md`
-- `C:\Users\carmi\AI\services\model_export\MODULE_REFERENCE.md`
-- `C:\Users\carmi\AI\services\npu_phi_service\MODULE_REFERENCE.md`
-- `C:\Users\carmi\AI\services\launch\MODULE_REFERENCE.md`
-- `C:\Users\carmi\AI\services\RUNTIME_SCRIPT_REFERENCE.md`
-- `C:\Users\carmi\AI\services\MODULE_TECHNICAL_DESCRIPTIONS.md`
-- `C:\Users\carmi\AI\services\END_TO_END_AGENTIC_FLOW.md`
+- `C:\Users\sanit\agentic-tool-loop\services\aicarmine_broker\MODULE_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\vulkan_bridge\MODULE_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\codex_bridge\MODULE_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\model_export\MODULE_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\npu_phi_service\MODULE_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\launch\MODULE_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\RUNTIME_SCRIPT_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\services\MODULE_TECHNICAL_DESCRIPTIONS.md`
+- `C:\Users\sanit\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`
 
 ## Runtime Boundaries
 
@@ -74,7 +74,7 @@ OpenWebUI
 ```
 
 Detailed proof and diagnostic steps are in
-`C:\Users\carmi\AI\services\END_TO_END_AGENTIC_FLOW.md`.
+`C:\Users\sanit\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`.
 
 Critical protocol notes:
 
@@ -228,11 +228,11 @@ Several roots are active at the same time. They are not interchangeable.
 
 | Root/env | Runtime role | Consumers |
 | --- | --- | --- |
-| `AICARMINE_LAB_REPO` | Active tool-loop repository/worktree. All `repo_*` paths and code-product targets are relative to this root. | 3572 planner/evidence, validator, repo tools, patch/report-only tools, command tools. |
+| `AICARMINE_LAB_REPO` | Active tool-loop repository/worktree. All `repo_*` paths and code-product targets are relative to this root. Default: `C:\Users\sanit\agentic-tool-loop`. | 3572 planner/evidence, validator, repo tools, patch/report-only tools, command tools. |
 | `AICARMINE_CODEX_MCP_REPO_ROOT` | Preferred Codex MCP repository root. Codex MCP processes map their local `AICARMINE_LAB_REPO` to this before broker-tool imports. | Codex MCP direct/repo helper processes only. |
 | `AICARMINE_REAL_REPO` | Canonical/index repository used by memory/RAG and long-lived project indexes. | intrinsic context, planner memory/RAG surfaces. |
 | `AICARMINE_VULKAN_WORKSPACE` | Broker workspace for job artifacts and dashboard storage. | job store, dashboard, SQLite/job files. |
-| `AICARMINE_AGENT_JOB_ROOT` | Concrete agent jobs directory. | job state/event/final persistence. |
+| `AICARMINE_AGENT_JOB_ROOT` | Concrete agent jobs directory under `state/codex_bridge/agentic_loop_client/port-3579/workspace/agent-jobs/`. | job state/event/final persistence. |
 | `OPEN_TERMINAL_CWD`, `AICARMINE_OPEN_TERMINAL_WORKDIR` | Open Terminal working directory. Expected to mirror `AICARMINE_LAB_REPO`. | launcher/Open Terminal integration. |
 
 Invariant for planner turns:
@@ -244,7 +244,7 @@ Invariant for planner turns:
   `AICARMINE_LAB_REPO`, it must not be exposed as a planner action.
 - Debug the active root from
   `planner-prompts/step-*-planner-payload.json.user_payload.lab_repo`, not from
-  a shell cwd or local Codex workspace assumption.
+  a shell cwd or local Codex workspace assumption. Default lab repo is `C:\Users\sanit\agentic-tool-loop`.
 
 ## Top-Level Python Entrypoints
 
@@ -405,7 +405,7 @@ Do not treat these as source modules for refactor planning:
 - `services/BCKUP`
 - `services/__pycache__`
 - `services/**/__pycache__`
-- job workspaces under `C:\Users\carmi\AI\qwen-agent-workspace`
+- job workspaces under `state/codex_bridge/agentic_loop_client/port-3579/workspace/agent-jobs/`
 
 These paths can contain evidence for a running job, but they are not the source
 implementation to edit. If job artifacts are needed for a protocol bug, use

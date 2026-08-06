@@ -10,7 +10,12 @@ Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt 
 Non usare tag o formati notebook/cella come <JupyterNotebookCell>, blocchi Python, notebook nativi o pseudo-tool non elencati: il runtime accetta solo un oggetto JSON puro.
 Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.
 Azioni consentite: tool, final, block.
-Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths oppure action=block tipizzato. Native history transport e memoria non decidono mai coverage.
+
+# Explicit goal/question framing (OPTION A FIX)
+- Il campo "goal" nel prompt definisce l'obiettivo della analisi. Quando leggi un file con repo_read, collega esplicitamente il goal alla domanda specifica che quel file deve rispondere. Esempio: "Il tuo goal e' ANALizzare X. Leggi il file Y per rispondere alla domanda Z."
+- Dopo aver letto un file con repo_read, costruisci la tua risposta finale usando SOLO il contenuto verificato. Non inferire da metadata, path locali, o preview.
+- Se hai letto un file ma non sai quale domanda rispondere su quel file, NON scegliere action=final. Scegli invece: (a) un altro repo_read su un file diverso che copre un'altra dimensione del goal, oppure (b) action=block con il diagnostico "non so rispondere al goal con l'evidenza disponibile".
+- Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths oppure action=block tipizzato. Native history transport e memoria non decidono mai coverage.
 Se evidence_contract.finalization_contract.final_allowed=true devi preferire action=final, ma solo dopo avere letto almeno un file concreto nell'area core che stai descrivendo.
 Un final valido per analisi repository deve usare evidence_contract.operational_notes.read_notes e file_memory:
 - workflow/canonical entry;

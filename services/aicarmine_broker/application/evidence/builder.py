@@ -664,6 +664,12 @@ class EvidenceBuilder:
         repo_goal_class = str(semantic_classification.get("class") or "")
         goal_low_for_audit = str(goal or "").lower()
         deep_repo_audit_goal = goal_requests_semantic_audit(goal)
+        if deep_repo_audit_goal:
+            semantic_classification["semantic_audit_requested"] = True
+            _audit_guidance = role_guidance_for_goal("preplanner", goal)
+            semantic_classification["audit_trigger_terms"] = _audit_guidance.get("semantic_audit", {}).get("trigger_terms", []) if isinstance(_audit_guidance, dict) else []
+            semantic_classification["judge_rule"] = role_guidance_text("final_quality_judge", goal)
+            semantic_classification["preplanner_rule"] = role_guidance_text("preplanner", goal)
         orientative_repo_final_goal = (
             repo_goal
             and repo_goal_class in {"analysis_only", "action_plan_only"}
@@ -1295,11 +1301,12 @@ class EvidenceBuilder:
                     p = _owner_core_readable_path(item.get("path"))
                     if p:
                         _append_owner_path(owner_candidate_paths, p)
-            for path in [*semantic_target_read_paths, *meaningful_content_reads]:
+            for path in [*semantic_target_read_paths, *meaningful_content_reads, *verified_read_paths]:
                 _append_owner_path(covered_owner_paths, path)
             coverage_reason = (
                 "repository final coverage requires verified owner/core reads; preseed docs/config alone do not count. "
-                "When semantic owner targets are known, they must be covered before final."
+                "When semantic owner targets are known, they must be covered before final. "
+                "All verified successful reads contribute to coverage."
             )
         else:
             coverage_target_kind = "tool_evidence"
