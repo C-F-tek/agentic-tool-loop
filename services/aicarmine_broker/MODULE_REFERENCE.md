@@ -15,10 +15,10 @@ public protocol except through the explicit 3571/3572 API boundary.
 
 Read before edits:
 
-- `C:\Users\sanit\progeetsbat\agentic-tool-loop\AGENTS.md`
-- `C:\Users\sanit\progeetsbat\agentic-tool-loop\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
-- `C:\Users\sanit\progeetsbat\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`
-- `C:\Users\sanit\progeetsbat\agentic-tool-loop\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
+- `C:\Users\sanit\agentic-tool-loop\AGENTS.md`
+- `C:\Users\sanit\agentic-tool-loop\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
+- `C:\Users\sanit\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`
+- `C:\Users\sanit\agentic-tool-loop\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 
 ## Runtime Contract
 
@@ -145,7 +145,7 @@ module; they are not compatibility shims for old flat modules.
 ## Active Repo Root Invariants
 
 `AICARMINE_LAB_REPO` is the active repository root for this package. Default:
-the workspace directory (default: `C:\Users\sanit\progeetsbat\agentic-tool-loop`).
+the workspace directory (default: `C:\Users\sanit\agentic-tool-loop`).
 the current working directory.
 
 Planner/evidence/validator/tool code must preserve these invariants:

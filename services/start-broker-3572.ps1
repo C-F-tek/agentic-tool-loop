@@ -1,7 +1,7 @@
 #!/usr/bin/env powershell
 $ErrorActionPreference = "Stop"
-Set-Location "C:\Users\sanit\progeetsbat\agentic-tool-loop"
-$env:PYTHONPATH = "C:\Users\sanit\progeetsbat\agentic-tool-loop;C:\Users\sanit\progeetsbat\agentic-tool-loop\services"
+Set-Location "C:\Users\sanit\agentic-tool-loop"
+$env:PYTHONPATH = "C:\Users\sanit\agentic-tool-loop;C:\Users\sanit\agentic-tool-loop\services"
 
 # Force all models to qwen2.5:7b as per user requirement
 # This replaces the heavy model with qwen2.5:7b for planner and task execution

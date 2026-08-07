@@ -9,16 +9,27 @@ $ErrorActionPreference = "Stop"
 # 3. Vulkan Bridge su porta 3571
 #
 # COMANDO DA USARE (da directory services):
-# cd C:\Users\sanit\progeetsbat\agentic-tool-loop\services
+# cd C:\Users\sanit\agentic-tool-loop\services
 # powershell -ExecutionPolicy Bypass -File launch-all-services.ps1
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-$repoRoot = Split-Path -Parent (Split-Path -Parent (Get-Location))
-if ((Split-Path -Leaf (Get-Location)) -eq "services") {
+# Detect repo root: if .git exists in current dir or parent, use it
+$repoRoot = $null
+if (Test-Path (Join-Path (Get-Location) ".git")) {
+    $repoRoot = Get-Location
+} elseif ((Split-Path -Leaf (Get-Location)) -eq "services" -and (Test-Path (Join-Path (Split-Path -Parent (Get-Location)) ".git"))) {
     $repoRoot = Split-Path -Parent (Get-Location)
+} else {
+    # Try going up one level
+    $parent = Split-Path -Parent (Get-Location)
+    if (Test-Path (Join-Path $parent ".git")) {
+        $repoRoot = $parent
+    } else {
+        $repoRoot = Get-Location
+    }
 }
 
 $env:PYTHONPATH = "$repoRoot;$env:PYTHONPATH"
@@ -36,8 +47,10 @@ if ([string]::IsNullOrWhiteSpace($TARGET_DEVICE)) {
     $TARGET_DEVICE = "GPU.0"
 }
 
-$LOGS_DIR = Join-Path $repoRoot "logs"
-New-Item -ItemType Directory -Force -Path $LOGS_DIR | Out-Null
+$LOGS_DIR = Join-Path $repoRoot "services\logs"
+if (-not (Test-Path $LOGS_DIR)) {
+    New-Item -ItemType Directory -Force -Path $LOGS_DIR | Out-Null
+}
 
 # ------------------------------------------------------------------
 # Helper functions

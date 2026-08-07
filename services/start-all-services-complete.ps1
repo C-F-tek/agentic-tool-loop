@@ -1,6 +1,6 @@
 #!/usr/bin/env powershell
 # Complete service startup sequence for agentic-tool-loop
-# This script starts all services in the correct order
+# This script starts all services in the correct order, each in its own visible window
 
 $ErrorActionPreference = "Stop"
 Set-Location "C:\Users\sanit\\agentic-tool-loop"
@@ -12,7 +12,7 @@ function Test-Port {
 }
 
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  Starting All Services - Complete Sequence" -ForegroundColor Cyan
+Write-Host "  Starting All Services - Each in its own window" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -28,7 +28,7 @@ try {
 
 Write-Host ""
 
-# Step 2: Start OVMS Reranker on port 3550
+# Step 2: Start OVMS Reranker on port 3550 (in its own visible window)
 Write-Host "[Step 2] Starting OVMS Reranker on port 3550..." -ForegroundColor Yellow
 if (-not (Test-Path "C:\Users\sanit\\agentic-tool-loop\services\launch\models-ovms-rerank\config.json")) {
     Write-Host "[ERROR] OVMS config.json not found" -ForegroundColor Red
@@ -36,7 +36,8 @@ if (-not (Test-Path "C:\Users\sanit\\agentic-tool-loop\services\launch\models-ov
     Start-Process -FilePath "C:\Users\sanit\\agentic-tool-loop\services\launch\ovms-runtime\bin\ovms.exe" `
         -ArgumentList @("--rest_port", "3550", "--rest_bind_address", "127.0.0.1", 
                         "--config_path", "C:\Users\sanit\\agentic-tool-loop\services\launch\models-ovms-rerank\config.json") `
-        -WindowStyle Hidden
+        -WindowStyle Normal `
+        -WorkingDirectory "C:\Users\sanit\\agentic-tool-loop\services\launch"
     Start-Sleep -Seconds 3
     if (Test-Port 3550) {
         Write-Host "[OK] OVMS Reranker started on port 3550" -ForegroundColor Green
@@ -47,13 +48,13 @@ if (-not (Test-Path "C:\Users\sanit\\agentic-tool-loop\services\launch\models-ov
 
 Write-Host ""
 
-# Step 3: Start Vulkan Tool Broker on port 3579
+# Step 3: Start Vulkan Tool Broker on port 3579 (in its own visible window)
 Write-Host "[Step 3] Starting Vulkan Tool Broker on port 3579..." -ForegroundColor Yellow
 if (-not (Test-Port 3579)) {
-    Set-Location "C:\Users\sanit\\agentic-tool-loop\services"
-    $env:PYTHONPATH = "C:\Users\sanit\\agentic-tool-loop"
-    Start-Process -FilePath "python" -ArgumentList @("-m", "uvicorn", "aicarmine_vulkan_tool_broker:app", "--host", "127.0.0.1", "--port", "3579") -WindowStyle Hidden
-    Set-Location "C:\Users\sanit\\agentic-tool-loop"
+    Start-Process -FilePath "python" `
+        -ArgumentList @("-m", "uvicorn", "aicarmine_vulkan_tool_broker:app", "--host", "127.0.0.1", "--port", "3579") `
+        -WindowStyle Normal `
+        -WorkingDirectory "C:\Users\sanit\\agentic-tool-loop\services"
     Start-Sleep -Seconds 3
     if (Test-Port 3579) {
         Write-Host "[OK] Vulkan Tool Broker started on port 3579" -ForegroundColor Green
@@ -66,13 +67,13 @@ if (-not (Test-Port 3579)) {
 
 Write-Host ""
 
-# Step 4: Start Vulkan Bridge on port 3571
+# Step 4: Start Vulkan Bridge on port 3571 (in its own visible window)
 Write-Host "[Step 4] Starting Vulkan Bridge on port 3571..." -ForegroundColor Yellow
 if (-not (Test-Port 3571)) {
-    Set-Location "C:\Users\sanit\\agentic-tool-loop\services"
-    $env:PYTHONPATH = "C:\Users\sanit\\agentic-tool-loop"
-    Start-Process -FilePath "python" -ArgumentList @("-m", "uvicorn", "aicarmine_vulkan_bridge_server:app", "--host", "127.0.0.1", "--port", "3571") -WindowStyle Hidden
-    Set-Location "C:\Users\sanit\\agentic-tool-loop"
+    Start-Process -FilePath "python" `
+        -ArgumentList @("-m", "uvicorn", "aicarmine_vulkan_bridge_server:app", "--host", "127.0.0.1", "--port", "3571") `
+        -WindowStyle Normal `
+        -WorkingDirectory "C:\Users\sanit\\agentic-tool-loop\services"
     Start-Sleep -Seconds 3
     if (Test-Port 3571) {
         Write-Host "[OK] Vulkan Bridge started on port 3571" -ForegroundColor Green
@@ -115,3 +116,5 @@ Write-Host ""
 Write-Host "Note: Agentic-loop Client MCP Server (port 3579) is a stdio-based MCP server." -ForegroundColor Yellow
 Write-Host "It is started by Cline directly, not via uvicorn HTTP." -ForegroundColor Yellow
 Write-Host ""
+Write-Host "All services are now running in separate visible windows." -ForegroundColor Green
+Write-Host "Close each window individually to stop the corresponding service." -ForegroundColor Yellow

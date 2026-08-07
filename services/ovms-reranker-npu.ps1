@@ -72,9 +72,9 @@ function Assert-OvmsRerankerDeviceContract {
 $CurrentDir = Split-Path -Parent (Get-Location)
 
 # Determine the actual repo root:
-# - Always prefer C:\Users\sanit\progeetsbat\agentic-tool-loop as the canonical repo root
+# - Always prefer C:\Users\sanit\agentic-tool-loop as the canonical repo root
 # - Fall back to CurrentDir if .git exists there
-$CanonicalRepoRoot = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
+$CanonicalRepoRoot = "C:\Users\sanit\agentic-tool-loop"
 if (Test-Path (Join-Path $CanonicalRepoRoot ".git")) {
     $ActualRepoRoot = $CanonicalRepoRoot
 } elseif (Test-Path (Join-Path $CurrentDir ".git")) {
@@ -93,8 +93,8 @@ $OVMS_ROOT = Get-AICarmineEnvValue "OVMS_ROOT"
 $OVMS_EXE = Get-AICarmineEnvValue "OVMS_EXE"
 $OVMS_SETUP = Get-AICarmineEnvValue "OVMS_SETUP"
 $MODELS = Get-AICarmineEnvValue "OVMS_RERANK_MODELS"
-# Override env var if it points to wrong/stale location (not under progeetsbat)
-if ($MODELS -and $MODELS -notlike "*progeetsbat*") {
+# Override env var if it points to wrong/stale location (not under agentic-tool-loop)
+if ($MODELS -and $MODELS -notlike "*agentic-tool-loop*") {
     $MODELS = Join-Path $ActualRepoRoot "services\launch\models-ovms-rerank"
 }
 # Read OPENVINO_PROVIDER_DEVICE from User/Machine scope only (skip Process to avoid stale values)
@@ -119,7 +119,7 @@ if ([string]::IsNullOrWhiteSpace($TARGET_DEVICE)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($OVMS_ROOT)) {
-    # Path 1: ovms-runtime/ovms at project root (C:\Users\sanit\progeetsbat\agentic-tool-loop\ovms-runtime\ovms)
+    # Path 1: ovms-runtime/ovms at project root (C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms)
     $CandidateOVMSRoot = Join-Path $ActualRepoRoot "ovms-runtime\ovms"
     if (Test-Path $CandidateOVMSRoot) {
         $OVMS_ROOT = $CandidateOVMSRoot

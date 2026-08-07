@@ -187,13 +187,19 @@ def create_app() -> FastAPI:
         for key in ("max_steps", "approval_mode", "user_consent"):
             if payload.get(key) not in (None, "", [], {}):
                 arguments[key] = payload.get(key)
-        return agent(
-            {
-                "tool_name": "vulkan_helper",
-                "task": task,
-                "arguments": arguments,
+        try:
+            return agent(
+                {
+                    "tool_name": "vulkan_helper",
+                    "task": task,
+                    "arguments": arguments,
+                }
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": f"agent_exception:{type(exc).__name__}:{str(exc)[:500]}"
             }
-        )
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}", include_in_schema=False)
     def job_dashboard(job_id: str) -> HTMLResponse:

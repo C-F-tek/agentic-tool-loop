@@ -23,7 +23,7 @@ if (-not $env:AICARMINE_LAB_REPO) {
         if (Test-Path (Join-Path $scriptDir ".git")) {
             $RepoRoot = $scriptDir
         } else {
-            $RepoRoot = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
+            $RepoRoot = "C:\Users\sanit\agentic-tool-loop"
         }
     }
 } else {
@@ -141,15 +141,15 @@ Write-Host "`n[INSTRUCTIONS] To make these variables permanent in PowerShell:" -
 Write-Host "`nAdd these lines to your PowerShell profile (~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1):" -ForegroundColor White
 Write-Host "" -ForegroundColor Gray
 Write-Host "# ---- AICARMINE / CODEX environment variables ----" -ForegroundColor DarkGray
-Write-Host '$env:AICARMINE_LAB_REPO                  = "C:\Users\sanit\progeetsbat\agentic-tool-loop"' -ForegroundColor DarkGray
+Write-Host '$env:AICARMINE_LAB_REPO                  = "C:\Users\sanit\agentic-tool-loop"' -ForegroundColor DarkGray
 Write-Host '$env:AICARMINE_CODEX_MCP_REPO_ROOT       = $env:AICARMINE_LAB_REPO' -ForegroundColor DarkGray
 Write-Host '$env:CODEX_WORKSPACE_ROOT                = $env:AICARMINE_LAB_REPO' -ForegroundColor DarkGray
-Write-Host '$env:AICARMINE_VULKAN_WORKSPACE          = "C:\Users\sanit\progeetsbat\agentic-tool-loop\state\codex_bridge\agentic_loop_client\port-3579\workspace"' -ForegroundColor DarkGray
+Write-Host '$env:AICARMINE_VULKAN_WORKSPACE          = "C:\Users\sanit\agentic-tool-loop\state\codex_bridge\agentic_loop_client\port-3579\workspace"' -ForegroundColor DarkGray
 Write-Host '$env:AICARMINE_AGENT_JOB_ROOT            = "$env:AICARMINE_VULKAN_WORKSPACE\agent-jobs"' -ForegroundColor DarkGray
 Write-Host '$env:AICARMINE_AGENT_JOB_DB              = "$env:AICARMINE_AGENT_JOB_ROOT\agent_jobs.sqlite3"' -ForegroundColor DarkGray
-Write-Host '$env:AICARMINE_PROJECT_MEMORY_DB         = "C:\Users\sanit\progeetsbat\agentic-tool-loop\state\project_memory\project_memory.sqlite3"' -ForegroundColor DarkGray
-Write-Host '$env:AICARMINE_SQLITE_READONLY_ALLOW_ROOTS = "C:\Users\sanit\progeetsbat\agentic-tool-loop"' -ForegroundColor DarkGray
-Write-Host '$env:AICARMINE_RAG_DB                    = "C:\Users\sanit\progeetsbat\agentic-tool-loop\state\codex_rag\code_rag.sqlite3"' -ForegroundColor DarkGray
+Write-Host '$env:AICARMINE_PROJECT_MEMORY_DB         = "C:\Users\sanit\agentic-tool-loop\state\project_memory\project_memory.sqlite3"' -ForegroundColor DarkGray
+Write-Host '$env:AICARMINE_SQLITE_READONLY_ALLOW_ROOTS = "C:\Users\sanit\agentic-tool-loop"' -ForegroundColor DarkGray
+Write-Host '$env:AICARMINE_RAG_DB                    = "C:\Users\sanit\agentic-tool-loop\state\codex_rag\code_rag.sqlite3"' -ForegroundColor DarkGray
 Write-Host '$env:AICARMINE_MCP_MAX_TEXT_CHARS        = 24000' -ForegroundColor DarkGray
 Write-Host "" -ForegroundColor Gray
 Write-Host "Then restart PowerShell or run: `$profile" -ForegroundColor White
