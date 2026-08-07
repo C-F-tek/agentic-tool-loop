@@ -11,6 +11,7 @@ from ..controller.rag_preseed import query_plan_continue_without_model
 from ...config import AGENTIC_PLANNER_STEP_TIMEOUT
 
 from .state import PlannerLoopState
+from .repeated_pattern_detector import RepeatedPatternDetector
 from ..shared.evidence_contract_summary import (
     evidence_contract_summary_triplet,
     validation_without_full_evidence_contract,
@@ -788,6 +789,11 @@ def run_agentic_planner_job(
         _history_ledger=planner_history_ledger,
         _evidence_builder=lambda rows: planner_evidence_contract(str(state.get("goal") or ""), rows),
     )
+    
+    # Pattern detector for early detection of repeated identical tool sequences
+    pattern_detector = RepeatedPatternDetector()
+    loop_state._pattern_detector = pattern_detector
+    loop_state._rejection_history = []
 
     def support_subturn_tool(tool: str) -> bool:
         return normalize_tool_name(tool) in support_subturn_tools
@@ -3009,6 +3015,43 @@ def run_agentic_planner_job(
                 persist_loop_turn_memory(row)
                 write_agent_job_state(state)
                 continue
+            # Pattern detection: inject suggested alternatives when repeated identical sequences detected
+            if not validation.get("ok"):
+                loop_state._rejection_history.append({
+                    "step": step,
+                    "tool": str(decision.get("tool") or ""),
+                    "action": str(decision.get("action") or ""),
+                    "violations": validation.get("violations", []),
+                })
+                pattern_detector.track_decision(
+                    str(decision.get("tool") or ""),
+                    str(decision.get("action") or ""),
+                    dict(decision.get("arguments") or {}),
+                )
+                pattern_info = detect_repeated_identical_sequence(loop_state._rejection_history)
+                if pattern_info.get("pattern_detected") is True:
+                    suggested_alternatives = pattern_detector.get_alternative_suggestions()
+                    if suggested_alternatives:
+                        guard_result["pattern_detection"] = {
+                            "schema": "repeated_pattern_detection.v1",
+                            "pattern_type": pattern_info.get("pattern_type", "identical_sequence"),
+                            "repeat_count": pattern_info.get("count", 0),
+                            "suggested_alternatives": suggested_alternatives,
+                            "instruction": (
+                                f"Repeated identical sequence detected ({pattern_info.get('count', 0)}x). "
+                                f"Do NOT repeat the same tools. Try one of these alternatives instead: "
+                                + ", ".join(a.get("tool", "") for a in suggested_alternatives[:5])
+                            ),
+                        }
+                        # Inject into evidence contract candidate_next_actions
+                        current_actions = contract_snapshot.get("candidate_next_actions", [])
+                        existing_tools = {str(a.get("tool") or "") for a in current_actions}
+                        for alt in suggested_alternatives:
+                            tool_name = str(alt.get("tool") or "")
+                            if tool_name and tool_name not in existing_tools:
+                                current_actions.append(alt)
+                        contract_snapshot["candidate_next_actions"] = current_actions
+
             if "planner_native_mode_non_json_output" in validation_violations:
                 prior_native_text_guards = controller_guard_count(
                     history,

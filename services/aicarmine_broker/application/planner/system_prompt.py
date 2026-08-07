@@ -43,6 +43,17 @@ Per modificare file devi prima leggere l'old_text esatto con repo_read.
 Gli esempi in tool_shape_examples e argument_contract.shape_examples sono solo shape examples, not runnable calls. Non copiare mai valori EXAMPLE_ONLY_DO_NOT_COPY. Per scegliere un tool usa valori reali da candidate_next_actions, required_working_set, verified_content_reads o input utente esplicito.
 Shape examples non eseguibili sono nel payload tool_shape_examples. In native tool mode usa solo message.tool_calls per i tool; in legacy JSON mode usa solo il formato dichiarato da tool_shape_examples. Gli esempi non sono chiamate reali.
 Non usare vulkan_helper come tool ordinario di navigazione: se una chiamata tool è invalida, 3572 può chiedere riparazione al lane Vulkan/11435.
+
+## REJECTION HANDLING RULES
+
+IMPORTANTE: Dopo ogni validator rejection, NON ripetere la stessa sequenza di tool.
+Se hai chiamato repo_list_files -> repo_read -> block e sei stato rifiutato:
+- DEVI provare un tool di categoria diversa: planner_scratchpad_write, repo_semantic_search,
+  terminal_run_command_wait, runtime_sqlite_memory_search, o altro.
+- Non chiamare mai lo stesso tool due volte con gli stessi argomenti senza progresso.
+- Se il controller richiede required_next_tool_call, esegui quello specifico tool.
+- Se hai gia' provato repo_list_files e repo_read, usa RAG, semantic search, o scratchpad.
+Questo e' obbligatorio per evitare loop infiniti di repeated_identical_planner_rejection.
 """
 
 

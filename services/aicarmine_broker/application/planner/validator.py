@@ -1678,9 +1678,13 @@ def validate_planner_decision_against_evidence(
                     "Either execute the required tool path or return final only when final is explicitly allowed."
                 )
             elif coverage_required and not coverage_satisfied:
+                missing_list = coverage_missing[:12]
                 coverage_progress = (
                     "Block is not authorized by evidence contract because minimum read coverage is not satisfied; "
-                    f"missing_owner_paths={coverage_missing[:12]}."
+                    f"missing_owner_paths={missing_list}. "
+                    "DO NOT repeat the same tool sequence. After this rejection, you MUST try a different action category: "
+                    "if you called repo_list_files then repo_read, try repo_semantic_search, planner_scratchpad_write, "
+                    "terminal_run_command_wait, or another tool instead of repeating repo_list_files/repo_read/block."
                 )
             elif final_rewrite_latch:
                 coverage_progress = (

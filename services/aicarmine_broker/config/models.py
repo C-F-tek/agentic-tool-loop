@@ -111,7 +111,7 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "my-qwen-code-6:latest"
+DEFAULT_PLANNER_MODEL = "mio-qwen-code-6:latest"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -223,8 +223,8 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         planner_top_p=env_float("AICARMINE_AGENTIC_PLANNER_TOP_P", 0.85, env),
         planner_presence_penalty=env_float("AICARMINE_AGENTIC_PLANNER_PRESENCE_PENALTY", 0.0, env),
         planner_incomprehensible_retries=env_int("AICARMINE_AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES", 3, env),
-        native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", True, env),
-        require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", True, env),
+        native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", False, env),
+        require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", False, env),
         native_max_parallel_readonly=env_int("AICARMINE_AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY", 8, env),
         agent_default_max_steps=env_int("AICARMINE_AGENT_DEFAULT_MAX_STEPS", 20, env),
         agent_max_steps=env_int("AICARMINE_AGENT_MAX_STEPS", 60, env),

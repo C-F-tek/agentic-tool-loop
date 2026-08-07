@@ -700,6 +700,8 @@ def _start_broker_process(
             "AICARMINE_RAG_RERANK_URL": rerank_url,
             "AICARMINE_CONTROLLER_RAG_RERANK_URL": rerank_url,
             "AICARMINE_RAG_RERANK_READY_URL": reranker_ready_url,
+            "AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS": "0",
+            "AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS": "0",
         }
     )
     command = [

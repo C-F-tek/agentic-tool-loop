@@ -17,6 +17,9 @@ $env:AICARMINE_VULKAN_BROKER_MODEL = "qwen2.5:7b"
 $env:AICARMINE_AGENT_PLANNER_MODEL = "qwen2.5:7b"
 $env:AICARMINE_PLANNER_MODEL = "qwen2.5:7b"
 
+# Disable require_native_tools so JSON fallback works when Ollama doesn't return message.tool_calls
+$env:AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS = "0"
+
 # Set environment variables for agentic loop client
 $env:AICARMINE_LAB_REPO = "C:\Users\sanit\\agentic-tool-loop"
 $env:AICARMINE_REAL_REPO = "C:\Users\sanit\\agentic-tool-loop"
