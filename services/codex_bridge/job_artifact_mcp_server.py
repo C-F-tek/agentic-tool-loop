@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import gzip
 import json
 import os
 from pathlib import Path
@@ -129,10 +130,10 @@ def _find_job_dir(root: Path, job_id: str) -> Path | None:
 
 
 def _read_text(path: Path, *, max_chars: int) -> tuple[str, bool]:
+    """Return full file content without truncation. max_chars is ignored."""
     with path.open("r", encoding="utf-8", errors="replace") as handle:
-        text = handle.read(max_chars + 1)
-    truncated = len(text) > max_chars
-    return text[:max_chars], truncated
+        text = handle.read()
+    return text, False
 
 
 def _read_text_page(path: Path, *, offset: int, max_chars: int) -> dict[str, Any]:
@@ -324,23 +325,51 @@ def _openwebui_inline_payload_view(final_json: Any, *, default_page_chars: int) 
     }
 
 
-def _read_events(path: Path, *, max_lines: int = 5000) -> list[dict[str, Any]]:
+def _read_events(path: Path, *, max_lines: int = 5000, use_gzip: bool = False) -> list[dict[str, Any]]:
+    """Read events from .ndjson or .ndjson.gz file.
+
+    When use_gzip=True and path ends with .ndjson.gz, the file is decompressed
+    before reading (no truncation by compression). Falls back to plain NDJSON
+    when the gzip variant does not exist.
+    """
     events: list[dict[str, Any]] = []
     if not path.is_file():
+        # Try .ndjson.gz fallback
+        gz_path = Path(str(path) + ".gz")
+        if gz_path.is_file():
+            path = gz_path
+            use_gzip = True
+    if not path.is_file():
         return events
-    with path.open("r", encoding="utf-8", errors="replace") as handle:
-        for index, line in enumerate(handle):
-            if index >= max_lines:
-                break
-            raw = line.strip()
-            if not raw:
-                continue
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                parsed = {"event_type": "raw", "message": raw}
-            if isinstance(parsed, dict):
-                events.append(parsed)
+    open_kwargs: dict[str, str] = {"encoding": "utf-8"}
+    if use_gzip:
+        with gzip.open(path, mode="rt", **open_kwargs) as handle:
+            for index, line in enumerate(handle):
+                if index >= max_lines:
+                    break
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = {"event_type": "raw", "message": raw}
+                if isinstance(parsed, dict):
+                    events.append(parsed)
+    else:
+        with path.open("r", **open_kwargs) as handle:
+            for index, line in enumerate(handle):
+                if index >= max_lines:
+                    break
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = {"event_type": "raw", "message": raw}
+                if isinstance(parsed, dict):
+                    events.append(parsed)
     return events
 
 
@@ -561,6 +590,7 @@ def _events(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     tail = _safe_int(args.get("tail") or args.get("limit"), 100, 1, 2000)
     max_lines = _safe_int(args.get("max_lines"), 10000, 1, 100000)
+    use_gzip = bool(args.get("use_gzip", True))
     raw_types = args.get("types")
     types = {str(item) for item in raw_types} if isinstance(raw_types, list) else set()
     step = args.get("step")
@@ -571,7 +601,16 @@ def _events(args: dict[str, Any], root: Path) -> dict[str, Any]:
         except (TypeError, ValueError):
             return {"ok": False, "error": "invalid_step", "step": step}
 
-    events = _read_events(job_dir / "events.ndjson", max_lines=max_lines)
+    events_path = job_dir / "events.ndjson"
+    gz_events_path = job_dir / "events.ndjson.gz"
+    # Prefer gzip variant when available and requested
+    if use_gzip and gz_events_path.is_file():
+        events = _read_events(gz_events_path, max_lines=max_lines, use_gzip=True)
+    elif events_path.is_file():
+        events = _read_events(events_path, max_lines=max_lines, use_gzip=False)
+    else:
+        events = []
+
     filtered = [
         event
         for event in events
@@ -586,6 +625,8 @@ def _events(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "event_count_total": len(events),
         "event_count_filtered": len(filtered),
         "tail": tail,
+        "use_gzip": use_gzip,
+        "source_file": str(gz_events_path if use_gzip and gz_events_path.is_file() else events_path),
     }
 
 
@@ -717,7 +758,15 @@ def _subturns(args: dict[str, Any], root: Path) -> dict[str, Any]:
     max_lines = _safe_int(args.get("max_lines"), 300000, 1, 500000)
     include_payload = bool(args.get("include_payload", False))
     max_chars = _safe_int(args.get("max_chars"), 8000, 500, 100000)
-    events = _read_events(job_dir / "events.ndjson", max_lines=max_lines)
+    events_path = job_dir / "events.ndjson"
+    gz_events_path = job_dir / "events.ndjson.gz"
+    use_gzip = bool(args.get("use_gzip", True))
+    if use_gzip and gz_events_path.is_file():
+        events = _read_events(gz_events_path, max_lines=max_lines, use_gzip=True)
+    elif events_path.is_file():
+        events = _read_events(events_path, max_lines=max_lines, use_gzip=False)
+    else:
+        events = []
     support_events = [_compact_subturn_event(event, include_payload=include_payload, max_chars=max_chars) for event in events if _support_subturn_event(event)]
 
     tool_result_rows: list[dict[str, Any]] = []
@@ -760,6 +809,7 @@ def _subturns(args: dict[str, Any], root: Path) -> dict[str, Any]:
         },
         "tail": tail,
         "include_payload": include_payload,
+        "use_gzip": use_gzip,
     }
 
 
@@ -839,7 +889,16 @@ def _rejections(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "error": "job_not_found", "job_id": job_id}
 
     tail = _safe_int(args.get("tail") or args.get("limit"), 100, 1, 1000)
-    events = _read_events(job_dir / "events.ndjson", max_lines=_safe_int(args.get("max_lines"), 100000, 1, 300000))
+    use_gzip = bool(args.get("use_gzip", True))
+    max_lines = _safe_int(args.get("max_lines"), 100000, 1, 300000)
+    events_path = job_dir / "events.ndjson"
+    gz_events_path = job_dir / "events.ndjson.gz"
+    if use_gzip and gz_events_path.is_file():
+        events = _read_events(gz_events_path, max_lines=max_lines, use_gzip=True)
+    elif events_path.is_file():
+        events = _read_events(events_path, max_lines=max_lines, use_gzip=False)
+    else:
+        events = []
     selected = _select_rejection_events(events)
     compacted: list[dict[str, Any]] = []
     for event in selected[-tail:]:
@@ -859,6 +918,7 @@ def _rejections(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "rejections": compacted,
         "count": len(compacted),
         "total_rejections": len(selected),
+        "use_gzip": use_gzip,
     }
 
 
@@ -902,7 +962,10 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_job_artifact_events"] = ToolSpec(
         name="aicarmine_job_artifact_events",
-        description="Read filtered/tail events from a job events.ndjson file.",
+        description=(
+            "Read filtered/tail events from a job events.ndjson file. "
+            "Set use_gzip=true to read events.ndjson.gz (decompressed JSONL, no truncation by compression)."
+        ),
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
@@ -911,6 +974,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "max_lines": integer_prop(10000, 1, 100000),
                 "types": string_array_prop(),
                 "step": integer_prop(0, 0, 100000),
+                "use_gzip": boolean_prop(True),
             },
             required=["job_id"],
         ),
@@ -963,6 +1027,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "max_lines": integer_prop(300000, 1, 500000),
                 "include_payload": boolean_prop(False),
                 "max_chars": integer_prop(8000, 500, 100000),
+                "use_gzip": boolean_prop(True),
             },
             required=["job_id"],
         ),
@@ -984,13 +1049,17 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_job_artifact_rejections"] = ToolSpec(
         name="aicarmine_job_artifact_rejections",
-        description="Extract planner/controller rejection events from a job event log.",
+        description=(
+            "Extract planner/controller rejection events from a job event log. "
+            "Set use_gzip=true to read events.ndjson.gz (decompressed JSONL, no truncation by compression)."
+        ),
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
                 "tail": integer_prop(100, 1, 1000),
                 "limit": integer_prop(100, 1, 1000),
                 "max_lines": integer_prop(100000, 1, 300000),
+                "use_gzip": boolean_prop(True),
             },
             required=["job_id"],
         ),

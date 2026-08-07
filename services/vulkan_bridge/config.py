@@ -63,7 +63,7 @@ def load_bridge_config_from_env(env: EnvMapping | None = None) -> BridgeConfig:
             "AICARMINE_PLANNER_MODEL",
             "AICARMINE_OLLAMA_PLANNER_MODEL",
         ),
-        "qwen2.5:7b",
+        "my-qwen-code-6:latest",
         env,
     )
     openwebui_return_model = first_env(

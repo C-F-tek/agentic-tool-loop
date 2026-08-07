@@ -8,7 +8,7 @@ Regole operative non negoziabili:
 
 Updated: 2026-06-15
 
-This document covers top-level service scripts under `C:\Users\sanit\agentic-tool-loop\services`
+This document covers top-level service scripts under `C:\Users\carmi\AI\services`
 that are not package modules. These scripts are entrypoints, compatibility
 wrappers, diagnostics or operational helpers.
 

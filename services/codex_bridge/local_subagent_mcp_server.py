@@ -216,7 +216,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "task": string_prop(),
                 "initial_context": string_prop(),
                 "arguments": object_prop(),
-                "confirm_agentic_loop": string_prop(),
+                # confirm_agentic_loop removed from schema per user request
                 "port": integer_prop(agentic_loop_client.DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(agentic_loop_client.DEFAULT_AGENT_ENDPOINT),
                 "return_mode": string_prop("wait", enum=["wait", "background", "async", "fire_and_forget"]),
@@ -235,7 +235,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "health_timeout_seconds": integer_prop(5, 1, 20),
                 "startup_timeout_seconds": integer_prop(45, 5, 180),
             },
-            required=["task", "confirm_agentic_loop"],
+            required=["task"],
         ),
         handler=_run_readonly,
     )

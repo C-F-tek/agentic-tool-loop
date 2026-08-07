@@ -47,9 +47,8 @@ def _safe_int(value: Any, default: int, low: int, high: int) -> int:
 
 
 def _compact_text(text: str, max_chars: int) -> tuple[str, bool]:
-    if len(text) <= max_chars:
-        return text, False
-    return text[: max(0, max_chars - 80)].rstrip() + f"\n...[truncated chars={len(text)}]", True
+    """Return full text without truncation. max_chars is ignored."""
+    return text, False
 
 
 def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tuple[str | None, dict[str, Any] | None]:

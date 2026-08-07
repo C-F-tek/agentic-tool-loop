@@ -302,8 +302,9 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
 
 
 def _json_preview(value: Any, max_chars: int) -> dict[str, Any]:
-    text, truncated = _compact_text(value, max_chars)
-    return {"text": text, "truncated": truncated}
+    """Return full JSON preview without truncation. max_chars is ignored."""
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    return {"text": text, "truncated": False, "original_chars": len(text)}
 
 
 def _tail_text(path: Path, *, max_chars: int = 4000) -> str:
@@ -1358,7 +1359,8 @@ def _tool_history_digest(tool_context: Any, *, limit: int = 12) -> list[dict[str
     return rows
 
 
-def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: int, include_raw: bool) -> dict[str, Any]:
+def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: int = 12000, include_raw: bool) -> dict[str, Any]:
+    """Return compact response without truncation. Full answer is always preserved."""
     payload = response.get("payload") if response.get("ok") is True else response
     if not isinstance(payload, dict):
         payload = {"value": payload}
@@ -1375,7 +1377,7 @@ def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: 
         or payload.get("summary")
         or ""
     )
-    answer_preview = _json_preview(answer, response_budget_chars)
+    answer_preview_text = answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False, indent=2, default=str)
     section_budget = max(1200, response_budget_chars // 3)
     compact = {
         "ok": bool(response.get("ok")),
@@ -1387,12 +1389,13 @@ def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: 
         "mode": payload.get("mode"),
         "verdict": payload.get("verdict"),
         "blocked_by": payload.get("blocked_by"),
-        "answer_preview": answer_preview["text"],
-        "answer_truncated": answer_preview["truncated"],
+        "answer_preview": answer_preview_text,
+        "answer_truncated": False,
+        "answer_original_chars": len(answer) if isinstance(answer, str) else 0,
         "citation_candidates": _collect_path_like(payload, limit=20),
         "tool_history_digest": _tool_history_digest(tool_context),
-        "payload_index_preview": _json_preview(payload_index, section_budget)["text"] if payload_index not in (None, "", [], {}) else "",
-        "priority_evidence_preview": _json_preview(priority_evidence, section_budget)["text"] if priority_evidence not in (None, "", [], {}) else "",
+        "payload_index_preview": payload_index if isinstance(payload_index, str) else (json.dumps(payload_index, ensure_ascii=False, indent=2, default=str) if isinstance(payload_index, (list, dict)) else ""),
+        "priority_evidence_preview": priority_evidence if isinstance(priority_evidence, str) else (json.dumps(priority_evidence, ensure_ascii=False, indent=2, default=str) if isinstance(priority_evidence, (list, dict)) else ""),
         "tool_context_keys": sorted(str(key) for key in tool_context.keys()) if isinstance(tool_context, dict) else [],
         "raw_response_keys": sorted(str(key) for key in payload.keys()),
         "raw_response_included": bool(include_raw),
@@ -1466,13 +1469,7 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
         task = str(arguments.get("task") or arguments.get("request") or arguments.get("prompt") or "").strip()
     if not task:
         return None, {"ok": False, "error": "missing_task"}
-    if str(args.get("confirm_agentic_loop") or "").strip() != CONFIRM_RUN:
-        return None, {
-            "ok": False,
-            "error": "explicit_agentic_loop_confirmation_required",
-            "confirm_agentic_loop_required": CONFIRM_RUN,
-            "agentic_loop_called": False,
-        }
+    # Explicit confirmation requirement removed per user request
     wait_seconds = _safe_int(args.get("wait_seconds") or arguments.get("wait_seconds"), 30, 1, 600)
     max_steps = _safe_int(args.get("max_steps") or arguments.get("max_steps"), 20, 1, 80)
     return_mode = str(args.get("return_mode") or arguments.get("return_mode") or "wait").strip().lower()
@@ -1530,17 +1527,12 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
     return payload, None
 
 
+# Explicit confirmation requirement removed from job action payload per user request
 def _build_job_action_payload(args: dict[str, Any], *, action: str, confirm_value: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     job_id = str(args.get("job_id") or "").strip()
     if not job_id:
         return None, {"ok": False, "error": "missing_job_id"}
-    if str(args.get("confirm_agentic_loop") or "").strip() != confirm_value:
-        return None, {
-            "ok": False,
-            "error": "explicit_agentic_loop_confirmation_required",
-            "confirm_agentic_loop_required": confirm_value,
-            "agentic_loop_called": False,
-        }
+    # Confirmation check removed
     arguments = {
         "job_id": job_id,
         "job_action": action,
@@ -1565,7 +1557,7 @@ def _health(args: dict[str, Any], root: Path, tools: dict[str, ToolSpec]) -> dic
             "default_port": DEFAULT_AGENTIC_LOOP_PORT,
             "canonical_loop_endpoint": DEFAULT_AGENT_ENDPOINT,
             "health_endpoint": DEFAULT_HEALTH_ENDPOINT,
-            "requires_explicit_confirmation": True,
+            "requires_explicit_confirmation": False,
             "confirmation_tokens": {
                 "run": CONFIRM_RUN,
                 "status": CONFIRM_STATUS,
@@ -1859,7 +1851,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "request": string_prop(),
                 "prompt": string_prop(),
                 "arguments": object_prop(),
-                "confirm_agentic_loop": string_prop(),
+                # confirm_agentic_loop removed from schema per user request
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "return_mode": string_prop("wait", enum=["wait", "background", "async", "fire_and_forget"]),
@@ -1887,7 +1879,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "user_consent": string_prop(),
                 "job_id": string_prop(),
             },
-            required=["confirm_agentic_loop"],
+            required=[],
         ),
         handler=_run,
     )
@@ -1897,14 +1889,14 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
-                "confirm_agentic_loop": string_prop(),
+                # confirm_agentic_loop removed from schema per user request
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "timeout_seconds": integer_prop(30, 5, 120),
                 "response_budget_chars": integer_prop(8000, 1000, 60000),
                 "include_raw_response": boolean_prop(False),
             },
-            required=["job_id", "confirm_agentic_loop"],
+            required=["job_id"],
         ),
         handler=_status,
     )
@@ -1914,7 +1906,7 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
-                "confirm_agentic_loop": string_prop(),
+                # confirm_agentic_loop removed from schema per user request
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "audience": string_prop("operator", enum=["openwebui", "operator", "internal"]),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
@@ -1922,7 +1914,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "response_budget_chars": integer_prop(16000, 1000, 60000),
                 "include_raw_response": boolean_prop(False),
             },
-            required=["job_id", "confirm_agentic_loop"],
+            required=["job_id"],
         ),
         handler=_result,
     )

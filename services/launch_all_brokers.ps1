@@ -12,12 +12,12 @@
 # powershell -ExecutionPolicy Bypass -File services\launch_all_brokers.ps1
 # ------------------------------------------------------------------
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-$repoRoot = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
+$repoRoot = "C:\Users\sanit\agentic-tool-loop"
 $PYTHONPATH = "$repoRoot;$env:PYTHONPATH"
 $env:PYTHONPATH = $PYTHONPATH
 
@@ -36,7 +36,7 @@ $OVMS_RERANK_MODELS = Join-Path $repoRoot "services\launch\models-ovms-rerank"
 $OVMS_RERANK_CONFIG = Join-Path $OVMS_RERANK_MODELS "config.json"
 $OVMS_RUNTIME = Join-Path $repoRoot "services\launch\ovms-runtime"
 $OVMS_EXE = Join-Path $OVMS_RUNTIME "bin\ovms.exe"
-$OVMS_SETUP = Join-Path $OVMS_RUNTIME "setupvars.ps1"
+$OVMS_SETUP = Join-Path $OVMS_RUNTIME "bin\setupvars.ps1"
 $TARGET_DEVICE = $env:OPENVINO_PROVIDER_DEVICE
 if ([string]::IsNullOrWhiteSpace($TARGET_DEVICE)) {
     $TARGET_DEVICE = "GPU.0"
@@ -123,17 +123,19 @@ if (-not (Test-Path $OVMS_EXE)) {
         $rerankerStderr = Join-Path $LOGS_DIR "ovms-reranker-3550-$(Get-Date -Format 'yyyyMMdd_HHmmss').stderr.log"
         
         # Source setupvars for OpenVINO environment
-        . $OVMS_SETUP
-        
-        Set-Location $OVMS_RERANK_MODELS
-        
-        & $OVMS_EXE `
-            --rest_port 3550 `
-            --rest_bind_address 127.0.0.1 `
-            --config_path $OVMS_RERANK_CONFIG `
-            > $rerankerStdout 2> $rerankerStderr
-        
-        Write-Host "[INFO] OVMS Reranker avviato (PID: $(Get-Process -Name python -ErrorAction SilentlyContinue | Select-Object -Last 1 -ExpandProperty Id))" -ForegroundColor Green
+        try {
+            . $OVMS_SETUP
+            Set-Location $OVMS_RERANK_MODELS
+            & $OVMS_EXE `
+                --rest_port 3550 `
+                --rest_bind_address 127.0.0.1 `
+                --config_path $OVMS_RERANK_CONFIG `
+                > $rerankerStdout 2> $rerankerStderr
+            Write-Host "[INFO] OVMS Reranker avviato" -ForegroundColor Green
+        } catch {
+            Write-Host "[WARN] OVMS Reranker non avviato: $_" -ForegroundColor Yellow
+        }
+        Set-Location $repoRoot
     } else {
         Write-Host "[OK] OVMS Reranker gia' attivo su porta 3550" -ForegroundColor Green
     }

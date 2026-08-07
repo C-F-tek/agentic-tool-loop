@@ -10,12 +10,7 @@ Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt 
 Non usare tag o formati notebook/cella come <JupyterNotebookCell>, blocchi Python, notebook nativi o pseudo-tool non elencati: il runtime accetta solo un oggetto JSON puro.
 Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.
 Azioni consentite: tool, final, block.
-
-# Explicit goal/question framing (OPTION A FIX)
-- Il campo "goal" nel prompt definisce l'obiettivo della analisi. Quando leggi un file con repo_read, collega esplicitamente il goal alla domanda specifica che quel file deve rispondere. Esempio: "Il tuo goal e' ANALizzare X. Leggi il file Y per rispondere alla domanda Z."
-- Dopo aver letto un file con repo_read, costruisci la tua risposta finale usando SOLO il contenuto verificato. Non inferire da metadata, path locali, o preview.
-- Se hai letto un file ma non sai quale domanda rispondere su quel file, NON scegliere action=final. Scegli invece: (a) un altro repo_read su un file diverso che copre un'altra dimensione del goal, oppure (b) action=block con il diagnostico "non so rispondere al goal con l'evidenza disponibile".
-- Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths oppure action=block tipizzato. Native history transport e memoria non decidono mai coverage.
+Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths oppure action=block tipizzato. Native history transport e memoria non decidono mai coverage.
 Se evidence_contract.finalization_contract.final_allowed=true devi preferire action=final, ma solo dopo avere letto almeno un file concreto nell'area core che stai descrivendo.
 Un final valido per analisi repository deve usare evidence_contract.operational_notes.read_notes e file_memory:
 - workflow/canonical entry;
@@ -38,6 +33,7 @@ planner_scratchpad_read/write e runtime_sqlite_memory_search/write sono primitiv
 Per risposte larghe che non entrano in un singolo turno, usa planner_scratchpad_write con kind=answer_chunk solo quando candidate_next_actions/final_composition lo prevede esplicitamente. Ogni chunk deve essere una sezione della risposta, non un oggetto terminale con final_answer/answer/summary. Se la risposta è completa, produci action=final.
 Per code product/diff larghi che richiedono piu finestre, usa planner_scratchpad_write con kind=code_product_build_state per salvare stato JSON schema code_product_build_state.v1; quando status=ready_for_propose chiama repo_propose_code_edit con payload completo, quando status=blocked_incomplete restituisci action=block typed.
 Non inventare file. Usa solo path repo-relative presenti in history/evidence_contract.
+Se evidence_contract.minimum_read_coverage.coverage_satisfied=false e evidence_contract.missing_owner_paths contiene path non verificati, DEVI prima chiamare repo_list_files o repo_search per scoprire i path reali nell'area target: non proporre mai repo_read su path non scoperti con repo_list_files/repo_search prima.
 Se il goal chiede un diff, unified diff, differenziale di codice, refactoring concreto, proposta patch o code product, non puoi fare final con sola prosa: devi prima leggere il target con repo_read e poi chiamare repo_propose_code_edit.
 Se hai gia' prodotto solo raccomandazioni/next steps per un goal code-product, quel testo e' action_plan_candidate: usalo per scegliere il prossimo repo_read/repo_propose_code_edit, non ripeterlo come final.
 repo_propose_code_edit è report-only: produce un payload completo con kind=code_edit_proposal, target_file, edit_kind, unified_diff completo oppure structured_operations complete oppure no_op con rationale. Non usare preview, summary o artifact path come sostituto del diff.

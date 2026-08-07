@@ -1,0 +1,7 @@
+﻿{
+    "failed_logon_average":  0,
+    "baseline_time":  "2026-08-06T19:40:15",
+    "new_service_average":  32,
+    "action":  "baseline",
+    "privilege_escalation_average":  0
+}

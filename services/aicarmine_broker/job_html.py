@@ -52,6 +52,15 @@ def _json_pretty(value: Any, *, max_chars: int = HTML_PRETTY_TEXT_LIMIT) -> str:
 def _read_text_if_exists(path: Path) -> str:
     if not path.exists() or not path.is_file():
         return ""
+    # Handle .gz compressed files (gzip)
+    if str(path).endswith(".gz"):
+        import gzip as _gzip
+        try:
+            with _gzip.open(path, "rt", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except Exception:
+            # Fallback: try raw read
+            return path.read_text(encoding="utf-8", errors="replace")
     return path.read_text(encoding="utf-8", errors="replace")
 
 

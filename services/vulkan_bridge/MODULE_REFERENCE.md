@@ -15,16 +15,16 @@ return model-usable evidence inline.
 
 Read before edits:
 
-- `C:\Users\sanit\agentic-tool-loop\AGENTS.md`
-- `C:\Users\sanit\agentic-tool-loop\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
-- `C:\Users\sanit\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`
-- `C:\Users\sanit\agentic-tool-loop\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
+- `C:\Users\carmi\AI\AGENTS.md`
+- `C:\Users\carmi\AI\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
+- `C:\Users\carmi\AI\services\END_TO_END_AGENTIC_FLOW.md`
+- `C:\Users\carmi\AI\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 
 ## Runtime Contract
 
 - Process owner: 3571 public bridge.
 - Uvicorn target: `aicarmine_vulkan_bridge_server:app`.
-- Expected Python: `C:\Users\sanit\agentic-tool-loop\venvs\labtools\Scripts\python.exe`.
+- Expected Python: `C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe`.
 - Public OpenWebUI tool: `vulkan_helper`.
 - Internal backend: 3572 broker/runtime.
 - 3571 must not expose 3572 internal routes as public OpenWebUI tools.

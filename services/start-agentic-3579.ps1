@@ -2,10 +2,10 @@
 $ErrorActionPreference = "Continue"
 
 # Set working directory to services/ so repo_mcp_common is directly importable
-Set-Location "C:\Users\sanit\progeetsbat\agentic-tool-loop\services"
+Set-Location "C:\Users\sanit\\agentic-tool-loop\services"
 
 # Set PYTHONPATH to include services/codex_bridge (for repo_mcp_common), services/, and repo root
-$env:PYTHONPATH = "C:\Users\sanit\progeetsbat\agentic-tool-loop\services\codex_bridge;C:\Users\sanit\progeetsbat\agentic-tool-loop\services;C:\Users\sanit\progeetsbat\agentic-tool-loop"
+$env:PYTHONPATH = "C:\Users\sanit\\agentic-tool-loop\services\codex_bridge;C:\Users\sanit\\agentic-tool-loop\services;C:\Users\sanit\\agentic-tool-loop"
 
 # Enable debug mode for all MCP servers
 $env:AICARMINE_REPO_MCP_DEBUG = "1"
@@ -18,11 +18,11 @@ $env:AICARMINE_AGENT_PLANNER_MODEL = "qwen2.5:7b"
 $env:AICARMINE_PLANNER_MODEL = "qwen2.5:7b"
 
 # Set environment variables for agentic loop client
-$env:AICARMINE_LAB_REPO = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
-$env:AICARMINE_REAL_REPO = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
-$env:AICARMINE_CODEX_MCP_REPO_ROOT = "C:\Users\sanit\progeetsbat\agentic-tool-loop"
+$env:AICARMINE_LAB_REPO = "C:\Users\sanit\\agentic-tool-loop"
+$env:AICARMINE_REAL_REPO = "C:\Users\sanit\\agentic-tool-loop"
+$env:AICARMINE_CODEX_MCP_REPO_ROOT = "C:\Users\sanit\\agentic-tool-loop"
 
-$workspaceDir = "C:\Users\sanit\progeetsbat\agentic-tool-loop\state\codex_bridge\agentic_loop_client\port-3579\workspace"
+$workspaceDir = "C:\Users\sanit\\agentic-tool-loop\state\codex_bridge\agentic_loop_client\port-3579\workspace"
 $jobDir = "$workspaceDir\agent-jobs"
 New-Item -ItemType Directory -Force -Path $workspaceDir | Out-Null
 New-Item -ItemType Directory -Force -Path $jobDir | Out-Null

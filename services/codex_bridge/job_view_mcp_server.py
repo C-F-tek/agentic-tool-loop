@@ -181,10 +181,8 @@ def _view_name(value: Any, default: str = "job_dashboard") -> str:
 
 
 def _truncate_text(value: str, limit: int) -> tuple[str, bool]:
-    if len(value) <= limit:
-        return value, False
-    suffix = f"\n...[truncated html chars={len(value)}]"
-    return value[: max(0, limit - len(suffix))].rstrip() + suffix, True
+    """Return full text without truncation. limit is ignored."""
+    return value, False
 
 
 def _json_pretty(value: Any) -> str:
