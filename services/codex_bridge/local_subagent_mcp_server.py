@@ -10,17 +10,23 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 import agentic_loop_client_mcp_server as agentic_loop_client
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
     health_payload,
+    integer_prop,
+    object_prop,
     object_schema,
+    safe_bool,
     self_test,
     serve,
+    string_prop,
+    string_prop_with_enum,
 )
 
 SERVER_NAME = "aicarmine-local-subagent-mcp"
@@ -29,37 +35,6 @@ SERVER_VERSION = "0.2.0"
 FORBIDDEN_PORTS = {3571, 3572, 8080, 11434, 11435}
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    if enum is not None:
-        schema["enum"] = enum
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def object_prop() -> dict[str, Any]:
-    return {"type": "object", "additionalProperties": True}
-
-
-def _safe_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-    return default
 
 
 def _subagent_contract(initial_context: str) -> dict[str, Any]:
@@ -83,6 +58,8 @@ def _run_readonly(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return {"ok": False, "error": "missing_task"}
 
     loop_args = dict(args)
+    for removed_key in ("reload", "restart", "confirm_restart_broker", "restart_timeout_seconds"):
+        loop_args.pop(removed_key, None)
     arguments = dict(loop_args.get("arguments")) if isinstance(loop_args.get("arguments"), dict) else {}
     context = dict(arguments.get("context")) if isinstance(arguments.get("context"), dict) else {}
     initial_context = str(loop_args.pop("initial_context", "") or "").strip()
@@ -146,7 +123,7 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _health(args: dict[str, Any], root: Path, tools: dict[str, ToolSpec]) -> dict[str, Any]:
     payload = health_payload(SERVER_NAME, list(tools))
-    probe_broker = _safe_bool(args.get("probe_broker"), False)
+    probe_broker = safe_bool(args.get("probe_broker"), False)
     payload.update(
         {
             "tool": "aicarmine_local_subagent_health",
@@ -216,10 +193,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "task": string_prop(),
                 "initial_context": string_prop(),
                 "arguments": object_prop(),
-                # confirm_agentic_loop removed from schema per user request
+                "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(agentic_loop_client.DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(agentic_loop_client.DEFAULT_AGENT_ENDPOINT),
-                "return_mode": string_prop("wait", enum=["wait", "background", "async", "fire_and_forget"]),
+                "return_mode": string_prop_with_enum("wait", enum=["wait", "background", "async", "fire_and_forget"]),
                 "wait_seconds": integer_prop(30, 1, 600),
                 "max_steps": integer_prop(20, 1, 80),
                 "timeout_seconds": integer_prop(120, 15, 900),
@@ -235,7 +212,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "health_timeout_seconds": integer_prop(5, 1, 20),
                 "startup_timeout_seconds": integer_prop(45, 5, 180),
             },
-            required=["task"],
+            required=["task", "confirm_agentic_loop"],
         ),
         handler=_run_readonly,
     )

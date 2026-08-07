@@ -3,21 +3,28 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from html.parser import HTMLParser
 import json
 import os
-from pathlib import Path
 import re
 import sys
+from collections import Counter
+from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    diagnostic_preview as _diagnostic_preview,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_bool,
+    safe_int,
     self_test,
     serve,
+    string_prop,
+    string_prop_with_enum,
 )
 
 SERVER_NAME = "aicarmine-job-view-mcp"
@@ -58,43 +65,6 @@ VIEW_NAMES = {
     "planner_lab_index",
     "planner_lab",
 }
-
-
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    if enum is not None:
-        schema["enum"] = enum
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _safe_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-    return default
 
 
 def _resolve_path(value: str, default: Path, root: Path) -> Path:
@@ -158,7 +128,7 @@ def _patch_broker_modules(root: Path) -> dict[str, Path]:
 
 def _load_renderers(root: Path) -> tuple[Any, Any, dict[str, Path]]:
     paths = _patch_broker_modules(root)
-    from aicarmine_broker import job_html, job_planner_lab  # noqa: PLC0415
+    from aicarmine_broker import job_html, job_planner_lab
 
     _patch_broker_modules(root)
     return job_html, job_planner_lab, paths
@@ -181,12 +151,32 @@ def _view_name(value: Any, default: str = "job_dashboard") -> str:
 
 
 def _truncate_text(value: str, limit: int) -> tuple[str, bool]:
-    """Return full text without truncation. limit is ignored."""
-    return value, False
+    if len(value) <= limit:
+        return value, False
+    suffix = f"\n...[truncated html chars={len(value)}]"
+    return value[: max(0, limit - len(suffix))].rstrip() + suffix, True
+
+
+# _diagnostic_preview imported from repo_mcp_common
+
+
+def _json_pretty_result(value: Any) -> tuple[str, dict[str, Any] | None]:
+    try:
+        return json.dumps(value, ensure_ascii=False, indent=2, default=str), None
+    except (TypeError, ValueError, RecursionError) as exc:
+        diagnostic = {
+            "diagnostic_only": True,
+            "error": "json_serialization_failed",
+            "error_type": type(exc).__name__,
+            "message_preview": _diagnostic_preview(exc, 500),
+            "value_type": type(value).__name__,
+        }
+        return json.dumps(diagnostic, ensure_ascii=False, indent=2, default=str), diagnostic
 
 
 def _json_pretty(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    text, _diagnostic = _json_pretty_result(value)
+    return text
 
 
 def _compact_ws(value: str, limit: int = 180) -> str:
@@ -347,8 +337,8 @@ def _validate_html_text(html_text: str) -> dict[str, Any]:
 
 def _render_html(view: str, args: dict[str, Any], root: Path) -> tuple[str, dict[str, Any]]:
     job_html, job_planner_lab, paths = _load_renderers(root)
-    limit = _safe_int(args.get("limit"), 50, 1, 200)
-    refresh_seconds = _safe_int(args.get("refresh_seconds"), 0, 0, 60)
+    limit = safe_int(args.get("limit"), 50, 1, 200)
+    refresh_seconds = safe_int(args.get("refresh_seconds"), 0, 0, 60)
     meta: dict[str, Any] = {
         "view": view,
         "read_only": True,
@@ -365,8 +355,8 @@ def _render_html(view: str, args: dict[str, Any], root: Path) -> tuple[str, dict
     meta["job_id"] = job_id
     section = str(args.get("section") or "").strip()
     key = str(args.get("key") or "").strip()
-    index = _safe_int(args.get("index"), 0, 0, 100000)
-    step = _safe_int(args.get("step"), 0, 0, 100000)
+    index = safe_int(args.get("index"), 0, 0, 100000)
+    step = safe_int(args.get("step"), 0, 0, 100000)
 
     if view == "job_dashboard":
         return job_html.agent_job_html(job_id), meta
@@ -393,6 +383,30 @@ def _render_html(view: str, args: dict[str, Any], root: Path) -> tuple[str, dict
     if view == "planner_lab":
         return job_planner_lab.agent_job_planner_lab_html(job_id), meta
     raise ValueError(f"unsupported view: {view}")
+
+
+def _render_failure(tool: str, args: dict[str, Any], root: Path, exc: Exception) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "ok": False,
+        "tool": tool,
+        "read_only": True,
+        "mode": "local_renderer_no_http",
+        "error": "job_view_render_failed",
+        "error_type": type(exc).__name__,
+        "message_preview": _diagnostic_preview(exc, 500),
+        "view": str(args.get("view") or ""),
+        "job_id": str(args.get("job_id") or ""),
+    }
+    try:
+        paths = _patch_broker_modules(root)
+        payload["job_root"] = str(paths["job_root"])
+    except Exception as root_exc:
+        payload["job_root_diagnostic"] = {
+            "error": "job_root_resolution_failed",
+            "error_type": type(root_exc).__name__,
+            "message_preview": _diagnostic_preview(root_exc, 500),
+        }
+    return payload
 
 
 def _list_views(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -436,11 +450,14 @@ def _list_views(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _render(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
-    max_chars = _safe_int(args.get("max_chars"), 50000, 1000, 500000)
-    include_html = _safe_bool(args.get("include_html"), True)
-    include_outline = _safe_bool(args.get("include_outline"), True)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_render", args, root, exc)
+    max_chars = safe_int(args.get("max_chars"), 50000, 1000, 500000)
+    include_html = safe_bool(args.get("include_html"), True)
+    include_outline = safe_bool(args.get("include_outline"), True)
     compact_html, truncated = _truncate_text(html_text, max_chars)
     result = {
         "ok": True,
@@ -469,12 +486,18 @@ def _render_section(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    job_html, _job_planner_lab, paths = _load_renderers(root)
-    job_id = _safe_job_id(args.get("job_id"))
-    include_heavy = _safe_bool(args.get("include_heavy"), False)
-    max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 1000000)
-    payload = job_html.agent_job_ia_view_payload(job_id, include_heavy=include_heavy)
-    payload_text = _json_pretty(payload)
+    try:
+        job_html, _job_planner_lab, paths = _load_renderers(root)
+        job_id = _safe_job_id(args.get("job_id"))
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_ia_payload", args, root, exc)
+    include_heavy = safe_bool(args.get("include_heavy"), False)
+    max_chars = safe_int(args.get("max_chars"), 80000, 1000, 1000000)
+    try:
+        payload = job_html.agent_job_ia_view_payload(job_id, include_heavy=include_heavy)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_ia_payload", {**args, "job_id": job_id}, root, exc)
+    payload_text, payload_diagnostic = _json_pretty_result(payload)
     compact_payload_text, truncated = _truncate_text(payload_text, max_chars)
     result: dict[str, Any] = {
         "ok": bool(isinstance(payload, dict) and payload.get("ok") is not False),
@@ -487,7 +510,9 @@ def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "payload_chars": len(payload_text),
         "payload_truncated": truncated,
     }
-    if not truncated:
+    if payload_diagnostic is not None:
+        result["payload_serialization_diagnostics"] = payload_diagnostic
+    if not truncated and payload_diagnostic is None:
         result["payload"] = payload
     else:
         result["payload_json"] = compact_payload_text
@@ -495,8 +520,11 @@ def _ia_payload(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _outline(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_outline", args, root, exc)
     return {
         "ok": True,
         "tool": "aicarmine_job_view_outline",
@@ -507,9 +535,12 @@ def _outline(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _links(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
-    outline = _html_outline(html_text)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+        outline = _html_outline(html_text)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_links", args, root, exc)
     return {
         "ok": True,
         "tool": "aicarmine_job_view_links",
@@ -520,13 +551,17 @@ def _links(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _validate_html(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    view = _view_name(args.get("view"))
-    html_text, meta = _render_html(view, args, root)
+    try:
+        view = _view_name(args.get("view"))
+        html_text, meta = _render_html(view, args, root)
+        validation = _validate_html_text(html_text)
+    except Exception as exc:
+        return _render_failure("aicarmine_job_view_validate_html", args, root, exc)
     return {
         "ok": True,
         "tool": "aicarmine_job_view_validate_html",
         **meta,
-        "validation": _validate_html_text(html_text),
+        "validation": validation,
     }
 
 
@@ -559,7 +594,7 @@ def _tools() -> dict[str, ToolSpec]:
         return _health(args, root, tools)
 
     render_props = {
-        "view": string_prop("job_dashboard", enum=sorted(VIEW_NAMES)),
+        "view": string_prop_with_enum("job_dashboard", enum=sorted(VIEW_NAMES)),
         "job_id": string_prop(),
         "section": string_prop(),
         "key": string_prop(),
@@ -573,7 +608,7 @@ def _tools() -> dict[str, ToolSpec]:
         "max_chars": integer_prop(50000, 1000, 500000),
     }
     section_props = dict(render_props)
-    section_props["view"] = string_prop("ia_view_section", enum=["status_json_section", "final_json_section", "events_section", "ia_view_section"])
+    section_props["view"] = string_prop_with_enum("ia_view_section", enum=["status_json_section", "final_json_section", "events_section", "ia_view_section"])
 
     tools["aicarmine_job_view_health"] = ToolSpec(
         name="aicarmine_job_view_health",
@@ -652,3 +687,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

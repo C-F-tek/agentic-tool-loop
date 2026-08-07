@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # codex_bridge Module Reference
 
-Updated: 2026-06-13
+Updated: 2026-06-15
 
 `codex_bridge` contains optional Codex-facing integration services. These are
 not the OpenWebUI 3571 public bridge and are not planner-native 3572 tools.
@@ -15,6 +15,10 @@ tool call actually needs them. Most tools exposed by this package are host-side
 Codex MCP tools; the explicit exception is
 `agentic_loop_client_mcp_server.py`, which is a Codex MCP client that can start
 or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
+
+For operator-facing tool selection and debug playbooks, read
+`services/codex_bridge/MCP_GUIDE.md`. This reference stays focused on module
+ownership and runtime constraints.
 
 ## Module Map
 
@@ -26,7 +30,8 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 | `repo_state_mcp_server.py` | Dedicated deterministic repo-state MCP server exposing health, status and capability tools. It imports broker repo-status helpers only after `repo_mcp_common.py` has normalized the MCP process root. |
 | `repo_search_det_mcp_server.py` | Dedicated deterministic repo-search MCP server exposing fd/rg/jq/ast-grep/tree-sitter/ctags helpers. It is tool-only and uses the Codex-selected root, not the OpenWebUI lab shadow. |
 | `repo_validate_mcp_server.py` | Dedicated deterministic repo-validation MCP server exposing diffcheck, ruff, pyright, shellcheck and semgrep helpers. It is tool-only and does not call broker HTTP or the agentic loop. Pytest/test execution is not an active default workflow and must not be used unless Carmine explicitly asks. |
-| `repo_code_mcp_server.py` | Incubating repo-code MCP server for candidate code-edit tools. It stays separate from the stable repo MCPs, exposes proposal/diff-check helpers as report-only tools and exposes exact `old_text` to `new_text` source patching only when `allow_source_write=true` is supplied. |
+| `repo_code_change_set.py` | Content-addressed change-set owner for the incubating repo-code MCP. It applies bounded exact structured operations across up to 100 files, generates canonical LF unified diffs server-side, records repository/commit/preimage metadata under ignored `state/repo_code/change_sets/`, and resolves integrity-checked IDs. |
+| `repo_code_mcp_server.py` | Incubating repo-code MCP server for candidate code-edit tools. It prefers multi-file `structured_edit`, retains unified-diff and exact legacy modes, propagates only verified change-set IDs after proposal, and requires `allow_source_write=true` for exact or atomic multi-file apply. |
 | `ops_mcp_server.py` | Incubating Codex ops MCP server for local MCP inventory and service-state inspection. It reads Windows process/port/log state without HTTP probes and redacts command-line secrets before returning process rows. It does not own project test/smoke scripts. |
 | `sqlite_readonly_mcp_server.py` | Dedicated read-only SQLite MCP server for Codex diagnostics. It lists allowlisted repo-local SQLite databases, reads schemas and runs bounded single-statement `SELECT`/`WITH` queries only. It opens databases with SQLite read-only mode, blocks write keywords, rejects user PRAGMA, enforces row/time/cell limits and never calls broker HTTP or the agentic loop. |
 | `job_artifact_mcp_server.py` | Dedicated read-only job artifact MCP server. It reads persisted filesystem artifacts under allowlisted job roots such as `qwen-agent-workspace/vulkan-broker/agent-jobs`, normalizes `job.json`, `events.ndjson`, `final.json`, `tool-results/` and `planner-prompts/` payloads, and does not call 3571, 3572 or `vulkan_helper`. |
@@ -37,6 +42,7 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 | `agentic_loop_client_mcp_server.py` | Explicit Codex MCP client for the canonical broker agentic loop. It can ensure a dedicated multi-instance `aicarmine_broker.app` process on `127.0.0.1:3579` by default, with `AICARMINE_LAB_REPO`, terminal cwd, workspace, job root, job DB and public base URL bound to the Codex-selected root and port. It can also ensure the repo-local OVMS/BGE reranker on `127.0.0.1:3550` using `services/ovms-reranker-npu.ps1`, then pass the reranker URLs into the dedicated broker environment. It requires confirmation tokens before starting a reranker, starting a broker, restarting a broker or calling `/vulkan/agent`, rejects shared ports such as 3571/3572/11434/11435, and returns compact Codex-safe job summaries instead of exposing raw oversized payloads by default. |
 | `rag_index_repo.py` | Standalone index builder for the Codex RAG path. By default it indexes the Git candidate surface (`git ls-files --cached --others --exclude-standard`), so `.gitignore` owns project inclusion/exclusion. It writes a dedicated SQLite/FTS5 code chunk index under `state/codex_rag/`, supports full rebuilds and delta updates, and does not read OpenWebUI/Chroma state or call Ollama/OVMS. |
 | `rag_mcp_server.py` | Dedicated MCP stdio server for Codex RAG. It exposes `aicarmine_rag_context`, `aicarmine_rag_index_status` and `aicarmine_rag_reindex`. Search reads the dedicated SQLite/FTS5 index lazily and optionally reranks candidates through the local OVMS `/v3/rerank` endpoint. Reindex writes only the RAG SQLite index and does not import OpenWebUI, broker dispatchers, or edit/validate tools. |
+| `MCP_GUIDE.md` | Operator-facing MCP guide. It lists the exposed tools per server, selection order, prohibited paths and debug playbooks for RAG/search, job artifacts and the dedicated 3579 broker. Keep it in sync when adding or changing MCP tools. |
 | `jsonrpc.py` | Compatibility exports from `mcp_server.py` for older import paths. No behavior should be added here. |
 | `ollama_responses_bridge.py` | HTTP adapter that presents an OpenAI Responses-like surface over Ollama chat/native APIs. It can save/load response state, inject previous context and stream response events. Preserve native Ollama pass-through routes. |
 | `responses_proxy.py` | Compatibility exports from `ollama_responses_bridge.py`. No behavior should be added here. |
@@ -48,6 +54,10 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 - `mcp_server.py` direct-dispatches the allowlisted Codex MCP tools without
   calling 3571, `/vulkan/agent`, or an HTTP broker tool loop. Imports of broker
   registry/dispatcher helpers must remain lazy and function-scoped.
+- Direct MCP dispatch must stay auditable without opening extra capabilities:
+  blocked responses and logs should include `requested_tool`, `internal_tool`,
+  `effect_classes` and `block_reason`, while command execution remains disabled
+  unless a dedicated confirmed tool owns it.
 - Codex root selection is process-local. `AICARMINE_CODEX_MCP_REPO_ROOT`,
   Codex workspace env and the MCP cwd take precedence over any inherited
   broker `AICARMINE_LAB_REPO`; once resolved, the MCP process rewrites its own
@@ -66,7 +76,10 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
 - `repo_code_mcp_server.py` is an incubator, not a promotion into the stable
   state/search/validation MCPs. New code-edit tools should live there first
   with explicit write flags and concrete runtime evidence before being moved
-  into a semantic MCP server.
+  into a semantic MCP server. Callers should send bounded structured edits;
+  the server generates and persists the canonical unified diff once, then its
+  ID is propagated through validation, apply-check and apply. Inline unified
+  diffs remain a compatibility mode for clients that already own a valid diff.
 - `ops_mcp_server.py` is an incubator for Codex-side operational checks only.
   Its service-state tools must not call `/health`, 3571, 3572,
   `vulkan_helper` or the agentic loop. MCP inventory probes are allowlisted
@@ -93,11 +106,12 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
   allowed to start or call the agentic broker. It must use a dedicated
   non-shared port, default `3579`, and must not call the shared OpenWebUI
   bridge on 3571 or a shared 3572 broker. `ensure_broker` starts only when the
-  configured port is free and `confirm_ensure_broker` is supplied. A broker
-  already listening on 3579 is not reloaded by killing the MCP process:
-  `restart=true` requires `confirm_restart_broker` and targets only the
-  dedicated broker process tree, excluding `agentic_loop_client_mcp_server.py`
-  MCP processes. `run`, `status` and `result` call `/vulkan/agent` only when the matching
+  configured port is free and `confirm_ensure_broker` is supplied. It must not
+  reload or restart a broker already listening on 3579; `reload`, `restart` and
+  `confirm_restart_broker` are rejected because uvicorn reload/restart can
+  terminate in-process job workers before terminal state is written. Loading
+  new code is a manual operator stop/start followed by PID/log/port
+  verification. `run`, `status` and `result` call `/vulkan/agent` only when the matching
   `confirm_agentic_loop` token is supplied. Dedicated instances must set
   `AICARMINE_LAB_REPO`, `AICARMINE_REAL_REPO`, `OPEN_TERMINAL_CWD`,
   `AICARMINE_OPEN_TERMINAL_WORKDIR`, `AICARMINE_VULKAN_WORKSPACE`,
@@ -114,11 +128,17 @@ or call a dedicated `aicarmine_broker.app` instance on a non-shared port.
   so jobs launched through the 3579 client remain inspectable without HTTP.
 - Normal RAG indexing should run as delta. Full mode is for schema changes or
   cleanup after a previously noisy index build.
+- Memory/RAG read paths are best-effort per section. A corrupt or locked memory
+  DB, reranker timeout or invalid reranker response should produce bounded
+  diagnostics and preserve any valid read-only data already available.
 - The RAG MCP reranker path uses an FTS candidate pool default of `80`, a
   reranker input default of `12`, `AICARMINE_RAG_RERANK_DOC_CHARS` default
   `2500` and `AICARMINE_RAG_RERANK_TIMEOUT_SECONDS` default `30.0`, so the
   shared BGE reranker can improve precision without turning every search into
   a large blocking request.
+- RAG reranker timeouts are reported with requested/effective timeout metadata.
+  When reranking is unavailable or returns no usable scores, FTS results remain
+  valid orientation evidence with `rerank_score=None`.
 - If Codex bridge behavior appears stale, verify which wrapper path launched it:
   `aicarmine_codex_mcp_server.py`, `aicarmine_codex_ollama_responses_bridge.py`
   or a package module directly.

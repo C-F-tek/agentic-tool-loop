@@ -6,20 +6,28 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    diagnostic_preview,
     health_payload,
+    integer_prop,
     object_schema,
+    path_is_under,
     run_git,
+    safe_float,
+    safe_int,
     self_test,
     serve,
+    string_array_prop,
+    string_prop,
 )
 
 SERVER_NAME = "aicarmine-project-memory-mcp"
@@ -33,92 +41,19 @@ JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 UPSERT_CONFIRM = "project_memory_upsert_verified"
 STALE_CONFIRM = "project_memory_mark_stale"
 SUPERSEDE_CONFIRM = "project_memory_supersede"
-
-
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def number_prop(default: float, minimum: float, maximum: float) -> dict[str, Any]:
-    return {"type": "number", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def string_array_prop(default: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _safe_float(value: Any, default: float, low: float, high: float) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _now_iso() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
-def _json_text(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-
-
-def _value_hash(value: str) -> str:
-    return hashlib.sha256(str(value or "").encode("utf-8", errors="replace")).hexdigest()
-
-
-def _record_id(*, repo_root: Path, scope: str, branch: str, key: str, value_hash: str) -> str:
-    raw = "\x00".join([str(repo_root.resolve()), scope, branch, key, value_hash])
-    return "pmem-" + hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:32]
+MAX_SOURCE_FILE_BYTES = 100_000_000
 
 
 def _memory_db(root: Path) -> Path:
-    env = os.environ.get("AICARMINE_PROJECT_MEMORY_DB", "").strip()
-    if env:
-        candidate = Path(env).expanduser()
-        if not candidate.is_absolute():
-            candidate = root / candidate
-        return candidate.resolve()
-    return (root / "state" / "project_memory" / "project_memory.sqlite3").resolve()
+    """Return the path to the project-local memory SQLite database."""
+    return root / "state" / "project_memory" / "memory.sqlite"
 
 
-def _path_is_under(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve().relative_to(parent.resolve())
-        return True
-    except ValueError:
-        pass
-    except OSError:
-        return False
-    child_text = str(child.resolve()).lower().rstrip("\\/")
-    parent_text = str(parent.resolve()).lower().rstrip("\\/")
-    return child_text == parent_text or child_text.startswith(parent_text + "\\") or child_text.startswith(parent_text + "/")
+
 
 
 def _db_allowed(db_path: Path, root: Path) -> bool:
-    return _path_is_under(db_path, root)
+    return path_is_under(db_path, root)
 
 
 def _connect(root: Path, *, create: bool) -> sqlite3.Connection | None:
@@ -134,6 +69,34 @@ def _connect(root: Path, *, create: bool) -> sqlite3.Connection | None:
     if create:
         _ensure_schema(conn)
     return conn
+
+
+def _sqlite_failure_payload(
+    *,
+    tool: str,
+    root: Path,
+    stage: str,
+    exc: Exception,
+    source_writes_performed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "tool": tool,
+        "error": "project_memory_sqlite_error",
+        "error_type": type(exc).__name__,
+        "stage": stage,
+        "db": str(_memory_db(root)),
+        "message_preview": _diagnostic_preview(exc, 500),
+        "source_writes_performed": source_writes_performed,
+    }
+
+
+def _rollback_quietly(conn: sqlite3.Connection) -> bool:
+    try:
+        conn.rollback()
+        return True
+    except sqlite3.Error:
+        return False
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -164,7 +127,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_identity ON memory_records(repo_root, branch, scope, key, status)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_identity "
+        "ON memory_records(repo_root, branch, scope, key, status)"
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_source ON memory_records(source_type, source_ref)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_status ON memory_records(status, updated_at)")
     conn.commit()
@@ -198,7 +164,12 @@ def _validate_scope(value: Any) -> tuple[str | None, dict[str, Any] | None]:
 def _validate_source_type(value: Any) -> tuple[str | None, dict[str, Any] | None]:
     source_type = str(value or "").strip().lower()
     if source_type not in SOURCE_TYPES:
-        return None, {"ok": False, "error": "invalid_source_type", "source_type": source_type, "allowed": sorted(SOURCE_TYPES)}
+        return None, {
+            "ok": False,
+            "error": "invalid_source_type",
+            "source_type": source_type,
+            "allowed": sorted(SOURCE_TYPES),
+        }
     return source_type, None
 
 
@@ -263,20 +234,42 @@ def _record_search_text(record: dict[str, Any]) -> str:
     ).lower()
 
 
-def _source_file_path(root: Path, source_ref: str) -> Path | None:
+def _source_file_resolution(root: Path, source_ref: str) -> tuple[Path | None, dict[str, Any] | None]:
     text = str(source_ref or "").strip()
     if not text:
-        return None
+        return None, {"error": "missing_source_ref"}
     candidate = Path(text).expanduser()
     if not candidate.is_absolute():
         candidate = root / candidate
     try:
-        resolved = candidate.resolve()
-    except OSError:
-        return None
-    if not _path_is_under(resolved, root):
-        return None
-    return resolved
+        resolved = candidate.resolve(strict=False)
+    except PermissionError as exc:
+        return None, {
+            "error": "source_file_permission_denied",
+            "source_ref": source_ref,
+            "error_type": type(exc).__name__,
+            "message_preview": _diagnostic_preview(exc, 500),
+        }
+    except (OSError, RuntimeError) as exc:
+        return None, {
+            "error": "source_file_resolve_failed",
+            "source_ref": source_ref,
+            "error_type": type(exc).__name__,
+            "message_preview": _diagnostic_preview(exc, 500),
+        }
+    if not path_is_under(resolved, root):
+        return None, {
+            "error": "source_file_outside_repo",
+            "source_ref": source_ref,
+            "resolved": str(resolved),
+            "repo_root": str(root.resolve(strict=False)),
+        }
+    return resolved, None
+
+
+def _source_file_path(root: Path, source_ref: str) -> Path | None:
+    path, _problem = _source_file_resolution(root, source_ref)
+    return path
 
 
 def _job_roots(root: Path) -> list[Path]:
@@ -293,28 +286,114 @@ def _verify_source(root: Path, source_type: str, source_ref: str) -> dict[str, A
     if not source_ref.strip():
         return {"ok": False, "error": "missing_source_ref"}
     if source_type == "file":
-        path = _source_file_path(root, source_ref)
+        path, problem = _source_file_resolution(root, source_ref)
+        if problem is not None:
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                **problem,
+            }
+        assert path is not None
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                "resolved": str(path),
+                "error": "source_file_not_found_or_not_file",
+                "path_status": "missing",
+            }
+        except PermissionError as exc:
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                "resolved": str(path),
+                "error": "source_file_permission_denied",
+                "error_type": type(exc).__name__,
+                "message_preview": _diagnostic_preview(exc, 500),
+            }
+        except OSError as exc:
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                "resolved": str(path),
+                "error": "source_file_stat_failed",
+                "error_type": type(exc).__name__,
+                "message_preview": _diagnostic_preview(exc, 500),
+            }
+        if not path.is_file():
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                "resolved": str(path),
+                "error": "source_file_not_found_or_not_file",
+                "path_status": "directory" if path.is_dir() else "missing",
+            }
+        if stat.st_size > MAX_SOURCE_FILE_BYTES:
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                "resolved": str(path),
+                "error": "source_file_too_large",
+                "size_bytes": stat.st_size,
+                "max_bytes": MAX_SOURCE_FILE_BYTES,
+            }
         return {
-            "ok": bool(path and path.is_file()),
+            "ok": True,
             "source_type": source_type,
             "source_ref": source_ref,
-            "resolved": str(path) if path else "",
-            "error": "" if path and path.is_file() else "source_file_not_found_or_outside_repo",
+            "resolved": str(path),
+            "size_bytes": stat.st_size,
+            "error": "",
         }
     if source_type == "job":
         job_id = source_ref.strip()
         if not JOB_ID_RE.fullmatch(job_id):
-            return {"ok": False, "source_type": source_type, "source_ref": source_ref, "error": "invalid_job_source_ref"}
+            return {
+                "ok": False,
+                "source_type": source_type,
+                "source_ref": source_ref,
+                "error": "invalid_job_source_ref",
+            }
         for jobs_root in _job_roots(root):
             candidate = jobs_root / job_id
             if candidate.is_dir():
-                return {"ok": True, "source_type": source_type, "source_ref": source_ref, "resolved": str(candidate.resolve())}
-        return {"ok": False, "source_type": source_type, "source_ref": source_ref, "error": "job_source_not_found"}
+                return {
+                    "ok": True,
+                    "source_type": source_type,
+                    "source_ref": source_ref,
+                    "resolved": str(candidate.resolve()),
+                }
+        return {
+            "ok": False,
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "error": "job_source_not_found",
+        }
     if source_type == "commit":
-        code, _stdout, _stderr = run_git(root, "cat-file", "-e", f"{source_ref}^{{commit}}")
-        return {"ok": code == 0, "source_type": source_type, "source_ref": source_ref, "error": "" if code == 0 else "commit_source_not_found"}
+        cat_expr = f"{source_ref}^{{commit}}"
+        code, _stdout, _stderr = run_git(root, "cat-file", "-e", cat_expr)
+        err_msg = "" if code == 0 else "commit_source_not_found"
+        return {
+            "ok": code == 0,
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "error": err_msg,
+        }
     if source_type in {"user", "diagnostic"}:
-        return {"ok": True, "source_type": source_type, "source_ref": source_ref, "externally_verifiable": False}
+        return {
+            "ok": True,
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "externally_verifiable": False,
+        }
     return {"ok": False, "source_type": source_type, "source_ref": source_ref, "error": "unsupported_source_type"}
 
 
@@ -327,7 +406,9 @@ def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
-def _active_identity_row(conn: sqlite3.Connection, *, root: Path, branch: str, scope: str, key: str) -> sqlite3.Row | None:
+def _active_identity_row(
+    conn: sqlite3.Connection, *, root: Path, branch: str, scope: str, key: str
+) -> sqlite3.Row | None:
     return conn.execute(
         """
         SELECT * FROM memory_records
@@ -343,7 +424,11 @@ def _record_by_id(conn: sqlite3.Connection, record_id: str) -> sqlite3.Row | Non
     return conn.execute("SELECT * FROM memory_records WHERE record_id = ?", (record_id,)).fetchone()
 
 
-def _resolve_record(args: dict[str, Any], root: Path, conn: sqlite3.Connection) -> tuple[sqlite3.Row | None, dict[str, Any] | None]:
+def _resolve_record(
+    args: dict[str, Any],
+    root: Path,
+    conn: sqlite3.Connection,
+) -> tuple[sqlite3.Row | None, dict[str, Any] | None]:
     record_id = str(args.get("record_id") or "").strip()
     if record_id:
         row = _record_by_id(conn, record_id)
@@ -387,7 +472,10 @@ def _health(args: dict[str, Any], root: Path, tools: dict[str, ToolSpec]) -> dic
 
 
 def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    conn = _connect(root, create=False)
+    try:
+        conn = _connect(root, create=False)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_search", root=root, stage="connect", exc=exc)
     if conn is None:
         return {
             "ok": True,
@@ -398,7 +486,7 @@ def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "count": 0,
         }
     query = str(args.get("query") or "").strip()
-    limit = _safe_int(args.get("limit") or args.get("max_results"), 20, 1, 200)
+    limit = safe_int(args.get("limit") or args.get("max_results"), default=20, low=1, high=200)
     status = str(args.get("status") or "active").strip().lower()
     scope = str(args.get("scope") or "").strip().lower()
     source_type = str(args.get("source_type") or "").strip().lower()
@@ -437,6 +525,8 @@ def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
     values.append(min(1000, max(limit, limit * 5)) if query_terms else limit)
     try:
         rows = conn.execute(sql, values).fetchall()
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_search", root=root, stage="query", exc=exc)
     finally:
         conn.close()
     records = [_row_to_record(row) for row in rows]
@@ -448,7 +538,9 @@ def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
             if score <= 0:
                 continue
             record["search_score"] = score
-            scored.append((score, str(record.get("last_verified_at") or ""), str(record.get("updated_at") or ""), record))
+            verified = str(record.get("last_verified_at") or "")
+            updated = str(record.get("updated_at") or "")
+            scored.append((score, verified, updated, record))
         records = [record for _score, _verified, _updated, record in sorted(scored, key=lambda item: -item[0])[:limit]]
     return {
         "ok": True,
@@ -462,11 +554,21 @@ def _search(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _get(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    conn = _connect(root, create=False)
+    try:
+        conn = _connect(root, create=False)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_get", root=root, stage="connect", exc=exc)
     if conn is None:
-        return {"ok": False, "tool": "aicarmine_project_memory_get", "error": "memory_db_not_found", "db": str(_memory_db(root))}
+        return {
+            "ok": False,
+            "tool": "aicarmine_project_memory_get",
+            "error": "memory_db_not_found",
+            "db": str(_memory_db(root)),
+        }
     try:
         row, problem = _resolve_record(args, root, conn)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_get", root=root, stage="query", exc=exc)
     finally:
         conn.close()
     if problem is not None:
@@ -477,11 +579,14 @@ def _get(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    if str(args.get("confirm_write") or "").strip() != UPSERT_CONFIRM:
+    confirm = str(args.get("confirm_write") or "").strip()
+    if confirm != UPSERT_CONFIRM:
         return {
             "ok": False,
+            "tool": "aicarmine_project_memory_upsert_verified",
             "error": "missing_confirm_write",
             "expected": UPSERT_CONFIRM,
+            "provided_preview": confirm[:120],
             "source_writes_performed": False,
         }
     key, key_problem = _validate_key(args.get("key"))
@@ -507,7 +612,7 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
     git = _git_context(root)
     branch = str(args.get("branch") or git["branch"] or "").strip()
     commit_sha = str(args.get("commit_sha") or git["commit_sha"] or "").strip()
-    confidence = _safe_float(args.get("confidence"), 1.0, 0.0, 1.0)
+    confidence = safe_float(args.get("confidence"), 1.0, low=0.0, high=1.0)
     tags = _parse_tags(args.get("tags"))
     metadata = _parse_metadata(args.get("metadata"))
     now = _now_iso()
@@ -515,8 +620,18 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
     record_id = _record_id(repo_root=root, scope=scope or "repo", branch=branch, key=key or "", value_hash=value_hash)
     supersede_existing = bool(args.get("supersede_existing", False))
 
-    conn = _connect(root, create=True)
+    try:
+        conn = _connect(root, create=True)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        payload = _sqlite_failure_payload(
+            tool="aicarmine_project_memory_upsert_verified",
+            root=root,
+            stage="connect",
+            exc=exc,
+        )
+        return payload
     assert conn is not None
+    committed = False
     try:
         existing = _active_identity_row(conn, root=root, branch=branch, scope=scope or "repo", key=key or "")
         if existing is not None and existing["value_hash"] != value_hash and not supersede_existing:
@@ -524,7 +639,10 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "ok": False,
                 "tool": "aicarmine_project_memory_upsert_verified",
                 "error": "active_memory_conflict",
-                "message": "Existing active memory has a different value. Use supersede_existing=true or memory_supersede.",
+                "message": (
+                    "Existing active memory has a different value. "
+                    "Use supersede_existing=true or memory_supersede."
+                ),
                 "existing": _row_to_record(existing),
                 "source_writes_performed": False,
             }
@@ -544,12 +662,13 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
                     source_ref,
                     commit_sha,
                     confidence,
-                    _json_text(tags),
-                    _json_text(metadata),
+                    _json_text_sorted(tags),
+                    _json_text_sorted(metadata),
                     existing["record_id"],
                 ),
             )
             conn.commit()
+            committed = True
             row = _record_by_id(conn, existing["record_id"])
             return {
                 "ok": True,
@@ -585,8 +704,8 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 now,
                 status,
                 confidence,
-                _json_text(tags),
-                _json_text(metadata),
+                _json_text_sorted(tags),
+                _json_text_sorted(metadata),
             ),
         )
         if existing is not None and supersede_existing:
@@ -604,6 +723,7 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 ),
             )
         conn.commit()
+        committed = True
         row = _record_by_id(conn, record_id)
         return {
             "ok": True,
@@ -614,6 +734,18 @@ def _upsert_verified(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "source_writes_performed": True,
             "write_scope": "project_local_sqlite_semantic_memory",
         }
+    except (sqlite3.Error, PermissionError, OSError, TypeError, ValueError) as exc:
+        rollback_ok = True if committed else _rollback_quietly(conn)
+        payload = _sqlite_failure_payload(
+            tool="aicarmine_project_memory_upsert_verified",
+            root=root,
+            stage="post_commit_read" if committed else "write",
+            exc=exc,
+            source_writes_performed=committed,
+        )
+        payload["rollback_attempted"] = not committed
+        payload["rollback_ok"] = rollback_ok
+        return payload
     finally:
         conn.close()
 
@@ -636,9 +768,18 @@ def _mark_stale(args: dict[str, Any], root: Path) -> dict[str, Any]:
     source_check = _verify_source(root, source_type or "", source_ref)
     if not source_check.get("ok"):
         return {"ok": False, "error": "source_verification_failed", "source_check": source_check}
-    conn = _connect(root, create=False)
+    try:
+        conn = _connect(root, create=False)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_mark_stale", root=root, stage="connect", exc=exc)
     if conn is None:
-        return {"ok": False, "tool": "aicarmine_project_memory_mark_stale", "error": "memory_db_not_found", "source_writes_performed": False}
+        return {
+            "ok": False,
+            "tool": "aicarmine_project_memory_mark_stale",
+            "error": "memory_db_not_found",
+            "source_writes_performed": False,
+        }
+    committed = False
     try:
         row, problem = _resolve_record(args, root, conn)
         if problem is not None:
@@ -648,16 +789,22 @@ def _mark_stale(args: dict[str, Any], root: Path) -> dict[str, Any]:
         assert row is not None
         now = _now_iso()
         metadata = _parse_metadata(row["metadata_json"])
-        metadata.setdefault("stale_evidence", []).append({"source_type": source_type, "source_ref": source_ref, "ts": now})
+        stale_entry = {
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "ts": now,
+        }
+        metadata.setdefault("stale_evidence", []).append(stale_entry)
         conn.execute(
             """
             UPDATE memory_records
             SET status = 'stale', obsolete_reason = ?, updated_at = ?, metadata_json = ?
             WHERE record_id = ?
             """,
-            (reason, now, _json_text(metadata), row["record_id"]),
+            (reason, now, _json_text_sorted(metadata), row["record_id"]),
         )
         conn.commit()
+        committed = True
         updated = _record_by_id(conn, row["record_id"])
         return {
             "ok": True,
@@ -665,6 +812,18 @@ def _mark_stale(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "record": _row_to_record(updated) if updated is not None else {},
             "source_writes_performed": True,
         }
+    except (sqlite3.Error, PermissionError, OSError, TypeError, ValueError) as exc:
+        rollback_ok = True if committed else _rollback_quietly(conn)
+        payload = _sqlite_failure_payload(
+            tool="aicarmine_project_memory_mark_stale",
+            root=root,
+            stage="post_commit_read" if committed else "write",
+            exc=exc,
+            source_writes_performed=committed,
+        )
+        payload["rollback_attempted"] = not committed
+        payload["rollback_ok"] = rollback_ok
+        return payload
     finally:
         conn.close()
 
@@ -683,11 +842,21 @@ def _supersede(args: dict[str, Any], root: Path) -> dict[str, Any]:
     new_value = str(args.get("new_value") or args.get("value") or "").strip()
     if not new_value:
         return {"ok": False, "error": "missing_new_value"}
-    conn = _connect(root, create=False)
+    try:
+        conn = _connect(root, create=False)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_supersede", root=root, stage="connect", exc=exc)
     if conn is None:
-        return {"ok": False, "tool": "aicarmine_project_memory_supersede", "error": "memory_db_not_found", "source_writes_performed": False}
+        return {
+            "ok": False,
+            "tool": "aicarmine_project_memory_supersede",
+            "error": "memory_db_not_found",
+            "source_writes_performed": False,
+        }
     try:
         old_row, problem = _resolve_record(args, root, conn)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_supersede", root=root, stage="query", exc=exc)
     finally:
         conn.close()
     if problem is not None:
@@ -702,8 +871,8 @@ def _supersede(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "source_type": args.get("source_type"),
         "source_ref": args.get("source_ref"),
         "confidence": args.get("confidence", old_row["confidence"]),
-        "tags": args.get("tags") or json.loads(str(old_row["tags_json"] or "[]")),
-        "metadata": args.get("metadata") or json.loads(str(old_row["metadata_json"] or "{}")),
+        "tags": args.get("tags") or _parse_tags(old_row["tags_json"]),
+        "metadata": args.get("metadata") or _parse_metadata(old_row["metadata_json"]),
         "supersede_existing": True,
         "obsolete_reason": reason,
         "branch": args.get("branch") or old_row["branch"],
@@ -717,7 +886,16 @@ def _supersede(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _audit_sources(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    conn = _connect(root, create=False)
+    try:
+        conn = _connect(root, create=False)
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        payload = _sqlite_failure_payload(
+            tool="aicarmine_project_memory_audit_sources",
+            root=root,
+            stage="connect",
+            exc=exc,
+        )
+        return payload
     if conn is None:
         return {
             "ok": True,
@@ -728,23 +906,27 @@ def _audit_sources(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "records_checked": 0,
         }
     status = str(args.get("status") or "active").strip().lower()
-    limit = _safe_int(args.get("limit") or args.get("max_results"), 200, 1, 1000)
+    limit = safe_int(args.get("limit") or args.get("max_results"), default=200, low=1, high=1000)
     clauses = ["repo_root = ?"]
     values: list[Any] = [str(root.resolve())]
     if status and status != "any":
         clauses.append("status = ?")
         values.append(status)
-    rows = conn.execute(
-        f"""
-        SELECT record_id, source_type, source_ref, status, key
-        FROM memory_records
-        WHERE {' AND '.join(clauses)}
-        ORDER BY updated_at DESC, id DESC
-        LIMIT ?
-        """,
-        (*values, limit),
-    ).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT record_id, source_type, source_ref, status, key
+            FROM memory_records
+            WHERE {' AND '.join(clauses)}
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (*values, limit),
+        ).fetchall()
+    except (sqlite3.Error, PermissionError, OSError, ValueError) as exc:
+        return _sqlite_failure_payload(tool="aicarmine_project_memory_audit_sources", root=root, stage="query", exc=exc)
+    finally:
+        conn.close()
     source_rows: list[dict[str, Any]] = []
     for row in rows:
         source_check = _verify_source(root, str(row["source_type"]), str(row["source_ref"]))
@@ -827,7 +1009,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "branch": string_prop(),
                 "commit_sha": string_prop(),
                 "status": string_prop("active"),
-                "confidence": number_prop(1.0, 0.0, 1.0),
+                "confidence": {"type": "number", "default": 1.0, "minimum": 0.0, "maximum": 1.0},
                 "tags": string_array_prop(),
                 "metadata": {"type": "object"},
                 "confirm_write": string_prop(),
@@ -873,7 +1055,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "value": string_prop(),
                 "source_type": string_prop(),
                 "source_ref": string_prop(),
-                "confidence": number_prop(1.0, 0.0, 1.0),
+                "confidence": {"type": "number", "default": 1.0, "minimum": 0.0, "maximum": 1.0},
                 "tags": string_array_prop(),
                 "metadata": {"type": "object"},
                 "obsolete_reason": string_prop(),

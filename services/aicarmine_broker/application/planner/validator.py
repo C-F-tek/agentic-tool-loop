@@ -13,10 +13,20 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
 )
 from aicarmine_broker.application.planner.final_quality_route import _apply_final_quality_route as _apply_final_quality_route_internal
 from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token, repo_rel_token
-from services.aicarmine_broker.application.code_product import history
-from services.aicarmine_broker.application.evidence import contract
-from services.aicarmine_broker.application.evidence.builder import planner_evidence_contract
-from services.aicarmine_broker.planner import _normalize_tool_name, _path_exists_repo_relative, _repo_readable_evidence_file
+from ..code_product import history
+# Lazy import via _get_planner_helpers() to avoid circular dependency with planner.py
+from ..evidence import contract
+from ..evidence.builder import planner_evidence_contract
+
+
+def _get_planner_helpers():
+    """Lazy import to avoid circular dependency with planner.py."""
+    from aicarmine_broker.planner import (
+        _normalize_tool_name,
+        _path_exists_repo_relative,
+        _repo_readable_evidence_file,
+    )
+    return _normalize_tool_name, _path_exists_repo_relative, _repo_readable_evidence_file
 
 
 def _list_or_empty(value: Any) -> list[Any]:
@@ -423,14 +433,16 @@ def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
             return False
         return any(str(key) in parsed for key in ("final_answer", "answer", "summary"))
 
-def _successful_answer_chunk_signatures() -> set[str]:
+def _successful_answer_chunk_signatures(deps: dict[str, Any] | None = None) -> set[str]:
         signatures: set[str] = set()
+        normalize_tool = _normalize_tool_name if deps is None else (deps.get("_normalize_tool_name") if deps else (_normalize_tool_name,))[0] if deps else _normalize_tool_name
+        normalize_tool = deps.get("_normalize_tool_name") if deps else _normalize_tool_name
         for row in history if isinstance(history, list) else []:
             if not isinstance(row, dict):
                 continue
             decision_row = row.get("decision") if isinstance(row.get("decision"), dict) else {}
             result_row = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
-            if _normalize_tool_name(str(decision_row.get("tool") or result_row.get("tool") or "")) != "planner_scratchpad_write":
+            if normalize_tool(str(decision_row.get("tool") or result_row.get("tool") or "")) != "planner_scratchpad_write":
                 continue
             raw_args = decision_row.get("arguments") if isinstance(decision_row.get("arguments"), dict) else {}
             written = result_row.get("written") if isinstance(result_row.get("written"), dict) else {}
@@ -442,13 +454,13 @@ def _successful_answer_chunk_signatures() -> set[str]:
                 signatures.add(f"{kind}:{tag}")
         return signatures
 
-def _evaluate_evidence_aware_final_reset(contract: dict[str, Any]) -> dict[str, Any]:
+def _evaluate_evidence_aware_final_reset(contract: dict[str, Any], deps: dict[str, Any] | None = None) -> dict[str, Any]:
         """Evaluate whether a final answer has sufficient evidence to warrant resetting the terminal block latch.
         
         Returns dict with keys: ok, reset_latch, reason, evidence_path_count
         """
         # Count successful repo_read paths with verified content
-        successful_paths = _successful_read_paths_for_final_route()
+        successful_paths = _successful_read_paths_for_final_route(deps)
         evidence_path_count = len(successful_paths)
         
         # Check coverage satisfaction
@@ -546,18 +558,19 @@ def _stale_required_next_repo_read_paths() -> set[str]:
                     paths.add(token)
         return paths
 
-def _successful_read_paths_for_final_route() -> set[str]:
+def _successful_read_paths_for_final_route(deps: dict[str, Any] | None = None) -> set[str]:
         """Read successful repo_read paths from the evidence contract in the prompt payload."""
         successful = set()
+        agentic_fn = deps.get("_agentic_v2_successful_read_paths") if deps else None
         # Fallback to contract.successful_repo_read_paths
         for path in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
-            token = _repo_rel_token(path)
+            token = repo_rel_token(path)
             if token:
                 successful.add(token)
-        if not successful:
+        if not successful and agentic_fn:
             try:
-                for path in _agentic_v2_successful_read_paths(history):
-                    token = _repo_rel_token(path)
+                for path in agentic_fn(history):
+                    token = repo_rel_token(path)
                     if token:
                         successful.add(token)
             except Exception:
@@ -576,10 +589,10 @@ def _path_allowed_by_missing_evidence(path: str, required_missing: list[str]) ->
                 return True
         return False
 
-def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[str]]:
+def _verified_required_next_missing_paths(values: Any, deps: dict[str, Any] | None = None) -> tuple[list[str], list[str]]:
         valid: list[str] = []
         invalid: list[str] = []
-        successful = _successful_read_paths_for_final_route()
+        successful = _successful_read_paths_for_final_route(deps)
         stale = _stale_required_next_repo_read_paths()
         conceptual_tokens = {
             "coverage required",
@@ -587,6 +600,8 @@ def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[
             "missing core candidate paths",
             "missing unverified file mentions",
         }
+        path_exists = (deps.get("_path_exists_repo_relative") if deps else _path_exists_repo_relative)
+        repo_readable = (deps.get("_repo_readable_evidence_file") if deps else _repo_readable_evidence_file)
         for path in _coalesce_required_next_missing_paths(values):
             if (
                 path in conceptual_tokens
@@ -600,7 +615,7 @@ def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[
                 if path not in invalid:
                     invalid.append(path)
                 continue
-            if _path_exists_repo_relative(path) and _repo_readable_evidence_file(path):
+            if path_exists(path) and repo_readable(path):
                 if path not in valid:
                     valid.append(path)
             elif path not in invalid:
@@ -702,6 +717,8 @@ def _apply_duplicate_repo_read_path_recovery_contract(
         contract: dict[str, Any],
         repeated_reads: list[str],
         history: list[dict[str, Any]],
+        deps: dict[str, Any] | None = None,
+        _dp_fn: Any = None,
     ) -> dict[str, Any]:
         contract = contract if isinstance(contract, dict) else {}
         history = history if isinstance(history, list) else []
@@ -761,7 +778,8 @@ def _apply_duplicate_repo_read_path_recovery_contract(
                 else {}
             )
             if required_tool == "repo_read":
-                required_paths = decision_paths(required_args)
+                dp_fn = _dp_fn or (deps.get("_decision_paths") if deps else None) or (lambda x: [])
+                required_paths = dp_fn(required_args)
                 if any(path in normalized for path in required_paths):
                     last_step = None
                     if history and isinstance(history[-1], dict):
@@ -1132,7 +1150,7 @@ def validate_planner_decision_against_evidence(
         contract["finalization_contract"] = final_contract
 
         # Evidence-aware terminal block reset: evaluate BEFORE terminal block check
-        _evidence_reset = _evaluate_evidence_aware_final_reset(contract)
+        _evidence_reset = _evaluate_evidence_aware_final_reset(contract, deps)
         if _evidence_reset.get("reset_latch") is True:
             contract = _clear_final_terminal_block_state(contract)
             final_rewrite_latch = "inactive"
@@ -1400,7 +1418,7 @@ def validate_planner_decision_against_evidence(
             return {"ok": True, "violations": [], "evidence_contract": contract}
         if not planner_may_choose_block:
             # Evidence-aware reset: check if sufficient evidence exists to clear terminal block
-            evidence_reset = _evaluate_evidence_aware_final_reset(contract)
+            evidence_reset = _evaluate_evidence_aware_final_reset(contract, deps)
             if evidence_reset.get("reset_latch"):
                 contract = _clear_final_terminal_block_state(contract)
                 planner_may_choose_block = True
@@ -1778,6 +1796,8 @@ def validate_planner_decision_against_evidence(
                 contract,
                 repeated_reads=repeated_reads,
                 history=history,
+                deps=deps,
+                _dp_fn=_agentic_v2_decision_paths,
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
 

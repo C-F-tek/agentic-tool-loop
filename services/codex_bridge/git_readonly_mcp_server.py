@@ -4,18 +4,24 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    compact_text_tuple,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_int,
     self_test,
     serve,
+    string_prop,
+    path_is_under,
 )
 
 SERVER_NAME = "aicarmine-git-readonly-mcp"
@@ -23,32 +29,8 @@ SERVER_VERSION = "0.1.0"
 REV_RE = re.compile(r"^[A-Za-z0-9_./:@{}^~+-]+$")
 
 
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _compact_text(text: str, max_chars: int) -> tuple[str, bool]:
-    """Return full text without truncation. max_chars is ignored."""
-    return text, False
+# Alias for local callers that expect `_compact_text` name
+_compact_text = compact_text_tuple
 
 
 def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tuple[str | None, dict[str, Any] | None]:
@@ -60,17 +42,6 @@ def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tu
     return text, None
 
 
-def _path_is_under(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve().relative_to(parent.resolve())
-        return True
-    except ValueError:
-        pass
-    except OSError:
-        return False
-    child_text = str(child.resolve()).lower().rstrip("\\/")
-    parent_text = str(parent.resolve()).lower().rstrip("\\/")
-    return child_text == parent_text or child_text.startswith(parent_text + "\\") or child_text.startswith(parent_text + "/")
 
 
 def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None]:
@@ -82,9 +53,23 @@ def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None
         candidate = root / candidate
     try:
         resolved = candidate.resolve()
-    except OSError as exc:
-        return None, {"ok": False, "error": "path_resolve_failed", "path": text, "message": str(exc)}
-    if not _path_is_under(resolved, root):
+    except PermissionError as exc:
+        return None, {
+            "ok": False,
+            "error": "path_permission_denied",
+            "path": text,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+    except (OSError, RuntimeError) as exc:
+        return None, {
+            "ok": False,
+            "error": "path_resolve_failed",
+            "path": text,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+    if not path_is_under(resolved, root):
         return None, {"ok": False, "error": "path_not_under_repo", "path": text, "resolved": str(resolved), "repo_root": str(root)}
     try:
         return str(resolved.relative_to(root.resolve())), None
@@ -93,14 +78,66 @@ def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None
 
 
 def _run_git(root: Path, args: list[str], *, timeout_seconds: int, max_chars: int) -> dict[str, Any]:
-    proc = subprocess.run(
-        ["git", "-C", str(root), *args],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    command = ["git", "-C", str(root), *args]
+    try:
+        proc = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout, stdout_truncated = _compact_text(exc.stdout or "", max_chars) if isinstance(exc.stdout, str) else ("", False)
+        stderr, stderr_truncated = _compact_text(exc.stderr or "", max_chars) if isinstance(exc.stderr, str) else ("", False)
+        return {
+            "returncode": -1,
+            "stdout": stdout,
+            "stderr": stderr,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_command_timeout",
+            "error_type": type(exc).__name__,
+        }
+    except FileNotFoundError as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc)[:max_chars],
+            "stdout_truncated": False,
+            "stderr_truncated": len(str(exc)) > max_chars,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_executable_not_found",
+            "error_type": type(exc).__name__,
+        }
+    except PermissionError as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc)[:max_chars],
+            "stdout_truncated": False,
+            "stderr_truncated": len(str(exc)) > max_chars,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_permission_denied",
+            "error_type": type(exc).__name__,
+        }
+    except OSError as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc)[:max_chars],
+            "stdout_truncated": False,
+            "stderr_truncated": len(str(exc)) > max_chars,
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "error": "git_os_error",
+            "error_type": type(exc).__name__,
+        }
     stdout, stdout_truncated = _compact_text(proc.stdout, max_chars)
     stderr, stderr_truncated = _compact_text(proc.stderr, max_chars)
     return {
@@ -109,7 +146,17 @@ def _run_git(root: Path, args: list[str], *, timeout_seconds: int, max_chars: in
         "stderr": stderr,
         "stdout_truncated": stdout_truncated,
         "stderr_truncated": stderr_truncated,
-        "command": ["git", "-C", str(root), *args],
+        "command": command,
+        "timeout_seconds": timeout_seconds,
+        **(
+            {
+                "error": f"git_command_failed_rc{proc.returncode}",
+                "error_type": "CalledProcessError",
+                "stderr_preview": (proc.stderr or "")[:500],
+            }
+            if proc.returncode != 0
+            else {}
+        ),
     }
 
 
@@ -119,8 +166,8 @@ def _current_branch(root: Path) -> str:
 
 
 def _log(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    max_count = _safe_int(args.get("max_count") or args.get("limit"), 20, 1, 200)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    max_count = safe_int(args.get("max_count") or args.get("limit"), 20, 1, 200)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     rev, problem = _validate_rev(args.get("rev"), default="HEAD", name="rev")
     if problem is not None:
         return problem
@@ -167,8 +214,8 @@ def _show(args: dict[str, Any], root: Path) -> dict[str, Any]:
     if problem is not None:
         return problem
     include_patch = bool(args.get("include_patch", False))
-    max_chars = _safe_int(args.get("max_chars"), 60000, 1000, 500000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    max_chars = safe_int(args.get("max_chars"), 60000, 1000, 500000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     cmd = ["show", "--no-ext-diff", "--stat", "--format=fuller", rev or "HEAD"]
     if not include_patch:
         cmd.append("--no-patch")
@@ -177,8 +224,8 @@ def _show(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 500000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    max_chars = safe_int(args.get("max_chars"), 80000, 1000, 500000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     pathspec, path_problem = _pathspec(args.get("path"), root)
     if path_problem is not None:
         return path_problem
@@ -210,10 +257,10 @@ def _blame(args: dict[str, Any], root: Path) -> dict[str, Any]:
     rev, problem = _validate_rev(args.get("rev"), default="HEAD", name="rev")
     if problem is not None:
         return problem
-    start = _safe_int(args.get("start_line"), 1, 1, 1_000_000)
-    end = _safe_int(args.get("end_line"), start, start, 1_000_000)
-    max_chars = _safe_int(args.get("max_chars"), 80000, 1000, 500000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    start = safe_int(args.get("start_line"), 1, 1, 1_000_000)
+    end = safe_int(args.get("end_line"), start, start, 1_000_000)
+    max_chars = safe_int(args.get("max_chars"), 80000, 1000, 500000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     cmd = ["blame", "--line-porcelain", "-L", f"{start},{end}", rev or "HEAD", "--", pathspec]
     result = _run_git(root, cmd, timeout_seconds=timeout_seconds, max_chars=max_chars)
     return {"ok": result["returncode"] == 0, "tool": "aicarmine_git_readonly_blame", "git": result, "read_only": True}
@@ -230,7 +277,7 @@ def _branch_compare(args: dict[str, Any], root: Path) -> dict[str, Any]:
     remote_ref, remote_problem = _validate_rev(f"{remote}/{branch}", default=f"{remote}/{branch}", name="remote_ref")
     if remote_problem is not None:
         return remote_problem
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 10, 1, 60)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 10, 1, 60)
     left_right = _run_git(
         root,
         ["rev-list", "--left-right", "--count", f"{branch_rev}...{remote_ref}"],

@@ -19,7 +19,9 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -36,6 +38,18 @@ from rag_index_repo import (
     SOURCE_FILESYSTEM,
     SOURCE_GIT_DEFAULT,
     build_index,
+)
+from repo_mcp_common import (
+    err as _err_response,
+)
+from repo_mcp_common import (
+    ok as _ok_response,
+)
+from repo_mcp_common import (
+    safe_bool,
+    safe_float,
+    safe_int,
+    tool_content,
 )
 
 SERVER_NAME = "aicarmine-codex-rag-mcp"
@@ -56,60 +70,6 @@ def _log(message: str) -> None:
         print(f"[{SERVER_NAME}] {message}", file=sys.stderr, flush=True)
 
 
-def _json_dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
-
-
-def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": _json_dumps(value)}], "isError": is_error}
-
-
-def _ok(msg_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
-
-
-def _err(msg_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
-    error = {"code": code, "message": message}
-    if data is not None:
-        error["data"] = data
-    return {"jsonrpc": "2.0", "id": msg_id, "error": error}
-
-
-def _safe_int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    if low is not None:
-        number = max(low, number)
-    if high is not None:
-        number = min(high, number)
-    return number
-
-
-def _safe_float(value: Any, default: float, low: float | None = None, high: float | None = None) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        number = default
-    if low is not None:
-        number = max(low, number)
-    if high is not None:
-        number = min(high, number)
-    return number
-
-
-def _safe_bool(value: Any, default: bool = True) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "on"}:
-        return True
-    if text in {"0", "false", "no", "off"}:
-        return False
-    return default
 
 
 def _env_path(name: str, default: str = "") -> Path | None:
@@ -304,6 +264,55 @@ def _db_inspect(db: Path) -> dict[str, Any]:
         conn.close()
 
 
+def _git_head(repo: Path) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def _safe_rag_metadata(repo: Path, db: Path, db_status: dict[str, Any]) -> dict[str, Any]:
+    meta = db_status.get("meta") if isinstance(db_status.get("meta"), dict) else {}
+    current_commit = _git_head(repo)
+    indexed_commit = str(
+        meta.get("indexed_commit")
+        or meta.get("git_commit")
+        or meta.get("commit")
+        or ""
+    ).strip()
+    indexed_repo_root = str(meta.get("repo_root") or "").strip()
+    stale_reasons: list[str] = []
+    if indexed_commit and current_commit and indexed_commit != current_commit:
+        stale_reasons.append("commit_mismatch")
+    if indexed_repo_root:
+        try:
+            if Path(indexed_repo_root).resolve(strict=False) != repo.resolve(strict=False):
+                stale_reasons.append("repo_root_mismatch")
+        except Exception:
+            stale_reasons.append("repo_root_unresolved")
+    return {
+        "repo_root": str(repo),
+        "db_path": str(db),
+        "indexed_repo_root": indexed_repo_root,
+        "current_commit": current_commit,
+        "indexed_commit": indexed_commit,
+        "indexed_at": str(meta.get("indexed_at") or ""),
+        "stale_determinable": bool(indexed_commit or indexed_repo_root),
+        "stale": bool(stale_reasons),
+        "stale_reasons": stale_reasons,
+    }
+
+
 def _fts_query(text: str) -> str:
     tokens = re.findall(r"[A-Za-z0-9_./:-]{2,}", text)
     tokens = [token[:96].replace('"', '""') for token in tokens][:40]
@@ -396,6 +405,8 @@ def _rerank(
     timeout_seconds: float,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     warnings: list[str] = []
+    started = time.monotonic()
+    effective_timeout = safe_float(timeout_seconds, DEFAULT_RERANK_TIMEOUT_SECONDS, low=1.0, high=60.0)
     url = os.environ.get("AICARMINE_RAG_RERANK_URL", DEFAULT_RERANK_URL).strip() or DEFAULT_RERANK_URL
     model = os.environ.get("AICARMINE_RAG_RERANK_MODEL", DEFAULT_RERANK_MODEL).strip() or DEFAULT_RERANK_MODEL
     meta: dict[str, Any] = {
@@ -405,7 +416,8 @@ def _rerank(
         "model": model,
         "candidate_limit": candidate_limit,
         "doc_chars": doc_chars,
-        "timeout_seconds": timeout_seconds,
+        "timeout_requested": timeout_seconds,
+        "timeout_seconds": effective_timeout,
     }
 
     if not enabled:
@@ -423,16 +435,57 @@ def _rerank(
     payload = {"model": model, "query": query, "documents": docs}
 
     try:
-        response = _http_json("POST", url, payload=payload, timeout=max(1, int(timeout_seconds)))
+        response = _http_json("POST", url, payload=payload, timeout=max(1, int(effective_timeout)))
         parsed = _parse_rerank_results(response)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         warnings.append(f"reranker_unavailable:{type(exc).__name__}:{exc}")
-        meta.update({"status": "unavailable", "error": type(exc).__name__, "detail": str(exc)})
+        meta.update(
+            {
+                "status": "unavailable",
+                "error": type(exc).__name__,
+                "detail": str(exc),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            }
+        )
         ranked = []
         for candidate in candidates:
             merged = dict(candidate)
             merged["rerank_score"] = None
             ranked.append(merged)
+        return ranked, warnings, meta
+
+    if not isinstance(response, (dict, list)):
+        warnings.append(f"reranker_invalid_response:{type(response).__name__}")
+        ranked = []
+        for candidate in candidates:
+            merged = dict(candidate)
+            merged["rerank_score"] = None
+            ranked.append(merged)
+        meta.update(
+            {
+                "status": "invalid_response",
+                "error": "reranker_response_not_json_shape",
+                "response_type": type(response).__name__,
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            }
+        )
+        return ranked, warnings, meta
+
+    if not parsed:
+        warnings.append("reranker_no_scores")
+        ranked = []
+        for candidate in candidates:
+            merged = dict(candidate)
+            merged["rerank_score"] = None
+            ranked.append(merged)
+        meta.update(
+            {
+                "status": "no_scores",
+                "returned_scores": 0,
+                "ranked_count": len(ranked),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            }
+        )
         return ranked, warnings, meta
 
     ranked: list[dict[str, Any]] = []
@@ -459,16 +512,23 @@ def _rerank(
         merged["rerank_score"] = None
         ranked.append(merged)
 
-    meta.update({"status": "ready", "returned_scores": len(parsed), "ranked_count": len(ranked)})
+    meta.update(
+        {
+            "status": "ready",
+            "returned_scores": len(parsed),
+            "ranked_count": len(ranked),
+            "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+        }
+    )
     return ranked, warnings, meta
 
 
 def _env_int(name: str, default: int, *, low: int, high: int) -> int:
-    return _safe_int(os.environ.get(name), default, low=low, high=high)
+    return safe_int(os.environ.get(name), default, low=low, high=high)
 
 
 def _env_float(name: str, default: float, *, low: float, high: float) -> float:
-    return _safe_float(os.environ.get(name), default, low=low, high=high)
+    return safe_float(os.environ.get(name), default, low=low, high=high)
 
 
 def _search(args: dict[str, Any]) -> dict[str, Any]:
@@ -477,29 +537,29 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "missing query"}
 
     db = Path(args.get("db") or _db_path()).expanduser()
-    candidate_limit = _safe_int(args.get("candidate_limit"), 80, low=1, high=300)
-    top_k = _safe_int(args.get("top_k"), 12, low=1, high=50)
-    max_chunk_chars = _safe_int(args.get("max_chunk_chars"), 4000, low=400, high=20000)
-    rerank_enabled = _safe_bool(args.get("rerank"), default=True)
-    rerank_candidate_limit = _safe_int(
+    candidate_limit = safe_int(args.get("candidate_limit"), 80, low=1, high=300)
+    top_k = safe_int(args.get("top_k"), 12, low=1, high=50)
+    max_chunk_chars = safe_int(args.get("max_chunk_chars"), 4000, low=400, high=20000)
+    rerank_enabled = safe_bool(args.get("rerank"), default=True)
+    rerank_candidate_limit = safe_int(
         args.get("rerank_candidate_limit"),
         _env_int("AICARMINE_RAG_RERANK_CANDIDATE_LIMIT", DEFAULT_RERANK_CANDIDATE_LIMIT, low=1, high=100),
         low=1,
         high=min(100, candidate_limit),
     )
-    rerank_doc_chars = _safe_int(
+    rerank_doc_chars = safe_int(
         args.get("rerank_doc_chars"),
         _env_int("AICARMINE_RAG_RERANK_DOC_CHARS", DEFAULT_RERANK_DOC_CHARS, low=200, high=20000),
         low=200,
         high=20000,
     )
-    rerank_timeout_seconds = _safe_float(
+    rerank_timeout_seconds = safe_float(
         args.get("rerank_timeout_seconds"),
         _env_float("AICARMINE_RAG_RERANK_TIMEOUT_SECONDS", DEFAULT_RERANK_TIMEOUT_SECONDS, low=1.0, high=120.0),
         low=1.0,
         high=120.0,
     )
-    max_total_chars = _safe_int(
+    max_total_chars = safe_int(
         args.get("max_total_chars") or os.environ.get("AICARMINE_RAG_MAX_TOTAL_CHARS"),
         50_000,
         low=1000,
@@ -575,11 +635,16 @@ def _index_status(args: dict[str, Any]) -> dict[str, Any]:
     db = Path(args.get("db") or _db_path()).expanduser()
     repo = _repo_root(args).resolve()
     status = _db_inspect(db)
+    rag_metadata = _safe_rag_metadata(repo, db, status)
     return {
         "ok": bool(status.get("ok")),
         "tool": "aicarmine_rag_index_status",
         "db": str(db),
         "repo_root": str(repo),
+        "rag_metadata": rag_metadata,
+        "current_commit": rag_metadata.get("current_commit", ""),
+        "indexed_commit": rag_metadata.get("indexed_commit", ""),
+        "stale": rag_metadata.get("stale", False),
         "db_status": status,
         "git_surface": _git_candidate_count(repo),
         "defaults": {
@@ -600,9 +665,9 @@ def _reindex(args: dict[str, Any]) -> dict[str, Any]:
     source = str(args.get("source") or os.environ.get("AICARMINE_RAG_INDEX_SOURCE") or SOURCE_GIT_DEFAULT).strip().lower()
     mode = str(args.get("mode") or os.environ.get("AICARMINE_RAG_INDEX_MODE") or MODE_DELTA).strip().lower()
     suffixes = _parse_csv(args.get("suffixes"), DEFAULT_SUFFIXES)
-    max_file_bytes = _safe_int(args.get("max_file_bytes"), MAX_FILE_BYTES_DEFAULT, low=1, high=100_000_000)
-    chunk_lines = _safe_int(args.get("chunk_lines"), CHUNK_LINES_DEFAULT, low=20, high=2000)
-    chunk_chars = _safe_int(args.get("chunk_chars"), CHUNK_CHARS_DEFAULT, low=1000, high=200_000)
+    max_file_bytes = safe_int(args.get("max_file_bytes"), MAX_FILE_BYTES_DEFAULT, low=1, high=100_000_000)
+    chunk_lines = safe_int(args.get("chunk_lines"), CHUNK_LINES_DEFAULT, low=20, high=2000)
+    chunk_chars = safe_int(args.get("chunk_chars"), CHUNK_CHARS_DEFAULT, low=1000, high=200_000)
 
     if source not in {SOURCE_GIT_DEFAULT, SOURCE_FILESYSTEM}:
         return {"ok": False, "error": f"unsupported source: {source}"}
@@ -634,27 +699,76 @@ def _handle_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 
     if operation == "health":
         inspect_result = _db_inspect(db)
-        return _tool_content({"ok": bool(inspect_result.get("ok")), "db": str(db), "db_status": inspect_result, "reranker": _reranker_ready()})
+        repo = _repo_root(arguments).resolve()
+        rag_metadata = _safe_rag_metadata(repo, db, inspect_result)
+        return tool_content(
+            {
+                "ok": bool(inspect_result.get("ok")),
+                "db": str(db),
+                "repo_root": str(repo),
+                "rag_metadata": rag_metadata,
+                "current_commit": rag_metadata.get("current_commit", ""),
+                "indexed_commit": rag_metadata.get("indexed_commit", ""),
+                "stale": rag_metadata.get("stale", False),
+                "db_status": inspect_result,
+                "reranker": _reranker_ready(),
+            }
+        )
 
     if operation == "inspect":
-        return _tool_content(_db_inspect(db))
+        return tool_content(_db_inspect(db))
 
     if operation == "search":
-        return _tool_content(_search(arguments))
+        return tool_content(_search(arguments))
 
-    return _tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
+    return tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
+
+
+def _handle_health_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    db = _db_path()
+    repo = _repo_root(arguments)
+    inspect_result = _db_inspect(db)
+    rag_metadata = _safe_rag_metadata(repo, db, inspect_result)
+    return tool_content(
+        {
+            "ok": bool(inspect_result.get("ok")),
+            "tool": "aicarmine_rag_health",
+            "server": SERVER_NAME,
+            "version": SERVER_VERSION,
+            "db": str(db),
+            "repo_root": str(repo),
+            "rag_metadata": rag_metadata,
+            "current_commit": rag_metadata.get("current_commit", ""),
+            "indexed_commit": rag_metadata.get("indexed_commit", ""),
+            "stale": rag_metadata.get("stale", False),
+            "reranker_ready": _reranker_ready(),
+            "tools_available": ["aicarmine_rag_context", "aicarmine_rag_index_status", "aicarmine_rag_reindex"],
+        }
+    )
 
 
 def _handle_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
-    return _tool_content(_index_status(arguments))
+    return tool_content(_index_status(arguments))
 
 
 def _handle_reindex_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     result = _reindex(arguments)
-    return _tool_content(result, is_error=not bool(result.get("ok")))
+    return tool_content(result, is_error=not bool(result.get("ok")))
 
 
 TOOL_SCHEMAS = [
+    {
+        "name": "aicarmine_rag_health",
+        "description": "Report RAG MCP health, DB status, index freshness, and reranker readiness.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "db": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    },
     {
         "name": "aicarmine_rag_context",
         "description": "Search the Codex RAG SQLite/FTS5 index and optionally rerank candidates with the local BGE reranker.",
@@ -725,7 +839,7 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 
     try:
         if method == "initialize":
-            return _ok(
+            return _ok_response(
                 msg_id,
                 {
                     "protocolVersion": params.get("protocolVersion") or "2024-11-05",
@@ -736,28 +850,29 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
             )
 
         if method == "ping":
-            return _ok(msg_id, {})
+            return _ok_response(msg_id, {})
 
         if method == "tools/list":
-            return _ok(msg_id, {"tools": TOOL_SCHEMAS})
+            return _ok_response(msg_id, {"tools": TOOL_SCHEMAS})
 
         if method == "tools/call":
             name = str(params.get("name") or "")
             arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
             handlers = {
+                "aicarmine_rag_health": _handle_health_tool,
                 "aicarmine_rag_context": _handle_context_tool,
                 "aicarmine_rag_index_status": _handle_status_tool,
                 "aicarmine_rag_reindex": _handle_reindex_tool,
             }
             handler = handlers.get(name)
             if handler is None:
-                return _ok(msg_id, _tool_content({"ok": False, "error": f"unknown tool: {name}"}, is_error=True))
-            return _ok(msg_id, handler(arguments))
+                return _ok_response(msg_id, tool_content({"ok": False, "error": f"unknown tool: {name}"}, is_error=True))
+            return _ok_response(msg_id, handler(arguments))
 
-        return _err(msg_id, -32601, f"method not found: {method}")
+        return _err_response(msg_id, -32601, f"method not found: {method}")
     except Exception as exc:
         _log(traceback.format_exc())
-        return _ok(msg_id, _tool_content({"ok": False, "error": type(exc).__name__, "detail": str(exc)}, is_error=True))
+        return _ok_response(msg_id, tool_content({"ok": False, "error": type(exc).__name__, "detail": str(exc)}, is_error=True))
 
 
 def main() -> int:

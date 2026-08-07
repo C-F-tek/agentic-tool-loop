@@ -1,109 +1,127 @@
-# services/codex_bridge
+# Codex Bridge — External Provider Integration
 
-`services/codex_bridge/` contains optional Codex-facing bridge helpers. It is
-not the public OpenWebUI 3571 bridge and not the 3572 planner runtime.
-MCP tools exposed here are host-side Codex tools; they do not become
-planner-native tools in the 3572 agentic loop.
+> **Purpose**: Codex bridge services connect to external Codex providers for extended AI capabilities. Provides MCP server integration, response bridging, and standardized compressed JSON responses.
 
-## Initial Reading Index
+---
 
-Start from these documents before changing runtime behavior:
+## Files
 
-- [AGENTS.md](../../AGENTS.md)
-  - Workspace operating rules and non-negotiable runtime contract notes.
-- [services/VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md](../VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md)
-  - Core validator/controller contract for the agentic loop.
-- [services/END_TO_END_AGENTIC_FLOW.md](../END_TO_END_AGENTIC_FLOW.md)
-  - End-to-end flow between OpenWebUI, 3571, 3572, planner, tools, and final payload.
-- [services/SERVICES_MODULE_TECHNICAL_REFERENCE.md](../SERVICES_MODULE_TECHNICAL_REFERENCE.md)
-  - Service-level technical map and module references.
-- [services/MODULE_TECHNICAL_DESCRIPTIONS.md](../MODULE_TECHNICAL_DESCRIPTIONS.md)
-  - File-by-file technical descriptions for the `services/` tree.
-- [services/CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md](../CODEX_OPENWEBUI_PAYLOAD_LIMITATION.md)
-  - Operational limit for Codex when inspecting large OpenWebUI payloads.
-- [services/aicarmine_broker/MODULE_REFERENCE.md](../aicarmine_broker/MODULE_REFERENCE.md)
-  - Broker module reference.
-- [services/vulkan_bridge/MODULE_REFERENCE.md](../vulkan_bridge/MODULE_REFERENCE.md)
-  - Public bridge module reference.
-- [services/codex_bridge/MODULE_REFERENCE.md](MODULE_REFERENCE.md)
-  - Codex bridge module reference.
-- [services/launch/MODULE_REFERENCE.md](../launch/MODULE_REFERENCE.md)
-  - Launch-script module reference.
-- [services/model_export/MODULE_REFERENCE.md](../model_export/MODULE_REFERENCE.md)
-  - Model export module reference.
+| File | Purpose | Key Types/Functions |
+|------|---------|----------------------|
+| `__init__.py` | Package init | — |
+| `aicarmine_codex_mcp_server.py` | Codex MCP server | MCP server implementation |
+| `aicarmine_codex_ollama_responses_bridge.py` | Responses bridge | Bridges responses from Ollama |
+| `mcp_response_compression.py` | **NEW** — Compressed JSON responses | `compress_response`, `decompress_response`, `mcp_tool_result`, `mcp_error_result` |
+| `repo_mcp_common.py` | Shared stdio MCP helpers | `ok`, `err`, `json_compress`, `smart_json_dumps`, `tool_content` |
 
-Core code entry points:
+---
 
-- [services/vulkan_bridge/app.py](../vulkan_bridge/app.py)
-  - Public OpenWebUI wrapper surface.
-- [services/vulkan_bridge/agentic_v9.py](../vulkan_bridge/agentic_v9.py)
-  - Agentic bridge integration surface.
-- [services/aicarmine_broker/app.py](../aicarmine_broker/app.py)
-  - Internal broker application.
-- [services/aicarmine_broker/planner.py](../aicarmine_broker/planner.py)
-  - Planner/controller facade and high-risk loop entry; owner packages live under services/aicarmine_broker/application/.
-- [services/aicarmine_broker/repo_tools.py](../aicarmine_broker/repo_tools.py)
-  - Compatibility facade for repo/tool helpers; concrete implementations live under services/aicarmine_broker/tools/.
-- [services/aicarmine_broker/tool_registry.py](../aicarmine_broker/tool_registry.py)
-  - Internal tool registry.
-- [services/aicarmine_broker/tool_dispatch.py](../aicarmine_broker/tool_dispatch.py)
-  - Compatibility facade for the explicit registry dispatcher in services/aicarmine_broker/application/tool_surface/dispatcher.py.
-- [services/aicarmine_broker/job_store.py](../aicarmine_broker/job_store.py)
-  - Job state and artifact persistence.
-- [services/aicarmine_broker/public_wrapper.py](../aicarmine_broker/public_wrapper.py)
-  - Public result packaging support.
-- [services/aicarmine_broker/planner_intrinsic_context.py](../aicarmine_broker/planner_intrinsic_context.py)
-  - Intrinsic planner context builder.
-- [services/aicarmine_broker/code_edit_proposal_contract.py](../aicarmine_broker/code_edit_proposal_contract.py)
-  - Report-only code edit proposal contract.
-- [services/aicarmine_broker/memory_tools.py](../aicarmine_broker/memory_tools.py)
-  - Runtime memory tool support.
+## Architecture
 
-## Current Folder Structure
+```
+┌─────────────────────────────────────┐
+│      Codex Bridge Service           │
+│      Port 3581 (optional)           │
+├─────────────────────────────────────┤
+│   aicarmine_codex_mcp_server.py     │ ← MCP server for Codex
+│   aicarmine_codex_ollama_responses_bridge.py  ← Response bridge
+│   mcp_response_compression.py       ← NEW: Standardized compression
+│   repo_mcp_common.py                ← Shared stdio helpers
+└─────────────────────────────────────┘
+```
 
-- [mcp_server.py](mcp_server.py)
-  - JSON-RPC/MCP server implementation for Codex integration. It exposes the
-    direct `aicarmine_tools` surface without calling 3571, `/vulkan/agent` or
-    the HTTP broker tool loop. If it imports broker tools, it first maps this
-    process' `AICARMINE_LAB_REPO` to the Codex-selected repo root; this does
-    not require the OpenWebUI/3572 lab shadow to use the same path.
-- [repo_mcp_common.py](repo_mcp_common.py),
-  [repo_state_mcp_server.py](repo_state_mcp_server.py),
-  [repo_search_det_mcp_server.py](repo_search_det_mcp_server.py),
-  [repo_validate_mcp_server.py](repo_validate_mcp_server.py)
-  - Deterministic repo-state/search/validation MCP servers for Codex. They
-    share the same process-local root normalization before importing broker
-    repo helper modules.
-- [repo_code_mcp_server.py](repo_code_mcp_server.py)
-  - Incubating repo-code MCP server for candidate code edit tooling. It is
-    separate from the stable state/search/validation MCPs, exposes proposal and
-    diff-check helpers as report-only tools, and exposes exact `old_text` to
-    `new_text` patching only with explicit `allow_source_write=true`.
-- [ops_mcp_server.py](ops_mcp_server.py)
-  - Incubating Codex ops MCP server for local MCP inventory and read-only
-    service-state inspection. It uses static MCP target allowlists, reads
-    process/port/log state without HTTP health probes, and does not call 3571,
-    3572, `vulkan_helper` or the agentic loop.
-- [local_subagent_mcp_server.py](local_subagent_mcp_server.py)
-  - Local subagent MCP facade for Codex. It delegates bounded read-only work to
-    the dedicated 3579 agentic-loop client, so execution still goes through the
-    broker planner/controller/validator path. It does not call Ollama directly,
-    does not use 3571/3572 and does not expose a parallel local tool loop.
-- [rag_mcp_server.py](rag_mcp_server.py)
-  - Dedicated Codex RAG MCP server backed by `state/codex_rag/` SQLite/FTS5 and
-    the local OVMS reranker.
-- [rag_index_repo.py](rag_index_repo.py)
-  - Git-surface index builder for the Codex RAG SQLite index.
-- [ollama_responses_bridge.py](ollama_responses_bridge.py)
-  - OpenAI Responses-compatible adapter around Ollama.
-- [jsonrpc.py](jsonrpc.py), [responses_proxy.py](responses_proxy.py), [storage.py](storage.py)
-  - Compatibility facades for historical import paths.
+---
 
-## Test/Smoke Guardrail
+## Key Components
 
-Codex bridge changes must not add, restore, run or document test/smoke flows
-unless Carmine explicitly requests them. Prefer read-only MCP health/status,
-RAG index status, artifact/job inspection, process/port/log evidence,
-payload inspection, compile/lint or diff checks as targeted verification.
-- [MODULE_REFERENCE.md](MODULE_REFERENCE.md)
-  - Detailed module reference.
+### MCP Server (`aicarmine_codex_mcp_server.py`)
+
+| Item | Description |
+|------|-------------|
+| **Role** | Exposes Codex capabilities via MCP protocol |
+| **Tools** | Code generation, analysis, refactoring |
+
+### Response Bridge (`aicarmine_codex_ollama_responses_bridge.py`)
+
+| Item | Description |
+|------|-------------|
+| **Role** | Bridges responses between Codex and Ollama |
+| **Purpose** | Normalize response formats across providers |
+
+### Compressed JSON Responses (`mcp_response_compression.py`) — NEW
+
+| Function | Purpose |
+|----------|---------|
+| `compress_response()` | Build compressed JSON response with metadata headers |
+| `decompress_response()` | Decompress bz2-compressed MCP response text |
+| `mcp_tool_result()` | Wrap data in MCP tool content format with compression |
+| `mcp_error_result()` | Build standardized MCP error result |
+| `jsonrpc_response()` | Build JSON-RPC 2.0 response with metadata |
+| `jsonrpc_error()` | Build JSON-RPC 2.0 error response with metadata |
+
+**Usage:**
+```python
+from services.codex_bridge.mcp_response_compression import (
+    compress_response,
+    mcp_tool_result,
+)
+
+# Auto-compress if payload > 10KB
+result = compress_response(
+    {"data": large_data, "summary": "overview"},
+    server_name="codex_bridge",
+    tool_name="some_tool",
+)
+
+# Wrap in MCP content format
+content = mcp_tool_result(
+    data,
+    server_name="codex_bridge",
+    tool_name="my_tool",
+    use_compression=True,  # Force compression
+)
+```
+
+**Environment Variables:**
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AICARMINE_MCP_COMPRESSION` | `0` | Enable bz2 compression (`1`, `true`, `yes`, `on`) |
+| `AICARMINE_MCP_MAX_TEXT_CHARS` | `24000` | Max text chars in responses |
+| `AICARMINE_MCP_COMPRESS_THRESHOLD` | `10000` | Compress if payload exceeds this (bytes) |
+| `AICARMINE_MCP_DEBUG` | `0` | Enable debug logging |
+
+---
+
+## Shared Helpers (`repo_mcp_common.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `ok(msg_id, result)` | JSON-RPC 2.0 success response |
+| `err(msg_id, code, message, data)` | JSON-RPC 2.0 error response |
+| `json_compress(value)` | bz2-compressed JSON payload |
+| `json_decompress(hex_data)` | Decompress bz2 payload |
+| `smart_json_dumps(value)` | Auto-compress if payload > 10KB |
+| `compact_text(value, limit)` | Truncate text to limit |
+| `tool_content(value, is_error)` | MCP tool content wrapper |
+
+---
+
+## Related Services
+
+| Service | Location | Purpose |
+|---------|----------|---------|
+| `codex_ollama_bridge_applied/codex_ollama_bridge/` | Applied changes | Full Codex + Ollama integration |
+| `vulkan_bridge/` | GPU service | GPU-accelerated operations |
+
+---
+
+## Documentation Index
+
+| Document | Location |
+|----------|----------|
+| [Complete Services Index](../../docs/SERVICES_INDEX.md) | Full file-by-file documentation |
+| [Python Refactoring Guide](../../docs/PYTHON_REFACTORING_GUIDE.md) | Anti-patterns and case studies |
+
+---
+
+*Generated from analysis of the C:\Users\carmi\AI workspace.*

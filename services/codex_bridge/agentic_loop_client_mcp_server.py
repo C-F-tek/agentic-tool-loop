@@ -5,23 +5,35 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
-from typing import Any, cast
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
+from typing import Any, cast
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
+    compact_text_tuple,
     health_payload,
+    integer_prop,
+    object_prop,
     object_schema,
+    path_is_under,
+    safe_bool,
+    safe_int,
     self_test,
     serve,
+    string_prop,
+    string_prop_with_enum,
 )
+
+_safe_bool = safe_bool
+_safe_int = safe_int
 
 SERVER_NAME = "aicarmine-agentic-loop-client-mcp"
 SERVER_VERSION = "0.1.0"
@@ -58,7 +70,6 @@ CONFIRM_RUN = "aicarmine_agentic_loop_run"
 CONFIRM_STATUS = "aicarmine_agentic_loop_status"
 CONFIRM_RESULT = "aicarmine_agentic_loop_result"
 CONFIRM_ENSURE = "aicarmine_agentic_loop_ensure_broker"
-CONFIRM_RESTART = "aicarmine_agentic_loop_restart_broker"
 CONFIRM_RERANKER = "aicarmine_agentic_loop_ensure_reranker"
 TERMINAL_STATUSES = {
     "completed",
@@ -70,53 +81,8 @@ TERMINAL_STATUSES = {
 }
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    if enum is not None:
-        schema["enum"] = enum
-    return schema
-
-
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def object_prop() -> dict[str, Any]:
-    return {"type": "object", "additionalProperties": True}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _safe_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off"}:
-            return False
-    return default
-
-
-def _compact_text(value: Any, max_chars: int) -> tuple[str, bool]:
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    if len(text) <= max_chars:
-        return text, False
-    suffix = f"\n...[truncated by {SERVER_NAME}; original_chars={len(text)}]"
-    return text[: max(0, max_chars - len(suffix))].rstrip() + suffix, True
+# Alias for local callers that expect `_compact_text` name
+_compact_text = compact_text_tuple
 
 
 def _default_endpoint_for_path(expected_path: str, *, port: int | None = None) -> str:
@@ -261,6 +227,7 @@ def _get_health(endpoint: str, *, timeout_seconds: int) -> dict[str, Any]:
 def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict[str, Any]:
     started = time.monotonic()
     marker = "aicarmine_codex_mcp_reranker_functional_probe"
+    effective_timeout = _safe_int(timeout_seconds, 30, 1, 60)
     payload = {
         "model": DEFAULT_RERANKER_MODEL,
         "query": f"{marker} planner validator tool surface",
@@ -273,7 +240,7 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
         method="POST",
         url=rerank_url,
         payload=payload,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=effective_timeout,
     )
     elapsed_ms = round((time.monotonic() - started) * 1000, 1)
     if response.get("ok") is not True:
@@ -281,6 +248,8 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
             "ok": False,
             "error": "reranker_functional_probe_failed",
             "elapsed_ms": elapsed_ms,
+            "timeout_requested": timeout_seconds,
+            "timeout_used": effective_timeout,
             "response": response,
         }
     payload_value = response.get("payload") if isinstance(response.get("payload"), dict) else {}
@@ -290,11 +259,15 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
             "ok": False,
             "error": "reranker_functional_probe_no_scores",
             "elapsed_ms": elapsed_ms,
+            "timeout_requested": timeout_seconds,
+            "timeout_used": effective_timeout,
             "response": response,
         }
     return {
         "ok": True,
         "elapsed_ms": elapsed_ms,
+        "timeout_requested": timeout_seconds,
+        "timeout_used": effective_timeout,
         "input_count": len(payload["documents"]),
         "returned_scores": len(results),
         "first_result": results[0],
@@ -302,9 +275,8 @@ def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict
 
 
 def _json_preview(value: Any, max_chars: int) -> dict[str, Any]:
-    """Return full JSON preview without truncation. max_chars is ignored."""
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    return {"text": text, "truncated": False, "original_chars": len(text)}
+    text, truncated = _compact_text(value, max_chars)
+    return {"text": text, "truncated": truncated}
 
 
 def _tail_text(path: Path, *, max_chars: int = 4000) -> str:
@@ -355,94 +327,6 @@ def _port_listening(host: str = "127.0.0.1", port: int = DEFAULT_AGENTIC_LOOP_PO
         return False
 
 
-def _run_powershell_json(script: str, *, timeout_seconds: int = 10) -> Any:
-    if os.name != "nt":
-        return None
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        completed = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command", script],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            creationflags=creationflags,
-            check=False,
-        )
-    except Exception:
-        return None
-    if completed.returncode != 0:
-        return None
-    text = completed.stdout.strip()
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
-
-
-def _windows_process_rows() -> list[dict[str, Any]]:
-    parsed = _run_powershell_json(
-        "Get-CimInstance Win32_Process | "
-        "Select-Object ProcessId,ParentProcessId,Name,CommandLine | "
-        "ConvertTo-Json -Depth 4 -Compress"
-    )
-    if isinstance(parsed, dict):
-        return [parsed]
-    if isinstance(parsed, list):
-        return [row for row in parsed if isinstance(row, dict)]
-    return []
-
-
-def _port_owner_pids(port: int) -> list[int]:
-    parsed = _run_powershell_json(
-        f"Get-NetTCPConnection -LocalPort {int(port)} -State Listen -ErrorAction SilentlyContinue | "
-        "Select-Object -ExpandProperty OwningProcess | "
-        "Sort-Object -Unique | ConvertTo-Json -Compress"
-    )
-    values = parsed if isinstance(parsed, list) else [parsed]
-    pids: list[int] = []
-    for value in values:
-        try:
-            pid = int(value)
-        except (TypeError, ValueError):
-            continue
-        if pid > 0 and pid not in pids:
-            pids.append(pid)
-    return pids
-
-
-def _process_pid(row: dict[str, Any]) -> int:
-    try:
-        return int(row.get("ProcessId") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _process_parent_pid(row: dict[str, Any]) -> int:
-    try:
-        return int(row.get("ParentProcessId") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _process_command_line(row: dict[str, Any]) -> str:
-    return str(row.get("CommandLine") or "")
-
-
-def _is_mcp_process_command(command_line: str) -> bool:
-    return "agentic_loop_client_mcp_server.py" in command_line.lower()
-
-
-def _is_broker_process_command(command_line: str, *, port: int) -> bool:
-    lowered = command_line.lower()
-    if _is_mcp_process_command(command_line):
-        return False
-    if "aicarmine_vulkan_tool_broker:app" not in lowered:
-        return False
-    return "--port" in lowered and str(port) in lowered
-
-
 def _read_broker_process_metadata(root: Path, port: int) -> dict[str, Any]:
     path = _broker_process_metadata_path(root, port)
     try:
@@ -454,6 +338,100 @@ def _read_broker_process_metadata(root: Path, port: int) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _broker_source_files(root: Path) -> list[Path]:
+    services_root = _services_root(root)
+    candidates: list[Path] = [services_root / "aicarmine_vulkan_tool_broker.py"]
+    for relative in (
+        "aicarmine_broker",
+        "vulkan_bridge",
+    ):
+        base = services_root / relative
+        if base.is_dir():
+            candidates.extend(base.rglob("*.py"))
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        try:
+            resolved = path.resolve(strict=False)
+        except Exception:
+            resolved = path
+        key = str(resolved).lower()
+        if key in seen or not path.is_file():
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _broker_source_freshness(root: Path, port: int) -> dict[str, Any]:
+    metadata = _read_broker_process_metadata(root, port)
+    if not metadata:
+        return {
+            "ok": True,
+            "checked": False,
+            "reason": "broker_process_metadata_missing",
+            "metadata_path": str(_broker_process_metadata_path(root, port)),
+        }
+    if bool(metadata.get("reload")):
+        return {
+            "ok": False,
+            "checked": True,
+            "reload": True,
+            "error": "broker_started_with_removed_reload",
+            "fix": (
+                "Stop and restart the dedicated 3579 broker manually without "
+                "uvicorn --reload before running new agentic jobs."
+            ),
+            "metadata": metadata,
+        }
+    try:
+        started_at = float(metadata.get("started_at_unix") or 0.0)
+    except (TypeError, ValueError):
+        started_at = 0.0
+    if started_at <= 0:
+        return {
+            "ok": True,
+            "checked": False,
+            "reason": "broker_started_at_missing",
+            "metadata": metadata,
+        }
+    newest_path = ""
+    newest_mtime = 0.0
+    checked = 0
+    for path in _broker_source_files(root):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        checked += 1
+        if mtime > newest_mtime:
+            newest_mtime = mtime
+            newest_path = str(path)
+    stale = bool(newest_mtime > started_at + 1.0)
+    return {
+        "ok": not stale,
+        "checked": True,
+        "reload": False,
+        "started_at_unix": started_at,
+        "newest_source_mtime_unix": newest_mtime,
+        "newest_source_path": newest_path,
+        "checked_source_file_count": checked,
+        "metadata": metadata,
+        **(
+            {
+                "error": "broker_stale_code_possible",
+                "fix": (
+                    "The dedicated broker process may be stale. Stop and restart "
+                    "the 3579 broker manually, then verify PID, port and log state. "
+                    "MCP reload/restart controls are intentionally removed for job safety."
+                ),
+            }
+            if stale
+            else {}
+        ),
+    }
+
+
 def _write_broker_process_metadata(
     root: Path,
     *,
@@ -461,7 +439,6 @@ def _write_broker_process_metadata(
     pid: int,
     command: list[str],
     cwd: Path,
-    reload: bool,
     log_path: Path,
 ) -> dict[str, Any]:
     path = _broker_process_metadata_path(root, port)
@@ -474,7 +451,7 @@ def _write_broker_process_metadata(
         "root_identity": _path_identity(root),
         "command": command,
         "cwd": str(cwd),
-        "reload": reload,
+        "reload": False,
         "log_path": str(log_path),
         "started_at_unix": time.time(),
     }
@@ -484,168 +461,6 @@ def _write_broker_process_metadata(
     except Exception as exc:
         return {"ok": False, "path": str(path), "error": type(exc).__name__, "message": str(exc)}
     return {"ok": True, "path": str(path), "payload": payload}
-
-
-def _collect_child_processes(parent_pids: set[int], rows: list[dict[str, Any]]) -> set[int]:
-    collected: set[int] = set()
-    changed = True
-    while changed:
-        changed = False
-        parents = parent_pids | collected
-        for row in rows:
-            pid = _process_pid(row)
-            if pid <= 0 or pid in collected or pid in parent_pids:
-                continue
-            if _process_parent_pid(row) in parents:
-                collected.add(pid)
-                changed = True
-    return collected
-
-
-def _broker_restart_candidates(root: Path, port: int, *, trust_port_owner: bool) -> dict[str, Any]:
-    rows = _windows_process_rows()
-    row_by_pid = {_process_pid(row): row for row in rows if _process_pid(row) > 0}
-    metadata = _read_broker_process_metadata(root, port)
-    codex_root_identity = _path_identity(root)
-    pids: set[int] = set()
-    reasons: list[dict[str, Any]] = []
-    excluded_mcp_pids: list[int] = []
-
-    metadata_pid = 0
-    try:
-        metadata_pid = int(metadata.get("pid") or 0)
-    except (TypeError, ValueError):
-        metadata_pid = 0
-    if (
-        metadata_pid > 0
-        and int(metadata.get("port") or 0) == port
-        and _path_identity(metadata.get("root")) == codex_root_identity
-    ):
-        pids.add(metadata_pid)
-        reasons.append({"pid": metadata_pid, "reason": "broker_process_metadata_root_matches"})
-
-    for pid in _port_owner_pids(port):
-        row = row_by_pid.get(pid)
-        command_line = _process_command_line(row) if row else ""
-        if _is_mcp_process_command(command_line):
-            excluded_mcp_pids.append(pid)
-            continue
-        if trust_port_owner:
-            pids.add(pid)
-            reasons.append({"pid": pid, "reason": "health_root_matched_port_owner"})
-        elif _is_broker_process_command(command_line, port=port):
-            pids.add(pid)
-            reasons.append({"pid": pid, "reason": "broker_command_owns_port"})
-
-    for row in rows:
-        pid = _process_pid(row)
-        command_line = _process_command_line(row)
-        if pid <= 0:
-            continue
-        if _is_mcp_process_command(command_line):
-            excluded_mcp_pids.append(pid)
-            continue
-        if _is_broker_process_command(command_line, port=port):
-            pids.add(pid)
-            reasons.append({"pid": pid, "reason": "broker_command_matches_port"})
-
-    child_pids = _collect_child_processes(pids, rows)
-    for pid in child_pids:
-        row = row_by_pid.get(pid)
-        command_line = _process_command_line(row) if row else ""
-        if _is_mcp_process_command(command_line):
-            excluded_mcp_pids.append(pid)
-            continue
-        pids.add(pid)
-        reasons.append({"pid": pid, "reason": "child_of_broker_candidate"})
-
-    current_pid = os.getpid()
-    pids.discard(current_pid)
-    excluded_mcp_pids = sorted(set(pid for pid in excluded_mcp_pids if pid > 0))
-    return {
-        "pids": sorted(pids),
-        "reasons": reasons,
-        "metadata_path": str(_broker_process_metadata_path(root, port)),
-        "metadata_present": bool(metadata),
-        "metadata": metadata,
-        "port_owner_pids": _port_owner_pids(port),
-        "excluded_mcp_pids": excluded_mcp_pids,
-        "current_mcp_pid": current_pid,
-    }
-
-
-def _terminate_broker_candidates(pids: list[int], *, port: int, timeout_seconds: int) -> dict[str, Any]:
-    unique_pids = sorted({int(pid) for pid in pids if int(pid) > 0 and int(pid) != os.getpid()})
-    if not unique_pids:
-        return {"ok": False, "error": "no_broker_process_candidates", "port": port, "terminated_pids": []}
-    attempts: list[dict[str, Any]] = []
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    for pid in unique_pids:
-        if os.name == "nt":
-            command = ["taskkill.exe", "/PID", str(pid), "/T", "/F"]
-        else:
-            command = ["kill", "-TERM", str(pid)]
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=max(3, timeout_seconds),
-                creationflags=creationflags if os.name == "nt" else 0,
-                check=False,
-            )
-            attempts.append(
-                {
-                    "pid": pid,
-                    "command": command,
-                    "returncode": completed.returncode,
-                    "stdout": completed.stdout[-1200:],
-                    "stderr": completed.stderr[-1200:],
-                }
-            )
-        except Exception as exc:
-            attempts.append({"pid": pid, "command": command, "error": type(exc).__name__, "message": str(exc)})
-
-    deadline = time.monotonic() + max(1, timeout_seconds)
-    while time.monotonic() < deadline:
-        if not _port_listening(port=port, timeout_seconds=0.2):
-            return {
-                "ok": True,
-                "port_released": True,
-                "port": port,
-                "terminated_pids": unique_pids,
-                "attempts": attempts,
-            }
-        time.sleep(0.25)
-    return {
-        "ok": False,
-        "error": "broker_port_still_listening_after_termination",
-        "port_released": False,
-        "port": port,
-        "terminated_pids": unique_pids,
-        "attempts": attempts,
-    }
-
-
-def _restart_existing_broker(root: Path, port: int, *, trust_port_owner: bool, timeout_seconds: int) -> dict[str, Any]:
-    candidates = _broker_restart_candidates(root, port, trust_port_owner=trust_port_owner)
-    pids = candidates.get("pids")
-    if not isinstance(pids, list) or not pids:
-        return {
-            "ok": False,
-            "error": "no_safe_broker_restart_candidate",
-            "port": port,
-            "candidate_scan": candidates,
-            "fix": "Do not kill MCP PIDs. Stop the actual broker process tree or start a fresh dedicated port.",
-        }
-    termination = _terminate_broker_candidates(pids, port=port, timeout_seconds=timeout_seconds)
-    return {
-        "ok": bool(termination.get("ok")),
-        "port": port,
-        "candidate_scan": candidates,
-        "termination": termination,
-        **({} if termination.get("ok") else {"error": termination.get("error") or "broker_restart_termination_failed"}),
-    }
 
 
 def _path_is_under(path: Path, parent: Path) -> bool:
@@ -661,10 +476,15 @@ def _start_broker_process(
     *,
     port: int,
     startup_timeout_seconds: int,
-    reload: bool = False,
     rerank_url: str = DEFAULT_RERANKER_URL,
     reranker_ready_url: str = DEFAULT_RERANKER_READY_URL,
 ) -> dict[str, Any]:
+    reload_policy = {
+        "reload_requested": False,
+        "reload_applied": False,
+        "reload_disabled_reason": "dedicated_agentic_loop_uses_in_process_workers",
+        "operator_hint": "Use a manual broker restart to load code; uvicorn --reload is disabled for 3579 job safety.",
+    }
     services_root = _services_root(root)
     if not services_root.is_dir():
         return {"ok": False, "error": "services_directory_missing", "path": str(services_root)}
@@ -695,13 +515,11 @@ def _start_broker_process(
             "AICARMINE_VULKAN_AGENT_URL": f"http://127.0.0.1:{port}/vulkan/agent",
             "AICARMINE_BROKER_SERVICE_NAME": f"aicarmine-codex-agentic-loop-{port}",
             "AICARMINE_BROKER_APP_TITLE": f"AI-Carmine Codex Agentic Loop {port}",
-            "AICARMINE_BROKER_UVICORN_RELOAD": "1" if reload else "0",
+            "AICARMINE_BROKER_UVICORN_RELOAD": "0",
             "RAG_EXTERNAL_RERANKER_URL": rerank_url,
             "AICARMINE_RAG_RERANK_URL": rerank_url,
             "AICARMINE_CONTROLLER_RAG_RERANK_URL": rerank_url,
             "AICARMINE_RAG_RERANK_READY_URL": reranker_ready_url,
-            "AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS": "0",
-            "AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS": "0",
         }
     )
     command = [
@@ -714,8 +532,6 @@ def _start_broker_process(
         "--port",
         str(port),
     ]
-    if reload:
-        command.append("--reload")
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_handle = log_path.open("a", encoding="utf-8", errors="replace")
     try:
@@ -737,7 +553,6 @@ def _start_broker_process(
         pid=process.pid,
         command=command,
         cwd=services_root,
-        reload=reload,
         log_path=log_path,
     )
     deadline = time.monotonic() + max(1, startup_timeout_seconds)
@@ -753,6 +568,7 @@ def _start_broker_process(
                 "command": command,
                 "cwd": str(services_root),
                 "process_metadata": process_metadata,
+                **reload_policy,
                 "log_path": str(log_path),
                 "log_tail": _tail_text(log_path),
             }
@@ -767,7 +583,8 @@ def _start_broker_process(
                 "command": command,
                 "cwd": str(services_root),
                 "port": port,
-                "reload": reload,
+                "reload": False,
+                **reload_policy,
                 "process_metadata": process_metadata,
                 "workspace": str(workspace),
                 "agent_job_root": str(agent_job_root),
@@ -784,7 +601,8 @@ def _start_broker_process(
         "command": command,
         "cwd": str(services_root),
         "port": port,
-        "reload": reload,
+        "reload": False,
+        **reload_policy,
         "process_metadata": process_metadata,
         "workspace": str(workspace),
         "agent_job_root": str(agent_job_root),
@@ -980,12 +798,12 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "rerank_port": rerank_port,
             "reranker_started": False,
         }
-    timeout_seconds = _safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
+    timeout_seconds = safe_int(args.get("health_timeout_seconds") or args.get("timeout_seconds"), 5, 1, 20)
     health = _get_health(ready_url, timeout_seconds=timeout_seconds)
     if health.get("ok") is True:
         functional_probe = _probe_reranker_functional(
             rerank_url,
-            timeout_seconds=_safe_int(
+            timeout_seconds=safe_int(
                 args.get("functional_timeout_seconds") or args.get("timeout_seconds"),
                 30,
                 1,
@@ -1061,9 +879,22 @@ def _ensure_reranker(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    port = _safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
-    broker_reload = _safe_bool(args.get("reload"), False)
-    broker_restart = _safe_bool(args.get("restart"), False)
+    port = safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
+    if safe_int(args.get("reload"), False) or safe_int(args.get("restart"), False) or args.get("confirm_restart_broker"):
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_ensure_broker",
+            "error": "broker_reload_restart_removed_from_mcp",
+            "broker_started": False,
+            "broker_running": "unknown",
+            "reload_requested": safe_int(args.get("reload"), False),
+            "restart_requested": safe_int(args.get("restart"), False),
+            "operator_hint": (
+                "Reload/restart from MCP is disabled for the dedicated 3579 broker "
+                "because it can interrupt in-process job workers. Stop and restart "
+                "the broker manually, then verify PID/log/port state."
+            ),
+        }
     health_endpoint, health_problem = _validate_endpoint(args.get("health_endpoint"), expected_path="/health", port=port)
     if health_problem is not None:
         return health_problem | {"tool": "aicarmine_agentic_loop_ensure_broker", "broker_started": False}
@@ -1124,75 +955,6 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
     health = _get_health(health_endpoint, timeout_seconds=timeout_seconds)
     if health.get("ok") is True:
         root_check = _broker_root_matches_codex_root(health.get("payload"), root)
-        if broker_restart:
-            if str(args.get("confirm_restart_broker") or "").strip() != CONFIRM_RESTART:
-                return {
-                    "ok": False,
-                    "tool": "aicarmine_agentic_loop_ensure_broker",
-                    "error": "explicit_broker_restart_confirmation_required",
-                    "confirm_restart_broker_required": CONFIRM_RESTART,
-                    "broker_running": True,
-                    "broker_started": False,
-                    "broker_restart_requested": True,
-                    "reload_requested": broker_reload,
-                    "reload_applied": False,
-                    "root_check": root_check,
-                    "health": _compact_agent_response(health, response_budget_chars=4000, include_raw=False),
-                }
-            if root_check.get("ok") is not True:
-                return {
-                    "ok": False,
-                    "tool": "aicarmine_agentic_loop_ensure_broker",
-                    "error": "broker_restart_refused_root_mismatch",
-                    "broker_running": True,
-                    "broker_started": False,
-                    "broker_restart_requested": True,
-                    "reload_requested": broker_reload,
-                    "reload_applied": False,
-                    "root_check": root_check,
-                    "health": _compact_agent_response(health, response_budget_chars=4000, include_raw=False),
-                    "fix": f"Do not terminate 127.0.0.1:{port} from this Codex root; broker health reports a different lab_repo.",
-                }
-            restart = _restart_existing_broker(
-                root,
-                port,
-                trust_port_owner=True,
-                timeout_seconds=_safe_int(args.get("restart_timeout_seconds"), 15, 3, 60),
-            )
-            if restart.get("ok") is not True:
-                return {
-                    "ok": False,
-                    "tool": "aicarmine_agentic_loop_ensure_broker",
-                    "error": restart.get("error") or "broker_restart_failed",
-                    "broker_running": "unknown",
-                    "broker_started": False,
-                    "broker_restart_requested": True,
-                    "reload_requested": broker_reload,
-                    "reload_applied": False,
-                    "root_check": root_check,
-                    "restart": restart,
-                    "health": _compact_agent_response(health, response_budget_chars=4000, include_raw=False),
-                }
-            startup = _start_broker_process(
-                root,
-                port=port,
-                startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 45, 5, 180),
-                reload=broker_reload,
-                rerank_url=rerank_url,
-                reranker_ready_url=reranker_ready_url,
-            )
-            return {
-                "tool": "aicarmine_agentic_loop_ensure_broker",
-                "broker_running": bool(startup.get("ok")),
-                "broker_started": bool(startup.get("started")),
-                "broker_restarted": bool(startup.get("started")) and bool(restart.get("ok")),
-                "broker_restart_requested": True,
-                "reload_requested": broker_reload,
-                "reload_applied": bool(startup.get("started")) and broker_reload,
-                "restart": restart,
-                **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
-                **startup,
-            }
         return {
             "ok": bool(root_check.get("ok")),
             "tool": "aicarmine_agentic_loop_ensure_broker",
@@ -1200,18 +962,12 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "broker_started": False,
             "broker_restarted": False,
             "broker_restart_requested": False,
-            "reload_requested": broker_reload,
+            "restart_supported": False,
+            "reload_requested": False,
             "reload_applied": False,
             "root_check": root_check,
             "health": _compact_agent_response(health, response_budget_chars=4000, include_raw=False),
             **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
-            **(
-                {
-                    "reload_note": "reload applies only when this call starts the broker; an already running broker is not terminated automatically."
-                }
-                if broker_reload
-                else {}
-            ),
             **(
                 {}
                 if root_check.get("ok")
@@ -1222,67 +978,18 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
             ),
         }
     if _port_listening(port=port):
-        if broker_restart:
-            if str(args.get("confirm_restart_broker") or "").strip() != CONFIRM_RESTART:
-                return {
-                    "ok": False,
-                    "tool": "aicarmine_agentic_loop_ensure_broker",
-                    "error": "explicit_broker_restart_confirmation_required",
-                    "confirm_restart_broker_required": CONFIRM_RESTART,
-                    "broker_running": "unknown",
-                    "broker_started": False,
-                    "broker_restart_requested": True,
-                    "reload_requested": broker_reload,
-                    "reload_applied": False,
-                    "health": health,
-                }
-            restart = _restart_existing_broker(
-                root,
-                port,
-                trust_port_owner=False,
-                timeout_seconds=_safe_int(args.get("restart_timeout_seconds"), 15, 3, 60),
-            )
-            if restart.get("ok") is not True:
-                return {
-                    "ok": False,
-                    "tool": "aicarmine_agentic_loop_ensure_broker",
-                    "error": restart.get("error") or "broker_restart_failed",
-                    "broker_running": "unknown",
-                    "broker_started": False,
-                    "broker_restart_requested": True,
-                    "reload_requested": broker_reload,
-                    "reload_applied": False,
-                    "health": health,
-                    "restart": restart,
-                }
-            startup = _start_broker_process(
-                root,
-                port=port,
-                startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 45, 5, 180),
-                reload=broker_reload,
-                rerank_url=rerank_url,
-                reranker_ready_url=reranker_ready_url,
-            )
-            return {
-                "tool": "aicarmine_agentic_loop_ensure_broker",
-                "broker_running": bool(startup.get("ok")),
-                "broker_started": bool(startup.get("started")),
-                "broker_restarted": bool(startup.get("started")) and bool(restart.get("ok")),
-                "broker_restart_requested": True,
-                "reload_requested": broker_reload,
-                "reload_applied": bool(startup.get("started")) and broker_reload,
-                "restart": restart,
-                **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
-                **startup,
-            }
         return {
             "ok": False,
             "tool": "aicarmine_agentic_loop_ensure_broker",
             "error": "broker_port_occupied_but_health_failed",
             "broker_running": "unknown",
             "broker_started": False,
+            "broker_restart_supported": False,
             "health": health,
-            "fix": f"Diagnostica il processo che occupa 127.0.0.1:{port}; il client non lo termina automaticamente.",
+            "fix": (
+                f"Diagnostica il processo che occupa 127.0.0.1:{port}; "
+                "il client MCP non lo termina o riavvia automaticamente."
+            ),
         }
     if str(args.get("confirm_ensure_broker") or "").strip() != CONFIRM_ENSURE:
         return {
@@ -1298,7 +1005,6 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
         root,
         port=port,
         startup_timeout_seconds=_safe_int(args.get("startup_timeout_seconds"), 45, 5, 180),
-        reload=broker_reload,
         rerank_url=rerank_url,
         reranker_ready_url=reranker_ready_url,
     )
@@ -1307,9 +1013,10 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "broker_running": bool(startup.get("ok")),
         "broker_started": bool(startup.get("started")),
         "broker_restarted": False,
-        "broker_restart_requested": broker_restart,
-        "reload_requested": broker_reload,
-        "reload_applied": bool(startup.get("started")) and broker_reload,
+        "broker_restart_requested": False,
+        "restart_supported": False,
+        "reload_requested": False,
+        "reload_applied": False,
         **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
         **startup,
     }
@@ -1361,8 +1068,7 @@ def _tool_history_digest(tool_context: Any, *, limit: int = 12) -> list[dict[str
     return rows
 
 
-def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: int = 12000, include_raw: bool) -> dict[str, Any]:
-    """Return compact response without truncation. Full answer is always preserved."""
+def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: int, include_raw: bool) -> dict[str, Any]:
     payload = response.get("payload") if response.get("ok") is True else response
     if not isinstance(payload, dict):
         payload = {"value": payload}
@@ -1379,7 +1085,7 @@ def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: 
         or payload.get("summary")
         or ""
     )
-    answer_preview_text = answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False, indent=2, default=str)
+    answer_preview = _json_preview(answer, response_budget_chars)
     section_budget = max(1200, response_budget_chars // 3)
     compact = {
         "ok": bool(response.get("ok")),
@@ -1391,13 +1097,12 @@ def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: 
         "mode": payload.get("mode"),
         "verdict": payload.get("verdict"),
         "blocked_by": payload.get("blocked_by"),
-        "answer_preview": answer_preview_text,
-        "answer_truncated": False,
-        "answer_original_chars": len(answer) if isinstance(answer, str) else 0,
+        "answer_preview": answer_preview["text"],
+        "answer_truncated": answer_preview["truncated"],
         "citation_candidates": _collect_path_like(payload, limit=20),
         "tool_history_digest": _tool_history_digest(tool_context),
-        "payload_index_preview": payload_index if isinstance(payload_index, str) else (json.dumps(payload_index, ensure_ascii=False, indent=2, default=str) if isinstance(payload_index, (list, dict)) else ""),
-        "priority_evidence_preview": priority_evidence if isinstance(priority_evidence, str) else (json.dumps(priority_evidence, ensure_ascii=False, indent=2, default=str) if isinstance(priority_evidence, (list, dict)) else ""),
+        "payload_index_preview": _json_preview(payload_index, section_budget)["text"] if payload_index not in (None, "", [], {}) else "",
+        "priority_evidence_preview": _json_preview(priority_evidence, section_budget)["text"] if priority_evidence not in (None, "", [], {}) else "",
         "tool_context_keys": sorted(str(key) for key in tool_context.keys()) if isinstance(tool_context, dict) else [],
         "raw_response_keys": sorted(str(key) for key in payload.keys()),
         "raw_response_included": bool(include_raw),
@@ -1471,7 +1176,13 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
         task = str(arguments.get("task") or arguments.get("request") or arguments.get("prompt") or "").strip()
     if not task:
         return None, {"ok": False, "error": "missing_task"}
-    # Explicit confirmation requirement removed per user request
+    if str(args.get("confirm_agentic_loop") or "").strip() != CONFIRM_RUN:
+        return None, {
+            "ok": False,
+            "error": "explicit_agentic_loop_confirmation_required",
+            "confirm_agentic_loop_required": CONFIRM_RUN,
+            "agentic_loop_called": False,
+        }
     wait_seconds = _safe_int(args.get("wait_seconds") or arguments.get("wait_seconds"), 30, 1, 600)
     max_steps = _safe_int(args.get("max_steps") or arguments.get("max_steps"), 20, 1, 80)
     return_mode = str(args.get("return_mode") or arguments.get("return_mode") or "wait").strip().lower()
@@ -1529,12 +1240,17 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
     return payload, None
 
 
-# Explicit confirmation requirement removed from job action payload per user request
 def _build_job_action_payload(args: dict[str, Any], *, action: str, confirm_value: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     job_id = str(args.get("job_id") or "").strip()
     if not job_id:
         return None, {"ok": False, "error": "missing_job_id"}
-    # Confirmation check removed
+    if str(args.get("confirm_agentic_loop") or "").strip() != confirm_value:
+        return None, {
+            "ok": False,
+            "error": "explicit_agentic_loop_confirmation_required",
+            "confirm_agentic_loop_required": confirm_value,
+            "agentic_loop_called": False,
+        }
     arguments = {
         "job_id": job_id,
         "job_action": action,
@@ -1559,13 +1275,12 @@ def _health(args: dict[str, Any], root: Path, tools: dict[str, ToolSpec]) -> dic
             "default_port": DEFAULT_AGENTIC_LOOP_PORT,
             "canonical_loop_endpoint": DEFAULT_AGENT_ENDPOINT,
             "health_endpoint": DEFAULT_HEALTH_ENDPOINT,
-            "requires_explicit_confirmation": False,
+            "requires_explicit_confirmation": True,
             "confirmation_tokens": {
                 "run": CONFIRM_RUN,
                 "status": CONFIRM_STATUS,
                 "result": CONFIRM_RESULT,
                 "ensure_broker": CONFIRM_ENSURE,
-                "restart_broker": CONFIRM_RESTART,
                 "ensure_reranker": CONFIRM_RERANKER,
             },
             "reranker": {
@@ -1611,11 +1326,11 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "creates_no_local_planner_loop": True,
         "requires_confirmation_for_http": True,
         "can_start_dedicated_broker_for_codex_root": True,
-        "can_start_dedicated_broker_with_uvicorn_reload": True,
-        "can_restart_dedicated_broker": True,
+        "can_start_dedicated_broker_with_uvicorn_reload": False,
+        "can_restart_dedicated_broker": False,
         "can_start_local_bge_reranker": True,
-        "start_behavior": "Starts a dedicated broker instance only when its configured port is free and confirm_ensure_broker is supplied; reload=true adds uvicorn --reload to newly started broker processes.",
-        "restart_behavior": "restart=true requires confirm_restart_broker and targets the dedicated broker process tree, not agentic_loop_client_mcp_server.py MCP processes.",
+        "start_behavior": "Starts a dedicated broker instance only when its configured port is free and confirm_ensure_broker is supplied; reload/restart are removed from MCP and must be handled manually by the operator.",
+        "restart_behavior": "MCP broker restart is disabled. Stop and restart the dedicated 3579 broker manually to load new code.",
         "reranker_start_behavior": "Starts the repo-local OVMS/BGE reranker script only when its configured port is free and confirm_ensure_reranker is supplied.",
         "reranker_ready_url": DEFAULT_RERANKER_READY_URL,
         "reranker_url": DEFAULT_RERANKER_URL,
@@ -1634,6 +1349,18 @@ def _capabilities(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    if _safe_bool(args.get("reload"), False) or _safe_bool(args.get("restart"), False) or args.get("confirm_restart_broker"):
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_run",
+            "error": "broker_reload_restart_removed_from_mcp",
+            "agentic_loop_called": False,
+            "broker_health_probe_called": False,
+            "operator_hint": (
+                "reload/restart from MCP is disabled for the dedicated 3579 broker. "
+                "Stop and restart the broker manually, then rerun without reload/restart arguments."
+            ),
+        }
     port = _safe_int(args.get("port"), DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
     endpoint, problem = _validate_endpoint(args.get("endpoint"), expected_path="/vulkan/agent", port=port)
     if problem is not None:
@@ -1645,6 +1372,7 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return payload_problem
     require_root_match = _safe_bool(args.get("require_broker_repo_root_match"), True)
     broker_root_check: dict[str, Any] = {"ok": None, "skipped": True}
+    broker_ensure: dict[str, Any] | None = None
     reranker_ensure: dict[str, Any] | None = None
     ensure_broker = _safe_bool(args.get("ensure_broker"), False)
     if _safe_bool(args.get("ensure_reranker"), False) and not ensure_broker:
@@ -1663,6 +1391,7 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             ensure_args = dict(args)
             ensure_args["port"] = port
             ensure = _ensure_broker(ensure_args, root)
+            broker_ensure = ensure
             if isinstance(ensure.get("reranker_ensure"), dict):
                 reranker_ensure = ensure["reranker_ensure"]
             if ensure.get("ok") is not True:
@@ -1709,6 +1438,22 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "fix": f"Avvia il broker dedicato Codex su 127.0.0.1:{port} con AICARMINE_LAB_REPO uguale alla root Codex oppure usa ensure_broker quando la porta e' libera.",
             }
     assert payload is not None
+    freshness = _broker_source_freshness(root, port)
+    if freshness.get("ok") is False:
+        return {
+            "ok": False,
+            "tool": "aicarmine_agentic_loop_run",
+            "error": freshness.get("error") or "broker_stale_code_possible",
+            "agentic_loop_called": False,
+            "broker_health_probe_called": bool(require_root_match),
+            "root_check": broker_root_check,
+            "broker_source_freshness": freshness,
+            "broker_ensure": broker_ensure,
+            "endpoint": endpoint,
+            "port": port,
+            "codex_mcp_repo_root": str(root),
+            "fix": freshness.get("fix"),
+        }
     requested_timeout_seconds = _safe_int(args.get("timeout_seconds"), 120, 15, 900)
     wait_budget_seconds = _safe_int(payload.get("wait_seconds"), 30, 1, 600)
     timeout_seconds = max(requested_timeout_seconds, min(900, wait_budget_seconds + 30))
@@ -1725,6 +1470,8 @@ def _run(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "endpoint": endpoint,
             "port": port,
             "codex_mcp_repo_root": str(root),
+            "broker_source_freshness": freshness,
+            **({"broker_ensure": broker_ensure} if broker_ensure is not None else {}),
             **({"reranker_ensure": reranker_ensure} if reranker_ensure is not None else {}),
             "request": {
                 "return_mode": payload.get("return_mode"),
@@ -1824,11 +1571,10 @@ def _tools() -> dict[str, ToolSpec]:
     )
     tools["aicarmine_agentic_loop_ensure_broker"] = ToolSpec(
         name="aicarmine_agentic_loop_ensure_broker",
-        description="Ensure a dedicated broker instance is running with AICARMINE_LAB_REPO equal to the Codex MCP repo root; starts it only with explicit confirmation and restarts it only with a separate restart confirmation.",
+        description="Ensure a dedicated broker instance is running with AICARMINE_LAB_REPO equal to the Codex MCP repo root; starts it only with explicit confirmation when the port is free.",
         input_schema=object_schema(
             {
                 "confirm_ensure_broker": string_prop(),
-                "confirm_restart_broker": string_prop(),
                 "ensure_reranker": boolean_prop(False),
                 "confirm_ensure_reranker": string_prop(),
                 "ready_url": string_prop(DEFAULT_RERANKER_READY_URL),
@@ -1837,9 +1583,6 @@ def _tools() -> dict[str, ToolSpec]:
                 "health_endpoint": string_prop(DEFAULT_HEALTH_ENDPOINT),
                 "health_timeout_seconds": integer_prop(5, 1, 20),
                 "startup_timeout_seconds": integer_prop(45, 5, 180),
-                "restart_timeout_seconds": integer_prop(15, 3, 60),
-                "reload": boolean_prop(False),
-                "restart": boolean_prop(False),
             }
         ),
         handler=_ensure_broker,
@@ -1853,10 +1596,10 @@ def _tools() -> dict[str, ToolSpec]:
                 "request": string_prop(),
                 "prompt": string_prop(),
                 "arguments": object_prop(),
-                # confirm_agentic_loop removed from schema per user request
+                "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
-                "return_mode": string_prop("wait", enum=["wait", "background", "async", "fire_and_forget"]),
+                "return_mode": string_prop_with_enum("wait", enum=["wait", "background", "async", "fire_and_forget"]),
                 "wait_seconds": integer_prop(30, 1, 600),
                 "max_steps": integer_prop(20, 1, 80),
                 "timeout_seconds": integer_prop(120, 15, 900),
@@ -1865,7 +1608,6 @@ def _tools() -> dict[str, ToolSpec]:
                 "append_codex_final_contract": boolean_prop(True),
                 "ensure_broker": boolean_prop(False),
                 "confirm_ensure_broker": string_prop(),
-                "confirm_restart_broker": string_prop(),
                 "ensure_reranker": boolean_prop(False),
                 "confirm_ensure_reranker": string_prop(),
                 "ready_url": string_prop(DEFAULT_RERANKER_READY_URL),
@@ -1874,14 +1616,11 @@ def _tools() -> dict[str, ToolSpec]:
                 "health_endpoint": string_prop(DEFAULT_HEALTH_ENDPOINT),
                 "health_timeout_seconds": integer_prop(5, 1, 20),
                 "startup_timeout_seconds": integer_prop(45, 5, 180),
-                "restart_timeout_seconds": integer_prop(15, 3, 60),
-                "reload": boolean_prop(False),
-                "restart": boolean_prop(False),
                 "approval_mode": string_prop(),
                 "user_consent": string_prop(),
                 "job_id": string_prop(),
             },
-            required=[],
+            required=["confirm_agentic_loop"],
         ),
         handler=_run,
     )
@@ -1891,14 +1630,14 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
-                # confirm_agentic_loop removed from schema per user request
+                "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "timeout_seconds": integer_prop(30, 5, 120),
                 "response_budget_chars": integer_prop(8000, 1000, 60000),
                 "include_raw_response": boolean_prop(False),
             },
-            required=["job_id"],
+            required=["job_id", "confirm_agentic_loop"],
         ),
         handler=_status,
     )
@@ -1908,15 +1647,15 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
-                # confirm_agentic_loop removed from schema per user request
+                "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
-                "audience": string_prop("operator", enum=["openwebui", "operator", "internal"]),
+                "audience": string_prop_with_enum("operator", enum=["openwebui", "operator", "internal"]),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "timeout_seconds": integer_prop(30, 5, 120),
                 "response_budget_chars": integer_prop(16000, 1000, 60000),
                 "include_raw_response": boolean_prop(False),
             },
-            required=["job_id"],
+            required=["job_id", "confirm_agentic_loop"],
         ),
         handler=_result,
     )

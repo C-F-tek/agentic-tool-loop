@@ -3,29 +3,35 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import sys
 import time
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from repo_mcp_common import (
     ToolSpec,
+    boolean_prop,
     health_payload,
+    integer_prop,
     object_schema,
+    safe_int,
     self_test,
     serve,
+    string_prop,
+    path_is_under,
 )
 
 SERVER_NAME = "aicarmine-sqlite-readonly-mcp"
 SERVER_VERSION = "0.1.0"
 
 DB_SUFFIXES = {".sqlite", ".sqlite3", ".db"}
+MAX_SQL_CHARS = 5000
 BLOCKED_SQL_RE = re.compile(
     r"\b("
     r"attach|alter|analyze|begin|commit|create|delete|detach|drop|insert|load_extension|"
@@ -35,40 +41,8 @@ BLOCKED_SQL_RE = re.compile(
 )
 
 
-def string_prop(default: str | None = None) -> dict[str, Any]:
-    schema: dict[str, Any] = {"type": "string"}
-    if default is not None:
-        schema["default"] = default
-    return schema
 
 
-def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
-    return {"type": "integer", "default": default, "minimum": minimum, "maximum": maximum}
-
-
-def boolean_prop(default: bool) -> dict[str, Any]:
-    return {"type": "boolean", "default": default}
-
-
-def _safe_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _path_is_under(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve().relative_to(parent.resolve())
-        return True
-    except ValueError:
-        pass
-    except OSError:
-        return False
-    child_text = str(child.resolve()).lower().rstrip("\\/")
-    parent_text = str(parent.resolve()).lower().rstrip("\\/")
-    return child_text == parent_text or child_text.startswith(parent_text + "\\") or child_text.startswith(parent_text + "/")
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
@@ -176,18 +150,32 @@ def _connect_readonly(path: Path, *, timeout_seconds: int) -> sqlite3.Connection
 
 def _validate_select_sql(sql: Any) -> tuple[str | None, dict[str, Any] | None]:
     text = str(sql or "").strip()
+    preview = text[:100]
     if not text:
-        return None, {"ok": False, "error": "missing_sql"}
+        return None, {"ok": False, "error": "missing_sql", "sql_preview": preview}
+    if len(text) > MAX_SQL_CHARS:
+        return None, {
+            "ok": False,
+            "error": "sql_too_long",
+            "length": len(text),
+            "max_length": MAX_SQL_CHARS,
+            "sql_preview": preview,
+        }
     lowered = text.lower().lstrip()
     if not (lowered.startswith("select") or lowered.startswith("with")):
-        return None, {"ok": False, "error": "only_select_or_with_allowed"}
+        return None, {"ok": False, "error": "only_select_or_with_allowed", "sql_preview": preview}
     if ";" in text:
-        return None, {"ok": False, "error": "multiple_statements_forbidden"}
+        return None, {"ok": False, "error": "multiple_statements_forbidden", "sql_preview": preview}
     if "--" in text or "/*" in text or "*/" in text:
-        return None, {"ok": False, "error": "sql_comments_forbidden"}
+        return None, {"ok": False, "error": "sql_comments_forbidden", "sql_preview": preview}
     blocked = BLOCKED_SQL_RE.search(text)
     if blocked:
-        return None, {"ok": False, "error": "blocked_sql_keyword", "keyword": blocked.group(1).lower()}
+        return None, {
+            "ok": False,
+            "error": "blocked_sql_keyword",
+            "keyword": blocked.group(1).lower(),
+            "sql_preview": preview,
+        }
     return text, None
 
 
@@ -249,7 +237,7 @@ def _schema(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     include_columns = bool(args.get("include_columns", True))
     include_sql = bool(args.get("include_sql", False))
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 5, 1, 30)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 5, 1, 30)
 
     with _connect_readonly(db_path, timeout_seconds=timeout_seconds) as conn:
         tables = _table_names(conn)
@@ -283,9 +271,9 @@ def _query(args: dict[str, Any], root: Path) -> dict[str, Any]:
         return sql_problem
     assert sql is not None
 
-    row_limit = _safe_int(args.get("row_limit") or args.get("limit"), 100, 1, 1000)
-    timeout_seconds = _safe_int(args.get("timeout_seconds"), 5, 1, 30)
-    max_cell_chars = _safe_int(args.get("max_cell_chars"), 4000, 200, 20000)
+    row_limit = safe_int(args.get("row_limit") or args.get("limit"), 100, 1, 1000)
+    timeout_seconds = safe_int(args.get("timeout_seconds"), 5, 1, 30)
+    max_cell_chars = safe_int(args.get("max_cell_chars"), 4000, 200, 20000)
 
     try:
         with _connect_readonly(db_path, timeout_seconds=timeout_seconds) as conn:
@@ -322,8 +310,8 @@ def _query(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _list_databases(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    max_results = _safe_int(args.get("max_results") or args.get("limit"), 200, 1, 1000)
-    max_depth = _safe_int(args.get("max_depth"), 6, 1, 12)
+    max_results = safe_int(args.get("max_results") or args.get("limit"), 200, 1, 1000)
+    max_depth = safe_int(args.get("max_depth"), 6, 1, 12)
     search_roots = _dedupe_paths(
         [
             root / "state",
