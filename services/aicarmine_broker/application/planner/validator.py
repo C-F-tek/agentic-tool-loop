@@ -11,7 +11,12 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     append_stale_required_call_marker,
     required_next_tool_call_satisfaction,
 )
-from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token
+from aicarmine_broker.application.planner.final_quality_route import _apply_final_quality_route as _apply_final_quality_route_internal
+from aicarmine_broker.application.shared.path_tokens import repo_path_token as _repo_path_token, repo_rel_token
+from services.aicarmine_broker.application.code_product import history
+from services.aicarmine_broker.application.evidence import contract
+from services.aicarmine_broker.application.evidence.builder import planner_evidence_contract
+from services.aicarmine_broker.planner import _normalize_tool_name, _path_exists_repo_relative, _repo_readable_evidence_file
 
 
 def _list_or_empty(value: Any) -> list[Any]:
@@ -409,6 +414,426 @@ def _required_next_route_has_deterministic_proof(
         return bool(target_file and target_file in _known_contract_repo_paths(contract))
     return False
 
+def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
+        try:
+            parsed = json.loads(str(text or ""))
+        except Exception:
+            return False
+        if not isinstance(parsed, dict):
+            return False
+        return any(str(key) in parsed for key in ("final_answer", "answer", "summary"))
+
+def _successful_answer_chunk_signatures() -> set[str]:
+        signatures: set[str] = set()
+        for row in history if isinstance(history, list) else []:
+            if not isinstance(row, dict):
+                continue
+            decision_row = row.get("decision") if isinstance(row.get("decision"), dict) else {}
+            result_row = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+            if _normalize_tool_name(str(decision_row.get("tool") or result_row.get("tool") or "")) != "planner_scratchpad_write":
+                continue
+            raw_args = decision_row.get("arguments") if isinstance(decision_row.get("arguments"), dict) else {}
+            written = result_row.get("written") if isinstance(result_row.get("written"), dict) else {}
+            kind = str(raw_args.get("kind") or written.get("kind") or "").strip()
+            if kind not in {"answer_chunk", "final_answer_chunk"} or result_row.get("ok") is not True:
+                continue
+            tag = str(raw_args.get("tag") or written.get("tag") or "").strip()
+            if tag:
+                signatures.add(f"{kind}:{tag}")
+        return signatures
+
+def _evaluate_evidence_aware_final_reset(contract: dict[str, Any]) -> dict[str, Any]:
+        """Evaluate whether a final answer has sufficient evidence to warrant resetting the terminal block latch.
+        
+        Returns dict with keys: ok, reset_latch, reason, evidence_path_count
+        """
+        # Count successful repo_read paths with verified content
+        successful_paths = _successful_read_paths_for_final_route()
+        evidence_path_count = len(successful_paths)
+        
+        # Check coverage satisfaction
+        coverage_satisfied = _minimum_read_coverage_satisfied()
+        
+        # Evidence-aware reset triggers when:
+        # 1. At least 3 successful repo_read paths with verified content
+        # 2. Coverage is satisfied (no missing paths remain)
+        # 3. Final answer is substantively complete (non-empty)
+        min_evidence_threshold = 3
+        has_sufficient_evidence = evidence_path_count >= min_evidence_threshold
+        
+        if has_sufficient_evidence and coverage_satisfied:
+            return {
+                "ok": True,
+                "reset_latch": True,
+                "reason": f"evidence_aware_reset: {evidence_path_count} successful repo_read paths, coverage satisfied",
+                "evidence_path_count": evidence_path_count,
+                "coverage_satisfied": True,
+            }
+        
+        return {
+            "ok": False,
+            "reset_latch": False,
+            "reason": f"insufficient evidence: {evidence_path_count} paths, coverage_satisfied={coverage_satisfied}",
+            "evidence_path_count": evidence_path_count,
+            "coverage_satisfied": coverage_satisfied,
+        }
+def _minimum_read_coverage_contract() -> dict[str, Any]:
+        coverage = contract.get("minimum_read_coverage")
+        if isinstance(coverage, dict):
+            return coverage
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        coverage = final_contract.get("minimum_read_coverage")
+        return coverage if isinstance(coverage, dict) else {}
+
+def _minimum_read_coverage_required() -> bool:
+        coverage = _minimum_read_coverage_contract()
+        if coverage:
+            return coverage.get("required") is True
+        return contract.get("coverage_satisfied") is not True
+
+def _minimum_read_coverage_satisfied() -> bool:
+        coverage = _minimum_read_coverage_contract()
+        if coverage:
+            return coverage.get("coverage_satisfied") is True
+        return contract.get("coverage_satisfied") is True
+
+def _minimum_read_coverage_missing_owner_paths() -> list[str]:
+        coverage = _minimum_read_coverage_contract()
+        raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
+        return [str(path) for path in raw] if isinstance(raw, list) else []
+
+def _final_answer_declares_missing_coverage(text: str) -> bool:
+        low = str(text or "").lower()
+        return any(
+            needle in low
+            for needle in (
+                "coverage_satisfied=false",
+                "coverage_satisfied: false",
+                '"coverage_satisfied": false',
+                "missing_owner_paths",
+                "missing coverage",
+                "insufficient coverage",
+                "copertura mancante",
+                "mancanza di copertura",
+            )
+        )
+
+def _coalesce_required_next_missing_paths(values: Any) -> list[str]:
+        out: list[str] = []
+        if not isinstance(values, (list, tuple, set)):
+            return out
+        for value in values:
+            token = repo_rel_token(value)
+            if token and token not in out:
+                out.append(token)
+        return out[:12]
+
+def _stale_required_next_repo_read_paths() -> set[str]:
+        paths: set[str] = set()
+        for row in contract.get("stale_required_next_tool_calls") if isinstance(contract.get("stale_required_next_tool_calls"), list) else []:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("tool") or "") != "repo_read":
+                continue
+            args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
+            for path in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
+                token = repo_rel_token(path)
+                if token:
+                    paths.add(token)
+        return paths
+
+def _successful_read_paths_for_final_route() -> set[str]:
+        """Read successful repo_read paths from the evidence contract in the prompt payload."""
+        successful = set()
+        # Fallback to contract.successful_repo_read_paths
+        for path in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
+            token = _repo_rel_token(path)
+            if token:
+                successful.add(token)
+        if not successful:
+            try:
+                for path in _agentic_v2_successful_read_paths(history):
+                    token = _repo_rel_token(path)
+                    if token:
+                        successful.add(token)
+            except Exception:
+                pass
+        return successful
+
+def _path_allowed_by_missing_evidence(path: str, required_missing: list[str]) -> bool:
+        token = _repo_path_token(path)
+        if not token:
+            return False
+        for item in required_missing:
+            required = repo_rel_token(item)
+            if not required:
+                continue
+            if token == required or token.startswith(f"{required}/") or required.startswith(f"{token}/"):
+                return True
+        return False
+
+def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[str]]:
+        valid: list[str] = []
+        invalid: list[str] = []
+        successful = _successful_read_paths_for_final_route()
+        stale = _stale_required_next_repo_read_paths()
+        conceptual_tokens = {
+            "coverage required",
+            "read or search pending",
+            "missing core candidate paths",
+            "missing unverified file mentions",
+        }
+        for path in _coalesce_required_next_missing_paths(values):
+            if (
+                path in conceptual_tokens
+                or path.startswith("need_")
+                or any(ch.isspace() for ch in path)
+            ):
+                if path not in invalid:
+                    invalid.append(path)
+                continue
+            if path in successful or path in stale:
+                if path not in invalid:
+                    invalid.append(path)
+                continue
+            if _path_exists_repo_relative(path) and _repo_readable_evidence_file(path):
+                if path not in valid:
+                    valid.append(path)
+            elif path not in invalid:
+                invalid.append(path)
+        return valid[:12], invalid[:12]
+
+def _required_next_tool_from_missing_evidences(values: Any, allow_if_missing: bool) -> dict[str, Any]:
+        iterable_values = values if isinstance(values, (list, tuple, set)) else []
+        paths = _coalesce_required_next_missing_paths(
+            [value for value in iterable_values if isinstance(value, str)]
+        )
+        if not paths:
+            return {}
+        paths = [
+            path for path in paths
+            if path not in _successful_read_paths_for_final_route()
+            and path not in _stale_required_next_repo_read_paths()
+        ]
+        if not paths:
+            return {}
+        return {
+            "tool": "repo_read",
+            "arguments": {"paths": paths},
+            "reason": (
+                "Rewrite final from verified evidence requires at least one remaining evidence gap. "
+                "Read one of the requested missing paths before final."
+            ),
+            "allow_only_if_missing_evidence": bool(allow_if_missing),
+            "source": "repo_analysis_final_model_quality",
+        }
+
+def _coalesce_required_next_tool_tool(value: dict[str, Any]) -> dict[str, Any]:
+        tool = str(value.get("tool") or "").strip().lower()
+        args = value.get("arguments") if isinstance(value.get("arguments"), dict) else {}
+        if not tool:
+            return {"tool": "", "arguments": {}, "allow_only_if_missing_evidence": False}
+        out = {
+            "tool": tool,
+            "arguments": args,
+            "allow_only_if_missing_evidence": bool(value.get("allow_only_if_missing_evidence")),
+            "reason": str(value.get("reason") or "").strip(),
+            "source": str(value.get("source") or "repo_analysis_final_model_quality").strip(),
+        }
+        if tool == "repo_read":
+            if "paths" in args:
+                normalized_paths = [
+                    repo_rel_token(item)
+                    for item in args.get("paths", [])
+                    if repo_rel_token(item)
+                ] if isinstance(args.get("paths"), list) else []
+                if normalized_paths:
+                    out["arguments"] = {"paths": normalized_paths}
+                else:
+                    out["arguments"] = {}
+            else:
+                path = repo_rel_token(args.get("path"))
+                if path:
+                    out["arguments"] = {"path": path}
+                else:
+                    out["arguments"] = {}
+            if out["arguments"]:
+                out["allow_only_if_missing_evidence"] = True
+        elif not args:
+            out["arguments"] = {}
+        return out
+
+def _coerce_final_rewrite_latch(value: Any) -> str:
+        raw = str(value or "inactive").strip().lower()
+        return (
+            raw
+            if raw in {"inactive", "rewrite_required", "required_gap_only", "terminal_block_required"}
+            else "inactive"
+        )
+
+def _required_gap_paths_from_quality(
+        quality: Mapping[str, Any],
+        *,
+        existing_missing: list[str],
+    ) -> list[str]:
+        raw_missing = (
+            quality.get("required_next_missing_evidences")
+            if isinstance(quality.get("required_next_missing_evidences"), list)
+            else existing_missing
+        )
+        if not isinstance(raw_missing, list):
+            return []
+        required_next_missing_evidences = [
+            repo_rel_token(item) for item in raw_missing if repo_rel_token(item)
+        ]
+        successful = _successful_read_paths_for_final_route()
+        stale = _stale_required_next_repo_read_paths()
+        return [
+            path
+            for path in required_next_missing_evidences
+            if path not in successful and path not in stale and path not in existing_missing
+        ]
+        
+def _apply_duplicate_repo_read_path_recovery_contract(
+        contract: dict[str, Any],
+        repeated_reads: list[str],
+        history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        contract = contract if isinstance(contract, dict) else {}
+        history = history if isinstance(history, list) else []
+        normalized: list[str] = []
+        for path in repeated_reads if isinstance(repeated_reads, list) else []:
+            token = _repo_path_token(path)
+            if token and token not in normalized:
+                normalized.append(token)
+        if not normalized:
+            return contract
+
+        forbidden: list[str] = []
+        for item in contract.get("forbidden_repeated_repo_read_paths", []):
+            if isinstance(item, str):
+                token = _repo_path_token(item)
+                if token and token not in forbidden:
+                    forbidden.append(token)
+        for token in normalized:
+            if token not in forbidden:
+                forbidden.append(token)
+        if not forbidden:
+            return contract
+        contract["forbidden_repeated_repo_read_paths"] = forbidden[:40]
+        duplicate_repo_read_recovery_count = (
+            contract.get("duplicate_repo_read_recovery_count")
+            if isinstance(contract.get("duplicate_repo_read_recovery_count"), dict)
+            else {}
+        )
+        for token in normalized:
+            duplicate_repo_read_recovery_count[str(token)] = (
+                int(duplicate_repo_read_recovery_count.get(str(token), 0) or 0) + 1
+            )
+        contract["duplicate_repo_read_recovery_count"] = {
+            key: int(value)
+            for key, value in duplicate_repo_read_recovery_count.items()
+            if str(key).strip()
+        }
+        contract["required_next_tool_call_advisory"] = {
+            "tool": "repo_read",
+            "arguments": {
+                "paths": normalized[:12],
+            },
+            "reason": "already_successful_full_path_read",
+            "source": "duplicate_repo_read_recovery_contract",
+        }
+
+        required_next_tool_call = (
+            contract.get("required_next_tool_call")
+            if isinstance(contract.get("required_next_tool_call"), dict)
+            else {}
+        )
+        if required_next_tool_call:
+            required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            required_args = (
+                required_next_tool_call.get("arguments")
+                if isinstance(required_next_tool_call.get("arguments"), dict)
+                else {}
+            )
+            if required_tool == "repo_read":
+                required_paths = decision_paths(required_args)
+                if any(path in normalized for path in required_paths):
+                    last_step = None
+                    if history and isinstance(history[-1], dict):
+                        last_step = history[-1].get("step")
+                    append_stale_required_call_marker(
+                        contract,
+                        {
+                            "tool": required_tool,
+                            "arguments": required_args,
+                            "satisfied": True,
+                            "reason": "repo_read_already_successful",
+                            "path_overlap": normalized,
+                            "step": last_step,
+                        },
+                    )
+
+        contract.pop("required_next_tool_call", None)
+        contract.pop("required_next_tool_call_validated", None)
+        contract.pop("required_next_tool_call_validation_source", None)
+        # Patch B: duplicate repo_read recovery con evidence consumption route
+        contract["required_next_progress"] = (
+            "Duplicate repo_read detected. Consume verified evidence windows or rewrite final from existing reads."
+        )
+        final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        if _minimum_read_coverage_satisfied():
+            final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+            if final_rewrite_latch == "inactive":
+                contract["planner_may_choose_final"] = True
+                final_contract["final_allowed"] = True
+                final_contract["planner_may_choose_final"] = True
+            else:
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["reason"] = "duplicate_repo_read_recovery_active_rewrite_latch"
+            coverage = contract.get("minimum_read_coverage")
+            if isinstance(coverage, dict):
+                contract["coverage_satisfied"] = coverage.get("coverage_satisfied", True)
+
+        duplicate_threshold_reached = any(
+            int(duplicate_repo_read_recovery_count.get(path, 0) or 0) >= 2
+            for path in normalized
+        )
+        if duplicate_threshold_reached:
+            # Non forzare planner_scratchpad_read senza document_id/section/offset reali
+            contract["required_next_progress"] = (
+                "Duplicate repo_read recovery: use verified_content_reads and required_working_set.repo_reads; "
+                "do not repeat repo_read. Extract conclusions from existing verified evidence."
+            )
+            # Non impostare required_next_tool_call: attendi documento_id reale da required_working_set
+            contract["planner_may_choose_block"] = True
+            contract["planner_may_choose_final"] = False
+            final_contract["planner_forced_terminal_block"] = True
+            final_contract["planner_forced_terminal_block_reason"] = (
+                "duplicate_repo_read_recovery_count_threshold_reached"
+            )
+            final_contract["planner_may_choose_block"] = True
+            final_contract["final_allowed"] = False
+            final_contract["planner_may_choose_final"] = False
+            final_contract["reason"] = "duplicate_repo_read_recovery_count_threshold_reached"
+            # Se required_next_progress non è stato settato, mantieni messaggio informativo
+            if not contract.get("required_next_progress"):
+                contract["required_next_progress"] = (
+                    "Duplicate repo_read recovery crossed retry threshold. "
+                    "Return a rewrite constrained to verified evidence or explicit terminal blocker if controller-forced."
+                )
+
+        contract["finalization_contract"] = final_contract
+        return contract
 
 def validate_planner_decision_against_evidence(
     goal: str,
@@ -499,33 +924,6 @@ def validate_planner_decision_against_evidence(
     semantic_audit_goal = goal_requests_semantic_audit(goal)
     violations: list[str] = []
 
-    def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
-        try:
-            parsed = json.loads(str(text or ""))
-        except Exception:
-            return False
-        if not isinstance(parsed, dict):
-            return False
-        return any(str(key) in parsed for key in ("final_answer", "answer", "summary"))
-
-    def _successful_answer_chunk_signatures() -> set[str]:
-        signatures: set[str] = set()
-        for row in history if isinstance(history, list) else []:
-            if not isinstance(row, dict):
-                continue
-            decision_row = row.get("decision") if isinstance(row.get("decision"), dict) else {}
-            result_row = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
-            if _normalize_tool_name(str(decision_row.get("tool") or result_row.get("tool") or "")) != "planner_scratchpad_write":
-                continue
-            raw_args = decision_row.get("arguments") if isinstance(decision_row.get("arguments"), dict) else {}
-            written = result_row.get("written") if isinstance(result_row.get("written"), dict) else {}
-            kind = str(raw_args.get("kind") or written.get("kind") or "").strip()
-            if kind not in {"answer_chunk", "final_answer_chunk"} or result_row.get("ok") is not True:
-                continue
-            tag = str(raw_args.get("tag") or written.get("tag") or "").strip()
-            if tag:
-                signatures.add(f"{kind}:{tag}")
-        return signatures
     internal_inconsistencies: list[str] = []
     prompt_context_continuation_required = (
         decision.get("prompt_context_continuation_required")
@@ -544,680 +942,6 @@ def validate_planner_decision_against_evidence(
             contract,
             prompt_context_continuation_required,
         )
-
-    def _minimum_read_coverage_contract() -> dict[str, Any]:
-        coverage = contract.get("minimum_read_coverage")
-        if isinstance(coverage, dict):
-            return coverage
-        final_contract = (
-            contract.get("finalization_contract")
-            if isinstance(contract.get("finalization_contract"), dict)
-            else {}
-        )
-        coverage = final_contract.get("minimum_read_coverage")
-        return coverage if isinstance(coverage, dict) else {}
-
-    def _minimum_read_coverage_required() -> bool:
-        coverage = _minimum_read_coverage_contract()
-        if coverage:
-            return coverage.get("required") is True
-        return contract.get("coverage_satisfied") is not True
-
-    def _minimum_read_coverage_satisfied() -> bool:
-        coverage = _minimum_read_coverage_contract()
-        if coverage:
-            return coverage.get("coverage_satisfied") is True
-        return contract.get("coverage_satisfied") is True
-
-    def _minimum_read_coverage_missing_owner_paths() -> list[str]:
-        coverage = _minimum_read_coverage_contract()
-        raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
-        return [str(path) for path in raw] if isinstance(raw, list) else []
-
-    def _final_answer_declares_missing_coverage(text: str) -> bool:
-        low = str(text or "").lower()
-        return any(
-            needle in low
-            for needle in (
-                "coverage_satisfied=false",
-                "coverage_satisfied: false",
-                '"coverage_satisfied": false',
-                "missing_owner_paths",
-                "missing coverage",
-                "insufficient coverage",
-                "copertura mancante",
-                "mancanza di copertura",
-            )
-        )
-
-    def _coalesce_required_next_missing_paths(values: Any) -> list[str]:
-        out: list[str] = []
-        if not isinstance(values, (list, tuple, set)):
-            return out
-        for value in values:
-            token = _repo_rel_token(value)
-            if token and token not in out:
-                out.append(token)
-        return out[:12]
-
-    def _stale_required_next_repo_read_paths() -> set[str]:
-        paths: set[str] = set()
-        for row in contract.get("stale_required_next_tool_calls") if isinstance(contract.get("stale_required_next_tool_calls"), list) else []:
-            if not isinstance(row, dict):
-                continue
-            if str(row.get("tool") or "") != "repo_read":
-                continue
-            args = row.get("arguments") if isinstance(row.get("arguments"), dict) else {}
-            for path in args.get("paths", []) if isinstance(args.get("paths"), list) else [args.get("path")]:
-                token = _repo_rel_token(path)
-                if token:
-                    paths.add(token)
-        return paths
-
-    def _successful_read_paths_for_final_route() -> set[str]:
-        successful = set()
-        for path in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
-            token = _repo_rel_token(path)
-            if token:
-                successful.add(token)
-        if not successful:
-            try:
-                for path in _agentic_v2_successful_read_paths(history):
-                    token = _repo_rel_token(path)
-                    if token:
-                        successful.add(token)
-            except Exception:
-                pass
-        return successful
-
-    def _path_allowed_by_missing_evidence(path: str, required_missing: list[str]) -> bool:
-        token = _repo_rel_token(path)
-        if not token:
-            return False
-        for item in required_missing:
-            required = _repo_rel_token(item)
-            if not required:
-                continue
-            if token == required or token.startswith(f"{required}/") or required.startswith(f"{token}/"):
-                return True
-        return False
-
-    def _verified_required_next_missing_paths(values: Any) -> tuple[list[str], list[str]]:
-        valid: list[str] = []
-        invalid: list[str] = []
-        successful = _successful_read_paths_for_final_route()
-        stale = _stale_required_next_repo_read_paths()
-        conceptual_tokens = {
-            "coverage required",
-            "read or search pending",
-            "missing core candidate paths",
-            "missing unverified file mentions",
-        }
-        for path in _coalesce_required_next_missing_paths(values):
-            if (
-                path in conceptual_tokens
-                or path.startswith("need_")
-                or any(ch.isspace() for ch in path)
-            ):
-                if path not in invalid:
-                    invalid.append(path)
-                continue
-            if path in successful or path in stale:
-                if path not in invalid:
-                    invalid.append(path)
-                continue
-            if _path_exists_repo_relative(path) and _repo_readable_evidence_file(path):
-                if path not in valid:
-                    valid.append(path)
-            elif path not in invalid:
-                invalid.append(path)
-        return valid[:12], invalid[:12]
-
-    def _required_next_tool_from_missing_evidences(values: Any, allow_if_missing: bool) -> dict[str, Any]:
-        iterable_values = values if isinstance(values, (list, tuple, set)) else []
-        paths = _coalesce_required_next_missing_paths(
-            [value for value in iterable_values if isinstance(value, str)]
-        )
-        if not paths:
-            return {}
-        paths = [
-            path for path in paths
-            if path not in _successful_read_paths_for_final_route()
-            and path not in _stale_required_next_repo_read_paths()
-        ]
-        if not paths:
-            return {}
-        return {
-            "tool": "repo_read",
-            "arguments": {"paths": paths},
-            "reason": (
-                "Rewrite final from verified evidence requires at least one remaining evidence gap. "
-                "Read one of the requested missing paths before final."
-            ),
-            "allow_only_if_missing_evidence": bool(allow_if_missing),
-            "source": "repo_analysis_final_model_quality",
-        }
-
-    def _coalesce_required_next_tool_tool(value: dict[str, Any]) -> dict[str, Any]:
-        tool = str(value.get("tool") or "").strip().lower()
-        args = value.get("arguments") if isinstance(value.get("arguments"), dict) else {}
-        if not tool:
-            return {"tool": "", "arguments": {}, "allow_only_if_missing_evidence": False}
-        out = {
-            "tool": tool,
-            "arguments": args,
-            "allow_only_if_missing_evidence": bool(value.get("allow_only_if_missing_evidence")),
-            "reason": str(value.get("reason") or "").strip(),
-            "source": str(value.get("source") or "repo_analysis_final_model_quality").strip(),
-        }
-        if tool == "repo_read":
-            if "paths" in args:
-                normalized_paths = [
-                    _repo_rel_token(item)
-                    for item in args.get("paths", [])
-                    if _repo_rel_token(item)
-                ] if isinstance(args.get("paths"), list) else []
-                if normalized_paths:
-                    out["arguments"] = {"paths": normalized_paths}
-                else:
-                    out["arguments"] = {}
-            else:
-                path = _repo_rel_token(args.get("path"))
-                if path:
-                    out["arguments"] = {"path": path}
-                else:
-                    out["arguments"] = {}
-            if out["arguments"]:
-                out["allow_only_if_missing_evidence"] = True
-        elif not args:
-            out["arguments"] = {}
-        return out
-
-    def _coerce_final_rewrite_latch(value: Any) -> str:
-        raw = str(value or "inactive").strip().lower()
-        return (
-            raw
-            if raw in {"inactive", "rewrite_required", "required_gap_only", "terminal_block_required"}
-            else "inactive"
-        )
-
-    def _required_gap_paths_from_quality(
-        quality: Mapping[str, Any],
-        *,
-        existing_missing: list[str],
-    ) -> list[str]:
-        raw_missing = (
-            quality.get("required_next_missing_evidences")
-            if isinstance(quality.get("required_next_missing_evidences"), list)
-            else existing_missing
-        )
-        if not isinstance(raw_missing, list):
-            return []
-        required_next_missing_evidences = [
-            _repo_rel_token(item) for item in raw_missing if _repo_rel_token(item)
-        ]
-        successful = _successful_read_paths_for_final_route()
-        stale = _stale_required_next_repo_read_paths()
-        return [
-            path
-            for path in required_next_missing_evidences
-            if path not in successful and path not in stale and path not in existing_missing
-        ]
-
-    def _apply_final_quality_route(quality: dict[str, Any]) -> None:
-        step_index = len(history)
-        if int(contract.get("planner_final_quality_last_rewrite_decision") or -1) != step_index:
-            reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
-            contract["planner_final_quality_reject_count"] = reject_count
-            contract["planner_final_quality_last_rewrite_decision"] = step_index
-        reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
-        contract["planner_cuda_rewrite_required"] = True
-
-        required_next_progress = str(quality.get("required_next_progress") or "").strip()
-
-        invalid_required_next_tool_call_paths: list[str] = []
-        if required_next_progress:
-            contract["required_next_progress"] = required_next_progress
-
-        required_next_output_sections = (
-            quality.get("required_next_output_sections")
-            if isinstance(quality.get("required_next_output_sections"), list)
-            else []
-        )
-        if required_next_output_sections:
-            contract["required_next_output_sections"] = [
-                str(item).strip()
-                for item in required_next_output_sections
-                if str(item).strip()
-            ]
-
-        raw_existing_required_missing = contract.get("required_next_missing_evidences")
-        existing_required_missing = [
-            path
-            for path in _coalesce_required_next_missing_paths(
-                raw_existing_required_missing
-                if isinstance(raw_existing_required_missing, (list, tuple, set))
-                else []
-            )
-            if path
-        ]
-        required_next_missing_evidences = _required_gap_paths_from_quality(
-            quality,
-            existing_missing=existing_required_missing,
-        )
-        raw_required_next_missing_evidences = (
-            required_next_missing_evidences
-            if required_next_missing_evidences
-            else existing_required_missing
-        )
-        verified_required_missing, invalid_required_missing = _verified_required_next_missing_paths(
-            raw_required_next_missing_evidences
-        )
-        if invalid_required_missing:
-            contract["invalid_required_next_missing_evidences"] = invalid_required_missing
-            contract["invalid_required_next_missing_evidence_reason"] = (
-                "final-quality proposed strings that are not existing readable repo paths; "
-                "validator will not turn them into repo_read calls"
-            )
-        if verified_required_missing:
-            contract["required_next_missing_evidences"] = verified_required_missing
-        else:
-            contract.pop("required_next_missing_evidences", None)
-            required_next_missing_evidences = []
-            if invalid_required_missing and not contract.get("required_next_progress"):
-                contract["required_next_progress"] = (
-                    "Final-quality proposed no valid unread repo path. Do not call repo_read for "
-                    "non-existing/prose paths; rewrite final from verified evidence or return a typed block."
-                )
-
-        required_next_tool_call = (
-            quality.get("required_next_tool_call")
-            if isinstance(quality.get("required_next_tool_call"), dict)
-            else {}
-        )
-        raw_contract_missing = contract.get("required_next_missing_evidences")
-        contract_missing = (
-            raw_contract_missing
-            if isinstance(raw_contract_missing, (list, tuple, set))
-            else []
-        )
-        if not required_next_tool_call and contract_missing:
-            required_next_tool_call = _required_next_tool_from_missing_evidences(
-                contract_missing,
-                allow_if_missing=True,
-            )
-        if required_next_tool_call.get("tool") == "repo_read":
-            args = (
-                required_next_tool_call.get("arguments")
-                if isinstance(required_next_tool_call.get("arguments"), dict)
-                else {}
-            )
-            raw_paths: list[Any] = []
-            if args.get("path"):
-                raw_paths.append(args.get("path"))
-            raw_paths.extend(args.get("paths") if isinstance(args.get("paths"), list) else [])
-            parsed_paths = _coalesce_repo_read_paths(raw_paths)
-            allowlist = _final_quality_repo_read_allowlist(contract)
-            valid_paths: list[str] = []
-            for path in parsed_paths:
-                if path in allowlist or not allowlist:
-                    valid_paths.append(path)
-                elif path not in invalid_required_next_tool_call_paths:
-                    invalid_required_next_tool_call_paths.append(path)
-            if valid_paths:
-                if len(valid_paths) == 1:
-                    args["path"] = valid_paths[0]
-                    args.pop("paths", None)
-                else:
-                    args["paths"] = valid_paths[:12]
-                    args.pop("path", None)
-                required_next_tool_call["arguments"] = args
-            else:
-                required_next_tool_call = {}
-        if invalid_required_next_tool_call_paths:
-            contract["invalid_required_next_tool_call_paths"] = invalid_required_next_tool_call_paths[:12]
-        if required_next_tool_call:
-            required_next_tool_call = _coalesce_required_next_tool_tool(required_next_tool_call)
-            if not _required_next_route_has_deterministic_proof(required_next_tool_call, contract):
-                tool_name = str(required_next_tool_call.get("tool") or "").strip()
-                args = (
-                    required_next_tool_call.get("arguments")
-                    if isinstance(required_next_tool_call.get("arguments"), dict)
-                    else {}
-                )
-                path_token = _repo_path_token(args.get("path")) if args.get("path") else ""
-                query_text = str(args.get("query") or args.get("pattern") or args.get("symbol") or args.get("needle") or args.get("text") or "").strip()
-                if path_token:
-                    contract["invalid_required_next_tool_call_paths"] = [path_token]
-                if query_text:
-                    contract["invalid_required_next_tool_call_query"] = query_text[:260]
-                contract["invalid_required_next_tool_call_reason"] = (
-                    f"{tool_name or 'required_next_tool_call'} lacked deterministic concrete route proof"
-                )
-                required_next_tool_call = {}
-            if required_next_tool_call.get("tool") == "repo_read":
-                required_args = (
-                    required_next_tool_call.get("arguments")
-                    if isinstance(required_next_tool_call.get("arguments"), dict)
-                    else {}
-                )
-                raw_required_paths = (
-                    required_args.get("paths")
-                    if isinstance(required_args.get("paths"), list)
-                    else [required_args.get("path")]
-                )
-                verified_tool_paths, invalid_tool_paths = _verified_required_next_missing_paths(
-                    raw_required_paths
-                )
-                if invalid_tool_paths:
-                    contract["invalid_required_next_tool_call_paths"] = invalid_tool_paths
-                    contract["invalid_required_next_tool_call_reason"] = (
-                        "repo_read required_next_tool_call contained non-existing or non-readable paths"
-                    )
-                required_missing = (
-                    contract.get("required_next_missing_evidences")
-                    if isinstance(contract.get("required_next_missing_evidences"), list)
-                    else []
-                )
-                if required_missing:
-                    verified_tool_paths = [
-                        path for path in verified_tool_paths
-                        if _path_allowed_by_missing_evidence(path, required_missing)
-                    ]
-                if verified_tool_paths:
-                    required_next_tool_call["arguments"] = {"paths": verified_tool_paths}
-                else:
-                    required_next_tool_call = {}
-            if required_next_tool_call and not required_next_tool_call.get("arguments"):
-                required_next_tool_call = {}
-
-        required_next_missing = (
-            contract.get("required_next_missing_evidences")
-            if isinstance(contract.get("required_next_missing_evidences"), list)
-            else []
-        )
-        if required_next_tool_call and required_next_tool_call.get("tool") == "repo_read":
-            required_next_tool_call["allow_only_if_missing_evidence"] = True
-            required_args = (
-                required_next_tool_call.get("arguments")
-                if isinstance(required_next_tool_call.get("arguments"), dict)
-                else {}
-            )
-            if required_next_missing and isinstance(required_args, dict):
-                filtered_paths = [
-                    path
-                    for path in required_args.get("paths", [])
-                    if str(path).strip() and _repo_rel_token(path) in required_next_missing
-                ]
-                if filtered_paths:
-                    required_next_tool_call["arguments"] = {
-                        "paths": _coalesce_required_next_missing_paths(filtered_paths)
-                    }
-                else:
-                    required_next_tool_call = {}
-
-            if required_next_tool_call and not required_next_tool_call.get("arguments"):
-                required_next_tool_call = {}
-        if required_next_tool_call:
-            required_next_tool_call["source"] = required_next_tool_call.get(
-                "source",
-                "repo_analysis_final_model_quality",
-            )
-            required_next_tool_call["allow_only_if_missing_evidence"] = (
-                required_next_tool_call.get("tool") == "repo_read"
-            )
-            satisfaction = required_next_tool_call_satisfaction(
-                required_next_tool_call,
-                history,
-                successful_repo_read_paths=_agentic_v2_successful_read_paths,
-                successful_window_signatures=_successful_window_signatures,
-                repo_read_window_signature=_repo_read_window_signature,
-                planner_scratchpad_window_signature=_planner_scratchpad_window_signature,
-                decision_paths=_decision_paths,
-            )
-            if satisfaction.get("satisfied") is True:
-                append_stale_required_call_marker(contract, satisfaction)
-                contract.pop("required_next_tool_call", None)
-                contract.pop("required_next_tool_call_validated", None)
-                contract.pop("required_next_tool_call_validation_source", None)
-                contract["required_next_progress"] = (
-                    "Final-quality requested an evidence route that is already satisfied in "
-                    "verified tool history. Do not call the same tool with the same arguments. "
-                    "Rewrite action=final from existing verified evidence, or choose a different "
-                    "concrete evidence gap only if one is still missing."
-                )
-                required_next_tool_call = {}
-            else:
-                required_next_tool_call["validated"] = True
-                required_next_tool_call["validation_source"] = "deterministic_validator"
-                contract["required_next_tool_call"] = required_next_tool_call
-                contract["required_next_tool_call_validated"] = True
-                contract["required_next_tool_call_validation_source"] = "deterministic_validator"
-                tool_name = str(required_next_tool_call.get("tool") or "").strip()
-                arguments = (
-                    required_next_tool_call.get("arguments")
-                    if isinstance(required_next_tool_call.get("arguments"), dict)
-                    else {}
-                )
-                action = {
-                    "action_id": "repo_analysis_final_quality:" + tool_name,
-                    "tool": tool_name,
-                    "arguments": arguments,
-                    "reason": required_next_tool_call.get("reason") or required_next_progress,
-                    "source": "repo_analysis_final_model_quality",
-                    "independent_read_only": True,
-                }
-                existing = (
-                    contract.get("candidate_next_actions")
-                    if isinstance(contract.get("candidate_next_actions"), list)
-                    else []
-                )
-                contract["candidate_next_actions"] = [action] + [
-                    item for item in existing if isinstance(item, dict) and item != action
-                ][:12]
-        else:
-            contract.pop("required_next_tool_call", None)
-            contract.pop("required_next_tool_call_validated", None)
-            contract.pop("required_next_tool_call_validation_source", None)
-            fallback_progress = (
-                "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
-                "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
-            )
-            final_rewrite_latch = "terminal_block_required" if reject_count >= 2 else "rewrite_required"
-            if final_rewrite_latch == "rewrite_required":
-                if required_next_missing_evidences:
-                    contract["required_next_progress"] = (
-                        "Final-quality rejected with concrete, verified evidence gaps but no runnable required_next_tool_call. "
-                        "You must rewrite the final answer by explicitly addressing the remaining required gaps: "
-                        f"{required_next_missing_evidences[:8]}"
-                    )
-                else:
-                    contract["required_next_progress"] = (
-                        "Final-quality rejected without a concrete runnable gap route. "
-                        "Continue rewrite from verified evidence and existing covered gaps only; "
-                        "do not emit block unless a controller-forced terminal decision is present."
-                    )
-            if not contract.get("required_next_progress"):
-                contract["required_next_progress"] = fallback_progress
-            if final_rewrite_latch == "terminal_block_required":
-                contract["planner_may_choose_block"] = True
-                contract["planner_forced_terminal_block"] = True
-                contract["planner_forced_terminal_block_reason"] = (
-                    "repo_analysis_final_quality_no_runnable_gap_terminal_block"
-                )
-            else:
-                contract["planner_may_choose_block"] = False
-        has_gap_route = bool(required_next_tool_call) or bool(required_next_missing_evidences)
-        if required_next_tool_call:
-            final_rewrite_latch = _next_final_rewrite_latch(
-                str(contract.get("final_rewrite_latch") or ""),
-                reject_count=reject_count,
-                has_gap_route=has_gap_route,
-            )
-        elif final_rewrite_latch != "terminal_block_required":
-            final_rewrite_latch = _next_final_rewrite_latch(
-                final_rewrite_latch,
-                reject_count=reject_count,
-                has_gap_route=False,
-            )
-        contract["final_rewrite_latch"] = final_rewrite_latch
-        contract["planner_may_choose_block"] = final_rewrite_latch == "terminal_block_required"
-        contract["planner_may_choose_final"] = False
-        final_contract = (
-            contract.get("finalization_contract")
-            if isinstance(contract.get("finalization_contract"), dict)
-            else {}
-        )
-        final_contract["final_allowed"] = False
-        final_contract["planner_may_choose_final"] = False
-        if final_rewrite_latch == "terminal_block_required":
-            final_contract["planner_may_choose_block"] = True
-            final_contract["planner_forced_terminal_block"] = True
-            final_contract["planner_forced_terminal_block_reason"] = (
-                "repo_analysis_final_quality_no_runnable_gap_terminal_block"
-            )
-            final_contract["reason"] = "repo_analysis_final_quality_no_runnable_gap_terminal_block"
-        else:
-            final_contract["planner_may_choose_block"] = False
-            final_contract["reason"] = "repo_analysis_final_model_quality_rejected_no_runnable_gap"
-        contract["finalization_contract"] = final_contract
-
-    def _apply_duplicate_repo_read_path_recovery_contract(
-        contract: dict[str, Any],
-        repeated_reads: list[str],
-        history: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        contract = contract if isinstance(contract, dict) else {}
-        history = history if isinstance(history, list) else []
-        normalized: list[str] = []
-        for path in repeated_reads if isinstance(repeated_reads, list) else []:
-            token = _repo_path_token(path)
-            if token and token not in normalized:
-                normalized.append(token)
-        if not normalized:
-            return contract
-
-        forbidden: list[str] = []
-        for item in contract.get("forbidden_repeated_repo_read_paths", []):
-            if isinstance(item, str):
-                token = _repo_path_token(item)
-                if token and token not in forbidden:
-                    forbidden.append(token)
-        for token in normalized:
-            if token not in forbidden:
-                forbidden.append(token)
-        if not forbidden:
-            return contract
-        contract["forbidden_repeated_repo_read_paths"] = forbidden[:40]
-        duplicate_repo_read_recovery_count = (
-            contract.get("duplicate_repo_read_recovery_count")
-            if isinstance(contract.get("duplicate_repo_read_recovery_count"), dict)
-            else {}
-        )
-        for token in normalized:
-            duplicate_repo_read_recovery_count[str(token)] = (
-                int(duplicate_repo_read_recovery_count.get(str(token), 0) or 0) + 1
-            )
-        contract["duplicate_repo_read_recovery_count"] = {
-            key: int(value)
-            for key, value in duplicate_repo_read_recovery_count.items()
-            if str(key).strip()
-        }
-        contract["required_next_tool_call_advisory"] = {
-            "tool": "repo_read",
-            "arguments": {
-                "paths": normalized[:12],
-            },
-            "reason": "already_successful_full_path_read",
-            "source": "duplicate_repo_read_recovery_contract",
-        }
-
-        required_next_tool_call = (
-            contract.get("required_next_tool_call")
-            if isinstance(contract.get("required_next_tool_call"), dict)
-            else {}
-        )
-        if required_next_tool_call:
-            required_tool = str(required_next_tool_call.get("tool") or "").strip()
-            required_args = (
-                required_next_tool_call.get("arguments")
-                if isinstance(required_next_tool_call.get("arguments"), dict)
-                else {}
-            )
-            if required_tool == "repo_read":
-                required_paths = _decision_paths(required_args)
-                if any(path in normalized for path in required_paths):
-                    last_step = None
-                    if history and isinstance(history[-1], dict):
-                        last_step = history[-1].get("step")
-                    append_stale_required_call_marker(
-                        contract,
-                        {
-                            "tool": required_tool,
-                            "arguments": required_args,
-                            "satisfied": True,
-                            "reason": "repo_read_already_successful",
-                            "path_overlap": normalized,
-                            "step": last_step,
-                        },
-                    )
-
-        contract.pop("required_next_tool_call", None)
-        contract.pop("required_next_tool_call_validated", None)
-        contract.pop("required_next_tool_call_validation_source", None)
-        # Patch B: duplicate repo_read recovery con evidence consumption route
-        contract["required_next_progress"] = (
-            "Duplicate repo_read detected. Consume verified evidence windows or rewrite final from existing reads."
-        )
-        final_contract = (
-            contract.get("finalization_contract")
-            if isinstance(contract.get("finalization_contract"), dict)
-            else {}
-        )
-        if _minimum_read_coverage_satisfied():
-            final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
-            if final_rewrite_latch == "inactive":
-                contract["planner_may_choose_final"] = True
-                final_contract["final_allowed"] = True
-                final_contract["planner_may_choose_final"] = True
-            else:
-                final_contract["final_allowed"] = False
-                final_contract["planner_may_choose_final"] = False
-                final_contract["reason"] = "duplicate_repo_read_recovery_active_rewrite_latch"
-            coverage = contract.get("minimum_read_coverage")
-            if isinstance(coverage, dict):
-                contract["coverage_satisfied"] = coverage.get("coverage_satisfied", True)
-
-        duplicate_threshold_reached = any(
-            int(duplicate_repo_read_recovery_count.get(path, 0) or 0) >= 2
-            for path in normalized
-        )
-        if duplicate_threshold_reached:
-            # Non forzare planner_scratchpad_read senza document_id/section/offset reali
-            contract["required_next_progress"] = (
-                "Duplicate repo_read recovery: use verified_content_reads and required_working_set.repo_reads; "
-                "do not repeat repo_read. Extract conclusions from existing verified evidence."
-            )
-            # Non impostare required_next_tool_call: attendi documento_id reale da required_working_set
-            contract["planner_may_choose_block"] = True
-            contract["planner_may_choose_final"] = False
-            final_contract["planner_forced_terminal_block"] = True
-            final_contract["planner_forced_terminal_block_reason"] = (
-                "duplicate_repo_read_recovery_count_threshold_reached"
-            )
-            final_contract["planner_may_choose_block"] = True
-            final_contract["final_allowed"] = False
-            final_contract["planner_may_choose_final"] = False
-            final_contract["reason"] = "duplicate_repo_read_recovery_count_threshold_reached"
-            # Se required_next_progress non è stato settato, mantieni messaggio informativo
-            if not contract.get("required_next_progress"):
-                contract["required_next_progress"] = (
-                    "Duplicate repo_read recovery crossed retry threshold. "
-                    "Return a rewrite constrained to verified evidence or explicit terminal blocker if controller-forced."
-                )
-
-        contract["finalization_contract"] = final_contract
-        return contract
 
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
@@ -1407,6 +1131,24 @@ def validate_planner_decision_against_evidence(
             final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
         contract["finalization_contract"] = final_contract
 
+        # Evidence-aware terminal block reset: evaluate BEFORE terminal block check
+        _evidence_reset = _evaluate_evidence_aware_final_reset(contract)
+        if _evidence_reset.get("reset_latch") is True:
+            contract = _clear_final_terminal_block_state(contract)
+            final_rewrite_latch = "inactive"
+            contract["final_rewrite_latch"] = "inactive"
+            contract["planner_may_choose_final"] = True
+            final_contract["final_allowed"] = True
+            final_contract["planner_may_choose_final"] = True
+            final_contract["planner_may_choose_block"] = False
+            final_contract.pop("planner_forced_terminal_block", None)
+            final_contract.pop("planner_forced_terminal_block_reason", None)
+            final_contract.pop("reason", None)
+            contract["finalization_contract"] = final_contract
+            contract["planner_may_choose_block"] = False
+            contract["planner_forced_terminal_block"] = False
+            contract["planner_forced_terminal_block_reason"] = ""
+
         planner_may_choose_block = bool(contract.get("planner_may_choose_block")) or bool(
             final_contract.get("planner_may_choose_block")
         )
@@ -1517,7 +1259,7 @@ def validate_planner_decision_against_evidence(
             )
             if deterministic_violations:
                 violations.extend(str(v) for v in deterministic_violations)
-                _apply_final_quality_route(deterministic_quality)
+                _apply_final_quality_route_internal(deterministic_quality)
             if callable(_repo_analysis_final_answer_model_quality):
                 quality = _repo_analysis_final_answer_model_quality(
                     final_answer,
@@ -1545,7 +1287,7 @@ def validate_planner_decision_against_evidence(
             contract["repo_analysis_final_quality"] = quality
             if quality_violations:
                 violations.extend(str(v) for v in quality_violations)
-                _apply_final_quality_route(quality if isinstance(quality, dict) else {})
+                _apply_final_quality_route_internal(quality if isinstance(quality, dict) else {})
         if review_goal and not read_ok:
             violations.append("final_without_successful_repo_read_for_python_review")
         if review_goal and target_scope and any(not _path_under_scope(p, target_scope) for p in read_ok):
@@ -1657,6 +1399,12 @@ def validate_planner_decision_against_evidence(
                 )
             return {"ok": True, "violations": [], "evidence_contract": contract}
         if not planner_may_choose_block:
+            # Evidence-aware reset: check if sufficient evidence exists to clear terminal block
+            evidence_reset = _evaluate_evidence_aware_final_reset(contract)
+            if evidence_reset.get("reset_latch"):
+                contract = _clear_final_terminal_block_state(contract)
+                planner_may_choose_block = True
+            
             final_quality_reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
             coverage_required = _minimum_read_coverage_required()
             coverage_satisfied = _minimum_read_coverage_satisfied()
