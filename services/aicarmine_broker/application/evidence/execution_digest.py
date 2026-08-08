@@ -14,6 +14,28 @@ RepoReadContentLoader = Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]
 KeyLineExtractor = Callable[[str], list[str]]
 
 
+def latest_file_list_result(history: list[dict[str, Any]], target_file: str) -> dict[str, Any]:
+    """Return the latest file list result for a target_file from history."""
+    from ..shared.history_queries import history_tool_result
+    from ..shared.path_tokens import repo_rel_token
+    target = repo_rel_token(target_file)
+    for item in reversed(history if isinstance(history, list) else []):
+        result = history_tool_result(item)
+        if result.get("tool") != "repo_file_list" or result.get("ok") is not True:
+            continue
+        items = result.get("items") if isinstance(result.get("items"), list) else []
+        for sub in items:
+            if isinstance(sub, dict) and sub.get("ok") and repo_rel_token(sub.get("path") or "") == target:
+                return {
+                    "path": target,
+                    "line_count": sub.get("line_count", 0),
+                    "sha256": sub.get("sha256"),
+                    "truncated": sub.get("truncated", False),
+                }
+    return {}
+KeyLineExtractor = Callable[[str], list[str]]
+
+
 def repo_read_content_views(
     history: list[dict[str, Any]],
     *,

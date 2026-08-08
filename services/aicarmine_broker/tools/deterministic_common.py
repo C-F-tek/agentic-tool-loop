@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,8 @@ from aicarmine_broker.config.env_loader import env_str
 from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
 from aicarmine_broker.job_store import now, write_json
 from aicarmine_broker.tools.terminal import strip_terminal_ansi
+
+logger = logging.getLogger(__name__)
 
 
 TOOL_RESULT_TEXT_LIMIT = 120_000
@@ -23,7 +27,6 @@ class DeterministicToolInputError(ValueError):
     def __init__(
         self,
         error: str,
-        *,
         argument: str | None = None,
         value: Any = None,
         path: str | None = None,
@@ -70,40 +73,74 @@ def winget_package_executable(package_prefix: str, executable_name: str) -> Path
     return None
 
 
-EXE_FALLBACKS: dict[str, list[Path]] = {
-    "ctags": [
-        candidate
-        for candidate in [
-            winget_package_executable("UniversalCtags.Ctags", "ctags.exe"),
-        ]
-        if candidate is not None
-    ],
-    "shellcheck": [
-        candidate
-        for candidate in [
-            winget_package_executable("koalaman.shellcheck", "shellcheck.exe"),
-        ]
-        if candidate is not None
-    ],
-    "hyperfine": [
-        candidate
-        for candidate in [
-            winget_package_executable("sharkdp.hyperfine", "hyperfine.exe"),
-        ]
-        if candidate is not None
-    ],
-    "ruff": [active_venv_script("ruff")],
-    "pyright": [active_venv_script("pyright")],
-    "pytest": [active_venv_script("pytest")],
-    "semgrep": [active_venv_script("semgrep")],
-}
+@dataclass(frozen=True)
+class ExeFallbacks:
+    """Executable fallback registry for deterministic tools.
+
+    Replaces the EXE_FALLBACKS dict with a typed, immutable dataclass.
+    Provides OOP structure for executable resolution.
+    """
+    ctags: tuple[Path, ...] = ()
+    shellcheck: tuple[Path, ...] = ()
+    hyperfine: tuple[Path, ...] = ()
+    ruff: tuple[Path, ...] = ()
+    pyright: tuple[Path, ...] = ()
+    pytest: tuple[Path, ...] = ()
+    semgrep: tuple[Path, ...] = ()
+
+    @classmethod
+    def build(cls) -> "ExeFallbacks":
+        """Build ExeFallbacks from active venv and winget packages."""
+        return cls(
+            ctags=tuple(
+                c for c in [
+                    winget_package_executable("UniversalCtags.Ctags", "ctags.exe"),
+                ]
+                if c is not None
+            ),
+            shellcheck=tuple(
+                c for c in [
+                    winget_package_executable("koalaman.shellcheck", "shellcheck.exe"),
+                ]
+                if c is not None
+            ),
+            hyperfine=tuple(
+                c for c in [
+                    winget_package_executable("sharkdp.hyperfine", "hyperfine.exe"),
+                ]
+                if c is not None
+            ),
+            ruff=(active_venv_script("ruff"),),
+            pyright=(active_venv_script("pyright"),),
+            pytest=(active_venv_script("pytest"),),
+            semgrep=(active_venv_script("semgrep"),),
+        )
+
+    def get(self, name: str) -> tuple[Path, ...]:
+        """Get fallback paths for a tool name."""
+        normalized = str(name or "").strip().lower()
+        attr = getattr(self, normalized, ())
+        return attr if isinstance(attr, tuple) else ()
+
+
+EXE_FALLBACKS: ExeFallbacks | None = None
+
+
+def _get_exe_fallbacks() -> ExeFallbacks:
+    """Lazy singleton for ExeFallbacks."""
+    global EXE_FALLBACKS
+    if EXE_FALLBACKS is None:
+        EXE_FALLBACKS = ExeFallbacks.build()
+    return EXE_FALLBACKS
 
 
 def resolve_deterministic_executable(name: str) -> str | None:
     normalized = str(name or "").strip()
     if not normalized:
         return None
-    for candidate in EXE_FALLBACKS.get(normalized.lower(), []):
+    fallbacks = _get_exe_fallbacks()
+    candidates = fallbacks.get(normalized)
+    for candidate in candidates:
         if candidate and candidate.exists():
             return str(candidate)
     found = shutil.which(normalized)
@@ -121,7 +158,32 @@ def deterministic_tool_missing(tool: str, executable: str) -> dict[str, Any]:
     }
 
 
+def _tool_to_error_code(tool: str) -> str:
+    """Map tool name to structured error code."""
+    normalized = str(tool or "").strip().lower().replace("repo_", "").replace("_", "").replace(" ", "")
+    for prefix in ["fd_files", "rg_search", "jq_query", "ast_grep", "tree_sitter",
+                   "git_apply_check", "ruff_check", "pyright_check", "pytest_run",
+                   "shellcheck", "ctags_symbols", "semgrep_scan", "hyperfine_benchmark"]:
+        if prefix in normalized:
+            return f"TOOL_EXEC_{prefix.upper()}"
+    return "TOOL_EXECUTION_FAILED"
+
+
 def deterministic_input_error(tool: str, exc: Exception) -> dict[str, Any]:
+    """Build error dict with structured error code logging (non-blocking)."""
+    error_code = _tool_to_error_code(tool)
+    summary = str(exc)[:500] if exc else "unknown error"
+
+    # Log structured error for monitoring - never crash on logging
+    try:
+        logger.warning(
+            "Tool execution error: code=%s tool=%s error=%s",
+            error_code, tool, summary
+        )
+    except Exception:
+        pass  # Never crash on logging
+
+    # Return compatible dict shape for existing callers
     payload: dict[str, Any] = {"ok": False, "tool": tool}
     if isinstance(exc, DeterministicToolInputError):
         payload.update(exc.payload())
@@ -134,7 +196,6 @@ def deterministic_input_error(tool: str, exc: Exception) -> dict[str, Any]:
 def bounded_int_arg(
     args: dict[str, Any],
     names: str | tuple[str, ...],
-    *,
     default: int,
     minimum: int,
     maximum: int,
@@ -173,7 +234,6 @@ def subprocess_text(value: Any) -> str:
 
 def run_argv(
     argv: list[str],
-    *,
     cwd: Path | None = None,
     timeout: int = COMMAND_TIMEOUT_SECONDS,
     stdin: str | None = None,
@@ -196,6 +256,10 @@ def run_argv(
             "capture_output": True,
             "timeout": timeout,
         }
+        # Windows universal-ctags needs TMP set to a valid temp directory.
+        # /tmp does not exist on Windows; ctags falls back to it and crashes.
+        if os.name == "nt" and "TMP" not in os.environ:
+            common_kwargs["env"] = {**os.environ, "TMP": str(Path.cwd() / "tmp")}
         if stdin_bytes is not None:
             completed = subprocess.run(argv, input=stdin_bytes, **common_kwargs)
         else:

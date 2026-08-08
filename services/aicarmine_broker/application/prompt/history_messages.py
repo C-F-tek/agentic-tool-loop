@@ -8,6 +8,18 @@ from typing import Any, Callable
 from ..shared.clean_values import drop_empty_dict_values
 from ..shared.history_queries import history_tool_result
 from .context_windows import bounded_prompt_context_tool_result_payload
+
+
+def planner_scratchpad_window_signature(messages: list) -> dict:
+    """Return a deterministic signature for the planner scratchpad window."""
+    return {"schema": "planner_scratchpad_window_signature.v1", "count": len(messages)}
+
+
+def repo_read_window_signature(messages: list) -> dict:
+    """Return a deterministic signature for the repo read window."""
+    return {"schema": "repo_read_window_signature.v1", "count": len(messages)}
+
+
 from .values import prompt_clip_text
 from ..tool_surface.manifest_builder import json_char_len
 

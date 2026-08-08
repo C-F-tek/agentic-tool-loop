@@ -15,16 +15,16 @@ public protocol except through the explicit 3571/3572 API boundary.
 
 Read before edits:
 
-- `C:\Users\sanit\agentic-tool-loop\AGENTS.md`
-- `C:\Users\sanit\agentic-tool-loop\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
-- `C:\Users\sanit\agentic-tool-loop\services\END_TO_END_AGENTIC_FLOW.md`
-- `C:\Users\sanit\agentic-tool-loop\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
+- `C:\Users\carmi\AI\AGENTS.md`
+- `C:\Users\carmi\AI\services\VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md`
+- `C:\Users\carmi\AI\services\END_TO_END_AGENTIC_FLOW.md`
+- `C:\Users\carmi\AI\services\SERVICES_MODULE_TECHNICAL_REFERENCE.md`
 
 ## Runtime Contract
 
 - Process owner: 3572 broker/runtime.
 - Uvicorn target: `aicarmine_vulkan_tool_broker:app`.
-- Expected Python: `python.exe` (from PATH or AICARMINE_LABTOOLS_PYTHON env var).
+- Expected Python: `C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe`.
 - Main external model endpoints are configured through the `config/` package
   and exposed through the `aicarmine_broker.config` compatibility surface.
 - The controller validates planner decisions; Ollama `done_reason` is stored as
@@ -144,9 +144,9 @@ module; they are not compatibility shims for old flat modules.
 
 ## Active Repo Root Invariants
 
-`AICARMINE_LAB_REPO` is the active repository root for this package. Default:
-the workspace directory (default: `C:\Users\sanit\agentic-tool-loop`).
-the current working directory.
+`AICARMINE_LAB_REPO` is the active repository root for this package. It may be a
+lab worktree under `C:\Users\carmi\AI\lab-worktrees\...`; it is not necessarily
+the Codex cwd or `C:\Users\carmi\AI`.
 
 Planner/evidence/validator/tool code must preserve these invariants:
 

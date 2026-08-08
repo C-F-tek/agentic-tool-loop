@@ -111,7 +111,8 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "mio-qwen-code-6:latest"
+DEFAULT_GLOBAL_MODEL = "Qwen3.6-35B-coding-v6:latest"
+DEFAULT_GLOBAL_TEMPERATURE = 0.1
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -132,13 +133,13 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         else num_ctx_requested
     )
     real_repo = _resolved_path(
-        env_str("AICARMINE_REAL_REPO", r"C:\Users\sanit\\agentic-tool-loop", env),
+        env_str("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project", env),
         env_name="AICARMINE_REAL_REPO",
     )
     workspace = _resolved_path(
         env_str(
             "AICARMINE_VULKAN_WORKSPACE",
-            r"C:\Users\sanit\\agentic-tool-loop",
+            r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker",
             env,
         ),
         env_name="AICARMINE_VULKAN_WORKSPACE",
@@ -179,7 +180,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         ),
         ollama_task_model=env_first(
             ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
-            "my-qwen-code-6:latest",
+            "qwen3-task-8k",
             env,
         ),
         ollama_keep_alive=env_first(
@@ -198,7 +199,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
                 "AICARMINE_PLANNER_MODEL",
                 "AICARMINE_OLLAMA_PLANNER_MODEL",
             ),
-            DEFAULT_PLANNER_MODEL,
+            DEFAULT_GLOBAL_MODEL,
             env,
         ),
         agentic_planner_enabled=env_bool("AICARMINE_AGENTIC_PLANNER_ENABLED", True, env),
@@ -223,8 +224,8 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         planner_top_p=env_float("AICARMINE_AGENTIC_PLANNER_TOP_P", 0.85, env),
         planner_presence_penalty=env_float("AICARMINE_AGENTIC_PLANNER_PRESENCE_PENALTY", 0.0, env),
         planner_incomprehensible_retries=env_int("AICARMINE_AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES", 3, env),
-        native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", False, env),
-        require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", False, env),
+        native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", True, env),
+        require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", True, env),
         native_max_parallel_readonly=env_int("AICARMINE_AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY", 8, env),
         agent_default_max_steps=env_int("AICARMINE_AGENT_DEFAULT_MAX_STEPS", 20, env),
         agent_max_steps=env_int("AICARMINE_AGENT_MAX_STEPS", 60, env),
@@ -237,7 +238,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         lab_repo=_resolved_path(
             env_str(
                 "AICARMINE_LAB_REPO",
-                r"C:\Users\sanit\\agentic-tool-loop",
+                r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab",
                 env,
             ),
             env_name="AICARMINE_LAB_REPO",

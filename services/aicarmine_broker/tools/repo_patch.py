@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -57,13 +59,149 @@ def _rollback_change_set_files(root: Path, records: list[dict[str, Any]]) -> Non
             full_path.unlink()
 
 
+def _compute_old_text_not_found_details(
+    old_text: str,
+    file_content: str,
+    rel: str,
+) -> dict[str, Any]:
+    """Compute detailed diagnostic information when old_text is not found in file_content.
+
+    Detection order:
+      1. old_text_is_prefix — exact match at start but file has more content
+      2. partial_match_mismatch — some lines match then diverge
+      3. content_mismatch_at_start — fuzzy match finds embedded content (e.g., imports after docstring)
+      4. completely_different_content — no meaningful similarity
+    """
+    result: dict[str, Any] = {}
+
+    old_lines = old_text.splitlines(keepends=True)
+    file_lines = file_content.splitlines(keepends=True)
+
+    # Strip trailing whitespace for comparison but track original
+    old_stripped = [line.rstrip() for line in old_lines]
+    file_stripped = [line.rstrip() for line in file_lines]
+
+    def _lines_equal_stripped(a: str, b: str) -> bool:
+        return a.strip() == b.strip()
+
+    match_len = 0
+    for i in range(min(len(old_stripped), len(file_stripped))):
+        if _lines_equal_stripped(old_stripped[i], file_stripped[i]):
+            match_len += 1
+        else:
+            break
+
+    # Pattern 1: old_text is a prefix of the file (exact match at start but file has more)
+    if match_len > 0 and match_len == len(old_stripped):
+        if old_text.strip() == file_content[:len(old_text)].strip():
+            remaining_in_file = file_content[len(old_text):].lstrip()
+            if remaining_in_file:
+                result.update({
+                    "mismatch_type": "old_text_is_prefix",
+                    "solvable": True,
+                    "description": (
+                        "The requested old_text matches the beginning of the file, "
+                        f"but the file contains additional content afterwards. "
+                        f"The file has {len(file_lines)} lines; old_text covers lines 1-{match_len}. "
+                        f"Remaining file content starts with: {remaining_in_file[:200].strip()!r}"
+                    ),
+                    "common_patterns": [
+                        "old_text is correct but incomplete — include all lines you want to replace",
+                        "verify the exact boundaries of text to replace",
+                    ],
+                })
+                return result
+
+    # Pattern 2: partial match at start (some lines match, then diverge)
+    if match_len > 0 and match_len < len(old_stripped):
+        mismatch_idx = match_len
+        expected_line = old_lines[mismatch_idx].rstrip()
+        actual_line = file_lines[mismatch_idx].rstrip()
+        result.update({
+            "mismatch_type": "partial_match_mismatch",
+            "solvable": True,
+            "description": (
+                f"old_text partially matches: {match_len}/{len(old_lines)} lines matched. "
+                f"Mismatch at line {mismatch_idx + 1}. "
+                f"Expected: {expected_line[:60]!r} "
+                f"Actual:   {actual_line[:60]!r}"
+            ),
+            "common_patterns": [
+                "Some lines match but content diverges partway through",
+                "Use repo_read to get exact file content around the mismatch",
+                "Verify old_text boundaries are correct",
+            ],
+            "matched_lines": match_len,
+            "total_old_text_lines": len(old_lines),
+            "mismatch_at_line": mismatch_idx + 1,
+            "expected_content": expected_line[:80],
+            "actual_content": actual_line[:80],
+        })
+        return result
+
+    # Pattern 3: fuzzy match — search for best partial match anywhere in file
+    # This catches cases like imports that are embedded after a docstring or other preamble.
+    best_ratio = 0
+    best_start = 0
+    old_text_stripped = old_text.strip()
+
+    for i in range(len(file_stripped)):
+        window_size = min(5, len(old_stripped), len(file_stripped) - i)
+        if window_size < 1:
+            continue
+        window = file_stripped[i:i + window_size]
+        window_text = "\n".join(window)
+        ratio = SequenceMatcher(None, old_text_stripped[:200], window_text[:200]).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_start = i
+
+    if best_ratio > 0.5 and best_start < len(file_lines):
+        result.update({
+            "mismatch_type": "content_mismatch_at_start",
+            "solvable": True,
+            "description": (
+                f"old_text does not match the beginning of the file. "
+                f"Best fuzzy match found at line {best_start + 1} "
+                f"(similarity: {best_ratio:.0%}). "
+                f"The file starts with: {file_lines[0].rstrip()[:80]!r}"
+            ),
+            "common_patterns": [
+                "The file content may have changed since old_text was drafted",
+                "Use repo_read to get the exact current file content",
+                "Check if the file path is correct",
+            ],
+            "fuzzy_match_line": best_start + 1,
+            "fuzzy_similarity": round(best_ratio, 2),
+        })
+        return result
+
+    # Pattern 4: completely different content
+    result.update({
+        "mismatch_type": "completely_different_content",
+        "solvable": False,
+        "description": (
+            "old_text does not match any part of the file. "
+            f"The file has {len(file_lines)} lines; old_text has {len(old_lines)} lines. "
+            f"File starts with: {file_lines[0].rstrip()[:80]!r}"
+        ),
+        "common_patterns": [
+            "The file may have been modified since old_text was created",
+            "The file path may be incorrect",
+            "Use repo_read to verify current file content",
+        ],
+        "file_starts_with": file_lines[0].rstrip()[:80],
+    })
+    return result
+
+
 def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = str(args.get("path") or "").strip()
     old_text = args.get("old_text")
     new_text = args.get("new_text")
     try:
         max_replacements = bounded_int_arg(args, "max_replacements", default=1, minimum=1, maximum=100)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
         return deterministic_input_error("repo_apply_patch", exc)
 
     if not path:
@@ -77,13 +215,13 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
         rel = safe_rel_path(path)
         full = (LAB_REPO / rel).resolve(strict=False)
         full.relative_to(LAB_REPO)
-    except Exception as exc:
+    except (OSError, ValueError, PermissionError):
         return {
             "ok": False,
             "tool": "repo_apply_patch",
             "path": path,
-            "error_type": type(exc).__name__,
-            "error": str(exc),
+            "error_type": "path_resolution_failed",
+            "error": f"Could not resolve path: {path}",
         }
 
     if not full.exists() or not full.is_file():
@@ -94,24 +232,34 @@ def repo_apply_patch(args: dict[str, Any], root: Path) -> dict[str, Any]:
     original = original_bytes.decode("utf-8-sig", errors="replace")
     occurrences = original.count(old_text)
     if occurrences < 1:
+        details = _compute_old_text_not_found_details(old_text, original, rel)
+
         return {
             "ok": False,
             "tool": "repo_apply_patch",
             "path": rel,
             "error": "old_text_not_found",
+            "error_details": details,
             "old_text_preview": old_text[:1000],
+            "file_content_preview": original[:1000],
+            "old_text_line_count": len(old_text.splitlines()),
+            "file_line_count": len(original.splitlines()),
             "repair_hints": [
                 "read_current_file_before_retry",
-                "old_text_must_be_exact",
+                "old_text_must_be_exact_match",
                 "use_repo_read_with_max_chars_80000",
+                f"repo_read path={rel} max_chars=80000",
             ],
             "suggested_next_tool_calls": [
                 {
                     "tool": "repo_read",
                     "arguments": {"path": rel, "max_chars": 80000},
-                    "reason": "read_file_to_verify_old_text",
+                    "reason": "read_file_to_verify_old_text_and_get_exact_content",
                 },
             ],
+            "diagnostic_summary": details.get("description", ""),
+            "is_solvable": details.get("solvable", False),
+            "common_fix_patterns": details.get("common_patterns", []),
         }
 
     replacements = min(occurrences, max_replacements)
@@ -202,7 +350,7 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
     normalized_diff = normalize_unified_diff_text(diff_text)
     diff_bytes = normalized_diff.encode("utf-8")
     matching_args = (
-        ["--ignore-space-change"]
+        ["--ignore-spacechange"]
         if args.get("_verified_change_set") is True
         else []
     )
@@ -307,7 +455,7 @@ def repo_apply_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:
             )
             if normalized_bytes != after_apply_bytes:
                 full_path.write_bytes(normalized_bytes)
-    except Exception as exc:
+    except (OSError, IOError, PermissionError) as exc:
         _rollback_change_set_files(root, backup_records)
         rollback_performed = True
         return {
@@ -410,13 +558,13 @@ def repo_write_file(args: dict[str, Any], root: Path) -> dict[str, Any]:
         rel = safe_rel_path(path)
         full = (LAB_REPO / rel).resolve(strict=False)
         full.relative_to(LAB_REPO)
-    except Exception as exc:
+    except (OSError, ValueError, PermissionError):
         return {
             "ok": False,
             "tool": "repo_write_file",
             "path": path,
-            "error_type": type(exc).__name__,
-            "error": str(exc),
+            "error_type": "path_resolution_failed",
+            "error": f"Could not resolve path: {path}",
         }
 
     if full.exists() and full.is_dir():

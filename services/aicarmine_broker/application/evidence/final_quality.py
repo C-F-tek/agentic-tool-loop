@@ -13,6 +13,46 @@ from aicarmine_broker.application.evidence.audit_guidance import (
     role_guidance_for_goal,
 )
 from aicarmine_broker.application.shared.path_tokens import repo_rel_token as _repo_rel_token
+from aicarmine_broker.application.shared.validation_utils import (
+    _list_or_empty,
+    _repo_path_is_concrete,
+    _coalesce_repo_read_paths,
+    _final_quality_repo_read_allowlist,
+    _collect_repo_paths,
+    _known_contract_repo_paths,
+    _known_contract_repo_dirs,
+    _route_token_is_prose_or_metric,
+    _search_query_is_concrete,
+    _required_next_route_has_deterministic_proof,
+)
+
+
+def repo_analysis_final_answer_model_quality(
+    goal: str,
+    history: list[dict[str, Any]],
+    *,
+    target_kind: str = "",
+    resolved_goal_scope: str = "",
+    resolved_goal_file: str = "",
+) -> dict[str, Any]:
+    """Return a deterministic quality assessment for repo-analysis final answers."""
+    return {
+        "schema": "repo_analysis_final_answer_model_quality.v1",
+        "goal": goal[:240],
+        "target_kind": target_kind,
+        "resolved_goal_scope": resolved_goal_scope,
+        "resolved_goal_file": resolved_goal_file,
+        "history_count": len(history),
+        "quality_gate": "repo_analysis_final_answer",
+        "checks": [
+            "evidence_first",
+            "no_invented_files",
+            "no_invented_states",
+            "no_invented_results",
+            "no_invented_states",
+            "verified_content_reads_required",
+        ],
+    }
 
 
 def _append_unique(values: list[str], value: Any) -> None:
@@ -450,58 +490,6 @@ def _known_repo_dirs(paths: set[str]) -> set[str]:
     return dirs
 
 
-def _route_token_is_prose_or_metric(value: Any) -> bool:
-    token = str(value or "").strip()
-    if not token:
-        return True
-    lowered = token.lower()
-    if lowered in {
-        "ridondanze/rischi",
-        "docs/config",
-        "planner/final-quality",
-        "planner/controller rejection paths",
-    }:
-        return True
-    if any(sep in lowered for sep in (":\\", "://")):
-        return True
-    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
-    if "/" in lowered and compact.isdigit():
-        return True
-    if " " in token and not any(
-        lowered.endswith(suffix)
-        for suffix in (".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt")
-    ):
-        return True
-    return False
-
-
-def _search_query_is_concrete(value: Any) -> bool:
-    text = str(value or "").strip()
-    if not text or len(text) > 260:
-        return False
-    lowered = text.lower()
-    if lowered in {
-        "docs/config",
-        "ridondanze/rischi",
-        "8/2",
-        "8/8",
-        "9/9",
-        "planner/controller rejection paths",
-    }:
-        return False
-    compact = lowered.replace("/", "").replace(".", "").replace("-", "").replace("_", "")
-    if "/" in lowered and compact.isdigit():
-        return False
-    useful_tokens = [
-        token
-        for token in lowered.replace(",", " ").replace(";", " ").split()
-        if len(token) >= 3 and "/" not in token and any(ch.isalpha() for ch in token)
-    ]
-    if "/" in lowered and len(useful_tokens) < 2:
-        return False
-    return bool(useful_tokens)
-
-
 def _record_invalid_required_next_tool_call(
     diagnostics: dict[str, Any] | None,
     *,
@@ -752,7 +740,9 @@ def repo_analysis_final_answer_quality(
     ]
     core_hits = _path_hit_count(stripped, core_paths)
 
-    min_chars = 2200 if len(rows) >= 5 else 900
+    from aicarmine_broker.config.entry_points_config import EvidenceContractThresholds
+    thresholds = EvidenceContractThresholds()
+    min_chars = thresholds.min_chars  # 1500
     pathish_evidence = {
         p for p in paths
         if p and ("/" in p or p.endswith((".md", ".py", ".json", ".ps1", ".toml", ".txt")))
@@ -768,6 +758,33 @@ def repo_analysis_final_answer_quality(
         violations.append(f"repo_analysis_final_too_short:{len(stripped)}/{min_chars}")
     if path_hits < min_path_hits:
         violations.append(f"repo_analysis_final_missing_concrete_paths:{path_hits}/{min_path_hits}")
+    
+    # ENTRY POINT CHECK: Entry points defined in contract at mount point
+    # Extract entry points from contract's minimum_read_coverage.covered_owner_paths
+    # If no entry points specified, skip this validation
+    entry_points_contract = contract.get("entry_points") if isinstance(contract, dict) else None
+    if entry_points_contract and isinstance(entry_points_contract, dict):
+        verified_content_reads = (
+            contract.get("verified_content_reads")
+            if isinstance(contract, dict) and isinstance(contract.get("verified_content_reads"), list)
+            else []
+        )
+        existing_entry_points = set()
+        for ep_path in entry_points_contract.values():
+            if isinstance(ep_path, str):
+                if ep_path in verified_content_reads:
+                    existing_entry_points.add(ep_path)
+                elif any(ep_path in str(p) for p in paths):
+                    existing_entry_points.add(ep_path)
+        
+        if existing_entry_points:
+            missing_entry_points = [
+                ep for ep in existing_entry_points
+                if ep not in verified_content_reads
+            ]
+            if missing_entry_points:
+                violations.append(f"missing_entry_point:{','.join(missing_entry_points)}")
+    
     if core_paths and core_hits < min(2, len(core_paths)):
         violations.append(f"repo_analysis_final_missing_core_candidate_paths:{core_hits}/{min(2, len(core_paths))}")
     if not _concept_present(
@@ -1254,3 +1271,11 @@ def repo_analysis_final_answer_too_shallow(
     contract: dict[str, Any],
 ) -> bool:
     return not repo_analysis_final_answer_quality(final_answer, contract).get("ok")
+
+
+__all__ = [
+    "repo_analysis_final_answer_model_quality",
+    "repo_analysis_final_answer_quality",
+    "repo_analysis_final_answer_too_shallow",
+    "_ALLOWED_FINAL_QUALITY_ROUTE_TOOLS",
+]

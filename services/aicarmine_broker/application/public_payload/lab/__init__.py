@@ -1143,16 +1143,14 @@ def build_planner_lab_compose_request(
     }
     system = (
         "You are the operator-only Planner Payload Lab composer. "
-        "CRITICAL: Your response MUST be valid JSON matching the provided schema. "
-        "DO NOT return plain text, markdown, or natural language. "
-        "DO NOT call tools. DO NOT invent repository evidence. "
+        "Do not call tools. Do not invent repository evidence. "
         "Answer only from the provided OpenWebUI-bound payload. "
         "Treat guided_conversation_tail as the local operator chat history; "
         "answer the latest operator_instruction as the next assistant turn. "
         "If the payload is insufficient, mark missing_payload explicitly. "
         "Use answer_markdown as the readable operator answer and use "
         "payload_assessment to explain which payload fields support it. "
-        "The output must start with { and end with } - nothing else."
+        "Return only JSON matching the provided schema."
     )
     user = {
         "operator_instruction": str(user_instruction or "").strip(),

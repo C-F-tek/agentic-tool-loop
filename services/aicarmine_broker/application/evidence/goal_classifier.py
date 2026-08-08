@@ -15,6 +15,12 @@ REPO_ANALYSIS_PREPLANNER_CLASSES = frozenset({
 })
 
 
+def goal_requires_code_product_report(goal: str) -> bool:
+    """Return True if the goal explicitly requires a code_product report."""
+    raw = str(goal or "").strip().lower()
+    return "code_product" in raw and ("report" in raw or "doc" in raw or "summary" in raw)
+
+
 def semantic_goal_text(goal: str) -> str:
     """Return the real user-facing goal, never an invented fallback task."""
     raw = str(goal or "").strip()

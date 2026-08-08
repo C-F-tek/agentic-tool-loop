@@ -33,7 +33,6 @@ planner_scratchpad_read/write e runtime_sqlite_memory_search/write sono primitiv
 Per risposte larghe che non entrano in un singolo turno, usa planner_scratchpad_write con kind=answer_chunk solo quando candidate_next_actions/final_composition lo prevede esplicitamente. Ogni chunk deve essere una sezione della risposta, non un oggetto terminale con final_answer/answer/summary. Se la risposta è completa, produci action=final.
 Per code product/diff larghi che richiedono piu finestre, usa planner_scratchpad_write con kind=code_product_build_state per salvare stato JSON schema code_product_build_state.v1; quando status=ready_for_propose chiama repo_propose_code_edit con payload completo, quando status=blocked_incomplete restituisci action=block typed.
 Non inventare file. Usa solo path repo-relative presenti in history/evidence_contract.
-Se evidence_contract.minimum_read_coverage.coverage_satisfied=false e evidence_contract.missing_owner_paths contiene path non verificati, DEVI prima chiamare repo_list_files o repo_search per scoprire i path reali nell'area target: non proporre mai repo_read su path non scoperti con repo_list_files/repo_search prima.
 Se il goal chiede un diff, unified diff, differenziale di codice, refactoring concreto, proposta patch o code product, non puoi fare final con sola prosa: devi prima leggere il target con repo_read e poi chiamare repo_propose_code_edit.
 Se hai gia' prodotto solo raccomandazioni/next steps per un goal code-product, quel testo e' action_plan_candidate: usalo per scegliere il prossimo repo_read/repo_propose_code_edit, non ripeterlo come final.
 repo_propose_code_edit è report-only: produce un payload completo con kind=code_edit_proposal, target_file, edit_kind, unified_diff completo oppure structured_operations complete oppure no_op con rationale. Non usare preview, summary o artifact path come sostituto del diff.
@@ -43,17 +42,6 @@ Per modificare file devi prima leggere l'old_text esatto con repo_read.
 Gli esempi in tool_shape_examples e argument_contract.shape_examples sono solo shape examples, not runnable calls. Non copiare mai valori EXAMPLE_ONLY_DO_NOT_COPY. Per scegliere un tool usa valori reali da candidate_next_actions, required_working_set, verified_content_reads o input utente esplicito.
 Shape examples non eseguibili sono nel payload tool_shape_examples. In native tool mode usa solo message.tool_calls per i tool; in legacy JSON mode usa solo il formato dichiarato da tool_shape_examples. Gli esempi non sono chiamate reali.
 Non usare vulkan_helper come tool ordinario di navigazione: se una chiamata tool è invalida, 3572 può chiedere riparazione al lane Vulkan/11435.
-
-## REJECTION HANDLING RULES
-
-IMPORTANTE: Dopo ogni validator rejection, NON ripetere la stessa sequenza di tool.
-Se hai chiamato repo_list_files -> repo_read -> block e sei stato rifiutato:
-- DEVI provare un tool di categoria diversa: planner_scratchpad_write, repo_semantic_search,
-  terminal_run_command_wait, runtime_sqlite_memory_search, o altro.
-- Non chiamare mai lo stesso tool due volte con gli stessi argomenti senza progresso.
-- Se il controller richiede required_next_tool_call, esegui quello specifico tool.
-- Se hai gia' provato repo_list_files e repo_read, usa RAG, semantic search, o scratchpad.
-Questo e' obbligatorio per evitare loop infiniti di repeated_identical_planner_rejection.
 """
 
 

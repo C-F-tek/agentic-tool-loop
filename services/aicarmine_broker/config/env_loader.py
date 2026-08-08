@@ -62,20 +62,19 @@ def _env_text(name: str, value: object, *, expected: str) -> str:
 
 
 def parse_bool(value: object, default: bool = False) -> bool:
+    """Parse a boolean from any value type.
+
+    Guard-clause style: early returns flatten triangular nesting.
+    """
     if value is None:
         return default
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
-        return value != 0
+        return bool(value)
     try:
         text = str(value).strip().lower()
-    except Exception as exc:
-        logger.debug(
-            "Boolean parse fallback to default. value_type=%s error_type=%s",
-            type(value).__name__,
-            type(exc).__name__,
-        )
+    except Exception:
         return default
     if not text:
         return default
@@ -109,6 +108,7 @@ def env_first(
 
 
 def env_bool(name: str, default: bool, env: EnvMapping | None = None) -> bool:
+    """Read a boolean env var with guard-clause early returns."""
     value = _env(env).get(name)
     if value is None:
         return default
@@ -119,10 +119,9 @@ def env_bool(name: str, default: bool, env: EnvMapping | None = None) -> bool:
     except Exception as exc:
         context = env_error_context(name, expected="boolean", value=value, exc=exc)
         logger.debug(
-            "Boolean env parse fallback to default. env_name=%s received_type=%s error_type=%s",
+            "Boolean env parse fallback. env_name=%s received_type=%s",
             context["env_name"],
             context["received_type"],
-            context.get("error_type"),
         )
         return default
     return parse_bool(value, default)

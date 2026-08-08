@@ -8,7 +8,6 @@ import logging
 from typing import Any
 
 from ..shared.evidence_contract_summary import evidence_contract_summary_triplet
-from .repeated_pattern_detector import RepeatedPatternDetector
 
 
 HistoryLedgerBuilder = Callable[[list[dict[str, Any]]], Any]
@@ -24,13 +23,6 @@ class PlannerLoopState:
     _history: list[dict[str, Any]]
     _history_ledger: HistoryLedgerBuilder
     _evidence_builder: EvidenceBuilder
-    _pattern_detector: RepeatedPatternDetector | None = None
-    _rejection_history: list[dict[str, Any]] | None = None
-    _consecutive_identical_sequence_count: int = 0
-
-    def __post_init__(self) -> None:
-        if self._rejection_history is None:
-            object.__setattr__(self, '_rejection_history', [])
 
     def append_history_row(self, row: dict[str, Any], *, update_evidence: bool = True) -> None:
         self._history.append(row)

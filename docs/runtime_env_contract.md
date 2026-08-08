@@ -27,12 +27,24 @@ through the import surface `aicarmine_broker.config`.
 Launcher scripts may set process/user env before startup, but live behavior is
 determined by the environment inherited by the running process.
 
-Critical planner defaults documented in the current code/docs:
+Planner runtime values have three distinct layers:
 
-- `AICARMINE_AGENTIC_PLANNER_NUM_CTX=12288`
-- `AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP=12288`
-- `AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET=48000`
+1. Code defaults in `services/aicarmine_broker/config/models.py`.
+2. Launcher/user environment overrides inherited by the running process.
+3. Effective runtime values captured in job artifacts and process diagnostics.
+
+Current code defaults:
+
+- `AICARMINE_AGENTIC_PLANNER_NUM_CTX=262144`
+- `AICARMINE_AGENTIC_PLANNER_NUM_CTX_CAP=262144`
+- `AICARMINE_AGENTIC_PLANNER_PROMPT_CHAR_BUDGET=max(48000, effective_num_ctx)`
 - `AICARMINE_AGENTIC_PLANNER_PROMPT_COMPACT_RATIO=0.5`
+
+Launcher profiles may intentionally override these values, for example a local
+operator launcher can request a larger context or different temperature. In a
+live incident, the launcher/process environment and job prompt capture are the
+operational source of truth; this document records boundaries and defaults, not
+proof that a specific already-running job inherited them.
 
 The refactor must not change model, context, launcher order or service venv as
 part of code-structure cleanup. Those changes require separate runtime proof.

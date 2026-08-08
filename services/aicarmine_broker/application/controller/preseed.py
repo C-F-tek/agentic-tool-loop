@@ -20,6 +20,48 @@ from ..evidence.repo_path_policy import (
 SafeRelPath = Callable[[str], str]
 
 
+def controller_preplanner_rag_preseed_plan(goal: str, contract: dict[str, Any]) -> dict[str, Any]:
+    """Return a deterministic preseed plan for controller preplanner RAG."""
+    return {
+        "schema": "controller_preplanner_rag_preseed_plan.v1",
+        "goal": goal[:240],
+        "target_kind": contract.get("target_kind"),
+        "resolved_goal_scope": contract.get("resolved_goal_scope"),
+        "queries": [
+            {"kind": "semantic", "text": goal[:160]},
+            {"kind": "path", "text": contract.get("resolved_goal_file") or ""},
+        ],
+    }
+
+
+def controller_preseed_plan(goal: str, contract: dict[str, Any]) -> dict[str, Any]:
+    """Return a deterministic preseed plan for controller."""
+    return {
+        "schema": "controller_preseed_plan.v1",
+        "goal": goal[:240],
+        "target_kind": contract.get("target_kind"),
+        "resolved_goal_scope": contract.get("resolved_goal_scope"),
+        "queries": [
+            {"kind": "semantic", "text": goal[:160]},
+            {"kind": "path", "text": contract.get("resolved_goal_file") or ""},
+        ],
+    }
+
+
+def controller_preplanner_rag_query_plan(goal: str, contract: dict[str, Any]) -> dict[str, Any]:
+    """Return a deterministic RAG query plan for controller preseed."""
+    return {
+        "schema": "controller_preplanner_rag_query_plan.v1",
+        "goal": goal[:240],
+        "target_kind": contract.get("target_kind"),
+        "resolved_goal_scope": contract.get("resolved_goal_scope"),
+        "queries": [
+            {"kind": "semantic", "text": goal[:160]},
+            {"kind": "path", "text": contract.get("resolved_goal_file") or ""},
+        ],
+    }
+
+
 def root_surface_entries(result: dict[str, Any], *, repo_root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for key in ("entries", "entries_preview", "files", "files_preview"):

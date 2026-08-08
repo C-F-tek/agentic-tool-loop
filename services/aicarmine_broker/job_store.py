@@ -20,32 +20,17 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .config import (
-    AGENT_JOB_DB,
-    AGENT_JOB_MAX_INLINE_EVENTS,
-    AGENT_JOB_ROOT,
-    AGENT_PUBLIC_BASE_URL,
-    AGENT_PUBLIC_ANSWER_CHARS,
-    AGENT_PUBLIC_RESULT_INLINE_CHARS,
-    AGENT_PUBLIC_SUMMARY_CHARS,
-    AGENT_TERMINAL_STATUSES,
-    AGENT_WAIT_POLL_SECONDS,
-)
-from .application.public_payload.history_ledger import build_public_result_digest
-from .application.job.response_values import (
-    compact_json,
-    compact_text,
-    event_digest,
-)
-from .application.job.terminal_response import (
-    build_compact_terminal_response,
-    build_missing_job_response,
-)
-from .application.job.status_response import build_compact_status_response
-from .application.job.wait_response import build_wait_timeout_response
-from .infrastructure.json_files import JsonFileStore
-from .infrastructure.job_sqlite_store import AgentJobSQLiteStore
-from .infrastructure.time_provider import TimeProvider
+from .application.job.failure_counter import get_counter, reset_counter
+
+from .config import *
+from .application.public_payload.history_ledger import *
+from .application.job.response_values import *
+from .application.job.terminal_response import *
+from .application.job.status_response import *
+from .application.job.wait_response import *
+from .infrastructure.json_files import *
+from .infrastructure.job_sqlite_store import *
+from .infrastructure.time_provider import *
 
 
 logger = logging.getLogger(__name__)
@@ -155,7 +140,7 @@ def _log_sqlite_warning(job_id: str, operation: str, warning: dict[str, Any], ex
 
 def session_root(session_id: str) -> Path:
     # Late import to avoid circular; workspace injected via _resolve_workspace()
-    from .config import WORKSPACE  # noqa: PLC0415
+    from .config import WORKSPACE  
 
     root = WORKSPACE / "sessions" / make_session_id(session_id)
     for name in ("commands", "reads", "tool-results", "artifacts"):
@@ -217,7 +202,7 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
     write_json(agent_job_state_path(job_id), state)
     try:
         _job_sqlite_store().upsert_job_state(state, root)
-    except Exception as exc:
+    except (sqlite3.IntegrityError, sqlite3.OperationalError, sqlite3.DatabaseError) as exc:
         warning = _sqlite_warning(exc)
         _log_sqlite_warning(job_id, "job_state_upsert", warning, exc)
         state["_persistence_warning"] = warning
@@ -226,6 +211,20 @@ def write_agent_job_state(state: dict[str, Any]) -> None:
             job_id,
             "sqlite_write_failed",
             "Filesystem job state was written but SQLite index update failed.",
+            warning,
+            step=None,
+        )
+    except Exception as exc:
+        # Broad catch for unexpected errors (e.g., permission denied, disk full)
+        warning = _sqlite_warning(exc)
+        warning["unexpected_error_type"] = type(exc).__name__
+        _log_sqlite_warning(job_id, "job_state_upsert_unexpected", warning, exc)
+        state["_persistence_warning"] = warning
+        write_json(agent_job_state_path(job_id), state)
+        append_agent_event_filesystem_only(
+            job_id,
+            "sqlite_write_failed_unexpected",
+            f"Unexpected SQLite error ({type(exc).__name__}): job state persisted to filesystem only.",
             warning,
             step=None,
         )
@@ -546,3 +545,4 @@ def wait_for_agent_terminal(
         timeout_seconds=timeout_seconds,
         events_tail=read_agent_events(job_id, 5),
     )
+

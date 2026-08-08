@@ -15,61 +15,11 @@ from fastapi import Body, FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .config import (
-    AGENT_JOB_DB,
-    AGENT_JOB_ROOT,
-    AGENTIC_PLANNER_NUM_CTX,
-    AGENTIC_PLANNER_NUM_CTX_CAP,
-    AGENTIC_PLANNER_NUM_CTX_REQUESTED,
-    AGENTIC_PLANNER_PROMPT_CHAR_BUDGET,
-    AGENTIC_PLANNER_PROMPT_COMPACT_RATIO,
-    AGENTIC_PLANNER_PROMPT_PREVIEW_CHARS,
-    AGENTIC_PLANNER_HISTORY_PROMPT_TAIL,
-    AGENTIC_PLANNER_ENABLED,
-    AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY,
-    AGENTIC_PLANNER_NATIVE_TOOLS,
-    AGENTIC_PLANNER_PRESENCE_PENALTY,
-    AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS,
-    AGENTIC_PLANNER_TEMPERATURE,
-    AGENTIC_PLANNER_TOP_K,
-    AGENTIC_PLANNER_TOP_P,
-    APP_DESCRIPTION,
-    APP_TITLE,
-    APP_VERSION,
-    HEALTH_PATH,
-    JOBS_INDEX_PATH,
-    JOBS_JSON_PATH,
-    LAB_REPO,
-    OLLAMA_TASK_MODEL,
-    OLLAMA_TASK_URL,
-    OPENAPI_CONTRACT,
-    OLLAMA_KEEP_ALIVE,
-    PLANNER_MODEL,
-    PLANNER_URL,
-    SERVICE_NAME,
-    V6_MARKER,
-    VULKAN_AGENT_PATH,
-    WORKSPACE,
-    ollama_options,
-)
-from .agent_entry import agent
-from .job_html import (
-    agent_job_events_view_html,
-    agent_job_events_section_html,
-    agent_job_final_json_view_html,
-    agent_job_final_json_section_html,
-    agent_job_final_markdown_view_html,
-    agent_job_html,
-    agent_job_ia_view_html,
-    agent_job_ia_view_payload,
-    agent_job_ia_view_section_html,
-    agent_jobs_index_html,
-    agent_job_planner_stream_view_html,
-    agent_job_status_json_view_html,
-    agent_job_status_json_section_html,
-)
-from .job_planner_lab import agent_job_planner_lab_html, planner_lab_index_html
-from .job_store import agent_job_root, append_agent_event, compact_agent_terminal_response, list_agent_jobs
+from .config import *
+from .agent_entry import *
+from .application.shared.job_html import *
+from .job_planner_lab import *
+from .job_store import *
 from .application.public_payload.lab import (
     build_planner_lab_apply_tool_call,
     build_planner_lab_compose_request,
@@ -77,7 +27,7 @@ from .application.public_payload.lab import (
     parse_planner_lab_compose_response,
 )
 from .planner_core.json_io import post_json
-from .tool_dispatch import dispatch_tool
+from .application.tool_surface.tool_dispatch import dispatch_tool
 from .tool_registry import capability_map
 
 
@@ -187,19 +137,13 @@ def create_app() -> FastAPI:
         for key in ("max_steps", "approval_mode", "user_consent"):
             if payload.get(key) not in (None, "", [], {}):
                 arguments[key] = payload.get(key)
-        try:
-            return agent(
-                {
-                    "tool_name": "vulkan_helper",
-                    "task": task,
-                    "arguments": arguments,
-                }
-            )
-        except Exception as exc:
-            return {
-                "ok": False,
-                "error": f"agent_exception:{type(exc).__name__}:{str(exc)[:500]}"
+        return agent(
+            {
+                "tool_name": "vulkan_helper",
+                "task": task,
+                "arguments": arguments,
             }
+        )
 
     @app.get(f"{JOBS_INDEX_PATH}/{{job_id}}", include_in_schema=False)
     def job_dashboard(job_id: str) -> HTMLResponse:

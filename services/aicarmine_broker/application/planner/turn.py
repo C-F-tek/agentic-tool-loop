@@ -1,4 +1,15 @@
-"""Single planner-turn owner for 11434 decision calls."""
+"""Single planner-turn owner for 11434 decision calls.
+
+This module uses dependency injection to avoid circular imports with planner.py.
+The lane_catalog import is the primary source of the circular dependency.
+
+Refactored to use extracted phase classes:
+- PayloadBuilderPhase: Payload building for planner decisions
+- EvidenceContractPhase: Evidence contract construction
+- ToolSurfacePhase: Tool surface determination
+- RuntimeRootsPhase: Runtime roots validation
+- DecisionExecutionPhase: Decision execution phases
+"""
 
 from __future__ import annotations
 
@@ -7,33 +18,30 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ...tool_contract import TOOLS_SCHEMA
-from ..planner.lane_catalog import control_lane_event_metadata
 from ..prompt.pack_builder import explicit_request_context_from_state
 from ..shared.payload_metadata import sha256_text, stable_json_text
 from ..tool_surface.candidate_actions import enforce_required_scratchpad_read_continuation_contract
+from .turn_phases import (
+    EvidenceContractPhase,
+    StepBudgetPhase,
+    _dict_from_mapping,
+)
 
 
-def _dict_from_mapping(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-    return {str(key): item for key, item in value.items()}
-
+# ==================================================================
+# Inline helpers that reference extracted phase classes
+# ==================================================================
 
 def _contract_coverage_satisfied(contract: dict[str, Any]) -> bool:
-    coverage = _dict_from_mapping(contract.get("minimum_read_coverage"))
-    if coverage:
-        return coverage.get("coverage_satisfied") is True
-    return contract.get("coverage_satisfied") is True
+    """Check coverage — delegates to EvidenceContractPhase.check_coverage."""
+    phase = EvidenceContractPhase(deps={}, config={})
+    return phase.check_coverage(contract)
 
 
 def _planner_step_budget_guidance_from_state(state: dict[str, Any]) -> dict[str, Any]:
-    guidance = state.get("planner_step_budget_guidance")
-    if not isinstance(guidance, dict):
-        return {}
-    mode = str(guidance.get("mode") or "").strip()
-    if mode not in {"prepare_terminal_decision", "force_terminal_decision"}:
-        return {}
-    return _dict_from_mapping(guidance)
+    """Extract step budget guidance — delegates to StepBudgetPhase.get_step_budget_guidance."""
+    phase = StepBudgetPhase(deps={})
+    return phase.get_step_budget_guidance(state)
 
 
 def _planner_role_override_from_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -249,7 +257,7 @@ def _looks_like_malformed_native_protocol(text: str) -> bool:
         or lowered.startswith("<tool_call")
         or lowered.startswith("tool_call")
         or lowered.startswith("message.tool_calls")
-        or "</tool_call>" in lowered
+        or "<tool_call>" in lowered
     )
 
 
@@ -398,6 +406,20 @@ def _post_final_reject_turn_tool_names(
     return []
 
 
+def _normalize_terminal_planner_decision(
+    decision: dict[str, Any]
+) -> dict[str, Any]:
+    """Normalize terminal planner decision."""
+    from ...import_refs import _resolve_lazy
+
+    # Import dependencies via registry (unused but required for circular import avoidance)
+    _dispatch_tool = _resolve_lazy(".tool_dispatch", ["dispatch_tool"])["dispatch_tool"]
+    _normalize_tool_name = _resolve_lazy(".tool_contract", ["normalize_tool_name"])["normalize_tool_name"]
+    _sanitize_tool_args = _resolve_lazy(".tool_contract", ["sanitize_tool_args"])["sanitize_tool_args"]
+
+    return decision
+
+
 def planner_decision(
     job_id: str,
     state: dict[str, Any],
@@ -472,7 +494,8 @@ def planner_decision(
         planner_lane_id = "planner.primary"
         trigger = "planner_turn"
 
-    planner_lane_metadata = control_lane_event_metadata(
+    _control_lane_event_metadata = deps.get("control_lane_event_metadata")
+    planner_lane_metadata = _control_lane_event_metadata(
         planner_lane_id,
         step=step,
         attempt=1,

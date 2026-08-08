@@ -15,6 +15,8 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ...config.compatibility import GLOBAL_TEMPERATURE
+
 from ..evidence.goal_classifier import (
     goal_operational_intent_text,
     semantic_goal_classification,
@@ -540,9 +542,9 @@ def _repair_preplanner_query_plan_json(
                 ),
             },
         ],
-        "options": {
-            "temperature": 0,
-            "num_predict": _env_int(
+            "options": {
+                "temperature": GLOBAL_TEMPERATURE,
+                "num_predict": _env_int(
                 "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_REPAIR_NUM_PREDICT",
                 700,
                 minimum=128,
@@ -857,7 +859,7 @@ def controller_preplanner_rag_query_plan(
                 ),
             }
         options: dict[str, Any] = {
-            "temperature": 0,
+            "temperature": GLOBAL_TEMPERATURE,
             "num_predict": _env_int(
                 "AICARMINE_CONTROLLER_RAG_QUERY_PLANNER_NUM_PREDICT",
                 512,

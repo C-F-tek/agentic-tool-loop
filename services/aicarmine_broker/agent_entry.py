@@ -37,9 +37,9 @@ from .job_store import (
     write_json,
 )
 from .planner import finalize_agentic_job, run_agentic_planner_job
-from .public_wrapper import deterministic_public_wrapper, fail_selector, summary_from_result
+from .application.public_payload.public_wrapper import deterministic_public_wrapper, fail_selector, summary_from_result
 from .tool_contract import public_args, public_tool, sanitize_tool_args, text_from_payload
-from .tool_dispatch import dispatch_tool
+from .application.tool_surface.tool_dispatch import dispatch_tool
 from .tool_selection import needs_composite_review, select_internal_tool, selector_fallback_tool
 
 

@@ -358,7 +358,7 @@ def _tool_cache_hit_for_decision(
     original_args: dict[str, Any],
     public_tool_name: str,
 ) -> dict[str, Any] | None:
-    from ..tool_contract import normalize_tool_name, sanitize_tool_args  # noqa: PLC0415
+    from ..tool_contract import normalize_tool_name, sanitize_tool_args  
 
     if not isinstance(decision, dict):
         return None
@@ -455,3 +455,4 @@ def _cached_vulkan_repair_result(
             "cached_from_step": item.get("step"),
         }
     return None
+

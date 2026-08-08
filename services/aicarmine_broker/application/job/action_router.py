@@ -1,4 +1,10 @@
-"""Public agent payload action router."""
+"""Public agent payload action router.
+
+Refactored using principles from PYTHON_REFACTORING_GUIDE.md:
+- Strategy pattern replacing if/elif chains (§5)
+- Lookup tables for action routing (§4)
+- Flat code with early returns (§8.3)
+"""
 from __future__ import annotations
 
 import logging
@@ -25,6 +31,43 @@ AppendEvent = Callable[..., None]
 
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Action routing lookup table (Guide §4 — Lookup tables replacing conditionals)
+# ---------------------------------------------------------------------------
+
+_ACTION_ROUTE_MAP: dict[str, str] = {
+    "": "start",
+    "start": "start",
+    "job_start": "start",
+    "async": "start",
+    "background": "start",
+    "run": "start",
+    "execute": "start",
+    "status": "status",
+    "job_status": "status",
+    "result": "result",
+    "job_result": "result",
+    "final": "result",
+    "cancel": "cancel",
+    "job_cancel": "cancel",
+}
+
+
+def _route_action(raw_job_action: str, public_tool_name: str, job_id: str) -> tuple[str, str]:
+    """Route a raw action string to (routed_action, job_id).
+
+    Uses a lookup table instead of repeated if/elif chains.
+    """
+    routed = _ACTION_ROUTE_MAP.get(raw_job_action)
+    if routed:
+        return routed, job_id
+    # Default: vulkan_helper without job_id → start; otherwise echo raw
+    if public_tool_name == "vulkan_helper" and not job_id:
+        return "start", job_id
+    if public_tool_name == "vulkan_helper":
+        return "start", job_id
+    return raw_job_action, job_id
 
 
 @dataclass(frozen=True)
@@ -131,12 +174,13 @@ class AgentJobActionRouter:
             timeout_seconds = 120.0
         return int(max(15.0, min(timeout_seconds, 240.0)))
 
-    @staticmethod
     def _job_action(
+        self,
         payload: dict[str, Any],
         original_args: dict[str, Any],
         public_tool_name: str,
     ) -> tuple[str, str]:
+        """Route a raw action string using lookup table dispatch."""
         raw_job_action = str(
             original_args.get("job_action")
             or payload.get("job_action")
@@ -145,23 +189,7 @@ class AgentJobActionRouter:
             or ""
         ).strip().lower()
         job_id = str(original_args.get("job_id") or payload.get("job_id") or "").strip()
-        start_actions = {"", "start", "job_start", "async", "background", "run", "execute"}
-        status_actions = {"status", "job_status"}
-        result_actions = {"result", "job_result", "final"}
-        cancel_actions = {"cancel", "job_cancel"}
-        if public_tool_name == "vulkan_helper" and (not job_id):
-            return "start", job_id
-        if raw_job_action in start_actions:
-            return "start", job_id
-        if raw_job_action in status_actions:
-            return "status", job_id
-        if raw_job_action in result_actions:
-            return "result", job_id
-        if raw_job_action in cancel_actions:
-            return "cancel", job_id
-        if public_tool_name == "vulkan_helper":
-            return "start", job_id
-        return raw_job_action, job_id
+        return _route_action(raw_job_action, public_tool_name, job_id)
 
     @staticmethod
     def _result_audience(
