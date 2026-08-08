@@ -138,6 +138,34 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
         "refactor_mcp_server.py",
         "refactor_health",
     ),
+    "aicarmine_knowledge_graph": LocalMcpServer(
+        "knowledge_graph_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
+    "aicarmine_doc_quality": LocalMcpServer(
+        "documentation_quality_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
+    "aicarmine_test_coverage": LocalMcpServer(
+        "test_coverage_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
+    "aicarmine_security_audit": LocalMcpServer(
+        "security_audit_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
+    "aicarmine_api_surface": LocalMcpServer(
+        "api_surface_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
+    "aicarmine_config_validator": LocalMcpServer(
+        "config_validator_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
+    "aicarmine_performance_profiler": LocalMcpServer(
+        "performance_profiler_mcp_server.py",
+        None,  # No dedicated health tool; uses generic health handler
+    ),
 }
 
 

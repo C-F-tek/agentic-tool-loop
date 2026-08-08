@@ -6,9 +6,14 @@ from pathlib import Path
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class ToolResult:
-    """Structured result for tool functions."""
+    """Structured result for tool functions.
+
+    Accepts arbitrary extra kwargs via cls_ok_result/cls_error_result
+    and stores them in context_for_30b so that tool-specific fields
+    (path, mode, query, etc.) do not raise TypeError.
+    """
     ok: bool = True
     tool: str = ""
     summary: str = ""
@@ -28,19 +33,25 @@ class ToolResult:
     items: list[Any] = field(default_factory=list)
     input_keys: list[str] = field(default_factory=list)
 
+    def __new__(cls, *args, **kwargs):
+        """Prevent direct construction with unknown kwargs."""
+        return super().__new__(cls)
+
     @classmethod
     def ok_result(cls_self, *, tool: str = "", summary: str = "", **kwargs: Any):
-        return cls_self(ok=True, tool=tool, summary=summary, **kwargs)
+        ctx = dict(kwargs) if kwargs else {}
+        return cls_self(ok=True, tool=tool, summary=summary, context_for_30b=ctx)
 
     @classmethod
     def error_result(cls_self, *, tool: str = "", error: str = "", details: str = "", **kwargs: Any):
+        ctx = dict(kwargs) if kwargs else {}
         return cls_self(
             ok=False,
             tool=tool,
             summary=error,
             error=error,
             details=details,
-            **kwargs,
+            context_for_30b=ctx,
         )
 
 

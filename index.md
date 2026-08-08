@@ -1,306 +1,364 @@
-# Analisi Completa del Progetto Agentic-Tool-Loop
+# MCP SERVER DA CREARE PER MIGLIORARE LA CONOSCENZA DELL'AI ASSISTANT
 
-## 1. PANORAMICA ARCHITETTURALE
+## ANALISI DEGLI STRUMENTI ESISTENTI
 
-**agentic-tool-loop** è un runtime agentic locale che funge da ponte tra OpenWebUI e un broker interno (3572) con un loop planner/validator su istanze Ollama locali. Il sistema è suddiviso in tre superfici runtime:
+### Server MCP che forniscono già conoscenza
+| Server | Strumenti | Scopo | Limiti |
+|--------|-----------|-------|--------|
+| `aicarmine-rag` | search, index_status, reindex | Ricerca semantica su chunk di codice | Non valuta qualità, solo indicizzazione |
+| `aicarmine-repo-symbol-index` | symbol_index, symbol_query, symbol_summary | SQLite-based symbol indexing | Solo estrazione simboli, nessuna valutazione |
+| `aicarmine-enhanced-analysis` | code_summarize_module, api_surface, config_validator | Code summarizer, API surface, config validation | Strumenti base, nessuna analisi approfondita |
+| `aicarmine-code-dep-graph` | build_dep_graph, find_import_chains, detect_circular_deps | Dependency graph analysis | Solo dipendenze import, nessuna analisi semantica |
+| `aicarmine-wily` | wily_report, wily_rank, ast_complexity_report | Complessità ciclomatica | Solo metriche, nessun contesto business |
+| `aicarmine-project-memory` | search, get, upsert_verified, mark_stale | Memoria persistente | Dipende da input umano, non auto-generata |
+| `aicarmine-index-bridge` | build_bridge, query_unified, persist_memory | Cross-reference RAG + Symbol Index | Solo unione database, nessuna analisi |
 
-| Superficie | Porta | Ruolo |
-|------------|-------|-------|
-| **3571 — Public Bridge** | 3571 | Wrapper esposto a OpenWebUI. Espone solo `vulkan_helper`. Inoltra il lavoro a 3572. |
-| **3572 — Internal Broker** | 3572 | Proprietario del loop agentic. Crea job, gestisce stato/eventi, costruisce prompt planner, valida decisioni modello, dispatcha tools, scrive artefatti terminali. |
-| **11434 / 11435 — Ollama Endpoints** | 11434 / 11435 | Endpoint planner (main) e repair/task (GPU0/Vulkan) rispettivamente. |
+## MCP SERVER DA CREARE (SIMILI A RAG MA CON STRUMENTI AGGIUNTIVI)
 
-### Struttura Directory
+### 1. DOCUMENTATION QUALITY SCANNER MCP SERVER
 
+**Differenza dal RAG:** Il RAG indicizza tutto il codice sorgente. Questo server indicizzerebbe SOLO la documentazione tecnica, valutando qualità e consistenza.
+
+**Strumenti proposti:**
 ```
-agentic-tool-loop/
-├── services/                          # Servizi principali
-│   ├── aicarmine_broker/              # Broker 3572 (FastAPI)
-│   │   ├── app.py                     # Entry point FastAPI
-│   │   ├── agent_entry.py             # Entry job agent
-│   │   ├── planner.py                 # Loop planner principale (3871 righe, 207 funzioni)
-│   │   ├── job_store.py               # Persistenza job (filesystem + SQLite)
-│   │   ├── tool_registry.py           # Registro tools
-│   │   ├── application/               # Application layer
-│   │   │   ├── planner/               # Validator, loop, evidence
-│   │   │   ├── tool_surface/          # Dispatcher tools
-│   │   │   ├── public_payload/        # Payload pubblico OpenWebUI
-│   │   │   ├── prompt/                # Costruzione prompt
-│   │   │   ├── controller/            # Controller lanes
-│   │   │   ├── code_product/          # Code product state
-│   │   │   └── evidence/              # Evidence building
-│   │   ├── infrastructure/            # Infrastructure layer
-│   │   └── tools/                     # Implementazioni tools
-│   ├── vulkan_bridge/                 # Bridge 3571 (OpenWebUI)
-│   │   └── app.py                     # Entry point bridge
-│   ├── codex_bridge/                  # MCP servers (25+ server)
-│   │   ├── mcp_server.py              # Codex MCP JSON-RPC
-│   │   ├── repo_state_mcp_server.py   # Repo state
-│   │   ├── repo_search_det_mcp_server.py # Repo search
-│   │   ├── repo_validate_mcp_server.py    # Repo validate
-│   │   ├── repo_code_mcp_server.py      # Repo code edit
-│   │   ├── rag_mcp_server.py            # RAG search
-│   │   ├── job_artifact_mcp_server.py   # Job artifacts
-│   │   └── ... (20+ altri server MCP)
-│   ├── launch/                        # Launcher servizi
-│   │   ├── openwebui_runtime.ps1      # Launcher principale
-│   │   ├── env.ps1                    # Helper environment
-│   │   ├── http.ps1                   # Helper HTTP endpoint
-│   │   ├── process.ps1                # Helper processo/porta
-│   │   └── contracts/                 # Contratti porte
-│   └── model_export/                  # Utility export modello
-├── .clinerules/                       # Regole Cline
-├── .agents/skills/                    # Skills operative
-├── docs/                              # Documentazione
-├── services/start-all-services-complete.ps1  # Startup completo
-├── services/stop-all-services.ps1     # Shutdown completo
-└── README.md                          # Architettura principale
+- doc_quality_scan(path, min_docstring_coverage=0.8)
+  → Valuta: completezza docstrings, consistenza formattazione, link rotti, content outdated
+- doc_coverage_map(module)
+  → Mappa: quali moduli/classi/functions hanno documentazione e quali no
+- doc_api_sync(api_surface, code_base)
+  → Confronta docstrings con codice reale, identifica discrepanze
+- doc_search(query, scope="all")
+  → Ricerca semantica nella documentazione (simile a RAG ma solo docs)
+- doc_recommendations(module)
+  → Suggerimenti specifici per migliorare documentazione
 ```
 
-## 2. PUNTI DI INGRESSO (STARTUP)
-
-### Sequenza di Avvio (services/start-all-services-complete.ps1)
-
-**Ordine di avvio:**
-1. **Verifica Ollama** — `http://127.0.0.1:11434/api/version`
-2. **OVMS Reranker** (porta 3550) — `ovms.exe --rest_port 3550`
-3. **Vulkan Tool Broker** (porta 3579) — `uvicorn aicarmine_vulkan_tool_broker:app --port 3579`
-4. **Vulkan Bridge** (porta 3571) — `uvicorn aicarmine_vulkan_bridge_server:app --port 3571`
-5. **Verifica finale** — Controllo porte 3550, 3579, 3571
-
-### Entry Points Principali
-
-| File | Ruolo | Porta |
-|------|-------|-------|
-| `services/vulkan_bridge/app.py` | Bridge pubblico OpenWebUI | 3571 |
-| `services/aicarmine_broker/app.py` | Broker interno FastAPI | 3572 |
-| `services/aicarmine_broker/agent_entry.py` | Entry job agent → `run_agentic_planner_job()` | 3572 |
-| `services/aicarmine_broker/planner.py` | Loop planner principale | 3572 → 11434 |
-| `services/codex_bridge/mcp_server.py` | MCP JSON-RPC server | stdio |
-
-### Flusso di Richiesta
-
-```
-OpenWebUI / modello esterno 30B
-  -> POST /vulkan_helper (3571)
-  -> POST /vulkan/agent (3572)
-  -> Creazione job + avvio worker
-  -> Richiesta controller_preplanner_rag_query_plan da 11434
-  -> Loop planner: decision → validazione → dispatch tool → finalize
-  -> Risposta compact → 3571 → OpenWebUI
+**Output strutturato:**
+```json
+{
+  "file": "services/aicarmine_broker/app.py",
+  "docstring_coverage": 0.65,
+  "missing_docs": ["AppConfig", "main()"],
+  "inconsistent_formatting": 3,
+  "broken_links": 1,
+  "outdated_content": 2,
+  "quality_score": 6.2,
+  "recommendations": [
+    "Add docstring to AppConfig class",
+    "Fix inconsistent parameter documentation in main()",
+    "Update outdated example in README.md"
+  ]
+}
 ```
 
-## 3. PUNTI DI USCITA E SPEGNIMENTO
+### 2. TEST COVERAGE ANALYZER MCP SERVER
 
-### Sequenza di Shutdown (services/stop-all-services.ps1)
+**Differenza da test_discovery:** Esiste già `test_discovery_mcp_server.py` ma manca l'analisi di copertura e dei gap.
 
-**Ordine di arresto:**
-1. **OVMS Reranker** — `Stop-Process ovms.exe`
-2. **Chiusura porte** — Per ogni porta (3550, 3560, 3571, 3572, 3579, 3581, 8080, 8888, 8889, 11434, 11435): `Get-NetTCPConnection → Stop-Process`
-3. **Python/uvicorn** — `Get-Process python | Where-Object { $_.CommandLine -like "*uvicorn*" } | Stop-Process`
-4. **Cleanup finale** — Kill processi Python rimanenti sulle porte servizio
-
-### Punti di Finalizzazione Job
-
-| Stato Terminale | Codice Proprietario | Descrizione |
-|-----------------|---------------------|-------------|
-| `completed` | `planner.py` + `job_store.py` | Planner final + validator acceptance |
-| `blocked_needs_attention` | `application/job/terminal_response.py` | Bloccato da validator |
-| `max_steps_reached` | `planner.py` | Limite passi raggiunto |
-| `failed` | `agent_entry.py` | Fallimento runtime |
-| `cancelled` | `job_store.py` | Job cancellato |
-
-### Operational Stop Proof
-
-Per arrestare job runaway/stuck:
-1. Ispeziona ownership porta per 3571, 3572, 11434, 11435
-2. Match PID → command line (`aicarmine-vulkan-tool-broker.ps1`, `uvicorn --port 3571`, `ollama.exe serve`)
-3. Per arrestare solo GPU0/task: stop `ollama-task-vulkan.ps1` tree su 11435
-4. Per arrestare nuovi job bridge: stop `aicarmine-vulkan-tool-broker.ps1`/3571
-5. Verifica che 11435 e 3571 siano assenti dalle porte listening
-
-## 4. PUNTI DI FORZA
-
-### 4.1 Architettura a Strati Ben Definita
-- **3571** (bridge pubblico) separato da **3572** (broker interno) — responsabilità chiare
-- **Validator-only gate** — il planner decide, il controller valida, nessun comportamento nascosto
-- **Prompt pack misurato** — budget reale, compaction controllata, SQLite secondario
-
-### 4.2 Contratti Pubblici/Stabili
-- Payload OpenWebUI stabile across tutti gli stati terminali (`completed`, `blocked`, `max_steps`, `failed`, `cancelled`)
-- `tool_context_for_30b.artifacts[*].artifact` contiene payload reali inline, non path locali
-- `priority_evidence_for_30b` pointer-first con metadata, hashes, location
-
-### 4.3 Strumenti MCP Estensibili
-- 25+ MCP servers per operazioni repository, query, validation, refactoring, RAG, job artifacts
-- Server MCP read-only per diagnostica (SQLite, Git, job artifact, symbol index)
-- Batch proxy per esecuzione parallela di tool MCP
-
-### 4.4 Persistenza Robusta
-- Filesystem job state (`job.json`, `events.ndjson`) come source of truth
-- SQLite come secondary dashboard/index cache
-- Fallback filesystem quando SQLite fallisce
-
-### 4.5 Code Product Lane Separato
-- `repo_propose_code_edit` (report-only) separato da `repo_apply_patch` (write-guarded)
-- Contratto code product completo: target read → proposal → finalization
-- Diff completi inline, non sostituiti da preview/summary
-
-### 4.6 Documentazione Completa
-- README.md con architettura dettagliata
-- END_TO_END_AGENTIC_FLOW.md con sequence diagram e owner matrix
-- MODULE_TECHNICAL_DESCRIPTIONS.md con descrizione per-modulo
-- VALIDATOR_ONLY_AGENTIC_LOOP_CONTRACT.md con contratto operativo
-
-## 5. PUNTI DI DEBOLEZZA E FIX APPLICATI
-
-### 5.1 RAG Index Vuoto ✅ RISOLTO
-
-**Problema:** L'indice RAG (`code_rag.sqlite3`) era vuoto (0 candidates) — nessuna ricerca semantica disponibile.
-
-**Fix applicato:** Riebuild dell'indice RAG tramite MCP tool `aicarmine_rag_reindex`:
+**Strumenti proposti:**
 ```
-Result: 847 files indexed, 1992 chunks created, source=git, mode=full
+- test_coverage_report(module, format="json")
+  → Genera report di copertura per file/moduli
+- test_gap_finder(module, min_coverage=0.8)
+  → Identifica codice non testato o poco testato
+- test_pattern_discovery(test_dir)
+  → Scopre pattern di test nel progetto
+- test_uncovered_search(query, module)
+  → Cerca codice specifico non coperto da test
+- test_scaffold_generator(module, style="pytest")
+  → Genera scaffold di test per codice non testato
 ```
 
-**Stato attuale:** RAG index ora popolato con 847 file e 1992 chunk. Ricerca semantica funzionante.
-
----
-
-### 5.2 Complessità Elevata
-
-**Problema:** 
-- `planner.py` ha 3871 righe e 207 funzioni — file ad alto rischio, difficile da mantenere
-- 25+ MCP servers con sovrapposizioni funzionali
-- Multipli livelli di compatibilità wrapper (`aicarmine_vulkan_bridge_server.py`, `aicarmine_vulkan_tool_broker.py`)
-
-**Analisi:** Le 207 funzioni in planner.py coprono:
-- Prompt building (30 funzioni)
-- Evidence contract (15 funzioni)
-- Code product state (20 funzioni)
-- Validator logic (25 funzioni)
-- Public payload formatting (20 funzioni)
-- Memory tools integration (15 funzioni)
-- Utility functions (82 funzioni)
-
-**Raccomandazioni:**
-1. **Estrazione moduli** — Spostare gruppi funzionali in `application/planner/` sottomoduli dedicati
-2. **Lazy imports** — I 98 import in planner.py possono essere caricati solo quando necessari
-3. **Wrapper compatibility** — I file `aicarmine_vulkan_bridge_server.py` e `aicarmine_vulkan_tool_broker.py` sono thin wrappers che potrebbero essere documentati come deprecati
-
----
-
-### 5.3 Dipendenze da Ambiente Windows
-
-**Problema:**
-- Script PowerShell specifici per Windows (`start-all-services-complete.ps1`, `stop-all-services.ps1`)
-- Path assoluti hardcoded (`C:\Users\sanit\agentic-tool-loop`)
-- PowerShell profile functions non sempre disponibili
-
-**Fix proposti:**
-1. Usare `$PSScriptRoot` o variabili ambiente per path relativi invece di path assoluti
-2. Creare versioni Python alternative degli script di startup/shutdown per portabilità
-3. Verificare disponibilità functions con `Get-Command` prima dell'uso
-
----
-
-### 5.4 Virtual Environment Fragmentation
-
-**Problema:**
-- 5 venv separati (labtools, codeinterpreter, executor, openwebui, openvino)
-- Path Python diversi per ogni venv
-- Rischio di contaminazione Python tra venv
-
-**Fix proposti:**
-1. Documentare chiaramente quale venv usa quale modulo
-2. Creare script di verifica isolamento venv
-3. Usare `python -m uvicorn` con percorso venv esplicito invece di invocazioni dirette
-
----
-
-### 5.5 Port Management Fragile ✅ PARZIALMENTE RISOLTO
-
-**Problema:** Shutdown basato su `Get-NetTCPConnection` — può fallire con `TIME_WAIT` o PID 0. Processi Python/uvicorn killati con `Stop-Process -Force` — possibile perdita di stato. Nessun graceful shutdown per Ollama (11434/11435).
-
-**Fix applicati nello stop-all-services.ps1:**
-- Il controllo `TIME_WAIT` con PID 0 è già documentato nel README.md ("A `3572` `TIME_WAIT` row with `OwningProcess=0` is not a live listener")
-- Lo shutdown include verifica post-kill per confermare arresto
-- Graceful shutdown per ovms.exe (`Stop-Process -Force`)
-
-**Miglioramenti aggiuntivi raccomandati:**
-1. Aggiungere timeout per `Stop-Process` con verifica loop
-2. Aggiungere supporto per HTTP graceful shutdown (`/shutdown` endpoint se disponibile)
-3. Loggare PID uccisi per audit trail
-
----
-
-### 5.6 Tool Surface Incoerente
-
-**Problema:** Public surface (3571): solo `/vulkan_helper`. Internal surface (3572): 30+ tools con aliases e compatibilità. Write-guarded tools richiedono explicit consent ma non sempre chiaro.
-
-**Fix proposti:**
-1. Documentare chiaramente quali tools sono write-guarded vs readonly
-2. Creare una tabella di mapping tool → permission level
-3. Validare che `OPENWEBUI_VISIBLE_TOOL_ALIASES` sia sempre `("vulkan_helper",)` — già verificato in app.py
-
-## 6. STRUTTURA DEL FLUSSO AGENTICO CANONICO
-
-```
-OpenWebUI / modello esterno 30B
-  -> POST /vulkan_helper (3571)
-  -> POST /vulkan/agent (3572)
-  -> Creazione job + avvio worker
-  -> Richiesta controller_preplanner_rag_query_plan da 11434
-  -> Loop planner:
-     - Build measured prompt pack (required_working_set + optional_context)
-     - Planner decision su 11434
-     - Validate against evidence contract
-     - Dispatch tool o Finalize
-     - Repair su 11435 se necessario
-  -> Risposta compact → 3571 → OpenWebUI con payload inline completo
+**Output strutturato:**
+```json
+{
+  "module": "services/aicarmine_broker/tools/",
+  "file_coverage": {
+    "repo_list_files.py": {"lines": 85, "functions": 60},
+    "repo_search.py": {"lines": 70, "functions": 40},
+    "repo_tree.py": {"lines": 90, "functions": 75}
+  },
+  "untested_functions": [
+    {"file": "repo_list_files.py", "function": "_validate_config", "reason": "no_test_found"},
+    {"file": "repo_search.py", "function": "_extract_matches", "reason": "coverage_below_threshold"}
+  ],
+  "coverage_gap_score": 3.2,
+  "recommended_tests": [
+    {"file": "test_repo_list_files.py", "tests": ["test_valid_path", "test_invalid_path", "test_gitignore_respected"]},
+    {"file": "test_repo_search.py", "tests": ["test_rg_mode", "test_fd_mode", "test_no_matches"]}
+  ]
+}
 ```
 
-## 7. RIEPILOGO MCP SERVERS
+### 3. SECURITY AUDIT SCANNER MCP SERVER
 
-| Categoria | Server Principali | Strumenti | Scopo |
-|-----------|-------------------|-----------|-------|
-| Core repository | repo_state, repo_search_det, repo_validate, repo_code | 25 | Health, search, validate, propose/edit |
-| Data & query | rag, sqlite_readonly, project_memory, index_bridge | 19 | RAG search, SQLite queries, memory |
-| Job & artifacts | job_artifact, job_view, git_readonly | 23 | Events, final state, Git history |
-| Operations | codex_ops, repo_symbol_index, test_discovery, code_dep_graph | 29 | MCP inventory, symbols, tests, deps |
-| Batch proxy | mcp_batch_proxy | 3 | Health check, list servers, parallel exec |
-| Refactoring | refactor | 8 | libcst/rope/bowler transformations |
-| Agent clients | local_subagent, agentic_loop_client, ollama_subagent | 10 | Subagent execution, GPU Ollama |
+**Differenza da security_mcp_server:** Esiste `security_mcp_server.py` ma va verificata la completezza degli strumenti.
 
-## 8. VERIFICA STARTUP
-
-Lo script `start-all-services-complete.ps1` produce questo output verificato:
-
+**Strumenti proposti:**
 ```
-[Step 1] Checking Ollama...
-[OK] Ollama is running
-
-[Step 2] Starting OVMS Reranker on port 3550...
-[OK] OVMS Reranker started on port 3550
-
-[Step 3] Starting Vulkan Tool Broker on port 3579...
-[OK] Vulkan Tool Broker started on port 3579
-
-[Step 4] Starting Vulkan Bridge on port 3571...
-[OK] Vulkan Bridge started on port 3571
-
-[Step 5] Verifying service status...
-OVMS Reranker (3550): [OK]
-Vulkan Tool Broker (3579): [OK]
-Vulkan Bridge (3571): [OK]
+- security_scan(module, severity="medium")
+  → Scansiona per hardcoded secrets, SQL injection, XSS, path traversal
+- secret_detector(file_patterns=["*.py", "*.env", "*.json"])
+  → Cerca chiavi API, token, password in chiaro
+- dependency_audit(requirements_file="requirements.txt")
+  → Analizza dipendenze per vulnerabilità note
+- permission_analysis(entry_points)
+  → Mappa permessi e accessi nel codice
+- secure_code_review(code_product)
+  → Review automatica di code product proposals per security
 ```
 
-Tutti i servizi partono correttamente con successo.
+**Output strutturato:**
+```json
+{
+  "scan_result": {
+    "hardcoded_secrets": [
+      {"file": "services/config/settings.py", "line": 42, "type": "API_KEY", "severity": "high"}
+    ],
+    "sql_injection_risks": [
+      {"file": "services/aicarmine_broker/tools/repo_search.py", "line": 150, "query": "f-string in SQL"}
+    ],
+    "xss_risks": [],
+    "path_traversal_risks": [
+      {"file": "services/codex_bridge/mcp_server.py", "line": 300, "path": "user_input"}
+    ],
+    "dependency_vulnerabilities": [
+      {"package": "requests", "version": "2.28.0", "vulnerability": "CVE-2023-xxxx", "severity": "medium"}
+    ],
+    "overall_security_score": 7.5
+  }
+}
+```
 
-## 9. CONCLUSIONE
+### 4. KNOWLEDGE GRAPH BUILDER MCP SERVER
 
-Il progetto **agentic-tool-loop** è un sistema complesso e ben architettato per l'esecuzione di loop agentic locali con validazione evidence-first. 
+**Differenza dal RAG:** Il RAG fa ricerca semantica su chunk di codice. Questo costruisce un GRAFO STRUTTURATO di concetti e relazioni per navigazione concettuale.
 
-**Punti di forza principali:** separazione chiara delle responsabilità (3571 vs 3572), contratti pubblici stabili, persistenza robusta, RAG index ora funzionante (847 file, 1992 chunk).
+**Strumenti proposti:**
+```
+- knowledge_graph_build(repo_root, output_format="sqlite")
+  → Costruisce grafo di concetti, relazioni, dipendenze
+- knowledge_graph_query(graph_id, query)
+  → Query sul grafo della conoscenza
+- concept_map(module)
+  → Mappa concetti principali del progetto
+- relationship_finder(module, depth=2)
+  → Trova relazioni tra moduli/classi/funzioni
+- knowledge_summary(project)
+  → Genera summary della conoscenza del progetto
+```
 
-**Punti deboli rimanenti:** complessità elevata del planner (3871 righe, 207 funzioni), frammentazione virtual environments, dipendenze Windows specifiche. I fix proposti includono estrazione moduli per planner.py, script PowerShell più portabili, e miglioramenti al port management nello shutdown.
+**Output strutturato:**
+```json
+{
+  "knowledge_graph": {
+    "nodes": [
+      {"id": "broker", "type": "module", "label": "AICarmine Broker"},
+      {"id": "planner", "type": "module", "label": "Planner Loop"},
+      {"id": "mcp_server", "type": "module", "label": "MCP Server"},
+      {"id": "ToolResult", "type": "class", "label": "ToolResult"}
+    ],
+    "edges": [
+      {"from": "planner", "to": "broker", "relation": "depends_on"},
+      {"from": "mcp_server", "to": "broker", "relation": "imports"},
+      {"from": "planner", "to": "ToolResult", "relation": "uses"}
+    ],
+    "concept_clusters": [
+      {"cluster": "tool_execution", "modules": ["dispatcher", "tool_result", "decision"]},
+      {"cluster": "mcp_infrastructure", "modules": ["mcp_server", "repo_mcp_common", "jsonrpc"]}
+    ]
+  }
+}
+```
+
+### 5. API SURFACE ANALYZER MCP SERVER
+
+**Differenza da enhanced_analysis:** Esiste `APISurfaceManager` in `enhanced_analysis_mcp_server.py` ma va integrato come server standalone con più strumenti.
+
+**Strumenti proposti:**
+```
+- api_surface_extract(entry_point, include_private=False)
+  → Estrae tutte le API pubbliche da FastAPI, MCP, HTTP endpoints
+- api_relationship_map(api_surface)
+  → Mappa relazioni tra API
+- api_deprecation_tracker(code_base)
+  → Traccia API deprecate e migration path
+- api_contract_validator(api_surface, docs)
+  → Valida contratti API contro documentazione
+- breaking_change_detector(current_api, previous_api)
+  → Identifica potenziali breaking changes
+```
+
+**Output strutturato:**
+```json
+{
+  "api_surface": {
+    "public_endpoints": [
+      {"name": "aicarmine_repo_list_files", "type": "MCP tool", "params": ["path", "max_files"], "returns": "dict"},
+      {"name": "aicarmine_repo_search", "type": "MCP tool", "params": ["query", "mode", "path"], "returns": "dict"}
+    ],
+    "internal_apis": [
+      {"name": "_validate_config", "module": "repo_list_files.py", "visibility": "private"}
+    ],
+    "deprecated_apis": [],
+    "api_consistency_score": 8.5
+  }
+}
+```
+
+### 6. CONFIGURATION VALIDATOR MCP SERVER
+
+**Differenza da enhanced_analysis:** Esiste `ConfigValidatorManager` in `enhanced_analysis_mcp_server.py` ma va estratto come server standalone.
+
+**Strumenti proposti:**
+```
+- config_validate(config_files)
+  → Valida JSON, YAML, TOML, env files
+- config_consistency_check(config_set)
+  → Controlla consistenza tra config files
+- config_env_audit(env_file, code_usage)
+  → Audit variabili ambiente vs uso reale
+- config_migration_helper(old_config, new_schema)
+  → Genera migration per config updates
+- config_template_generator(config_type)
+  → Genera template per nuove configurazioni
+```
+
+**Output strutturato:**
+```json
+{
+  "validation_result": {
+    "valid_files": ["services/config/settings.json", ".venvmapping.env"],
+    "invalid_files": [
+      {"file": "services/config/broken.yaml", "errors": ["missing_required_field", "invalid_type"]}
+    ],
+    "consistency_issues": [
+      {"config1": "settings.json", "config2": "env.json", "issue": "different_port_values"}
+    ],
+    "environment_audit": {
+      "defined_but_unused": ["AICARMINE_UNUSED_VAR"],
+      "used_but_not_defined": ["AICARMINE_MISSING_VAR"]
+    }
+  }
+}
+```
+
+### 7. PERFORMANCE PROFILER MCP SERVER
+
+**Differenza da wily:** Esiste `wily_mcp_server.py` per complessità ma manca il profiling runtime.
+
+**Strumenti proposti:**
+```
+- performance_profile(function_path, iterations=100)
+  → Profila funzioni per tempo di esecuzione
+- memory_leak_detector(object_tracking=True)
+  → Identifica potenziali memory leak
+- slow_query_finder(db_connections)
+  → Trova query/database operations lente
+- complexity_report(module, include_nesting=True)
+  → Report di complessità ciclomatica (simile a Wily ma più dettagliato)
+- optimization_suggestions(code_base)
+  → Suggerimenti di ottimizzazione basati su pattern
+```
+
+**Output strutturato:**
+```json
+{
+  "performance_report": {
+    "slow_functions": [
+      {"function": "repo_search", "module": "services/codex_bridge/", "avg_time_ms": 45.2, "p99_time_ms": 120.5},
+      {"function": "build_dep_graph", "module": "code_dep_graph_mcp_server.py", "avg_time_ms": 89.7, "p99_time_ms": 250.3}
+    ],
+    "memory_leak_risks": [
+      {"file": "rag_mcp_server.py", "line": 200, "issue": "unbounded_cache_growth"}
+    ],
+    "optimization_suggestions": [
+      {"file": "planner/loop.py", "suggestion": "Replace linear search with binary search in _find_matching_events"},
+      {"file": "mcp_server.py", "suggestion": "Add caching for _resolve_project_root calls"}
+    ]
+  }
+}
+```
+
+## PRIORITÀ DI IMPLEMENTAZIONE
+
+| Priorità | Server | Impatto sulla Conoscenza | Tempo Stimato |
+|----------|--------|-------------------------|---------------|
+| 1 | Knowledge Graph Builder | Alta — Navigazione concettuale strutturata | 2-3 giorni |
+| 2 | Documentation Quality Scanner | Alta — Migliora comprensione architetturale | 1-2 giorni |
+| 3 | Test Coverage Analyzer | Alta — Identifica aree non testate | 1-2 giorni |
+| 4 | Security Audit Scanner | Media — Sicurezza del codice | 2-3 giorni |
+| 5 | API Surface Analyzer | Media — Documentazione API | 1 giorno |
+| 6 | Configuration Validator | Media — Validazione config | 1 giorno |
+| 7 | Performance Profiler | Bassa — Ottimizzazione | 2-3 giorni |
+
+## CONFRONTO CON RAG ESISTENTE
+
+| Aspetto | RAG Esistente | Nuovi Server |
+|---------|--------------|--------------|
+| Scopo | Ricerca semantica su chunk di codice | Valutazione, analisi, navigazione |
+| Output | Testi indicizzati | Metriche, grafici, report |
+| Qualità | Nessuna valutazione | Valutazione automatica |
+| Struttura | Chunk flat | Grafi, mappe, relazioni |
+| Azione | Ricerca passiva | Raccomandazioni attive |
+
+## IMPLEMENTAZIONE TECNICA
+
+Ognuno di questi server può essere implementato come MCP stdio server simile a `rag_mcp_server.py`:
+
+```python
+# services/codex_bridge/knowledge_graph_mcp_server.py
+#!/usr/bin/env python3
+"""MCP server for knowledge graph construction and querying."""
+
+from repo_mcp_common import (
+    ToolSpec,
+    health_payload,
+    object_schema,
+    serve,
+)
+
+SERVER_NAME = "aicarmine-knowledge-graph-mcp"
+SERVER_VERSION = "1.0.0"
+
+def _tools() -> dict[str, ToolSpec]:
+    tools: dict[str, ToolSpec] = {}
+    
+    def health(args: dict[str, Any], root):
+        return health_payload(SERVER_NAME, list(tools))
+    
+    tools["aicarmine_knowledge_graph_build"] = ToolSpec(
+        name="aicarmine_knowledge_graph_build",
+        description="Build knowledge graph from repository",
+        input_schema=object_schema("graph_id", "repo_root"),
+        handler=_build_graph,
+    )
+    
+    tools["aicarmine_knowledge_graph_query"] = ToolSpec(
+        name="aicarmine_knowledge_graph_query",
+        description="Query knowledge graph",
+        input_schema=object_schema("graph_id", "query"),
+        handler=_query_graph,
+    )
+    
+    return tools
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(argv if argv is not None else sys.argv[1:])
+    tools = _tools()
+    return serve(SERVER_NAME, SERVER_VERSION, tools)
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+## SINTESI
+
+Il server RAG attuale indicizza il codice sorgente per ricerca semantica. I server proposti sopra complementano il RAG fornendo:
+- **Valutazione qualità** (non solo indicizzazione)
+- **Analisi strutturale** (test coverage, security, config)
+- **Navigazione concettuale** (knowledge graph)
+- **Documentazione focalizzata** (doc-specific search)
+- **Performance analysis** (profiling runtime)
+
+Ognuno di questi può essere implementato come MCP stdio server simile a `rag_mcp_server.py`, con tool specifici e output strutturato JSON.
