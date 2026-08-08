@@ -4,7 +4,11 @@
             "config": {
                 "name": "bge-reranker-v2-m3",
                 "base_path": "C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-rerank\\BAAI\\bge-reranker-v2-m3",
+<<<<<<< HEAD
 "target_device": "GPU.0",
+=======
+                "target_device": "CPU",
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
                 "plugin_config": {
                     "PERFORMANCE_HINT": "LATENCY",
                     "NUM_STREAMS": "AUTO"

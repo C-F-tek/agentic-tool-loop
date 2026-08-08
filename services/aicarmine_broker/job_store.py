@@ -36,6 +36,9 @@ from .infrastructure.time_provider import *
 logger = logging.getLogger(__name__)
 
 
+logger = logging.getLogger(__name__)
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------

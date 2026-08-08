@@ -1,6 +1,7 @@
 #Requires -RunAsAdmin
 <#
 .SYNOPSIS
+<<<<<<< HEAD
     MCP Orchestrator Hook — Aggressive MCP-first with quantum/pre-quantum engineering awareness.
     This PowerShell hook implements MCP tool routing at the Cline hook level,
     enabling the system to select optimal MCP tools BEFORE Cline invokes them.
@@ -19,6 +20,23 @@
     - mcp_quantum_orchestrate: Quantum/pre-quantum engineering orchestration
     
     Extended with quantum computing, pre-quantum engineering, and hybrid quantum-classical systems.
+=======
+    MCP Orchestrator Hook - Seleziona automaticamente il tool ottimale in base al tipo di query.
+    Questo hook PowerShell implementa l'orchestratore MCP a livello di hook Cline,
+    permettendo al sistema di routing di Cline di selezionare automaticamente il tool ottimale
+    PRIMA che Cline debba chiamare l'orchestratore.
+    
+    Workflow:
+    1. Cline riceve la query utente
+    2. L'hook PreToolUse.ps1 chiama aicarmine_mcp_orchestrator.ps1
+    3. L'orchestratore analizza la query e seleziona il tool ottimale
+    4. Il tool ottimale viene passato a Cline per l'esecuzione
+    
+    Tool esposti:
+    - mcp_select_optimal_tool: Analizza query e seleziona tool ottimale
+    - mcp_list_optimal_tools: Lista dei tool ottimali per ogni tipo di query
+    - mcp_selection_log: Log delle selezioni MCP effettuate
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 #>
 
 param(
@@ -26,6 +44,7 @@ param(
     [string]$PreferredServer,
     [switch]$ListTools,
     [switch]$ShowLog,
+<<<<<<< HEAD
     [int]$LogLimit = 10,
     [switch]$OrchestrateMode,
     [switch]$QuantumMode
@@ -46,6 +65,25 @@ $OrchestratorState = @{
 }
 
 # Query types — extended with quantum/pre-quantum engineering categories
+=======
+    [int]$LogLimit = 10
+)
+
+# Importazione moduli
+$ErrorActionPreference = "Continue"
+
+# Path del progetto
+$ProjectRoot = $PSScriptRoot | Split-Path -Parent | Split-Path -Parent
+$ServicesPath = Join-Path $ProjectRoot "services"
+
+# Stato dell'orchestratore
+$OrchestratorState = @{
+    Selections = @()
+    Timestamps = @()
+}
+
+# Classi di query supportate
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 enum QueryType {
     Search
     Read
@@ -57,6 +95,7 @@ enum QueryType {
     Job
     RAG
     Write
+<<<<<<< HEAD
     Orchestrate
     Analyze
     QuantumCircuit
@@ -152,6 +191,54 @@ $QuantumOrchestrationSequence = @(
     @{ Step = 5; Tool = "aicarmine_repo_apply_patch"; Purpose = "Apply HTML template updates for circuit display" }
 )
 
+=======
+}
+
+# Tool selection per ogni tipo di query
+$ToolMap = @{
+    Search = @{
+        Primary   = @{ Server = "aicarmine-repo-search-det"; Tool = "aicarmine_repo_search_fd"; Reason = "Ricerca veloce con fd per pattern semplici" }
+        Fallback  = @{ Server = "aicarmine-repo-search-det"; Tool = "aicarmine_repo_search_rg"; Reason = "Ricerca ripgrep per pattern complessi" }
+    }
+    Read = @{
+        Primary   = @{ Server = "aicarmine-codex-app"; Tool = "aicarmine_repo_read"; Reason = "Lettura diretta di file noti" }
+        Fallback  = @{ Server = "aicarmine-codex-app"; Tool = "aicarmine_repo_list_files"; Reason = "Listatura file quando il path è sconosciuto" }
+    }
+    Validate = @{
+        Primary   = @{ Server = "aicarmine-repo-validate"; Tool = "aicarmine_repo_validate_diffcheck"; Reason = "Validazione diff prima di applicare modifiche" }
+        Fallback  = @{ Server = "aicarmine-repo-validate"; Tool = "aicarmine_repo_validate_ruff"; Reason = "Validazione Python con ruff" }
+    }
+    Debug = @{
+        Primary   = @{ Server = "aicarmine-codex-app"; Tool = "aicarmine_bridge_health"; Reason = "Verifica salute bridge" }
+        Fallback  = @{ Server = "aicarmine-codex-app"; Tool = "aicarmine_repo_status"; Reason = "Stato repository per diagnostica" }
+    }
+    Security = @{
+        Primary   = @{ Server = "aicarmine-repo-validate"; Tool = "aicarmine_repo_validate_semgrep"; Reason = "Scansione sicurezza statica" }
+        Fallback  = @{ Server = "aicarmine-repo-validate"; Tool = "aicarmine_repo_validate_ruff"; Reason = "Validazione sicurezza con ruff" }
+    }
+    Git = @{
+        Primary   = @{ Server = "aicarmine-git-readonly"; Tool = "aicarmine_git_readonly_log"; Reason = "Log Git per storia repository" }
+        Fallback  = @{ Server = "aicarmine-git-readonly"; Tool = "aicarmine_git_readonly_diff"; Reason = "Diff Git per modifiche" }
+    }
+    Memory = @{
+        Primary   = @{ Server = "aicarmine-project-memory"; Tool = "aicarmine_project_memory_search"; Reason = "Ricerca memoria persistente" }
+        Fallback  = @{ Server = "aicarmine-project-memory"; Tool = "aicarmine_project_memory_get"; Reason = "Lettura memoria per record specifico" }
+    }
+    Job = @{
+        Primary   = @{ Server = "aicarmine-job-artifact"; Tool = "aicarmine_job_artifact_list_jobs"; Reason = "Listatura job per ispezione" }
+        Fallback  = @{ Server = "aicarmine-job-view"; Tool = "aicarmine_job_view_render"; Reason = "Rendering HTML per visualizzazione" }
+    }
+    RAG = @{
+        Primary   = @{ Server = "aicarmine-rag"; Tool = "aicarmine_rag_context"; Reason = "Contesto RAG per conoscenza semantica" }
+        Fallback  = @{ Server = "aicarmine-rag"; Tool = "aicarmine_rag_index_status"; Reason = "Stato indice RAG per diagnostica" }
+    }
+    Write = @{
+        Primary   = @{ Server = "aicarmine-codex-app"; Tool = "aicarmine_repo_apply_patch"; Reason = "Applicazione patch con guardie" }
+        Fallback  = @{ Server = "aicarmine-codex-app"; Tool = "aicarmine_repo_write_file"; Reason = "Scrittura file con guardie" }
+    }
+}
+
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 function Get-QueryType {
     param([string]$Query)
     $QueryLower = $Query.ToLower()
@@ -166,6 +253,7 @@ function Get-QueryType {
     if ($QueryLower | Select-String -Pattern 'job|agent|task|lavoro') { return [QueryType]::Job }
     if ($QueryLower | Select-String -Pattern 'rag|knowledge|semantic|conoscenza') { return [QueryType]::RAG }
     if ($QueryLower | Select-String -Pattern 'scrivi|write|edit|modify') { return [QueryType]::Write }
+<<<<<<< HEAD
     if ($QueryLower | Select-String -Pattern 'refactor|migration|orchestrate|large.?scale|multi.?module|codebase|system.?level') { return [QueryType]::Orchestrate }
     if ($QueryLower | Select-String -Pattern 'analyze|architecture|dependency|structure') { return [QueryType]::Analyze }
     # Quantum/pre-quantum engineering task classification
@@ -173,6 +261,8 @@ function Get-QueryType {
     if ($QueryLower | Select-String -Pattern 'statevector|bloch|density.?matrix|state.?browser') { return [QueryType]::QuantumState }
     if ($QueryLower | Select-String -Pattern 'experiment|shots|measurement|vqe|qaoa|qnn|nisq') { return [QueryType]::QuantumExperiment }
     if ($QueryLower | Select-String -Pattern 'pre.?quantum|classical.?approximation|simulation|hybrid.?quantum') { return [QueryType]::PreQuantumSimulation }
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     
     return [QueryType]::Search
 }
@@ -183,14 +273,24 @@ function Select-OptimalTool {
     $queryType = Get-QueryType -Query $Query
     $toolInfo = $ToolMap[$queryType]
     
+<<<<<<< HEAD
     # If preferred server specified, override selection
+=======
+    # Se è specificato un server preferito, sovrascrive la selezione
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     if ($PreferredServer) {
         return @{
             QueryType = $queryType.ToString()
             SelectedServer = $PreferredServer
+<<<<<<< HEAD
             SelectedTool = "N/A (manual override)"
             Confidence = 0.5
             Reason = "Preferred server specified"
+=======
+            SelectedTool = "N/A (override manuale)"
+            Confidence = 0.5
+            Reason = "Server preferito specificato"
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
             Override = $true
             OrchestratorSelection = $toolInfo.Primary
         }
@@ -209,6 +309,7 @@ function Select-OptimalTool {
     }
 }
 
+<<<<<<< HEAD
 function Get-OrchestrationSequence {
     return $OrchestrationSequence | ConvertTo-Json -Depth 3
 }
@@ -220,6 +321,11 @@ function Get-QuantumOrchestrationSequence {
 # Special request handling
 if ($ListTools) {
     # Return complete optimal tool map — including quantum types
+=======
+# Gestione delle richieste speciali
+if ($ListTools) {
+    # Restituisce la mappa completa dei tool ottimali
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     $toolMapJson = @{}
     foreach ($type in [QueryType].GetEnumValues()) {
         $info = $ToolMap[$type]
@@ -233,12 +339,17 @@ if ($ListTools) {
 }
 
 if ($ShowLog) {
+<<<<<<< HEAD
     # Return selection logs
+=======
+    # Restituisce il log delle selezioni
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     $logEntries = $OrchestratorState.Selections | Select-Object -Last $LogLimit
     $logEntries | ConvertTo-Json -Depth 2
     exit 0
 }
 
+<<<<<<< HEAD
 if ($OrchestrateMode) {
     # Large-scale orchestration sequence
     $orchResult = @{
@@ -286,12 +397,20 @@ if ($Query) {
     $result = Select-OptimalTool -Query $Query -PreferredServer $PreferredServer
     
     # Record selection
+=======
+# Selezione ottimale del tool
+if ($Query) {
+    $result = Select-OptimalTool -Query $Query -PreferredServer $PreferredServer
+    
+    # Registra la selezione
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     $OrchestratorState.Selections += @{
         Query = $Query
         Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Result = $result
     }
     
+<<<<<<< HEAD
     # Return result in JSON format
     $result | ConvertTo-Json -Depth 3
 } else {
@@ -303,4 +422,15 @@ if ($Query) {
     Write-Host "  -ShowLog: Returns selection logs" -ForegroundColor Yellow
     Write-Host "  -OrchestrateMode: Returns orchestration sequence" -ForegroundColor Yellow
     Write-Host "  -QuantumMode: Returns quantum orchestration sequence" -ForegroundColor Yellow
+=======
+    # Restituisce il risultato in formato JSON
+    $result | ConvertTo-Json -Depth 3
+} else {
+    Write-Host "Usage: aicarmine_mcp_orchestrator.ps1 -Query <query> [-PreferredServer <server>]" -ForegroundColor Yellow
+    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "  -Query: Query dell'utente" -ForegroundColor Yellow
+    Write-Host "  -PreferredServer: Server MCP preferito (opzionale)" -ForegroundColor Yellow
+    Write-Host "  -ListTools: Restituisce la mappa completa dei tool ottimali" -ForegroundColor Yellow
+    Write-Host "  -ShowLog: Restituisce il log delle selezioni" -ForegroundColor Yellow
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 }

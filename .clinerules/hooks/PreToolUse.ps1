@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 # [PreToolUse] Hook — MCP-First Enforcement v2
 # Aggressive MCP tool priority with quantum/engineering awareness.
+=======
+# [PreToolUse] Hook
+# PowerShell template for Windows hook execution.
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 
 $rawInput = ''
 $contextModification = ''
@@ -7,15 +12,19 @@ try {
     $rawInput = [Console]::In.ReadToEnd()
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_contract_probe.ps1')
     Write-AICarmineHookContractProbe -HookName 'PreToolUse' -RawInput $rawInput
+<<<<<<< HEAD
     
     # Load MCP orchestrator for tool selection guidance
     . (Join-Path $PSScriptRoot 'lib\aicarmine_mcp_orchestrator.ps1')
     
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_pretool_observer.ps1')
     $observation = Get-AICarmineClinePreToolObservation -RawInput $rawInput
     if ($null -ne $observation -and $observation.contextModification -is [string]) {
         $contextModification = $observation.contextModification
     }
+<<<<<<< HEAD
     
     # Additional MCP-first enforcement layer: detect native vs MCP tool selection
     $payload = ConvertFrom-Json -InputObject $rawInput -ErrorAction SilentlyContinue
@@ -65,6 +74,8 @@ try {
             }
         }
     }
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 }
 catch {
     # Hooks are fail-open; probe or observer failures must not affect Cline.
@@ -75,4 +86,8 @@ catch {
     cancel = $false
     contextModification = $contextModification
     errorMessage = ''
+<<<<<<< HEAD
 } | ConvertTo-Json -Compress
+=======
+} | ConvertTo-Json -Compress
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8

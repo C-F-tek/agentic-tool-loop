@@ -43,6 +43,7 @@ function Get-AICarmineClineTaskBootstrap {
             '- Use only the repository capability relevant to the current task; do not run a blanket health sweep.',
             '- UserPromptSubmit will add task-specific MCP routing after the user prompt.',
             '',
+<<<<<<< HEAD
             'CRITICAL: Always prefer MCP tools over native Cline tools.',
             '',
             'MCP > Native Cline priority:',
@@ -67,6 +68,12 @@ function Get-AICarmineClineTaskBootstrap {
             '- Leggi gli AGENTS.md applicabili e i contratti richiesti',
             '- Esegui il discovery nativo della superficie MCP esposta dalla sessione corrente',
             '- Filtra e riconosci le famiglie con prefisso aicarmine_. sono tool su misura per il progetto',
+=======
+            'Inizio della task:',
+            '- Leggi gli AGENTS.md applicabili e i contratti richiesti',
+            '- Esegui il discovery nativo della superficie MCP esposta dalla sessione corrente',
+            '- Filtra e riconosci le famiglie con prefisso aicarmine_. sono tool su misura per il proggetto',
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
             '- Deterministic search: aicarmine_repo_search_det',
             '- La superficie runtime scoperta è autoritativa rispetto alla mappa orientativa riportata sotto',
             '- Git history: aicarmine_git_readonly',

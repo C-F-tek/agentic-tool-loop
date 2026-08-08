@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 # [PostToolUse] Hook — MCP-First Enforcement v2
 # Enhances post-tool observation with aggressive MCP validation and quantum awareness.
+=======
+# [PostToolUse] Hook
+# PowerShell template for Windows hook execution.
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 
 $rawInput = ''
 $contextModification = ''
@@ -9,6 +14,7 @@ try {
     Write-AICarmineHookContractProbe -HookName 'PostToolUse' -RawInput $rawInput
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_pretool_observer.ps1')
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_posttool_observer.ps1')
+<<<<<<< HEAD
     . (Join-Path $PSScriptRoot 'lib\aicarmine_mcp_orchestrator.ps1')
     $observation = Get-AICarmineClinePostToolObservation -RawInput $rawInput
     if ($null -ne $observation) {
@@ -54,6 +60,11 @@ try {
                 }
             }
         }
+=======
+    $observation = Get-AICarmineClinePostToolObservation -RawInput $rawInput
+    if ($null -ne $observation) {
+        $contextModification = [string]$observation.contextModification
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     }
 }
 catch {
@@ -64,4 +75,8 @@ catch {
     cancel = $false
     contextModification = $contextModification
     errorMessage = ''
+<<<<<<< HEAD
 } | ConvertTo-Json -Compress
+=======
+} | ConvertTo-Json -Compress
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8

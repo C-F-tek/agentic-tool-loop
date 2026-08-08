@@ -6,10 +6,14 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+<<<<<<< HEAD
 from turtle import st
 from typing import Any, Callable, NoReturn
 
 from hypothesis import HealthCheck, given, seed, settings
+=======
+from typing import Any, Callable
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 PROFILE_ORIENTATION_SELECTOR = "orientation.selector.contract.v1"
 PROFILE_ORIENTATION_SHADOW_HELPERS = (
     "orientation.shadow_helpers.contract.v1"
@@ -409,7 +413,11 @@ def _orientation_call(
         candidates=selected_candidates,
         post_json=post_json,
         planner_url="http://127.0.0.1:11434/api/chat",
+<<<<<<< HEAD
         planner_model="qwen3.6-35b-coding-v5:latest",
+=======
+        planner_model="mio-qwen-code-toolnative:latest",
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
         keep_alive="30m",
         timeout_seconds=37,
         max_selected=max_selected,
@@ -459,7 +467,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             "root_doc:README.md",
             "root_area:services",
         ], result
+<<<<<<< HEAD
         assert result.get("planner_model") == "qwen3.6-35b-coding-v5:latest", result
+=======
+        assert result.get("planner_model") == "mio-qwen-code-toolnative:latest", result
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
         assert result.get("planner_url") == (
             "http://127.0.0.1:11434/api/chat"
         ), result
@@ -468,7 +480,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
 
         body = captured.get("body")
         assert isinstance(body, dict), captured
+<<<<<<< HEAD
         assert body.get("model") == "qwen3.6-35b-coding-v5:latest", body
+=======
+        assert body.get("model") == "mio-qwen-code-toolnative:latest", body
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
         assert body.get("stream") is False, body
         assert body.get("think") is False, body
         assert body.get("format") == "json", body
@@ -556,7 +572,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         assert result.get("rationale") == "backend_request_failed", result
         assert result.get("backend_unreachable") is True, result
         assert result.get("error_type") == "URLError", result
+<<<<<<< HEAD
         assert result.get("planner_model") == "qwen3.6-35b-coding-v5:latest", (
+=======
+        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", (
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
             result
         )
         return {"error_type": result.get("error_type")}
@@ -650,7 +670,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             lambda _url, _body, _timeout: response,
         )
         assert result.get("ok") is True, result
+<<<<<<< HEAD
         assert result.get("planner_model") == "qwen3.6-35b-coding-v5:latest", (
+=======
+        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", (
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
             result
         )
         assert response == response_before, (response, response_before)
@@ -764,7 +788,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             prompt_ids = [c["candidate_id"] for c in parsed["candidates"]]
             # Il modello emette: README due volte + INVENTED + services
             return {
+<<<<<<< HEAD
                 "model": "qwen3.6-35b-coding-v5:latest",
+=======
+                "model": "mio-qwen-code-toolnative:latest",
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
                 "message": {
                     "role": "assistant",
                     "content": json.dumps({
@@ -855,7 +883,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
 
         def capture_request(url, body, timeout):
             return {
+<<<<<<< HEAD
                 "model": "qwen3.6-35b-coding-v5:latest",
+=======
+                "model": "qwen3.5:9b-coding-v5-1",
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
                 "message": {
                     "role": "assistant",
                     "content": json.dumps({
@@ -992,7 +1024,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         assert result.get("status") == "unavailable", result
         assert result.get("rationale") == "no_valid_candidates_in_pool", result
         assert captured == {}, captured
+<<<<<<< HEAD
         assert result.get("planner_model") == "qwen3.6-35b-coding-v5:latest", result
+=======
+        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", result
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
         assert result.get("planner_url") == "http://127.0.0.1:11434/api/chat", result
         assert result.get("timeout_seconds") == 37, result
         assert result.get("keep_alive") == "30m", result
@@ -1042,7 +1078,11 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
         assert len(result.get("error_type")) == 120, result
         assert result.get("error") == "Y" * 500, result
         assert len(result.get("error")) == 500, result
+<<<<<<< HEAD
         assert result.get("planner_model") == "qwen3.6-35b-coding-v5:latest", result
+=======
+        assert result.get("planner_model") == "qwen3.5:9b-coding-v5-1", result
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
         assert result.get("planner_url") == "http://127.0.0.1:11434/api/chat", result
         assert result.get("timeout_seconds") == 37, result
         assert result.get("keep_alive") == "30m", result

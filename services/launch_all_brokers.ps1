@@ -12,7 +12,11 @@
 # powershell -ExecutionPolicy Bypass -File services\launch_all_brokers.ps1
 # ------------------------------------------------------------------
 
+<<<<<<< HEAD
 $ErrorActionPreference = "Continue"
+=======
+$ErrorActionPreference = "Stop"
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 
 # ------------------------------------------------------------------
 # Config
@@ -31,6 +35,7 @@ $SERVICES = @(
 # It is launched by Cline MCP configuration, not by this script.
 # To launch it manually: python -m services.codex_bridge.agentic_loop_client_mcp_server
 
+<<<<<<< HEAD
 # OVMS Reranker config paths
 $OVMS_RERANK_MODELS = Join-Path $repoRoot "services\launch\models-ovms-rerank"
 $OVMS_RERANK_CONFIG = Join-Path $OVMS_RERANK_MODELS "config.json"
@@ -42,6 +47,8 @@ if ([string]::IsNullOrWhiteSpace($TARGET_DEVICE)) {
     $TARGET_DEVICE = "GPU.0"
 }
 
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 $LOGS_DIR = Join-Path $repoRoot "logs"
 New-Item -ItemType Directory -Force -Path $LOGS_DIR | Out-Null
 
@@ -103,6 +110,7 @@ Write-Host "Repo root: $repoRoot" -ForegroundColor Cyan
 Write-Host "PYTHONPATH: $env:PYTHONPATH" -ForegroundColor Cyan
 Write-Host ""
 
+<<<<<<< HEAD
 # ------------------------------------------------------------------
 # Start OVMS Reranker
 # ------------------------------------------------------------------
@@ -141,6 +149,8 @@ if (-not (Test-Path $OVMS_EXE)) {
     }
 }
 
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 $processes = @{}
 
 foreach ($svc in $SERVICES) {
@@ -191,10 +201,13 @@ foreach ($port in $processes.Keys) {
     if (-not $ok) { $allOk = $false }
 }
 
+<<<<<<< HEAD
 # Check OVMS Reranker health
 $rerankerOk = Wait-ForEndpoint -Url "http://$($HOSTNAME):3550" -Label "OVMS Reranker" -TimeoutSec 30
 if (-not $rerankerOk) { $allOk = $false }
 
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 # ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
@@ -210,11 +223,14 @@ foreach ($svc in $SERVICES) {
     Write-Host "$($svc.Name,-25) http://$($HOSTNAME):$($svc.Port) [$status]" -ForegroundColor $color
 }
 
+<<<<<<< HEAD
 # Reranker status
 $rerankerStatus = if (Test-HttpEndpoint -Url "http://$($HOSTNAME):3550" -TimeoutSec 1) { "OK" } else { "FAILED" }
 $rerankerColor = if ($rerankerStatus -eq "OK") { "Green" } else { "Red" }
 Write-Host "$('OVMS Reranker',-25) http://$($HOSTNAME):3550 [$rerankerStatus]" -ForegroundColor $rerankerColor
 
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 Write-Host ""
 Write-Host "Per fermare tutti i broker:" -ForegroundColor Yellow
 Write-Host "  Get-Process python | Where-Object { `\$_ .CommandLine -like '*uvicorn*' } | Stop-Process -Force" -ForegroundColor Yellow

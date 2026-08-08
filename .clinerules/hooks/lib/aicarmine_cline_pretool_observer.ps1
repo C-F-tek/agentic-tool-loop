@@ -789,6 +789,7 @@ function Get-AICarmineClinePreToolObservation {
             finally { Exit-AICarmineTaskStateMutex -Mutex $lockResult }
         }
 
+<<<<<<< HEAD
         # Quantum/pre-quantum engineering awareness layer
         $taskText = ''
         $msgProp = $payload.PSObject.Properties['message']
@@ -799,6 +800,8 @@ function Get-AICarmineClinePreToolObservation {
         # Detect quantum engineering task context
         $isQuantumTask = $taskLower -match '(?i)(quantum|qubit|circuit|gate|statevector|bloch|nisq|vqe|qaoa|qnn|quantum.?computing|pre.?quantum|hybrid.?quantum)'
         
+=======
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
         if ($lockStatus -notin @('timeout', 'error')) {
             if ($codes.Contains('read_only_write_tool_candidate')) {
                 [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: a write-capable tool was selected for a read-only task. The call is not blocked by this observe-only hook. Recheck the task boundary before proceeding.')
@@ -807,21 +810,29 @@ function Get-AICarmineClinePreToolObservation {
                 [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: this identical tool call previously produced an observed failure. The call is not blocked. Do not retry it unchanged; change a discriminating argument or diagnose the failing stage.')
             }
             elseif ($nativeAfterMcpFailure) {
+<<<<<<< HEAD
                 $mcpToolsList = 'aicarmine_repo_read, aicarmine_repo_search, aicarmine_git_readonly_*, aicarmine_rag_context'
                 if ($isQuantumTask) {
                     $mcpToolsList += ', aicarmine_project_memory_search (for quantum experiment metadata)'
                 }
                 [void]$messages.Add("AICARMINE PRE-TOOL OBSERVATION: a prior MCP failure was observed in this routing epoch before this native tool selection. The call is not blocked. Report the failed MCP call and ensure the fallback addresses that concrete failure. MCP tools ($mcpToolsList) are preferred over native Cline tools (read_file, search_files, execute_command git).")
+=======
+                [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: a prior MCP failure was observed in this routing epoch before this native tool selection. The call is not blocked. Report the failed MCP call and ensure the fallback addresses that concrete failure.')
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
             }
             elseif ($repeated) {
                 [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: an identical tool call was already observed for this task. The call is not blocked. Do not repeat it unchanged unless new evidence justifies the retry.')
             }
             elseif ($codes.Contains('native_used_while_mcp_recommended')) {
+<<<<<<< HEAD
                 $mcpAdvise = 'MCP tools provide truncation control, structured output, Git/SQLite/RAG integration. Native tools are too generic.'
                 if ($isQuantumTask) {
                     $mcpAdvise += ' Quantum/pre-quantum engineering tasks require MCP tools for bounded statevector visualization, circuit JSON export, and experiment metadata tracking.'
                 }
                 [void]$messages.Add("AICARMINE PRE-TOOL OBSERVATION: this task has repository MCP recommendations, but a native tool was selected. The call is not blocked. Use native fallback only after a concrete MCP failure and report that failure. $mcpAdvise")
+=======
+                [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: this task has repository MCP recommendations, but a native tool was selected. The call is not blocked. Use native fallback only after a concrete MCP failure and report that failure.')
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
             }
             if ($unrelatedMcp) {
                 [void]$messages.Add('AICARMINE PRE-TOOL OBSERVATION: the selected MCP tool belongs to a family unrelated to the repository routing state. The call is not blocked. Recheck tool relevance before proceeding.')

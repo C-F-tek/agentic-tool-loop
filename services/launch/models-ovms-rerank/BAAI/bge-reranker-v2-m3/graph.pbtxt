@@ -11,7 +11,11 @@ node {
     [type.googleapis.com / mediapipe.RerankCalculatorOVOptions]: {
       models_path: "./",
       plugin_config: '{"NUM_STREAMS": "1" }',
+<<<<<<< HEAD
 target_device: "GPU.0"
+=======
+      target_device: "CPU"
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
     }
   }
 }

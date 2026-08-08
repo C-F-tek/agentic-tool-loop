@@ -1,12 +1,21 @@
+<<<<<<< HEAD
 # [TaskStart] Hook — MCP Initialization v2
 # Initializes MCP tool routing state at task start for aggressive MCP-first enforcement.
 
 $rawInput = ''
 $contextModification = ''
+=======
+# [TaskStart] Hook
+# PowerShell template for Windows hook execution.
+
+$rawInput = ''
+$bootstrap = ''
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 try {
     $rawInput = [Console]::In.ReadToEnd()
     . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_contract_probe.ps1')
     Write-AICarmineHookContractProbe -HookName 'TaskStart' -RawInput $rawInput
+<<<<<<< HEAD
     
     # Load MCP orchestrator for initial tool routing setup
     . (Join-Path $PSScriptRoot 'lib\aicarmine_mcp_orchestrator.ps1')
@@ -101,10 +110,24 @@ AICARMINE TASK START: MCP-first enforcement active. Preferred tools: $($preferre
 catch {
     # Hooks are fail-open; probe or observer failures must not affect Cline.
     $contextModification = ''
+=======
+    . (Join-Path $PSScriptRoot 'lib\aicarmine_cline_task_bootstrap.ps1')
+    $bootstrap = Get-AICarmineClineTaskBootstrap -RawInput $rawInput
+}
+catch {
+    # Hooks are fail-open; bootstrap or probe failures must not affect Cline.
+    $bootstrap = ''
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
 }
 
 [ordered]@{
     cancel = $false
+<<<<<<< HEAD
     contextModification = $contextModification
     errorMessage = ''
 } | ConvertTo-Json -Compress
+=======
+    contextModification = $bootstrap
+    errorMessage = ''
+} | ConvertTo-Json -Compress
+>>>>>>> f00b7873c326fa2c8e93286beb4604e3655f9aa8
