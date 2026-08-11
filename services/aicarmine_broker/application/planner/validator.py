@@ -1023,7 +1023,11 @@ def validate_planner_decision_against_evidence(
                 "Final-quality rejected with no concrete evidence gap and no runnable required_next_tool_call. "
                 "Rewrite the final answer from verified evidence only; do not call non-evidence tools."
             )
-            final_rewrite_latch = "terminal_block_required" if reject_count >= 2 else "rewrite_required"
+            # Lower threshold: allow terminal_block_required after just 1 rejection when
+            # the judge model quality has already rejected the final answer. This prevents
+            # the planner from being stuck emitting "block" while validator rejects it because
+            # planner_may_choose_block is False.
+            final_rewrite_latch = "terminal_block_required" if reject_count >= 1 else "rewrite_required"
             if final_rewrite_latch == "rewrite_required":
                 if required_next_missing_evidences:
                     contract["required_next_progress"] = (

@@ -438,7 +438,7 @@ def _controller_initial_orientation_candidate_pool(
 
 
 def _controller_orientation_model_select(
-    *,
+    
     goal: str,
     semantic_intent: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -504,7 +504,7 @@ def _apply_turn_surface_policy(contract: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_surface_names_for_turn(
-    *,
+    
     goal: str,
     evidence_contract: dict[str, Any],
     intrinsic_context: dict[str, Any],
@@ -528,7 +528,7 @@ def _available_tools_for_user_payload(compact_tools: list[dict[str, Any]]) -> An
 
 def _available_tools_window_pack(
     root: Path,
-    *,
+    
     goal: str,
     available_tools: Any,
     window_chars: int,
@@ -574,7 +574,7 @@ def _compact_evidence_contract_for_prompt(contract: dict[str, Any]) -> dict[str,
 
 def _windowed_evidence_contract_for_prompt(
     root: Path,
-    *,
+    
     goal: str,
     contract: dict[str, Any],
     window_chars: int,
@@ -693,7 +693,7 @@ def _windowed_evidence_contract_for_prompt(
 
 def _prompt_section_window_pack(
     root: Path,
-    *,
+    
     goal: str,
     section: str,
     value: Any,
@@ -735,12 +735,11 @@ def _prompt_section_window_pack(
 
 def _hard_budget_evidence_contract_for_prompt(
     root: Path,
-    *,
     goal: str,
     contract: dict[str, Any],
     window_chars: int,
     history: list[dict[str, Any]] | None = None,
-    reason: str,
+    reason: str = "",
 ) -> dict[str, Any]:
     if not isinstance(contract, dict) or not contract:
         return {}
@@ -804,7 +803,7 @@ def _compact_intrinsic_context_for_prompt(context: dict[str, Any]) -> dict[str, 
 
 def _windowed_optional_context_value(
     root: Path,
-    *,
+    
     goal: str,
     key: str,
     value: Any,
@@ -843,7 +842,7 @@ def _windowed_optional_context_value(
 
 def _optional_context_window_pack(
     root: Path,
-    *,
+    
     goal: str,
     optional_context: dict[str, Any],
     window_chars: int,
@@ -898,7 +897,7 @@ def _optional_context_window_pack(
 
 
 def _optional_context_for_prompt(
-    *,
+    
     root: Path,
     goal: str,
     history: list[dict[str, Any]],
@@ -1046,7 +1045,7 @@ def _prompt_window_chars(compact_mode: bool, attempt: int = 0) -> int:
 
 def _prompt_budget_report(
     user_payload: dict[str, Any],
-    *,
+    
     system_prompt: str = "",
     extra_prompt_sections: dict[str, int] | None = None,
 ) -> dict[str, Any]:
@@ -1189,7 +1188,7 @@ def _repo_read_item_full_content(item: dict[str, Any]) -> tuple[str, dict[str, A
 
 def _store_prompt_text_window(
     root: Path,
-    *,
+    
     section: str,
     text: str,
     query: str,
@@ -1208,7 +1207,7 @@ def _store_prompt_text_window(
 
 def _store_prompt_value_window(
     root: Path,
-    *,
+    
     section: str,
     value: Any,
     query: str,
@@ -1241,7 +1240,7 @@ def _prompt_window_tracking_metadata_errors(history: list[dict[str, Any]]) -> li
     )
 
 
-def _prompt_context_continue_action(window: dict[str, Any], *, max_chars: int, reason: str) -> dict[str, Any] | None:
+def _prompt_context_continue_action(window: dict[str, Any],  max_chars: int, reason: str) -> dict[str, Any] | None:
     return _prompt_context_continue_action_impl(
         window,
         max_chars=max_chars,
@@ -1265,7 +1264,7 @@ def _planner_scratchpad_next_window_action_from_history(
 def _repo_read_items_for_prompt(
     history: list[dict[str, Any]],
     paths: set[str],
-    *,
+    
     job_root: Path,
     goal: str,
     window_chars: int,
@@ -1288,7 +1287,7 @@ def _repo_read_items_for_prompt(
 
 def _latest_code_product_for_prompt(
     history: list[dict[str, Any]],
-    *,
+    
     job_root: Path,
     goal: str,
     window_chars: int,
@@ -1309,7 +1308,7 @@ def _required_working_set_for_prompt(
     goal: str,
     history: list[dict[str, Any]],
     contract: dict[str, Any],
-    *,
+    
     job_root: Path,
     window_chars: int,
     compact_mode: bool,
@@ -1338,7 +1337,7 @@ def _required_working_set_for_prompt(
 
 def _required_working_set_continuation_action(
     required_working_set: dict[str, Any],
-    *,
+    
     history: list[dict[str, Any]],
     window_chars: int,
 ) -> dict[str, Any] | None:
@@ -1353,7 +1352,7 @@ def _required_working_set_continuation_action(
 
 def _evidence_contract_continuation_action(
     evidence_contract: dict[str, Any],
-    *,
+    
     history: list[dict[str, Any]],
     window_chars: int,
 ) -> dict[str, Any] | None:
@@ -1407,7 +1406,7 @@ def _native_history_message_reserve_chars(history: list[dict[str, Any]], window_
 
 
 def _build_planner_user_payload(
-    *,
+    
     job_id: str,
     state: dict[str, Any],
     step: int,
@@ -1484,7 +1483,7 @@ def _drop_empty_dict_values(value: dict[str, Any]) -> dict[str, Any]:
 
 def _planner_ollama_turn_from_decision(
     decision: dict[str, Any] | None,
-    *,
+    
     step: Any = None,
 ) -> dict[str, Any]:
     return _planner_ollama_turn_from_decision_impl(decision, step=step)
@@ -1528,7 +1527,7 @@ def _planner_history_evidence_payload(item: dict[str, Any], result: dict[str, An
 def _planner_tool_result_message_payload(
     item: dict[str, Any],
     result: dict[str, Any],
-    *,
+    
     root: Path,
     goal: str,
     window_chars: int,
@@ -1546,7 +1545,7 @@ def _planner_tool_result_message_payload(
 
 def _planner_history_item_messages(
     item: dict[str, Any],
-    *,
+    
     root: Path,
     goal: str,
     window_chars: int,
@@ -1563,7 +1562,7 @@ def _planner_history_item_messages(
 
 def _planner_history_messages_for_ollama(
     history: list[dict[str, Any]],
-    *,
+    
     root: Path,
     goal: str,
     window_chars: int,
@@ -1711,7 +1710,7 @@ def goal_has_write_intent(goal: str) -> bool:
 
 def _code_product_build_state_duplicate_write(
     history: list[dict[str, Any]],
-    *,
+    
     target_file: str,
     text: str,
 ) -> bool:
@@ -1733,7 +1732,7 @@ def _code_product_build_state_read_action(state: dict[str, Any], target_file: st
 def _code_product_source_windows_from_reads(
     history: list[dict[str, Any]],
     target_file: str,
-    *,
+    
     limit: int = 3,
 ) -> list[dict[str, Any]]:
     return _code_product_source_windows_from_reads_impl(
@@ -1765,7 +1764,7 @@ def _code_product_build_state_propose_action(
 
 
 def _code_product_candidate_action(
-    *,
+    
     target_file: str,
     latest_violations: list[str],
     goal: str = "",
@@ -1796,7 +1795,7 @@ def _code_product_payload_rejection_count(
 
 def _code_product_source_window_candidate(
     target_file: str,
-    *,
+    
     line_count: int = 0,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -1810,7 +1809,7 @@ def _code_product_source_window_candidate(
 
 def _strip_duplicate_window_candidate(
     actions: list[dict[str, Any]],
-    *,
+    
     tool: str,
     signature: str,
 ) -> list[dict[str, Any]]:
@@ -1819,7 +1818,7 @@ def _strip_duplicate_window_candidate(
 
 def _apply_duplicate_window_replan_contract(
     contract: dict[str, Any],
-    *,
+    
     violation: str,
     tool: str,
     args: dict[str, Any],
@@ -1872,7 +1871,7 @@ def _disallowed_invalid_code_product_signatures(
 
 def _compact_validation_rejections_tail(
     validation_rejections: list[dict[str, Any]],
-    *,
+    
     limit: int = 5,
 ) -> list[dict[str, Any]]:
     return _compact_validation_rejections_tail_impl(validation_rejections, limit=limit)
@@ -2351,7 +2350,7 @@ def _read_candidate_sort_key(path: str) -> tuple[int, int, int, int, str]:
 
 def _dynamic_read_candidate_paths(
     paths: list[str],
-    *,
+    
     read_ok: set[str] | None = None,
     target_scope: str = "",
 ) -> list[str]:
@@ -2372,7 +2371,7 @@ def _scope_candidate_source_paths(list_rows: list[dict[str, Any]], target_scope:
 def _scope_read_candidates_from_evidence(
     list_rows: list[dict[str, Any]],
     target_scope: str,
-    *,
+    
     read_ok: list[str] | set[str] | None = None,
 ) -> list[str]:
     return _scope_read_candidates_from_evidence_impl(
@@ -2387,7 +2386,7 @@ def _scope_read_candidates_from_evidence(
 
 def _meaningful_read_candidates_from_evidence(
     list_rows: list[dict[str, Any]],
-    *,
+    
     read_ok: list[str] | set[str] | None = None,
 ) -> list[str]:
     return _meaningful_read_candidates_from_evidence_impl(
@@ -2487,7 +2486,7 @@ def _scope_claim_conflict_for_path(path: str, claims: list[dict[str, Any]]) -> d
 def _add_core_discovery_candidate(
     out: list[dict[str, Any]],
     seen: set[str],
-    *,
+    
     path: str,
     source: str,
     rank: int,
@@ -2518,7 +2517,7 @@ def _add_core_discovery_candidate(
 
 
 def _core_discovery_candidates_from_intrinsic(
-    *,
+    
     intrinsic_context: dict[str, Any] | None,
     list_rows: list[dict[str, Any]],
     read_ok: list[str],
@@ -2549,7 +2548,7 @@ def _core_discovery_candidates_from_intrinsic(
 
 def _core_discovery_read_paths(
     candidates: list[dict[str, Any]] | None,
-    *,
+    
     read_ok: set[str],
     target_scope: str,
     limit: int,
@@ -3080,7 +3079,7 @@ def _old_text_verified_by_repo_read(history: list[dict[str, Any]], target_file: 
 
 def _apply_unverified_old_text_replan_contract(
     contract: dict[str, Any],
-    *,
+    
     target_file: str,
     violation: str,
     history: list[dict[str, Any]],
@@ -3167,7 +3166,6 @@ def _apply_unverified_old_text_replan_contract(
 def _repo_analysis_final_answer_model_quality(
     final_answer: str,
     contract: dict[str, Any],
-    *,
     goal: str,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -3179,10 +3177,10 @@ def _repo_analysis_final_answer_model_quality(
     user_payload = _dict_or_empty(request.get("user_payload"))
     options = {
         "temperature": 0,
-        "num_predict": 1000,
+        "num_predict": 4096,
         "num_ctx": max(
-            4096,
-            min(int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 8192), int(AGENTIC_PLANNER_NUM_CTX or 8192)),
+            32768,
+            min(int(AGENTIC_PLANNER_NUM_CTX_CAP or AGENTIC_PLANNER_NUM_CTX or 65536), int(AGENTIC_PLANNER_NUM_CTX or 65536)),
         ),
     }
     payload = {
@@ -4006,7 +4004,7 @@ def _validation_needs_replan_specialist(
 def _specialist_route_audit(
     required_call: Any,
     history: list[dict[str, Any]],
-    *,
+    
     source: str,
     allowed_tools: set[str] | None = None,
 ) -> dict[str, Any]:
@@ -4292,7 +4290,7 @@ def _replan_search_query_is_concrete(value: Any) -> bool:
 def _mark_replan_required_call_validated(
     result: dict[str, Any],
     required_call: dict[str, Any],
-    *,
+    
     source: str = "planner_replan_specialist_sanitizer",
 ) -> dict[str, Any]:
     required_call["validated"] = True
@@ -4452,7 +4450,7 @@ def _sanitize_replan_specialist_result_against_contract(
 
 
 def planner_replan_specialist_for_validation(
-    *,
+    
     goal: str,
     decision: dict[str, Any],
     validation: dict[str, Any],
@@ -4701,7 +4699,7 @@ def _planner_cuda_rewrite_violations(validation: dict[str, Any]) -> list[str]:
 
 def _planner_cuda_rewrite_violation_matches(
     violations: list[str],
-    *,
+    
     exact: set[str],
     prefixes: tuple[str, ...],
 ) -> bool:
@@ -4742,7 +4740,7 @@ def planner_cuda_rewrite_target(validation: dict[str, Any], decision: dict[str, 
 
 
 def _planner_cuda_rewrite_instruction(
-    *,
+    
     rewrite_target: str,
     existing_instruction: str,
 ) -> str:
@@ -4775,7 +4773,7 @@ def _planner_cuda_rewrite_instruction(
 def planner_cuda_rewrite_guard_for_validation(
     validation: dict[str, Any],
     decision: dict[str, Any],
-    *,
+    
     job_id: str = "",
     step: int = 0,
     goal: str = "",
@@ -4903,7 +4901,7 @@ def _should_attempt_vulkan_repair(
 
 
 def vulkan_repair_invalid_planner_decision(
-    *,
+    
     goal: str,
     step: int,
     decision: dict[str, Any],
@@ -5024,7 +5022,7 @@ def vulkan_repair_invalid_planner_decision(
 def controller_guard_result_for_validation(
     validation: dict[str, Any],
     decision: dict[str, Any],
-    *,
+    
     job_id: str = "",
     step: int = 0,
     goal: str = "",
@@ -5230,11 +5228,11 @@ def _public_terminal_content_key(key: Any) -> bool:
     return _public_terminal_content_key_impl(key)
 
 
-def _public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
+def _public_terminal_sanitize_text(value: Any,  content: bool = False) -> str:
     return _public_terminal_sanitize_text_impl(value, content=content)
 
 
-def _public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
+def _public_terminal_sanitize_value(value: Any,  key: str = "", depth: int = 0) -> Any:
     return _public_terminal_sanitize_value_impl(value, key=key, depth=depth)
 
 
@@ -5271,7 +5269,7 @@ def _executed_tool_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _repo_read_content_views(
     history: list[dict[str, Any]],
-    *,
+    
     per_item_limit: int = 60000,
     total_limit: int = 180000,
 ) -> list[dict[str, Any]]:
@@ -5293,7 +5291,7 @@ def _execution_evidence_digest_text(result: dict[str, Any] | None, limit: int = 
 
 
 def _compact_evidence_guide_for_30b(
-    *,
+    
     goal: Any,
     status: str,
     answer: str,
@@ -5525,7 +5523,7 @@ def _write_loop_turn_memory(
 
 
 def _terminal_judge_fallback_report(
-    *,
+    
     status: str,
     goal: str,
     history: list[dict[str, Any]],
@@ -5580,7 +5578,7 @@ def _terminal_judge_markdown(report: dict[str, Any]) -> str:
 
 def _sanitize_terminal_judge_provider_report(
     value: Any,
-    *,
+    
     status: str,
     goal: str,
     history_count: int,
