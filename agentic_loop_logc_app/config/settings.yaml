@@ -1,0 +1,25 @@
+[database]
+type = sqlite
+path = state/data.db
+host = localhost
+port = 5432
+name = data
+user = admin
+password = 
+
+[rag]
+index_db = state/rag_index.sqlite3
+chunk_chars = 4000
+chunk_lines = 180
+max_file_bytes = 2000000
+source = filesystem
+mode = delta
+rerank = true
+rerank_url = http://127.0.0.1:3550/v3/rerank
+candidate_limit = 80
+top_k = 12
+
+[mcp]
+port = 3580
+name = aicarmine_data_rag
+tool_prefix = aicarmine_

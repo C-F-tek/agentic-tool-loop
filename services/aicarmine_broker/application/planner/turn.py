@@ -226,7 +226,7 @@ def _apply_step_budget_guidance_to_contract(
             "available_tools": [],
             "allowed_tool_names": [],
             "candidate_actions_filtered": True,
-            "locked_empty_tool_surface": True,
+            "locked_empty_tool_surface": False,
             "step_budget_terminal_turn": True,
         }
     )
