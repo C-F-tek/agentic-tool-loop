@@ -715,6 +715,8 @@ class EvidenceBuilder:
                 if isinstance(item, dict)
             ]
             + read_ok
+            + ranked_preplanner_paths
+            + selected_preplanner_paths
         ):
             p = _repo_rel_token(path)
             if p and p not in validator_admissible_read_paths:

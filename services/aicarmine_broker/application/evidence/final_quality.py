@@ -736,6 +736,13 @@ def _repo_content_analysis_summary(contract: dict[str, Any]) -> dict[str, Any]:
     total_lines = 0
     total_chars = 0
     
+    # Extract content patterns for substantive analysis
+    python_classes = []
+    python_functions = []
+    python_imports = []
+    markdown_headings = []
+    config_keys = []
+    
     for row in (verified_reads if isinstance(verified_reads, list) else []):
         if not isinstance(row, dict):
             continue
@@ -745,12 +752,31 @@ def _repo_content_analysis_summary(contract: dict[str, Any]) -> dict[str, Any]:
         total_lines += lines
         total_chars += chars
         
+        # Extract content preview if available for pattern analysis
+        content_preview = str(row.get("content_preview") or row.get("content_sample") or "")
+        
         if path.endswith(".py"):
             py_count += 1
+            # Extract class names from preview
+            import re
+            classes_found = re.findall(r'class\s+(\w+)', content_preview)
+            python_classes.extend(classes_found)
+            # Extract function names
+            funcs_found = re.findall(r'def\s+(\w+)', content_preview)
+            python_functions.extend(funcs_found)
+            # Extract imports
+            imports_found = re.findall(r'(?:import|from)\s+(\w+)', content_preview)
+            python_imports.extend(imports_found)
         elif path.endswith(".md"):
             md_count += 1
+            # Extract headings
+            headings_found = re.findall(r'#{1,6}\s+(.+)', content_preview)
+            markdown_headings.extend(headings_found)
         elif any(path.endswith(ext) for ext in [".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".conf"]):
             config_count += 1
+            # Extract top-level keys from preview
+            keys_found = re.findall(r'^([a-zA-Z_][a-zA-Z0-9_]*):\s', content_preview, re.MULTILINE)
+            config_keys.extend(keys_found)
         else:
             other_count += 1
     
@@ -772,19 +798,43 @@ def _repo_content_analysis_summary(contract: dict[str, Any]) -> dict[str, Any]:
     else:
         depth = "minimal"
     
-    # Generate verdict guidance
+    # Generate verdict guidance with substantive content analysis
     verdict_guidance = []
     if py_count > 0:
-        verdict_guidance.append(f"Python codebase: {py_count} files analyzed ({total_lines} lines total)")
+        unique_classes = set(python_classes)
+        unique_funcs = set(python_functions)
+        unique_imports = set(python_imports)
+        verdict_guidance.append(
+            f"Python codebase: {py_count} files analyzed ({total_lines} lines total), "
+            f"{len(unique_classes)} classes detected, {len(unique_funcs)} functions detected, "
+            f"{len(unique_imports)} import modules detected"
+        )
     if md_count > 0:
-        verdict_guidance.append(f"Documentation: {md_count} markdown files reviewed")
+        unique_headings = set(markdown_headings)
+        verdict_guidance.append(
+            f"Documentation: {md_count} markdown files reviewed, "
+            f"{len(unique_headings)} distinct topics/sections detected"
+        )
     if config_count > 0:
-        verdict_guidance.append(f"Configuration: {config_count} config files examined")
+        unique_keys = set(config_keys)
+        verdict_guidance.append(
+            f"Configuration: {config_count} config files examined, "
+            f"{len(unique_keys)} distinct configuration keys detected"
+        )
     
     if missing_paths:
         verdict_guidance.append(f"Missing evidence: {len(missing_paths)} paths require verification")
     if covered_paths:
         verdict_guidance.append(f"Covered: {len(covered_paths)} paths verified")
+    
+    # Add content-level analysis summary
+    content_analysis = {
+        "python_classes_sample": list(set(python_classes))[:10],
+        "python_functions_sample": list(set(python_functions))[:10],
+        "python_imports_sample": list(set(python_imports))[:10],
+        "markdown_topics_sample": list(set(markdown_headings))[:10],
+        "config_keys_sample": list(set(config_keys))[:10],
+    }
     
     return {
         "schema": "repo_content_analysis_summary.v1",
@@ -804,6 +854,7 @@ def _repo_content_analysis_summary(contract: dict[str, Any]) -> dict[str, Any]:
             "candidates": len(candidate_paths),
         },
         "verdict_guidance": verdict_guidance,
+        "content_analysis": content_analysis,
         "judge_expanded_verdicts": True,
     }
 
