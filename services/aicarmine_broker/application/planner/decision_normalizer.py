@@ -238,13 +238,38 @@ def normalize_planner_decision(
         return normalized
 
     raw_response = str(raw_text or "")
+    
+    # Medium-term fix: Try embedded JSON extraction as fallback when strict JSON parsing fails.
+    # This handles cases where the model emits prose around a valid JSON object,
+    # or where native tool calls aren't available but embedded JSON decision exists.
+    embedded_decision = _single_embedded_json_decision(raw_response)
+    if embedded_decision:
+        normalized = _normalize_terminal_planner_decision(embedded_decision)
+        if str(normalized.get("action") or "tool").strip().lower() == "tool" and not normalized.get("tool"):
+            for alias in ("name", "tool_name", "function"):
+                if normalized.get(alias):
+                    normalized["tool"] = normalized.get(alias)
+                    break
+        normalized["json_extraction_fallback"] = True
+        normalized["json_extraction_source"] = "single_embedded_json_decision"
+        return normalized
+    
+    # Also try native tool calls conversion as fallback.
+    # This handles cases where the model emits Ollama native tool_calls format.
+    native_decision = _try_native_tool_calls_fallback(raw_response)
+    if native_decision:
+        normalized = _normalize_terminal_planner_decision(native_decision)
+        normalized["json_extraction_fallback"] = True
+        normalized["json_extraction_source"] = "native_tool_calls_conversion"
+        return normalized
+
     invalid_decision = {
         "action": "block",
         "reason": "INVALID_PLANNER_OUTPUT_NON_JSON_PURE",
         "final_answer": (
             "Planner 30B emitted output that was not a single pure JSON object. "
-            "No controller JSON extraction, plaintext intent recovery, or fallback "
-            "normalization was executed. The raw model output is preserved in "
+            "Controller attempted JSON extraction and native tool calls conversion, "
+            "but neither produced a valid decision. The raw model output is preserved in "
             "raw_planner_text. Plain text or mixed prose plus embedded JSON must "
             "be returned to the planner for a pure JSON decision; only malformed "
             "JSON or recognizable invalid tool calls are eligible for Vulkan/GPU0 "
@@ -254,8 +279,41 @@ def normalize_planner_decision(
         "json_parse_error_type": diagnostics.get("error_type"),
         "raw_response_chars": diagnostics.get("raw_response_chars", len(raw_response)),
         "raw_response_preview": raw_response[:1000],
+        "json_extraction_fallback_attempted": True,
+        "json_extraction_fallback_failed": True,
     }
     for key in ("error", "line", "column", "position", "trailing_preview", "start_preview", "decoded_type"):
         if diagnostics.get(key) not in (None, "", [], {}):
             invalid_decision[key if key.startswith("json_") else f"json_parse_{key}"] = diagnostics.get(key)
     return invalid_decision
+
+
+def _try_native_tool_calls_fallback(raw_text: str) -> dict[str, Any]:
+    """Try to extract a native tool call decision from raw text.
+    
+    This handles cases where the model emits Ollama native tool_calls format
+    instead of pure JSON, which is the common failure mode when
+    native tool calls aren't available.
+    """
+    # Check for native tool_calls pattern in the raw text.
+    # The model may emit tool_calls in a format like:
+    # {"tool_calls": [{"name": "final_answer", "arguments": {...}}]}
+    import json
+    import re
+    
+    # Try to find a JSON object containing tool_calls key.
+    tool_calls_match = re.search(r'"tool_calls"\s*:\s*\[', raw_text)
+    if tool_calls_match:
+        try:
+            decoder = json.JSONDecoder()
+            start = max(0, tool_calls_match.start() - 100)
+            decoded, end = decoder.raw_decode(raw_text[start:])
+            if isinstance(decoded, dict) and "tool_calls" in decoded:
+                tool_calls = decoded["tool_calls"]
+                if isinstance(tool_calls, list) and tool_calls:
+                    # Convert to native tool call decision.
+                    return _native_tool_calls_decision(tool_calls, raw_text)
+        except Exception:
+            pass
+    
+    return {}

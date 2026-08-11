@@ -722,6 +722,92 @@ def _claims_deep_or_complete_review(text_low: str) -> bool:
     return _concept_present(text_low, patterns)
 
 
+def _repo_content_analysis_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    """Generate a comprehensive summary of repo content analysis from verified reads."""
+    verified_reads = contract.get("verified_content_reads") if isinstance(contract, dict) else []
+    successful_reads = contract.get("successful_repo_read_paths") if isinstance(contract, dict) else []
+    file_memory = contract.get("file_memory") if isinstance(contract, dict) else []
+    
+    # Count read types
+    py_count = 0
+    md_count = 0
+    config_count = 0
+    other_count = 0
+    total_lines = 0
+    total_chars = 0
+    
+    for row in (verified_reads if isinstance(verified_reads, list) else []):
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get("path") or row.get("repo_path") or "")
+        lines = int(row.get("line_count") or 0)
+        chars = int(row.get("content_chars") or 0)
+        total_lines += lines
+        total_chars += chars
+        
+        if path.endswith(".py"):
+            py_count += 1
+        elif path.endswith(".md"):
+            md_count += 1
+        elif any(path.endswith(ext) for ext in [".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".conf"]):
+            config_count += 1
+        else:
+            other_count += 1
+    
+    # Analyze coverage
+    covered_paths = contract.get("covered_owner_paths") if isinstance(contract, dict) else []
+    missing_paths = contract.get("missing_owner_paths") if isinstance(contract, dict) else []
+    candidate_paths = contract.get("candidate_owner_paths") if isinstance(contract, dict) else []
+    
+    # Determine analysis depth
+    read_count = len(verified_reads)
+    if read_count >= 20:
+        depth = "comprehensive"
+    elif read_count >= 10:
+        depth = "substantial"
+    elif read_count >= 5:
+        depth = "moderate"
+    elif read_count >= 2:
+        depth = "partial"
+    else:
+        depth = "minimal"
+    
+    # Generate verdict guidance
+    verdict_guidance = []
+    if py_count > 0:
+        verdict_guidance.append(f"Python codebase: {py_count} files analyzed ({total_lines} lines total)")
+    if md_count > 0:
+        verdict_guidance.append(f"Documentation: {md_count} markdown files reviewed")
+    if config_count > 0:
+        verdict_guidance.append(f"Configuration: {config_count} config files examined")
+    
+    if missing_paths:
+        verdict_guidance.append(f"Missing evidence: {len(missing_paths)} paths require verification")
+    if covered_paths:
+        verdict_guidance.append(f"Covered: {len(covered_paths)} paths verified")
+    
+    return {
+        "schema": "repo_content_analysis_summary.v1",
+        "analysis_depth": depth,
+        "total_files_read": len(verified_reads),
+        "total_lines_analyzed": total_lines,
+        "total_chars_analyzed": total_chars,
+        "file_types": {
+            "python": py_count,
+            "markdown": md_count,
+            "config": config_count,
+            "other": other_count,
+        },
+        "coverage": {
+            "covered": len(covered_paths),
+            "missing": len(missing_paths),
+            "candidates": len(candidate_paths),
+        },
+        "verdict_guidance": verdict_guidance,
+        "judge_expanded_verdicts": True,
+    }
+
+
 def repo_analysis_final_answer_quality(
     final_answer: str,
     contract: dict[str, Any],
@@ -977,6 +1063,7 @@ def repo_analysis_final_answer_model_quality_request(
             "goal": str(goal or ""),
             "final_answer": _clip_text(final_answer, 16000),
             "contract_summary": _final_quality_contract_summary(contract),
+            "repo_content_analysis": _repo_content_analysis_summary(contract),
             "semantic_audit_guidance": audit_guidance_for_goal(goal),
             "final_quality_judge_role_guidance": role_guidance_for_goal("final_quality_judge", goal),
             "goal_requests_semantic_audit": goal_requests_semantic_audit(goal),
@@ -997,7 +1084,11 @@ def repo_analysis_final_answer_model_quality_request(
                 "Do not ask to repo_read files already present in verified_content_reads or successful_repo_read_paths.",
                 "For headings, metrics, missing sections, or conceptual gaps, use required_next_progress/required_next_output_sections, or repo_semantic_search with a concrete query.",
                 "If enough evidence exists but the prose is inconsistent, reject and require a corrected final without a tool call.",
+                "Use repo_content_analysis to assess analysis depth (minimal/partial/moderate/substantial/comprehensive) and adjust verdict strictness accordingly.",
+                "When file_types shows Python files analyzed, verify code-level claims against actual source evidence.",
+                "When coverage.covered > 0, prioritize claims grounded in verified reads over speculative assertions.",
             ],
+            "judge_expanded_verdicts": True,
             "allowed_required_next_tools": sorted(_ALLOWED_FINAL_QUALITY_ROUTE_TOOLS),
             "required_json_shape": {
                 "decision": "accept | reject | continue_required",

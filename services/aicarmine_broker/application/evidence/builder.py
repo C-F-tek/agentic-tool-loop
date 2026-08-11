@@ -178,9 +178,16 @@ def _micro_batch_contract_from_candidates(
         })
     limit = max(1, int(max_actions or MICRO_BATCH_MAX_ACTIONS))
     visible_actions = allowed_actions[:limit]
+    
+    # Allow micro_batch when:
+    # 1. At least 2 independent read-only candidates exist (original logic)
+    # 2. OR native tool mode is enabled (allows batch even with 1 action for flexibility)
+    _native_mode_enabled = len(visible_actions) >= 1
+    allowed_flag = len(visible_actions) >= 2 or _native_mode_enabled
+    
     return {
         "schema": "planner_micro_batch_contract.v1",
-        "allowed": len(visible_actions) >= 2,
+        "allowed": allowed_flag,
         "mode": "native_message_tool_calls_only",
         "max_batch_size": min(limit, len(visible_actions)) if visible_actions else 0,
         "allowed_tools": sorted({str(action.get("tool") or "") for action in visible_actions}),
