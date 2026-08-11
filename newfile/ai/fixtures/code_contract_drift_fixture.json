@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "kind": "code_contract_drift",
+  "repo_root": ".",
+  "passed": false,
+  "errors": [
+    "Tools/validation/check_validation_report_contract.py: missing required term: fixture_manual_review_gate"
+  ],
+  "warnings": [],
+  "provider_execution_performed": false,
+  "patch_application_performed": false,
+  "source_writes_performed": false,
+  "apply_mode": "report_only_manual_review_only",
+  "drift_count": 1,
+  "lane_policy": {
+    "cpu": "validators and contract analyzers run here by default"
+  },
+  "checks": [
+    {
+      "path": "Tools/validation/check_validation_report_contract.py",
+      "contract": "fixture_validation_report_contract_manual_review_gate",
+      "owner_lane": "cpu_validation",
+      "consumed_by_lanes": [
+        "cpu"
+      ],
+      "exists": true,
+      "ok": false,
+      "required_term_count": 1,
+      "recommended_term_count": 1,
+      "missing_required_terms": [
+        "fixture_manual_review_gate"
+      ],
+      "missing_recommended_terms": [
+        "manual_review_required"
+      ],
+      "forbidden_terms_present": [],
+      "forbidden_global_terms_present": [],
+      "allowed_global_forbidden_terms_present": [],
+      "errors": [
+        "missing required term: fixture_manual_review_gate"
+      ],
+      "warnings": [
+        "missing recommended term: manual_review_required"
+      ],
+      "safe_actions": [
+        {
+          "path": "Tools/validation/check_validation_report_contract.py",
+          "operation": "manual_code_patch_suggestion",
+          "apply_mode": "manual_review_only",
+          "owner_lane": "cpu_validation",
+          "hint": "Fixture-only suggestion. Do not apply; validate report-only code patch-plan generation."
+        }
+      ]
+    }
+  ],
+  "safe_actions": [
+    {
+      "path": "Tools/validation/check_validation_report_contract.py",
+      "operation": "manual_code_patch_suggestion",
+      "apply_mode": "manual_review_only",
+      "owner_lane": "cpu_validation",
+      "hint": "Fixture-only suggestion. Do not apply; validate report-only code patch-plan generation."
+    }
+  ],
+  "guardrails": {
+    "code_report_only": true,
+    "provider_execution_performed": false,
+    "patch_application_performed": false,
+    "blender_runtime_touched": false,
+    "full_analysis_json_touched": false,
+    "sqlite_db_touched": false,
+    "npu_promoted_to_advisory": false,
+    "openvino_gpu_primary_lane": false
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "agent_review_code_patch_plan",
+  "passed": true,
+  "provider_execution_performed": false,
+  "patch_application_performed": false,
+  "source_writes_performed": false,
+  "manual_review_required": true,
+  "apply_mode": "report_only_manual_review_code_patch_plan",
+  "patch_plan_count": 1,
+  "code_patch_plans": [
+    {
+      "id": "code_patch_001",
+      "area": "validation",
+      "risk": "low",
+      "status": "ready_for_manual_review",
+      "target_files": [
+        "Tools/validation/check_validation_report_contract.py"
+      ],
+      "rationale": "Fixture-only example showing a low-risk validator documentation/code review target without applying a patch.",
+      "edit_strategy": "Manual review only; inspect current file before preparing any concrete edit.",
+      "proposed_patch": "",
+      "validation_commands": [
+        "python .\\Tools\\validation\\check_python_syntax.py --repo-root . --output .\\output\\validation\\python_syntax.json",
+        "python .\\Tools\\validation\\check_validation_report_contract.py --repo-root . --output .\\output\\validation\\validation_report_contract.json",
+        "git diff --check"
+      ],
+      "stop_conditions": [
+        "Stop if the target file does not exist.",
+        "Stop if the patch touches output/**.",
+        "Stop if validation fails.",
+        "Stop if Blender runtime execution is required."
+      ],
+      "manual_review_required": true
+    }
+  ],
+  "errors": [],
+  "warnings": []
+}

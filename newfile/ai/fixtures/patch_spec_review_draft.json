@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "kind": "proposal_patch_spec_draft",
+  "generated_at": "2026-05-01T00:00:00",
+  "repo_root": "not specified",
+  "source_proposal_report": "Tools/ai/fixtures/notional_repository_change_proposals.json",
+  "proposal_id": "P-FIXTURE-REVIEW-PROMOTION",
+  "proposal_title": "Fixture for reviewed patch spec promotion",
+  "proposal_area": "validation_fixtures",
+  "proposal_priority": "P3",
+  "apply_mode": "manual_review_only",
+  "draft_status": "needs_concrete_replacements",
+  "provider_execution_performed": false,
+  "description": "Draft fixture for review-to-concrete patch spec promotion",
+  "operations": [
+    {
+      "path": "Tools/ai/fixtures/patch_spec_review_target.md",
+      "replacements": [],
+      "proposal_id": "P-FIXTURE-REVIEW-PROMOTION",
+      "artifact_kind": "markdown",
+      "operation": "manual_patch_suggestion",
+      "content_status": "draft_metadata_only",
+      "draft_status": "needs_concrete_replacements",
+      "draft_notes": [
+        "Fixture operation. Do not apply in source; dry-run only."
+      ],
+      "require_contains_after": [],
+      "forbid_contains_after": []
+    }
+  ],
+  "validation_commands": [
+    "python .\\Tools\\validation\\check_reviewed_patch_specs.py --repo-root . --manifest .\\output\\patch_specs\\reviewed_patch_spec_fixture_manifest.json --output .\\output\\validation\\reviewed_patch_specs.json"
+  ],
+  "stop_conditions": [
+    "Any validation would write source files."
+  ],
+  "do_not_touch": [
+    "runtime Blender files",
+    "Ready To Jazz migration",
+    "full analysis JSON",
+    "generated indexes by hand"
+  ],
+  "guardrails": [
+    "Fixture draft only."
+  ],
+  "skipped_targets": []
+}

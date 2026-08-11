@@ -120,6 +120,41 @@ def _compact_text(value: Any, limit: int = MAX_TEXT) -> str:
     return text[: max(0, limit - 180)].rstrip() + "\n\n...[truncated by aicarmine_codex_app_mcp]"
 
 
+def _compact_text_gzip(value: Any, limit: int = MAX_TEXT) -> str:
+    """Compact text with automatic gzip compression for large payloads.
+    
+    Uses gzip compression when enabled and payload exceeds threshold.
+    Falls back to truncation if compression doesn't help.
+    """
+    try:
+        from codex_bridge.json_gzip_util import compact_text_gzip as _gzip_ct
+        return _gzip_ct(value, limit)
+    except ImportError:
+        # Fallback to plain truncation
+        text = value if isinstance(value, str) else _json_dumps(value)
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 180)].rstrip() + "\n\n...[truncated by aicarmine_codex_app_mcp_gzip]"
+
+
+def _tool_content_gzip(value: Any, is_error: bool = False) -> dict[str, Any]:
+    """MCP tool content wrapper with optional gzip compression for large payloads."""
+    try:
+        from codex_bridge.json_gzip_util import tool_content_gzip as _gzip_tc
+        return _gzip_tc(value, is_error)
+    except ImportError:
+        return {"content": [{"type": "text", "text": _compact_text(value)}], "isError": is_error}
+
+
+def _smart_json_dumps(value: Any) -> str:
+    """Smart JSON serialization with automatic gzip compression."""
+    try:
+        from codex_bridge.json_gzip_util import smart_json_dumps as _gzip_sjd
+        return _gzip_sjd(value)
+    except ImportError:
+        return _json_dumps(value)
+
+
 def _diagnostic_preview(value: Any, limit: int = 500) -> str:
     try:
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
@@ -132,6 +167,12 @@ def _diagnostic_preview(value: Any, limit: int = 500) -> str:
 
 
 def _tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
+    """MCP tool content wrapper with optional gzip compression for large payloads."""
+    return _tool_content_gzip(value, is_error)
+
+
+def _tool_content_plain(value: Any, is_error: bool = False) -> dict[str, Any]:
+    """MCP tool content wrapper without compression (plain text)."""
     return {"content": [{"type": "text", "text": _compact_text(value)}], "isError": is_error}
 
 

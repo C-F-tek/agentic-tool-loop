@@ -12,6 +12,30 @@ import sys
 import traceback
 from typing import Any, BinaryIO, Callable
 
+# Import gzip compression utilities for large payloads
+try:
+    from codex_bridge.json_gzip_util import (
+        smart_json_dumps,
+        decompress_tool_text,
+        compact_text_gzip,
+        tool_content_gzip,
+        auto_compress_payload,
+        COMPRESSION_ENABLED as GZIP_ENABLED,
+    )
+except ImportError:
+    # Fallback: define minimal stubs if json_gzip_util not available
+    def smart_json_dumps(value, *, use_compression=None):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    def decompress_tool_text(text):
+        return text
+    def compact_text_gzip(value, limit=24000):
+        return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    def tool_content_gzip(value, is_error=False):
+        return {"content": [{"type": "text", "text": str(value)}], "isError": is_error}
+    def auto_compress_payload(payload):
+        return payload
+    GZIP_ENABLED = False
+
 
 SERVICES_ROOT = Path(__file__).resolve().parents[1]
 REPO_HOME_ROOT = Path(__file__).resolve().parents[2]
@@ -63,6 +87,44 @@ def compact_text(value: Any, limit: int = MAX_TEXT) -> str:
     if len(value) <= limit:
         return value
     return value[: max(0, limit - 170)].rstrip() + "\n\n...[truncated by aicarmine_repo_mcp]"
+
+
+def compact_text_with_gzip(value: Any, limit: int = MAX_TEXT) -> str:
+    """Compact text with automatic gzip compression for large payloads.
+    
+    Uses gzip compression when enabled and payload exceeds threshold.
+    Falls back to truncation if compression doesn't help.
+    """
+    try:
+        return compact_text_gzip(value, limit)
+    except Exception:
+        # Fallback to plain truncation
+        if not isinstance(value, str):
+            raw = json_dumps(value)
+        else:
+            raw = value
+        if len(raw) <= limit:
+            return raw
+        return raw[: max(0, limit - 170)].rstrip() + "\n\n...[truncated by aicarmine_repo_mcp_gzip]"
+
+
+def tool_content_with_gzip(value: Any, is_error: bool = False) -> dict[str, Any]:
+    """MCP tool content wrapper with optional gzip compression."""
+    try:
+        return tool_content_gzip(value, is_error)
+    except Exception:
+        return {"content": [{"type": "text", "text": str(value)}], "isError": is_error}
+
+
+def smart_compress_payload(value: Any) -> str:
+    """Smart JSON serialization with automatic gzip compression.
+    
+    Compresses payloads that exceed the configured threshold.
+    """
+    try:
+        return smart_json_dumps(value)
+    except Exception:
+        return json_dumps(value)
 
 
 def tool_content(value: Any, is_error: bool = False) -> dict[str, Any]:
