@@ -103,7 +103,6 @@ def _final_quality_repo_read_allowlist(contract: dict[str, Any]) -> set[str]:
 
 def _next_final_rewrite_latch(
     current: str,
-    *,
     reject_count: int,
     has_gap_route: bool,
 ) -> str:
@@ -126,7 +125,7 @@ def _next_final_rewrite_latch(
 
 def _escalate_final_rewrite_retry_count(
     contract: dict[str, Any],
-    *,
+    
     has_gap_route: bool,
 ) -> dict[str, Any]:
     contract = contract if isinstance(contract, dict) else {}
@@ -415,9 +414,9 @@ def validate_planner_decision_against_evidence(
     decision: dict[str, Any],
     history: list[dict[str, Any]],
     require_native_tool_call: bool = False,
-    *,
-    deps: Mapping[str, Any],
-    config: Mapping[str, Any],
+    deps: Mapping[str, Any] | None = None,
+    config: Mapping[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     AGENTIC_PLANNER_NATIVE_TOOLS = config["AGENTIC_PLANNER_NATIVE_TOOLS"]
     CODE_PRODUCT_BUILD_STATE_KIND = config["CODE_PRODUCT_BUILD_STATE_KIND"]
@@ -498,6 +497,351 @@ def validate_planner_decision_against_evidence(
     )
     semantic_audit_goal = goal_requests_semantic_audit(goal)
     violations: list[str] = []
+    
+    # === INJECTION PROTECTION SAFEGUARDS ===
+    # These checks detect chain-of-thought contamination and injected decision manipulation
+    
+    def _detect_instruction_injection(contract: dict[str, Any]) -> list[str]:
+        """Detect when operational_notes or required_next_progress contain injected instructions
+        that bypass the planner's autonomous reasoning."""
+        detected: list[str] = []
+        
+        operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
+        next_progress = str(operational.get("next_instruction") or "").strip()
+        
+        if not next_progress:
+            return detected
+            
+        # Check for instruction patterns that indicate injection rather than evidence-based guidance
+        injection_patterns = [
+            # Patterns that suggest the instruction is telling the planner WHAT to do rather than WHY
+            "synthesize terminal final",
+            "synthesize terminal analysis",
+            "synthesize terminal conclusion",
+            "synthesize terminal summary",
+            "synthesize terminal report",
+            # Patterns that bypass evidence requirements
+            "do not call additional tools",
+            "do not call any tools",
+            "without calling additional tools",
+            # Patterns that force a specific action regardless of evidence
+            "force transition to action=",
+            "forced transition to action=",
+            "must synthesize terminal",
+            "must return action=",
+            "must produce action=",
+        ]
+        
+        for pattern in injection_patterns:
+            if pattern in next_progress.lower():
+                detected.append(f"injected_instruction_pattern:{pattern[:80]}")
+                break
+                
+        return detected
+    
+    def _detect_finalization_contract_manipulation(contract: dict[str, Any]) -> list[str]:
+        """Detect when finalization_contract has been manipulated to force final/block decisions."""
+        detected: list[str] = []
+        
+        final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+        
+        # Check for forced finalization markers that indicate manipulation
+        if final_contract.get("planner_forced_terminal_block") is True:
+            reason = str(final_contract.get("planner_forced_terminal_block_reason") or "")
+            if reason and reason not in {"", "controller-forced"}:
+                detected.append(f"forced_terminal_block_injected:{reason[:120]}")
+        
+        # Check for forced finalization that bypasses evidence requirements
+        if final_contract.get("final_allowed") is True and final_contract.get("planner_may_choose_final") is True:
+            # If coverage is not satisfied but final is allowed, this is suspicious
+            coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+            if coverage and coverage.get("coverage_satisfied") is False:
+                detected.append("final_allowed_without_coverage_satisfied")
+        
+        return detected
+    
+    def _detect_required_tool_call_injection(contract: dict[str, Any]) -> list[str]:
+        """Detect when required_next_tool_call has been injected to force specific tool usage."""
+        detected: list[str] = []
+        
+        required_tool_call = contract.get("required_next_tool_call") if isinstance(contract.get("required_next_tool_call"), dict) else {}
+        
+        if not required_tool_call:
+            return detected
+            
+        # Check for injection patterns in required tool call
+        source = str(required_tool_call.get("source") or "").strip()
+        reason = str(required_tool_call.get("reason") or "").strip()
+        
+        # If source indicates injection rather than evidence-based requirement
+        if source in {"injected", "controller-forced", "forced", "injected_instruction"}:
+            detected.append(f"injected_required_tool_call_source:{source}")
+        
+        # Check for reason patterns that indicate injection
+        injection_reasons = [
+            "force execution of",
+            "must call",
+            "required to call",
+            "forced to execute",
+        ]
+        
+        for pattern in injection_reasons:
+            if pattern in reason.lower():
+                detected.append(f"injected_required_tool_call_reason:{pattern[:80]}")
+                break
+        
+        return detected
+    
+    def _detect_working_memory_contamination(history: list[dict[str, Any]]) -> list[str]:
+        """Detect when working memory or planner memory has been contaminated with injected guidance."""
+        detected: list[str] = []
+        
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            
+            tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+            
+            # Check for injected instructions in tool results
+            next_instruction = str(tool_result.get("next_instruction") or "").strip()
+            if next_instruction:
+                # Check for patterns that indicate injection rather than evidence-based guidance
+                injection_patterns = [
+                    "synthesize terminal",
+                    "do not call additional tools",
+                    "force transition",
+                    "must synthesize",
+                    "must return action=",
+                ]
+                
+                for pattern in injection_patterns:
+                    if pattern in next_instruction.lower():
+                        detected.append(f"injected_instruction_in_tool_result:{pattern[:80]}")
+                        break
+        
+        return detected
+    
+    # Run injection detection checks
+    injection_violations = _detect_instruction_injection(contract)
+    if injection_violations:
+        violations.extend(injection_violations)
+    
+    finalization_manipulation = _detect_finalization_contract_manipulation(contract)
+    if finalization_manipulation:
+        violations.extend(finalization_manipulation)
+    
+    required_tool_injection = _detect_required_tool_call_injection(contract)
+    if required_tool_injection:
+        violations.extend(required_tool_injection)
+    
+    memory_contamination = _detect_working_memory_contamination(history)
+    if memory_contamination:
+        violations.extend(memory_contamination)
+    
+    # If injection detected, return early with violation details
+    if violations:
+        return {
+            "ok": False,
+            "violations": violations,
+            "evidence_contract": contract,
+            "injection_protection": True,
+        }
+    
+    # === ADDITIONAL INJECTION PROTECTION FOR REMAINING VECTORS ===
+    
+    def _detect_replan_specialist_injection(history: list[dict[str, Any]]) -> list[str]:
+        """Detect when planner replan specialist has injected biased guidance."""
+        detected: list[str] = []
+        
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            
+            # Check for replan specialist events
+            if row.get("event") == "planner_replan_specialist" or row.get("type") == "planner_replan_specialist":
+                replan_data = row.get("data") or row.get("tool_result")
+                if not isinstance(replan_data, dict):
+                    continue
+                
+                # Check for injection patterns in replan specialist output
+                required_progress = str(replan_data.get("required_next_progress") or "").strip()
+                if required_progress:
+                    injection_patterns = [
+                        "synthesize terminal",
+                        "do not call additional tools",
+                        "force transition to action=",
+                        "must synthesize terminal",
+                        "must return action=",
+                        "forced to execute",
+                    ]
+                    
+                    for pattern in injection_patterns:
+                        if pattern in required_progress.lower():
+                            detected.append(f"injected_replan_specialist_instruction:{pattern[:80]}")
+                            break
+        
+        return detected
+    
+    def _detect_cuda_rewrite_injection(inner_state: dict[str, Any]) -> list[str]:
+        """Detect when CUDA rewrite has been used to force decisions."""
+        detected: list[str] = []
+        
+        planner_role_override = inner_state.get("planner_role_override") if isinstance(inner_state.get("planner_role_override"), dict) else {}
+        
+        if not planner_role_override:
+            return detected
+            
+        role = str(planner_role_override.get("role") or "").strip()
+        instruction = str(planner_role_override.get("instruction") or "").strip()
+        provider = str(planner_role_override.get("provider") or "").strip()
+        
+        # Check for forced rewrite that bypasses evidence requirements
+        if role == "planner_cuda_rewrite":
+            # Check instruction for injection patterns
+            injection_patterns = [
+                "synthesize terminal",
+                "do not call additional tools",
+                "force transition to action=",
+                "must synthesize terminal",
+                "must return action=",
+                "forced to execute",
+            ]
+            
+            for pattern in injection_patterns:
+                if pattern in instruction.lower():
+                    detected.append(f"injected_cuda_rewrite_instruction:{pattern[:80]}")
+                    break
+        
+        return detected
+    
+    def _detect_controller_evidence_contract_tampering(contract: dict[str, Any]) -> list[str]:
+        """Detect when evidence contract has been tampered by controller to force decisions."""
+        detected: list[str] = []
+        
+        # Check for suspicious finalization contract modifications
+        final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+        
+        # If final_allowed is True but coverage is not satisfied, this is suspicious
+        if final_contract.get("final_allowed") is True:
+            coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
+            if coverage and coverage.get("coverage_satisfied") is False:
+                detected.append("controller_tampered_finalization_contract:final_allowed_without_coverage")
+        
+        # Check for suspicious required_next_tool_call modifications
+        required_tool_call = contract.get("required_next_tool_call") if isinstance(contract.get("required_next_tool_call"), dict) else {}
+        
+        if required_tool_call:
+            source = str(required_tool_call.get("source") or "").strip()
+            validated = required_tool_call.get("validated")
+            validation_source = str(required_tool_call.get("validation_source") or "").strip()
+            
+            # If validated but source indicates controller injection
+            if validated and source in {"controller", "controller-forced", "forced"}:
+                detected.append(f"controller_tampered_required_tool_call:source={source}")
+        
+        return detected
+    
+    def _detect_planner_memory_surface_contamination(history: list[dict[str, Any]]) -> list[str]:
+        """Detect when planner memory surface records have been contaminated with injected guidance."""
+        detected: list[str] = []
+        
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            
+            tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+            
+            # Check for planner memory surface contamination
+            if tool_result.get("planner_memory_surface") or tool_result.get("planner_memory"):
+                memory_data = tool_result.get("planner_memory") if isinstance(tool_result.get("planner_memory"), dict) else {}
+                
+                if memory_data:
+                    records = memory_data.get("records") if isinstance(memory_data.get("records"), list) else []
+                    
+                    for record in records:
+                        if not isinstance(record, dict):
+                            continue
+                        
+                        # Check for injected guidance in memory records
+                        content = str(record.get("content") or record.get("text") or "").strip()
+                        summary = str(record.get("summary") or "").strip()
+                        
+                        if content or summary:
+                            injection_patterns = [
+                                "synthesize terminal",
+                                "do not call additional tools",
+                                "force transition to action=",
+                                "must synthesize terminal",
+                                "must return action=",
+                                "forced to execute",
+                            ]
+                            
+                            for pattern in injection_patterns:
+                                if pattern in (content + summary).lower():
+                                    detected.append(f"injected_planner_memory_record:{pattern[:80]}")
+                                    break
+        
+        return detected
+    
+    def _detect_working_memory_contamination(inner_state: dict[str, Any]) -> list[str]:
+        """Detect when working memory fields have been contaminated with injected guidance."""
+        detected: list[str] = []
+        
+        working_memory = inner_state.get("working_memory_for_30b") if isinstance(inner_state.get("working_memory_for_30b"), dict) else {}
+        
+        if not working_memory:
+            return detected
+        
+        # Check for injected instructions in working memory
+        operational_notes = working_memory.get("operational_notes") if isinstance(working_memory.get("operational_notes"), dict) else {}
+        next_instruction = str(operational_notes.get("next_instruction") or "").strip()
+        
+        if next_instruction:
+            injection_patterns = [
+                "synthesize terminal",
+                "do not call additional tools",
+                "force transition to action=",
+                "must synthesize terminal",
+                "must return action=",
+                "forced to execute",
+            ]
+            
+            for pattern in injection_patterns:
+                if pattern in next_instruction.lower():
+                    detected.append(f"injected_working_memory_instruction:{pattern[:80]}")
+                    break
+        
+        return detected
+    
+    # Run additional injection detection checks
+    replan_injection = _detect_replan_specialist_injection(history)
+    if replan_injection:
+        violations.extend(replan_injection)
+    
+    cuda_rewrite_injection = _detect_cuda_rewrite_injection(state or {})
+    if cuda_rewrite_injection:
+        violations.extend(cuda_rewrite_injection)
+    
+    controller_tampering = _detect_controller_evidence_contract_tampering(contract)
+    if controller_tampering:
+        violations.extend(controller_tampering)
+    
+    memory_contamination = _detect_planner_memory_surface_contamination(history)
+    if memory_contamination:
+        violations.extend(memory_contamination)
+    
+    working_memory_contamination = _detect_working_memory_contamination(state or {})
+    if working_memory_contamination:
+        violations.extend(working_memory_contamination)
+    
+    # If any additional injection detected, return early with violation details
+    if violations:
+        return {
+            "ok": False,
+            "violations": violations,
+            "evidence_contract": contract,
+            "injection_protection": True,
+        }
 
     def _answer_chunk_misuses_terminal_payload_shape(text: str) -> bool:
         try:
@@ -762,7 +1106,7 @@ def validate_planner_decision_against_evidence(
 
     def _required_gap_paths_from_quality(
         quality: Mapping[str, Any],
-        *,
+        
         existing_missing: list[str],
     ) -> list[str]:
         raw_missing = (
@@ -2125,6 +2469,22 @@ def validate_planner_decision_against_evidence(
             if tool == "repo_read" and known_paths and path not in known_paths and path not in admissible_reads:
                 # Existing files are valid only if they have been discovered in tree/list evidence.
                 violations.append(f"repo_read_path_not_from_prior_file_evidence:{path}")
+                # Initialize final_contract before use in forced finalization guard
+                final_contract = (
+                    contract.get("finalization_contract")
+                    if isinstance(contract.get("finalization_contract"), dict)
+                    else {}
+                )
+                # Remove successfully read paths from missing_owner_paths to prevent retry loop
+                successful = set()
+                for p in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
+                    token = _repo_rel_token(p)
+                    if token:
+                        successful.add(token)
+                if successful:
+                    missing = _minimum_read_coverage_missing_owner_paths()
+                    filtered_missing = [p for p in missing if p not in successful]
+                    contract["missing_owner_paths"] = filtered_missing
                 # Forced finalization guard: when repo_read is rejected for path not from prior evidence
                 # AND the same invalid path has been retried (repeated call count >= 1), force finalization
                 # if coverage is satisfied and final is allowed.
