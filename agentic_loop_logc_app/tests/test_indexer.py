@@ -6,7 +6,7 @@ import tempfile
 import pytest
 from pathlib import Path
 
-from rag.indexer import RAGIndexer, ChunkInfo
+from ..rag.indexer import RAGIndexer, ChunkInfo
 
 
 class TestRAGIndexer:

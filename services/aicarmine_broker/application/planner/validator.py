@@ -572,7 +572,26 @@ def validate_planner_decision_against_evidence(
     def _minimum_read_coverage_missing_owner_paths() -> list[str]:
         coverage = _minimum_read_coverage_contract()
         raw = coverage.get("missing_owner_paths") if coverage else contract.get("missing_owner_paths")
-        return [str(path) for path in raw] if isinstance(raw, list) else []
+        missing = [str(path) for path in raw] if isinstance(raw, list) else []
+        if not missing:
+            return missing
+        # Filter out paths that have been successfully read (they should disappear from missing list)
+        successful = set()
+        for path in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
+            token = _repo_rel_token(path)
+            if token:
+                successful.add(token)
+        if not successful:
+            try:
+                for path in _agentic_v2_successful_read_paths(history):
+                    token = _repo_rel_token(path)
+                    if token:
+                        successful.add(token)
+            except Exception:
+                pass
+        if successful:
+            missing = [p for p in missing if p not in successful]
+        return missing
 
     def _final_answer_declares_missing_coverage(text: str) -> bool:
         low = str(text or "").lower()
@@ -1795,6 +1814,32 @@ def validate_planner_decision_against_evidence(
                             f"Rewrite lane requires {required_rewrite_tool} as the next tool, "
                             "or a rewritten final."
                         )
+                    # Forced finalization guard: when coverage is satisfied and support_subturn
+                    # retry count has crossed threshold, force transition to action=final.
+                    coverage_satisfied_val = _minimum_read_coverage_satisfied()
+                    coverage_required_val = _minimum_read_coverage_required()
+                    may_choose_final_val = bool(contract.get("planner_may_choose_final")) or bool(
+                        final_contract.get("planner_may_choose_final")
+                    )
+                    support_retry_count = int(contract.get("support_subturn_rewrite_retry_count") or 0)
+                    if coverage_satisfied_val and may_choose_final_val and support_retry_count >= 3 and tool not in {"final", "done"}:
+                        contract["planner_may_choose_final"] = True
+                        contract["planner_may_choose_block"] = False
+                        final_contract["final_allowed"] = True
+                        final_contract["planner_may_choose_final"] = True
+                        final_contract.pop("reason", None)
+                        contract["finalization_contract"] = final_contract
+                        contract["required_next_progress"] = (
+                            "Support-subturn retry threshold reached (>=3) with coverage satisfied "
+                            "and final allowed. Synthesize terminal final from existing verified evidence "
+                            "and read_notes; do not call additional tools."
+                        )
+                        return {
+                            "ok": True,
+                            "violations": [],
+                            "evidence_contract": contract,
+                            "forced_finalization": True,
+                        }
                     return {"ok": False, "violations": violations, "evidence_contract": contract}
             violations.append("tool_not_allowed_in_post_final_reject_rewrite_lane")
             contract["required_next_progress"] = (
@@ -2080,6 +2125,32 @@ def validate_planner_decision_against_evidence(
             if tool == "repo_read" and known_paths and path not in known_paths and path not in admissible_reads:
                 # Existing files are valid only if they have been discovered in tree/list evidence.
                 violations.append(f"repo_read_path_not_from_prior_file_evidence:{path}")
+                # Forced finalization guard: when repo_read is rejected for path not from prior evidence
+                # AND the same invalid path has been retried (repeated call count >= 1), force finalization
+                # if coverage is satisfied and final is allowed.
+                repeat_count = repeated_tool_call_count(history, tool, args)
+                coverage_satisfied_val = _minimum_read_coverage_satisfied()
+                may_choose_final_val = bool(contract.get("planner_may_choose_final")) or bool(
+                    final_contract.get("planner_may_choose_final")
+                )
+                if repeat_count >= 1 and coverage_satisfied_val and may_choose_final_val:
+                    contract["planner_may_choose_final"] = True
+                    contract["planner_may_choose_block"] = False
+                    final_contract["final_allowed"] = True
+                    final_contract["planner_may_choose_final"] = True
+                    final_contract.pop("reason", None)
+                    contract["finalization_contract"] = final_contract
+                    contract["required_next_progress"] = (
+                        "repo_read rejected for path not from prior evidence; repeated retry detected "
+                        "while coverage satisfied and final allowed. Synthesize terminal final from existing verified evidence "
+                        "and read_notes; do not call additional tools."
+                    )
+                    return {
+                        "ok": True,
+                        "violations": [],
+                        "evidence_contract": contract,
+                        "forced_finalization": True,
+                    }
                 contract = _escalate_final_rewrite_retry_count(
                     contract,
                     has_gap_route=bool(
@@ -2191,6 +2262,30 @@ def validate_planner_decision_against_evidence(
 
     if repeated_tool_call_count(history, tool, args) >= 2:
         violations.append("repeated_same_tool_arguments_without_progress")
+        # Forced finalization guard: when identical tool calls repeat without progress and coverage
+        # is satisfied with final allowed, force transition to action=final.
+        coverage_satisfied_val = _minimum_read_coverage_satisfied()
+        may_choose_final_val = bool(contract.get("planner_may_choose_final")) or bool(
+            final_contract.get("planner_may_choose_final")
+        )
+        if coverage_satisfied_val and may_choose_final_val and tool not in {"final", "done"}:
+            contract["planner_may_choose_final"] = True
+            contract["planner_may_choose_block"] = False
+            final_contract["final_allowed"] = True
+            final_contract["planner_may_choose_final"] = True
+            final_contract.pop("reason", None)
+            contract["finalization_contract"] = final_contract
+            contract["required_next_progress"] = (
+                "Repeated identical tool call without progress detected while coverage satisfied "
+                "and final allowed. Synthesize terminal final from existing verified evidence "
+                "and read_notes; do not call additional tools."
+            )
+            return {
+                "ok": True,
+                "violations": [],
+                "evidence_contract": contract,
+                "forced_finalization": True,
+            }
 
     invalid_signature = _canonical_invalid_code_product_decision_signature(decision, violations)
     invalid_repeat_count = _invalid_code_product_decision_signature_count(history, invalid_signature)

@@ -1,1 +1,1 @@
-﻿"""IA-Carmine core package family."""
+"""IA-Carmine core package family."""

@@ -1,4 +1,4 @@
-﻿"""HTML rendering for agent job dashboards."""
+"""HTML rendering for agent job dashboards."""
 from __future__ import annotations
 
 import html

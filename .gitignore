@@ -28,7 +28,7 @@ secrets/
 *.pfx
 *.dpapi
 # test*
-
+newfile/
 # OpenWebUI local installation/data. Keep only local descriptors.
 openwebui-data/**
 !openwebui-data/

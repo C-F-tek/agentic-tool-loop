@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from rag.reranker import RAGReranker, _tokenize, _bm25_score, _tfidf_score, _keyword_overlap
+from ..rag.reranker import RAGReranker, _tokenize, _bm25_score, _tfidf_score, _keyword_overlap
 
 
 class TestRAGReranker:

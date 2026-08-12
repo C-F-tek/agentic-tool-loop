@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 from pathlib import Path
 
-from rag.retriever import RAGRetriever
+from ..rag.retriever import RAGRetriever
 
 
 def _create_test_db(db_path: Path) -> None:

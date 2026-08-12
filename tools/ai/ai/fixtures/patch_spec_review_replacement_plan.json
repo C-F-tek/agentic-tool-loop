@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "kind": "patch_spec_replacement_plan",
+  "generated_at": "2026-05-01T00:00:00",
+  "apply_mode": "manual_review_only",
+  "review_status": "reviewed_replacements_proposed",
+  "provider_execution_performed": false,
+  "source_draft_spec": "Tools/ai/fixtures/patch_spec_review_draft.json",
+  "description": "Fixture replacement plan for dry-run-only reviewed patch spec promotion",
+  "operations": [
+    {
+      "path": "Tools/ai/fixtures/patch_spec_review_target.md",
+      "replacements": [
+        {
+          "type": "exact",
+          "old": "status: draft",
+          "new": "status: reviewed",
+          "count": 1
+        }
+      ],
+      "require_contains_before": [
+        "status: draft"
+      ],
+      "require_contains_after": [
+        "status: reviewed"
+      ],
+      "forbid_contains_after": [
+        "status: draft"
+      ],
+      "expected_line_delta": 0,
+      "review_notes": [
+        "Dry-run-only fixture replacement."
+      ]
+    }
+  ],
+  "validation_commands": [
+    "python .\\Tools\\validation\\check_reviewed_patch_specs.py --repo-root . --manifest .\\output\\patch_specs\\reviewed_patch_spec_fixture_manifest.json --output .\\output\\validation\\reviewed_patch_specs.json"
+  ],
+  "stop_conditions": [
+    "Any validation would write source files."
+  ]
+}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from data.schemas import ColumnSchema, TableSchema, DatabaseSchema
+from ..data.schemas import ColumnSchema, TableSchema, DatabaseSchema
 
 
 class TestColumnSchema:

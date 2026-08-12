@@ -17,7 +17,7 @@ from typing import Any, Iterable
 try:  # Support both direct script execution and namespace-package imports.
     from .agent_state import MemoryRecord, compact_text, load_memory_db, load_memory_jsonl, sha256_text, utc_now_iso
 except ImportError:  # pragma: no cover - direct execution fallback.
-    from agent_state import MemoryRecord, compact_text, load_memory_db, load_memory_jsonl, sha256_text, utc_now_iso
+    from .agent_state import MemoryRecord, compact_text, load_memory_db, load_memory_jsonl, sha256_text, utc_now_iso
 
 
 POLICY_SCHEMA_VERSION = 1

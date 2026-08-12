@@ -1,0 +1,35 @@
+{
+  "id": "code_edit_fixture_001",
+  "kind": "code_edit_proposal",
+  "apply_mode": "report_only_manual_review_code_edit_proposal",
+  "manual_review_required": true,
+  "provider_execution_performed": false,
+  "patch_application_performed": false,
+  "source_writes_performed": false,
+  "target_file": "Tools/ai/code_patch_plan_common.py",
+  "target_metadata": {
+    "path": "Tools/ai/code_patch_plan_common.py",
+    "exists": true,
+    "sha256": null,
+    "line_count": null,
+    "suffix": ".py"
+  },
+  "edit_kind": "no_op",
+  "rationale": "Fixture validates the code edit proposal contract without proposing a source mutation.",
+  "edit_strategy": "Keep this proposal advisory-only. Use it to validate guardrails, target metadata shape, validation commands and stop conditions.",
+  "unified_diff": "",
+  "structured_operations": [],
+  "validation_commands": [
+    "python -m py_compile .\\Tools\\ai\\code_patch_plan_common.py",
+    "python .\\Tools\\validation\\check_python_syntax.py --repo-root . --output .\\output\\validation\\python_syntax.json",
+    "python .\\Tools\\validation\\check_validation_report_contract.py --repo-root . --output .\\output\\validation\\validation_report_contract.json",
+    "git diff --check"
+  ],
+  "stop_conditions": [
+    "Stop if the target file changed since the proposal was generated.",
+    "Stop if the edit touches output/**, generated indexes, full analysis JSON, SQLite, secrets, permissions, billing, or repository visibility.",
+    "Stop if the edit requires provider execution, Blender runtime execution, deployment, or patch auto-apply.",
+    "Stop if any validation command fails."
+  ],
+  "ready_for_manual_review": true
+}

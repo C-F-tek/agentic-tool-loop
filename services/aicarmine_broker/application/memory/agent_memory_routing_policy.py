@@ -21,15 +21,15 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from Tools.ai.code_patch_plan_common import read_json_object
-    from Tools.validation.report_utils import write_json_report
+    from tools.ai.code_patch_plan_common import read_json_object
+    from tools.validation.report_utils import write_json_report
 except ImportError:
     repo_root_for_import = Path(__file__).resolve().parents[2]
     import sys
     if str(repo_root_for_import) not in sys.path:
         sys.path.insert(0, str(repo_root_for_import))
-    from Tools.ai.code_patch_plan_common import read_json_object  # type: ignore
-    from Tools.validation.report_utils import write_json_report  # type: ignore
+    from tools.ai.code_patch_plan_common import read_json_object  # type: ignore
+    from tools.validation.report_utils import write_json_report  # type: ignore
 
 
 DEFAULT_OUTPUT = "output/validation/agent_memory_routing_policy.json"

@@ -6,7 +6,7 @@ import tempfile
 import pytest
 from pathlib import Path
 
-from agents.rag_agent import DataRAGAgent, QueryResult
+from ..agents.rag_agent import DataRAGAgent, QueryResult
 
 
 class TestDataRAGAgent:

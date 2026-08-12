@@ -1,4 +1,4 @@
-﻿"""AI-Carmine Codex MCP wrapper.
+"""AI-Carmine Codex MCP wrapper.
 
 Stable entrypoint for Codex App.
 
