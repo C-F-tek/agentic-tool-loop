@@ -48,7 +48,12 @@ def mapping_field_diagnostics(field_name: str, value: Any) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class PlannerRuntimeConfig:
-    """Measured planner runtime settings for one process/turn."""
+    """Measured planner runtime settings for one process/turn.
+
+    This dataclass captures the bounded configuration used by the planner
+    during a single turn, including context window budget, prompt compact
+    ratio, history tail length, and generation parameters.
+    """
 
     planner_url: str
     planner_model: str
@@ -97,7 +102,12 @@ class PlannerRuntimeConfig:
 
 @dataclass(frozen=True)
 class ToolDecision:
-    """A planner request to execute an internal 3572 tool."""
+    """A planner request to execute an internal 3572 tool.
+
+    Represents the normalized decision produced by the planner loop,
+    containing the selected tool name, arguments, reason, and optional
+    metadata about the candidate action that triggered this decision.
+    """
 
     tool: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
@@ -107,7 +117,11 @@ class ToolDecision:
 
 @dataclass(frozen=True)
 class FinalDecision:
-    """A planner final answer candidate before validator acceptance."""
+    """A planner final answer candidate before validator acceptance.
+
+    Captures the terminal response the planner wishes to emit once all
+    required progress has been satisfied and finalization is allowed.
+    """
 
     final_answer: str
     source: str = "final_answer"
@@ -115,7 +129,12 @@ class FinalDecision:
 
 @dataclass(frozen=True)
 class PlannerDecision:
-    """Normalized planner decision independent from Ollama transport shape."""
+    """Normalized planner decision independent from Ollama transport shape.
+
+    Bridges the raw Ollama/chat response into a structured decision
+    that the dispatcher can act on, including tool selection, arguments,
+    and the evidence contract at the time of the decision.
+    """
 
     action: str
     raw: Mapping[str, Any] = field(default_factory=dict)
@@ -130,7 +149,11 @@ class PlannerDecision:
 
 @dataclass(frozen=True)
 class EvidenceWindow:
-    """Real bounded text window consumed by the planner prompt pack."""
+    """Real bounded text window consumed by the planner prompt pack.
+
+    Tracks how much of the context budget was used for evidence material,
+    history tail, and intrinsic context during one planner turn.
+    """
 
     document_id: str
     section: str
@@ -159,7 +182,12 @@ class EvidenceWindow:
 
 @dataclass(frozen=True)
 class ToolEvidence:
-    """Useful evidence extracted from a successful internal tool result."""
+    """Useful evidence extracted from a successful internal tool result.
+
+    Represents a single piece of evidence (such as a file read, search
+    result, or validation outcome) that the planner can use to justify
+    its next decision or final answer.
+    """
 
     tool: str
     ok: bool
@@ -169,7 +197,12 @@ class ToolEvidence:
 
 @dataclass(frozen=True)
 class EvidenceContract:
-    """Per-turn validator contract passed to the planner."""
+    """Per-turn validator contract passed to the planner.
+
+    Defines the rules, required progress markers, candidate actions,
+    and coverage constraints that the planner must obey when selecting
+    tools and building its decision chain.
+    """
 
     goal: str
     final_allowed: bool
@@ -186,7 +219,11 @@ class EvidenceContract:
 
 @dataclass(frozen=True)
 class AgentJobSnapshot:
-    """Immutable view of a 3572 job state used by orchestration ports."""
+    """Immutable view of a 3572 job state used by orchestration ports.
+
+    Provides a frozen snapshot of an agent job including its status,
+    goal, workspace path, history entries, and raw state dictionary.
+    """
 
     job_id: str
     status: str
@@ -202,7 +239,12 @@ class AgentJobSnapshot:
 
 @dataclass(frozen=True)
 class ToolResult:
-    """Result returned by a dispatched internal 3572 tool."""
+    """Result returned by a dispatched internal 3572 tool.
+
+    Bounded container for the output of an internal tool execution,
+    including success flag, tool name, summary, error details, and
+    optional guard metadata.
+    """
 
     tool: str
     ok: bool
@@ -214,7 +256,12 @@ class ToolResult:
 
 @dataclass(frozen=True)
 class ValidationResult:
-    """Validator outcome for a normalized planner decision."""
+    """Validator outcome for a normalized planner decision.
+
+    Reports whether a planner decision passed deterministic validation,
+    including any rejection reason, required next progress marker, and
+    candidate action filtering applied by the validator.
+    """
 
     ok: bool
     violations: tuple[str, ...] = ()
@@ -228,7 +275,12 @@ class ValidationResult:
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """Planner-visible schema summary for one internal tool."""
+    """Planner-visible schema summary for one internal tool.
+
+    Provides the planner with a compact description of an internal tool's
+    name, description, argument schema, and execution constraints so it
+    can make informed tool selection decisions.
+    """
 
     name: str
     description: str

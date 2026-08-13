@@ -32,7 +32,12 @@ def _mapping_payload(payload: Mapping[str, Any], *, job_id: str, event_type: str
 
 
 class JobStoreRepository:
-    """Adapter over the legacy job_store module."""
+    """Adapter over the legacy job_store module.
+
+    Implements the JobRepository protocol by delegating to the legacy
+    job_store package for loading snapshots, appending events, and
+    finalizing agent job state in the broker SQLite database.
+    """
 
     def load(self, job_id: str) -> AgentJobSnapshot:
         from .. import job_store

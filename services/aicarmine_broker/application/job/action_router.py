@@ -29,7 +29,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class AgentJobActionRouter:
-    """Route a public broker payload to job lifecycle or selector dispatch."""
+    """Route a public broker payload to job lifecycle or selector dispatch.
+
+    Handles the routing of public broker payloads to either the agent job
+    lifecycle (start/status/result/cancel) or the selector runner for direct
+    tool execution without background job creation.
+    """
 
     public_tool: PublicTool
     public_args: PublicArgs

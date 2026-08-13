@@ -18,6 +18,9 @@ def _command_preview(command: tuple[str, ...]) -> str:
 class SubprocessCommandRunner:
     """Minimal argv-only command runner adapter.
 
+    Executes bounded commands via subprocess.run with shell=False, returning
+    a CommandResult with stdout, stderr, and returncode.
+
     This adapter does not replace guarded command policy in `repo_tools.py`.
     Callers are expected to pass only commands already allowed by the validator
     or an existing guard.

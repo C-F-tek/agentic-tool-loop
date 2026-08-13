@@ -20,6 +20,7 @@ TOOL_RESULT_ITEMS_LIMIT = 500
 
 
 class DeterministicToolInputError(ValueError):
+    """Bounded error for deterministic tool input validation failures."""
     def __init__(
         self,
         error: str,

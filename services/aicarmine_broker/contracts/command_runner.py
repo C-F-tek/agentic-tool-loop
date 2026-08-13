@@ -7,13 +7,22 @@ from typing import Mapping, Protocol
 
 @dataclass(frozen=True)
 class CommandResult:
+    """Bounded result of a guarded command execution.
+
+    Contains the return code, stdout, and stderr from a subprocess command
+    execution, used by the deterministic tool runner to validate command output.
+    """
     returncode: int
     stdout: str
     stderr: str
 
 
 class CommandRunner(Protocol):
-    """Guarded command execution port."""
+    """Guarded command execution port.
+
+    Defines the interface for bounded command execution that respects
+    existing safety guards and validation constraints.
+    """
     def run(
         self,
         command: tuple[str, ...],

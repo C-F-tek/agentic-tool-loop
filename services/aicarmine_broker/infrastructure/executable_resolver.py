@@ -18,7 +18,11 @@ def _preview(value: object, *, limit: int = 300) -> str:
 
 
 class ExecutableResolver:
-    """Resolve deterministic CLI tools without hard-coding a global PATH."""
+    """Resolve deterministic CLI tools without hard-coding a global PATH.
+
+    Provides methods for resolving executable paths from the active Python
+    virtual environment's script directory, with fallback to PATH lookup.
+    """
 
     def __init__(self, active_python: Path | None = None) -> None:
         try:

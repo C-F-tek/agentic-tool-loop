@@ -66,16 +66,18 @@ class RAGRetriever:
         match = " AND ".join([f'"{t}"' for t in tokens])
         
         try:
-            # Query FTS5 directly without JOIN - standalone FTS5 table
+            # Query FTS5 via subquery on rowid - FTS5 virtual tables expose
+            # `rowid` only as an implicit column usable in WHERE/ORDER BY, not
+            # as a joinable column in JOIN ... ON clauses.
             rows = conn.execute(
                 """
                 SELECT
-                    c.id, c.path, c.start_line, c.end_line,
-                    c.symbol, c.kind, c.content,
+                    id, path, start_line, end_line, symbol, kind, content,
                     0.0 AS rank
                 FROM chunks
-                JOIN chunks_fts ON chunks_fts.content = chunks.content
-                WHERE chunks_fts MATCH ?
+                WHERE id IN (
+                    SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ?
+                )
                 ORDER BY rank
                 LIMIT ?
                 """,
@@ -89,12 +91,12 @@ class RAGRetriever:
                 rows = conn.execute(
                     """
                     SELECT
-                        c.id, c.path, c.start_line, c.end_line,
-                        c.symbol, c.kind, c.content,
+                        id, path, start_line, end_line, symbol, kind, content,
                         0.0 AS rank
                     FROM chunks
-                    JOIN chunks_fts ON chunks_fts.content = chunks.content
-                    WHERE chunks_fts MATCH ?
+                    WHERE id IN (
+                        SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ?
+                    )
                     ORDER BY rank
                     LIMIT ?
                     """,

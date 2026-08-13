@@ -6,6 +6,7 @@ import re
 
 @dataclass(frozen=True)
 class CommandClassification:
+    """Bounded classification result for a shell command."""
     command_class: str
     reason: str
     matched_pattern: str = ""

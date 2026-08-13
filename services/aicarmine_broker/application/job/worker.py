@@ -30,7 +30,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class AgentJobWorker:
-    """Run one background 3572 job without owning persistence primitives."""
+    """Run one background 3572 job without owning persistence primitives.
+
+    Orchestrates the execution of a single agent job by coordinating between
+    state loading, planner running, legacy one-shot fallback, and failure handling.
+    """
 
     load_state: LoadState
     write_state: WriteState

@@ -8,6 +8,11 @@ from .env_loader import EnvMapping, env_bool, env_error_context, env_first, env_
 
 @dataclass(frozen=True)
 class BrokerConfig:
+    """Frozen configuration for the 3572 broker service.
+
+    Contains all runtime settings including service metadata, planner parameters,
+    agent job configuration, repository paths, and tool execution constraints.
+    """
     service_name: str
     orientation_lane_mode: str
     app_title: str

@@ -1,3 +1,17 @@
+"""Code edit proposal contract for bounded validation and evidence collection.
+
+This module owns the canonical code edit proposal schema used by the broker's
+structured_edit and unified_diff workflows. It validates target paths, generates
+unified diffs, collects tree-sitter / AST / ast-grep evidence, and produces a
+complete proposal payload for manual review or patch application.
+
+Key responsibilities:
+- Path normalization and validation against repository root
+- Unified diff generation from old/new text pairs
+- Structured operations normalization with preview-marker detection
+- Tree-sitter parsing, Python AST anchor searching, and ast-grep evidence collection
+- Complete proposal payload assembly with errors, warnings, and metadata
+"""
 from __future__ import annotations
 
 import ast
@@ -40,6 +54,13 @@ PREVIEW_MARKERS = (
 
 
 def normalize_repo_path(value: str) -> str:
+    """Normalize a repo-relative path by stripping ./ prefix and normalizing separators.
+
+    Args:
+        value: The raw path string to normalize.
+    Returns:
+        The normalized path with forward slashes and ./ prefix stripped.
+    """
     raw = str(value or "").strip().replace("\\", "/")
     while raw.startswith("./"):
         raw = raw[2:]
@@ -47,6 +68,17 @@ def normalize_repo_path(value: str) -> str:
 
 
 def target_path_errors(repo_root: Path, target_file: str) -> list[str]:
+    """Validate target_file against repo_root and return any path errors.
+
+    Checks for missing target, absolute paths, path traversal, forbidden
+    locations (tool-results, .git, etc.), and outside-repo resolution.
+
+    Args:
+        repo_root: The repository root path.
+        target_file: The relative file path to validate.
+    Returns:
+        A list of error strings if validation fails, empty list otherwise.
+    """
     errors: list[str] = []
     rel = normalize_repo_path(target_file)
     if not rel:
@@ -71,12 +103,28 @@ def target_path_errors(repo_root: Path, target_file: str) -> list[str]:
 
 
 def physical_line_count(text: str) -> int:
+    """Count physical lines in a text string.
+
+    Args:
+        text: The text to count lines in.
+    Returns:
+        The number of lines, handling empty strings and trailing newline correctly.
+    """
     if not text:
         return 0
     return text.count("\n") + (0 if text.endswith("\n") else 1)
 
 
 def default_validation_commands_for(target_file: str) -> list[str]:
+    """Return default validation commands for a target file.
+
+    Includes git diff --check and py_compile for Python files.
+
+    Args:
+        target_file: The relative path of the target file.
+    Returns:
+        A list of shell command strings for validation.
+    """
     rel = normalize_repo_path(target_file)
     commands = ["git diff --check"]
     if rel.endswith(".py"):
@@ -85,6 +133,14 @@ def default_validation_commands_for(target_file: str) -> list[str]:
 
 
 def target_metadata(repo_root: Path, target_file: str) -> dict[str, Any]:
+    """Compute metadata for a target file including size, sha256, and line count.
+
+    Args:
+        repo_root: The repository root path.
+        target_file: The relative file path.
+    Returns:
+        A dictionary with target_file, exists, is_file, size_bytes, sha256, and line count.
+    """
     rel = normalize_repo_path(target_file)
     path = repo_root / rel
     meta: dict[str, Any] = {
@@ -105,13 +161,25 @@ def target_metadata(repo_root: Path, target_file: str) -> dict[str, Any]:
 
 
 def generate_unified_diff_from_texts(
-    *,
     target_file: str,
     old_text: str,
     new_text: str,
     fromfile_prefix: str = "a",
     tofile_prefix: str = "b",
 ) -> str:
+    """Generate a unified diff between old_text and new_text for the target file.
+
+    Uses difflib.unified_diff with proper file prefixes for the target path.
+
+    Args:
+        target_file: The relative path of the target file.
+        old_text: The original text content.
+        new_text: The new text content.
+        fromfile_prefix: Prefix for the 'from' filename in the diff header.
+        tofile_prefix: Prefix for the 'to' filename in the diff header.
+    Returns:
+        The unified diff string.
+    """
     rel = normalize_repo_path(target_file)
     old_lines = old_text.splitlines(keepends=True)
     new_lines = new_text.splitlines(keepends=True)
@@ -127,6 +195,15 @@ def generate_unified_diff_from_texts(
 
 
 def _contains_preview_marker(value: Any) -> bool:
+    """Check if a value contains any preview/truncation markers.
+
+    Used to detect incomplete code_product payloads that contain truncated content.
+
+    Args:
+        value: The value to check (string, dict, or list).
+    Returns:
+        True if any preview marker is found, False otherwise.
+    """
     if isinstance(value, str):
         lowered = value.lower()
         return any(marker in lowered for marker in PREVIEW_MARKERS)
@@ -138,11 +215,23 @@ def _contains_preview_marker(value: Any) -> bool:
 
 
 def validate_unified_diff_text(
-    *,
+    
     unified_diff: str,
     target_file: str,
     require_unidiff: bool = True,
 ) -> list[str]:
+    """Validate a unified diff string for completeness and correctness.
+
+    Checks for missing diff text, preview markers, proper diff markers (---, +@@),
+    target file presence in the diff, and optional unidiff parsing validation.
+
+    Args:
+        unified_diff: The unified diff string to validate.
+        target_file: The expected target file path.
+        require_unidiff: Whether to require unidiff dependency for parsing validation.
+    Returns:
+        A list of error strings if validation fails, empty list otherwise.
+    """
     errors: list[str] = []
     diff_text = str(unified_diff or "")
     rel = normalize_repo_path(target_file)
@@ -174,6 +263,16 @@ def validate_unified_diff_text(
 
 
 def normalize_structured_operations(value: Any) -> tuple[list[dict[str, Any]], list[str]]:
+    """Normalize structured operations from a value, validating each operation.
+
+    Checks that the value is a list of dicts, validates operation fields,
+    and checks for preview markers indicating incomplete payloads.
+
+    Args:
+        value: The value to normalize (expected to be a list).
+    Returns:
+        A tuple of (valid_operations_list, errors_list).
+    """
     errors: list[str] = []
     if value is None:
         return [], ["structured_operations_missing"]
@@ -196,6 +295,17 @@ def normalize_structured_operations(value: Any) -> tuple[list[dict[str, Any]], l
 
 
 def tree_sitter_parse_evidence(repo_root: Path, target_file: str, language: str) -> tuple[dict[str, Any], list[str]]:
+    """Parse a Python file with tree-sitter and return AST evidence.
+
+    Requires tree_sitter and tree_sitter_python dependencies. Only supports 'python' language.
+
+    Args:
+        repo_root: The repository root path.
+        target_file: The relative path of the Python file.
+        language: The language identifier (must be 'python').
+    Returns:
+        A tuple of (evidence_dict, errors_list).
+    """
     rel = normalize_repo_path(target_file)
     evidence: dict[str, Any] = {"language": language, "target_file": rel}
     errors: list[str] = []
@@ -235,6 +345,18 @@ def tree_sitter_parse_evidence(repo_root: Path, target_file: str, language: str)
 
 
 def python_ast_anchor_evidence(repo_root: Path, target_file: str, ast_anchor: str) -> tuple[dict[str, Any], list[str]]:
+    """Search Python AST for nodes matching an anchor name string.
+
+    Parses the target file and walks the AST looking for nodes whose 'name'
+    attribute matches the provided anchor string.
+
+    Args:
+        repo_root: The repository root path.
+        target_file: The relative path of the Python file.
+        ast_anchor: The anchor name string to search for.
+    Returns:
+        A tuple of (evidence_dict, errors_list).
+    """
     rel = normalize_repo_path(target_file)
     anchor = str(ast_anchor or "").strip()
     evidence: dict[str, Any] = {"target_file": rel, "anchor": anchor}
@@ -262,6 +384,17 @@ def python_ast_anchor_evidence(repo_root: Path, target_file: str, ast_anchor: st
 
 
 def ast_grep_evidence(repo_root: Path, target_file: str, pattern: str) -> tuple[dict[str, Any], list[str]]:
+    """Run ast-grep search and return evidence.
+
+    Requires ast-grep CLI. Searches for the pattern in the target file.
+
+    Args:
+        repo_root: The repository root path.
+        target_file: The relative path of the target file.
+        pattern: The ast-grep search pattern.
+    Returns:
+        A tuple of (evidence_dict, errors_list).
+    """
     rel = normalize_repo_path(target_file)
     evidence: dict[str, Any] = {"target_file": rel, "pattern": pattern}
     if not pattern:
@@ -298,7 +431,7 @@ def ast_grep_evidence(repo_root: Path, target_file: str, pattern: str) -> tuple[
 
 
 def build_code_edit_proposal(
-    *,
+    
     repo_root: Path,
     target_file: str,
     edit_kind: str,
@@ -313,6 +446,28 @@ def build_code_edit_proposal(
     ast_grep_rule: str | None = None,
     tree_sitter_language: str | None = None,
 ) -> dict[str, Any]:
+    """Build a code edit proposal with validation evidence.
+
+    Supports structured_edit, unified_diff, and no_op edit kinds.
+    Collects validation evidence from tree-sitter, AST anchors, and ast-grep.
+
+    Args:
+        repo_root: The repository root path.
+        target_file: The relative path of the target file.
+        edit_kind: The type of edit (structured_edit, unified_diff, or no_op).
+        rationale: The reason for the edit.
+        unified_diff: The unified diff string (for unified_diff kind).
+        structured_operations: List of structured operations (for structured_edit kind).
+        old_text: The original text content.
+        new_text: The new text content.
+        validation_commands: List of validation command strings.
+        require_unidiff: Whether to require unidiff dependency.
+        ast_anchor: AST anchor name to search for.
+        ast_grep_rule: ast-grep search pattern.
+        tree_sitter_language: Language for tree-sitter parsing.
+    Returns:
+        A dictionary containing the proposal with all validation evidence.
+    """
     rel = normalize_repo_path(target_file)
     kind = str(edit_kind or "").strip()
     errors = target_path_errors(repo_root, rel)

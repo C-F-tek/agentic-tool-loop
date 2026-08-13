@@ -918,7 +918,7 @@ def validate_planner_decision_against_evidence(
         rollup_state_raw = _safe_get_attention_state(inner_state, "attention_rollup_state")
         rollup_state = rollup_state_raw if isinstance(rollup_state_raw, dict) else {}
         
-        if rollup_state:pip
+        if rollup_state:
             rollup_attack = rollup_state.get("rollup_attack_detected")
             if rollup_attack is True:
                 detected.append("attention_rollup_attack:confirmed_attention_manipulation")

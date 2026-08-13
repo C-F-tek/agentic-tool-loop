@@ -13,18 +13,35 @@ logger = logging.getLogger(__name__)
 
 
 class RegistryToolDispatcher:
-    """Simple tool dispatcher that maps names to handlers."""
+    """Simple tool dispatcher that maps names to handlers.
+
+    Implements a basic registry-based dispatcher for mapping tool names
+    to their corresponding handler functions, with logging and error handling.
+    """
 
     def __init__(self) -> None:
         self._tools: dict[str, Any] = {}
 
     def register(self, name: str, handler: Any) -> None:
-        """Register a tool handler."""
+        """Register a tool handler.
+
+        Args:
+            name: The tool name to register.
+            handler: The callable handler for the tool.
+        """
         self._tools[name.lower().strip()] = handler
         logger.info("Registered tool: %s", name)
 
     def dispatch(self, name: str, args: dict, **kwargs: Any) -> dict[str, Any]:
-        """Dispatch a tool call by name."""
+        """Dispatch a tool call by name.
+
+        Args:
+            name: The tool name to dispatch.
+            args: The arguments to pass to the tool.
+            **kwargs: Additional keyword arguments.
+        Returns:
+            The tool result dictionary with ok status and potential error details.
+        """
         tool_name = name.lower().strip()
         handler = self._tools.get(tool_name)
 

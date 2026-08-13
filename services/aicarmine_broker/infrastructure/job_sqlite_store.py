@@ -32,7 +32,11 @@ def _payload_json(payload: Any) -> str:
 
 
 class AgentJobSQLiteStore:
-    """Persist job index rows and event rows in the broker SQLite DB."""
+    """Persist job index rows and event rows in the broker SQLite DB.
+
+    Provides SQLite-backed methods for initializing the database schema,
+    upserting job state, listing jobs, and appending typed events.
+    """
 
     def __init__(self, db_path: Path, job_root: Path) -> None:
         self.db_path = Path(db_path)

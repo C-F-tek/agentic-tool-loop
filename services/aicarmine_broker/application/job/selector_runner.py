@@ -19,7 +19,12 @@ NowSeconds = Callable[[], int]
 
 @dataclass(frozen=True)
 class SelectorRunner:
-    """Run the selector/dispatch/public-wrapper path with injected adapters."""
+    """Run the selector/dispatch/public-wrapper path with injected adapters.
+
+    Orchestrates the execution of the selector pipeline: selecting an internal
+    tool from the planner, sanitizing arguments, dispatching execution, and
+    wrapping the result as a public broker payload.
+    """
 
     select_internal_tool: SelectInternalTool
     selector_fallback_tool: SelectorFallbackTool

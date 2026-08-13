@@ -2,7 +2,7 @@
     "model_config_list": [
         {
             "config": {
-                "name": "bge-reranker-v2-m3",
+                "name": "BAAI/bge-reranker-v2-m3",
                 "base_path": "C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-rerank\\BAAI\\bge-reranker-v2-m3",
                 "target_device": "CPU",
                 "plugin_config": {
