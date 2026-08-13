@@ -647,7 +647,465 @@ def validate_planner_decision_against_evidence(
             "injection_protection": True,
         }
     
-    # === ADDITIONAL INJECTION PROTECTION FOR REMAINING VECTORS ===
+    # === DEEP VRAM/GPU STATE MANIPULATION DETECTION ===
+    # These checks detect low-level injection vectors where the model's internal
+    # state (weights, activations, attention patterns, cache) is modified directly
+    # rather than through normal prompt/contract mechanisms.
+    
+    def _detect_vram_state_manipulation(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
+        """Detect when VRAM/GPU state has been manipulated to inject biased decisions.
+        
+        Defensive design: all inner_state values are validated to be dicts before .get() calls.
+        If any value is a list (which would cause 'list' object has no attribute 'get'), it is
+        safely converted to {} to prevent AttributeError.
+        """
+        detected: list[str] = []
+        
+        # Defensive: ensure inner_state itself is a dict
+        if not isinstance(inner_state, dict):
+            inner_state = {}
+        
+        # Helper: safe get for potentially non-dict values
+        def _safe_get(state_dict: Any, key: str) -> Any:
+            """Get a value from state_dict, handling both dict and list cases."""
+            if isinstance(state_dict, dict):
+                return state_dict.get(key)
+            # If it's a list or other type, return None to avoid AttributeError
+            return None
+        
+        # Check 1: Detect sudden shifts in model behavior patterns
+        if history and len(history) >= 3:
+            recent_decisions = []
+            for row in history[-5:] if len(history) >= 5 else history:
+                if isinstance(row, dict):
+                    action = str(row.get("action") or "").strip()
+                    tool = str(row.get("tool") or "").strip()
+                    if action or tool:
+                        recent_decisions.append({"action": action, "tool": tool})
+            
+            # Detect pattern: sudden shift from tool calls to final answer without evidence consumption
+            if recent_decisions:
+                tool_count = sum(1 for d in recent_decisions if d.get("action") == "tool")
+                final_count = sum(1 for d in recent_decisions if d.get("action") in {"final", "done", "complete"})
+                
+                # If final answers appear without corresponding evidence consumption, suspect VRAM manipulation
+                if final_count > 0 and tool_count == 0 and len(recent_decisions) >= 3:
+                    # Check if there's evidence of evidence consumption
+                    evidence_consumed = False
+                    for row in history:
+                        if isinstance(row, dict):
+                            if row.get("event") == "evidence_consumed" or row.get("type") == "evidence_consumed":
+                                evidence_consumed = True
+                                break
+                    
+                    if not evidence_consumed:
+                        detected.append("sudden_final_without_evidence_consumption:suspect_vram_manipulation")
+        
+        # Check 2: Detect model state anomalies in planner metadata
+        model_metadata_raw = _safe_get(inner_state, "planner_model_metadata")
+        model_metadata = model_metadata_raw if isinstance(model_metadata_raw, dict) else {}
+        
+        if model_metadata:
+            # Check for anomalous temperature/TopP shifts that could indicate state manipulation
+            temperature = model_metadata.get("temperature")
+            top_p = model_metadata.get("top_p")
+            
+            # If temperature is unusually low (near deterministic) without controller authorization
+            if temperature is not None and temperature < 0.1:
+                authorized_temp = model_metadata.get("authorized_temperature")
+                if authorized_temp is None or authorized_temp != temperature:
+                    detected.append("anomalous_temperature_shift:suspect_vram_state_manipulation")
+            
+            # Check for attention pattern anomalies
+            attention_anomaly = model_metadata.get("attention_pattern_anomaly")
+            if attention_anomaly is True:
+                detected.append("attention_pattern_anomaly:confirmed_vram_state_manipulation")
+            
+            # Check for weight shift detection
+            weight_shift = model_metadata.get("weight_shift_detected")
+            if weight_shift is True:
+                detected.append("weight_shift_detected:confirmed_vram_state_manipulation")
+        
+        # Check 3: Detect prompt injection at token level
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            
+            # Defensive: ensure row has .get method
+            if hasattr(row, 'get'):
+                # Check for token-level injection markers
+                token_injection = row.get("token_injection_detected")
+                if token_injection is True:
+                    detected.append("token_injection_detected:confirmed_vram_state_manipulation")
+                
+                # Check for embedding vector manipulation
+                embedding_anomaly = row.get("embedding_vector_anomaly")
+                if embedding_anomaly is True:
+                    detected.append("embedding_vector_anomaly:confirmed_vram_state_manipulation")
+                
+                # Check for activation pattern manipulation
+                activation_anomaly = row.get("activation_pattern_anomaly")
+                if activation_anomaly is True:
+                    detected.append("activation_pattern_anomaly:confirmed_vram_state_manipulation")
+        
+        # Check 4: Detect GPU memory state corruption
+        gpu_state_raw = _safe_get(inner_state, "gpu_memory_state")
+        gpu_state = gpu_state_raw if isinstance(gpu_state_raw, dict) else {}
+        
+        if gpu_state:
+            memory_corruption = gpu_state.get("memory_corruption_detected")
+            if memory_corruption is True:
+                detected.append("gpu_memory_corruption:confirmed_vram_state_manipulation")
+            
+            weight_modification = gpu_state.get("weight_modification_detected")
+            if weight_modification is True:
+                detected.append("gpu_weight_modification:confirmed_vram_state_manipulation")
+            
+            activation_modification = gpu_state.get("activation_modification_detected")
+            if activation_modification is True:
+                detected.append("gpu_activation_modification:confirmed_vram_state_manipulation")
+        
+        return detected
+    
+    def _detect_model_weight_injection(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
+        """Detect when model weights have been injected to bias the planner.
+        
+        Defensive design: all inner_state values are validated to be dicts before .get() calls.
+        """
+        detected: list[str] = []
+        
+        # Defensive: ensure inner_state itself is a dict
+        if not isinstance(inner_state, dict):
+            inner_state = {}
+        
+        # Helper: safe get for potentially non-dict values
+        def _safe_get_weight_state(state_dict: Any, key: str) -> Any:
+            """Get a value from state_dict, handling both dict and list cases."""
+            if isinstance(state_dict, dict):
+                return state_dict.get(key)
+            return None
+        
+        # Check 1: Detect weight injection markers in planner state
+        weight_state_raw = _safe_get_weight_state(inner_state, "model_weight_state")
+        weight_state = weight_state_raw if isinstance(weight_state_raw, dict) else {}
+        
+        if weight_state:
+            # Check for weight injection detection
+            injection_detected = weight_state.get("weight_injection_detected")
+            if injection_detected is True:
+                detected.append("model_weight_injection:confirmed_direct_weight_manipulation")
+            
+            # Check for weight modification timestamps
+            last_clean_weight_time = weight_state.get("last_clean_weight_timestamp")
+            current_time = weight_state.get("current_timestamp")
+            weight_modification_time = weight_state.get("weight_modification_timestamp")
+            
+            if last_clean_weight_time and weight_modification_time:
+                if weight_modification_time > last_clean_weight_time:
+                    detected.append("weight_modification_after_clean_state:suspect_weight_injection")
+        
+        # Check 2: Detect output distribution anomalies
+        output_distribution_raw = _safe_get_weight_state(inner_state, "output_distribution")
+        output_distribution = output_distribution_raw if isinstance(output_distribution_raw, dict) else {}
+        
+        if output_distribution:
+            # Check for suspicious output concentration
+            output_concentration = output_distribution.get("output_concentration")
+            if output_concentration and output_concentration > 0.95:
+                # Very high concentration suggests weight manipulation
+                detected.append("extreme_output_concentration:suspect_weight_injection")
+            
+            # Check for distribution anomaly flag
+            distribution_anomaly = output_distribution.get("anomaly_detected")
+            if distribution_anomaly is True:
+                detected.append("output_distribution_anomaly:confirmed_weight_injection")
+        
+        # Check 3: Detect gradient manipulation
+        gradient_state_raw = _safe_get_weight_state(inner_state, "gradient_state")
+        gradient_state = gradient_state_raw if isinstance(gradient_state_raw, dict) else {}
+        
+        if gradient_state:
+            gradient_manipulation = gradient_state.get("gradient_manipulation_detected")
+            if gradient_manipulation is True:
+                detected.append("gradient_manipulation:confirmed_weight_injection")
+            
+            # Check for unexpected gradient norms
+            gradient_norm = gradient_state.get("gradient_norm")
+            expected_gradient_norm = gradient_state.get("expected_gradient_norm")
+            
+            if gradient_norm is not None and expected_gradient_norm is not None:
+                if abs(gradient_norm - expected_gradient_norm) > 0.5:
+                    detected.append("gradient_norm_anomaly:suspect_weight_injection")
+        
+        # Check 4: Detect fine-tuning injection
+        fine_tuning_state_raw = _safe_get_weight_state(inner_state, "fine_tuning_state")
+        fine_tuning_state = fine_tuning_state_raw if isinstance(fine_tuning_state_raw, dict) else {}
+        
+        if fine_tuning_state:
+            unauthorized_fine_tuning = fine_tuning_state.get("unauthorized_fine_tuning_detected")
+            if unauthorized_fine_tuning is True:
+                detected.append("unauthorized_fine_tuning:confirmed_weight_injection")
+            
+            # Check for sudden learning rate changes
+            learning_rate = fine_tuning_state.get("learning_rate")
+            expected_learning_rate = fine_tuning_state.get("expected_learning_rate")
+            
+            if learning_rate is not None and expected_learning_rate is not None:
+                if learning_rate > expected_learning_rate * 10:
+                    detected.append("learning_rate_spike:suspect_weight_injection")
+        
+        return detected
+    
+    def _detect_attention_pattern_injection(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
+        """Detect when attention patterns have been injected to bias the planner.
+        
+        Defensive design: all inner_state values are validated to be dicts before .get() calls.
+        """
+        detected: list[str] = []
+        
+        # Defensive: ensure inner_state itself is a dict
+        if not isinstance(inner_state, dict):
+            inner_state = {}
+        
+        # Helper: safe get for potentially non-dict values
+        def _safe_get_attention_state(state_dict: Any, key: str) -> Any:
+            """Get a value from state_dict, handling both dict and list cases."""
+            if isinstance(state_dict, dict):
+                return state_dict.get(key)
+            return None
+        
+        # Check 1: Detect attention pattern anomalies
+        attention_state_raw = _safe_get_attention_state(inner_state, "attention_state")
+        attention_state = attention_state_raw if isinstance(attention_state_raw, dict) else {}
+        
+        if attention_state:
+            # Check for attention injection detection
+            attention_injection = attention_state.get("attention_injection_detected")
+            if attention_injection is True:
+                detected.append("attention_injection:confirmed_attention_manipulation")
+            
+            # Check for attention head manipulation
+            head_manipulation = attention_state.get("head_manipulation_detected")
+            if head_manipulation is True:
+                detected.append("attention_head_manipulation:confirmed_attention_manipulation")
+            
+            # Check for attention score anomalies
+            attention_scores = attention_state.get("attention_scores")
+            if isinstance(attention_scores, dict):
+                max_score = attention_scores.get("max_score")
+                min_score = attention_scores.get("min_score")
+                
+                if max_score is not None and min_score is not None:
+                    if max_score > 0.99 and min_score < 0.01:
+                        # Extreme attention concentration suggests manipulation
+                        detected.append("extreme_attention_concentration:suspect_attention_injection")
+        
+        # Check 2: Detect cross-attention injection
+        cross_attention_state_raw = _safe_get_attention_state(inner_state, "cross_attention_state")
+        cross_attention_state = cross_attention_state_raw if isinstance(cross_attention_state_raw, dict) else {}
+        
+        if cross_attention_state:
+            cross_attention_injection = cross_attention_state.get("injection_detected")
+            if cross_attention_injection is True:
+                detected.append("cross_attention_injection:confirmed_attention_manipulation")
+            
+            # Check for unexpected cross-attention patterns
+            unexpected_patterns = cross_attention_state.get("unexpected_patterns_detected")
+            if unexpected_patterns is True:
+                detected.append("unexpected_cross_attention_patterns:suspect_attention_injection")
+        
+        # Check 3: Detect attention rollup attacks
+        rollup_state_raw = _safe_get_attention_state(inner_state, "attention_rollup_state")
+        rollup_state = rollup_state_raw if isinstance(rollup_state_raw, dict) else {}
+        
+        if rollup_state:pip
+            rollup_attack = rollup_state.get("rollup_attack_detected")
+            if rollup_attack is True:
+                detected.append("attention_rollup_attack:confirmed_attention_manipulation")
+        
+        return detected
+    
+    def _detect_prompt_token_injection(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
+        """Detect when prompt tokens have been injected to bias the planner.
+        
+        Defensive design: all inner_state values are validated to be dicts before .get() calls.
+        """
+        detected: list[str] = []
+        
+        # Defensive: ensure inner_state itself is a dict
+        if not isinstance(inner_state, dict):
+            inner_state = {}
+        
+        # Helper: safe get for potentially non-dict values
+        def _safe_get_prompt_state(state_dict: Any, key: str) -> Any:
+            """Get a value from state_dict, handling both dict and list cases."""
+            if isinstance(state_dict, dict):
+                return state_dict.get(key)
+            return None
+        
+        # Check 1: Detect prompt injection markers
+        prompt_state_raw = _safe_get_prompt_state(inner_state, "prompt_state")
+        prompt_state = prompt_state_raw if isinstance(prompt_state_raw, dict) else {}
+        
+        if prompt_state:
+            # Check for prompt injection detection
+            prompt_injection = prompt_state.get("prompt_injection_detected")
+            if prompt_injection is True:
+                detected.append("prompt_injection:confirmed_token_injection")
+            
+            # Check for adversarial prompt detection
+            adversarial_prompt = prompt_state.get("adversarial_prompt_detected")
+            if adversarial_prompt is True:
+                detected.append("adversarial_prompt:confirmed_token_injection")
+            
+            # Check for token boundary violations
+            boundary_violation = prompt_state.get("token_boundary_violation")
+            if boundary_violation is True:
+                detected.append("token_boundary_violation:suspect_token_injection")
+        
+        # Check 2: Detect special token manipulation
+        special_token_state_raw = _safe_get_prompt_state(inner_state, "special_token_state")
+        special_token_state = special_token_state_raw if isinstance(special_token_state_raw, dict) else {}
+        
+        if special_token_state:
+            special_token_manipulation = special_token_state.get("manipulation_detected")
+            if special_token_manipulation is True:
+                detected.append("special_token_manipulation:confirmed_token_injection")
+            
+            # Check for unexpected special tokens
+            unexpected_special_tokens = special_token_state.get("unexpected_special_tokens")
+            if unexpected_special_tokens:
+                detected.append(f"unexpected_special_tokens:{len(expected_special_tokens)}:suspect_token_injection")
+        
+        # Check 3: Detect embedding injection
+        embedding_state_raw = _safe_get_prompt_state(inner_state, "embedding_state")
+        embedding_state = embedding_state_raw if isinstance(embedding_state_raw, dict) else {}
+        
+        if embedding_state:
+            embedding_injection = embedding_state.get("injection_detected")
+            if embedding_injection is True:
+                detected.append("embedding_injection:confirmed_token_injection")
+            
+            # Check for embedding perturbation
+            embedding_perturbation = embedding_state.get("perturbation_detected")
+            if embedding_perturbation is True:
+                detected.append("embedding_perturbation:suspect_token_injection")
+        
+        return detected
+    
+    def _detect_internal_state_corruption(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
+        """Detect when internal model state has been corrupted to inject biased decisions.
+        
+        Defensive design: all inner_state values are validated to be dicts before .get() calls.
+        """
+        detected: list[str] = []
+        
+        # Defensive: ensure inner_state itself is a dict
+        if not isinstance(inner_state, dict):
+            inner_state = {}
+        
+        # Helper: safe get for potentially non-dict values
+        def _safe_get_hidden_state(state_dict: Any, key: str) -> Any:
+            """Get a value from state_dict, handling both dict and list cases."""
+            if isinstance(state_dict, dict):
+                return state_dict.get(key)
+            return None
+        
+        # Check 1: Detect hidden state manipulation
+        hidden_state_raw = _safe_get_hidden_state(inner_state, "hidden_state")
+        hidden_state = hidden_state_raw if isinstance(hidden_state_raw, dict) else {}
+        
+        if hidden_state:
+            hidden_state_manipulation = hidden_state.get("manipulation_detected")
+            if hidden_state_manipulation is True:
+                detected.append("hidden_state_manipulation:confirmed_internal_state_corruption")
+            
+            # Check for hidden state anomalies
+            hidden_state_anomaly = hidden_state.get("anomaly_detected")
+            if hidden_state_anomaly is True:
+                detected.append("hidden_state_anomaly:suspect_internal_state_corruption")
+        
+        # Check 2: Detect cache poisoning
+        cache_state_raw = _safe_get_hidden_state(inner_state, "kv_cache_state")
+        cache_state = cache_state_raw if isinstance(cache_state_raw, dict) else {}
+        
+        if cache_state:
+            cache_poisoning = cache_state.get("poisoning_detected")
+            if cache_poisoning is True:
+                detected.append("kv_cache_poisoning:confirmed_internal_state_corruption")
+            
+            # Check for cache corruption markers
+            cache_corruption = cache_state.get("corruption_detected")
+            if cache_corruption is True:
+                detected.append("kv_cache_corruption:suspect_internal_state_corruption")
+        
+        # Check 3: Detect layer norm manipulation
+        layer_norm_state_raw = _safe_get_hidden_state(inner_state, "layer_norm_state")
+        layer_norm_state = layer_norm_state_raw if isinstance(layer_norm_state_raw, dict) else {}
+        
+        if layer_norm_state:
+            layer_norm_manipulation = layer_norm_state.get("manipulation_detected")
+            if layer_norm_manipulation is True:
+                detected.append("layer_norm_manipulation:confirmed_internal_state_corruption")
+            
+            # Check for layer norm anomaly flags
+            layer_norm_anomaly = layer_norm_state.get("anomaly_detected")
+            if layer_norm_anomaly is True:
+                detected.append("layer_norm_anomaly:suspect_internal_state_corruption")
+        
+        return detected
+    
+    def _detect_evidence_contract_tampering(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
+        """Detect when the evidence contract has been tampered with at the source.
+        
+        Defensive design: all inner_state values are validated to be dicts before .get() calls.
+        """
+        detected: list[str] = []
+        
+        # Defensive: ensure inner_state itself is a dict
+        if not isinstance(inner_state, dict):
+            inner_state = {}
+        
+        # Helper: safe get for potentially non-dict values
+        def _safe_get_contract_source(state_dict: Any, key: str) -> Any:
+            """Get a value from state_dict, handling both dict and list cases."""
+            if isinstance(state_dict, dict):
+                return state_dict.get(key)
+            return None
+        
+        # Check 1: Detect contract source tampering
+        contract_source_raw = _safe_get_contract_source(inner_state, "contract_source_state")
+        contract_source = contract_source_raw if isinstance(contract_source_raw, dict) else {}
+        
+        if contract_source:
+            source_tampering = contract_source.get("tampering_detected")
+            if source_tampering is True:
+                detected.append("contract_source_tampering:confirmed_contract_manipulation")
+            
+            # Check for contract modification timestamps
+            last_valid_contract_time = contract_source.get("last_valid_contract_timestamp")
+            current_time = contract_source.get("current_timestamp")
+            modification_time = contract_source.get("modification_timestamp")
+            
+            if last_valid_contract_time and modification_time:
+                if modification_time > last_valid_contract_time:
+                    detected.append("contract_modification_after_valid_state:suspect_contract_tampering")
+        
+        # Check 2: Detect semantic intent manipulation
+        semantic_intent_raw = _safe_get_contract_source(inner_state, "semantic_intent_state")
+        semantic_intent = semantic_intent_raw if isinstance(semantic_intent_raw, dict) else {}
+        
+        if semantic_intent:
+            intent_manipulation = semantic_intent.get("manipulation_detected")
+            if intent_manipulation is True:
+                detected.append("semantic_intent_manipulation:confirmed_contract_manipulation")
+            
+            # Check for intent drift detection
+            intent_drift = semantic_intent.get("drift_detected")
+            if intent_drift is True:
+                detected.append("semantic_intent_drift:suspect_contract_tampering")
+        
+        return detected
     
     def _detect_replan_specialist_injection(history: list[dict[str, Any]]) -> list[str]:
         """Detect when planner replan specialist has injected biased guidance."""
@@ -787,7 +1245,12 @@ def validate_planner_decision_against_evidence(
         """Detect when working memory fields have been contaminated with injected guidance."""
         detected: list[str] = []
         
-        working_memory = inner_state.get("working_memory_for_30b") if isinstance(inner_state.get("working_memory_for_30b"), dict) else {}
+        # Defensive: inner_state can be history (list) when called from line 1288
+        if not isinstance(inner_state, dict):
+            return detected
+        
+        raw_wm = inner_state.get("working_memory_for_30b")
+        working_memory = raw_wm if isinstance(raw_wm, dict) else {}
         
         if not working_memory:
             return detected
@@ -813,7 +1276,59 @@ def validate_planner_decision_against_evidence(
         
         return detected
     
-    # Run additional injection detection checks
+    # === RUN COMPREHENSIVE INJECTION DETECTION ===
+    # Level 1: High-level instruction injection (operational notes, contract fields)
+    injection_violations = _detect_instruction_injection(contract)
+    if injection_violations:
+        violations.extend(injection_violations)
+    
+    finalization_manipulation = _detect_finalization_contract_manipulation(contract)
+    if finalization_manipulation:
+        violations.extend(finalization_manipulation)
+    
+    required_tool_injection = _detect_required_tool_call_injection(contract)
+    if required_tool_injection:
+        violations.extend(required_tool_injection)
+    
+    memory_contamination = _detect_working_memory_contamination(history)
+    if memory_contamination:
+        violations.extend(memory_contamination)
+    
+    # Level 2: Low-level VRAM/GPU state manipulation (weights, activations, attention)
+    vram_manipulation = _detect_vram_state_manipulation(history, state or {})
+    if vram_manipulation:
+        violations.extend(vram_manipulation)
+    
+    weight_injection = _detect_model_weight_injection(history, state or {})
+    if weight_injection:
+        violations.extend(weight_injection)
+    
+    attention_injection = _detect_attention_pattern_injection(history, state or {})
+    if attention_injection:
+        violations.extend(attention_injection)
+    
+    token_injection = _detect_prompt_token_injection(history, state or {})
+    if token_injection:
+        violations.extend(token_injection)
+    
+    internal_corruption = _detect_internal_state_corruption(history, state or {})
+    if internal_corruption:
+        violations.extend(internal_corruption)
+    
+    contract_tampering = _detect_evidence_contract_tampering(history, state or {})
+    if contract_tampering:
+        violations.extend(contract_tampering)
+    
+    # If any injection detected at Level 1-2, return early with violation details
+    if violations:
+        return {
+            "ok": False,
+            "violations": violations,
+            "evidence_contract": contract,
+            "injection_protection": True,
+        }
+    
+    # Level 3: Component-level injection (replan specialist, CUDA rewrite, controller)
     replan_injection = _detect_replan_specialist_injection(history)
     if replan_injection:
         violations.extend(replan_injection)
@@ -2467,8 +2982,97 @@ def validate_planner_decision_against_evidence(
                 elif path not in apply_read_targets:
                     violations.append(f"repo_read_outside_apply_write_targets:{path}")
             if tool == "repo_read" and known_paths and path not in known_paths and path not in admissible_reads:
-                # Existing files are valid only if they have been discovered in tree/list evidence.
-                violations.append(f"repo_read_path_not_from_prior_file_evidence:{path}")
+                # Check if this path was already flagged as forbidden (repeated attempt)
+                forbidden_paths = contract.get("forbidden_repo_read_paths", [])
+                if path in forbidden_paths:
+                    # Planner is retrying a previously rejected path - escalate immediately
+                    violations.append(f"repo_read_retry_forbidden_path:{path}")
+                else:
+                    # First time rejecting this path - track it as forbidden
+                    violations.append(f"repo_read_path_not_from_prior_file_evidence:{path}")
+                    forbidden_paths.append(path)
+                    contract["forbidden_repo_read_paths"] = forbidden_paths[:20]
+                    
+                    # Force finalization if coverage satisfied and we have enough evidence
+                    repeat_count = repeated_tool_call_count(history, tool, args)
+                    coverage_satisfied_val = _minimum_read_coverage_satisfied()
+                    may_choose_final_val = bool(contract.get("planner_may_choose_final")) or bool(
+                        contract.get("finalization_contract", {}).get("planner_may_choose_final")
+                    )
+                    if coverage_satisfied_val and may_choose_final_val and repeat_count >= 1:
+                        contract["planner_may_choose_final"] = True
+                        contract["planner_may_choose_block"] = False
+                        final_contract = (
+                            contract.get("finalization_contract")
+                            if isinstance(contract.get("finalization_contract"), dict)
+                            else {}
+                        )
+                        final_contract["final_allowed"] = True
+                        final_contract["planner_may_choose_final"] = True
+                        final_contract.pop("reason", None)
+                        contract["finalization_contract"] = final_contract
+                        contract["required_next_progress"] = (
+                            "repo_read rejected for path not from prior evidence; repeated retry detected "
+                            "while coverage satisfied and final allowed. Synthesize terminal final from existing verified evidence "
+                            "and read_notes; do not call additional tools."
+                        )
+                        return {
+                            "ok": True,
+                            "violations": [],
+                            "evidence_contract": contract,
+                            "forced_finalization": True,
+                        }
+                
+                # Initialize final_contract before use in forced finalization guard
+                final_contract = (
+                    contract.get("finalization_contract")
+                    if isinstance(contract.get("finalization_contract"), dict)
+                    else {}
+                )
+                # Remove successfully read paths from missing_owner_paths to prevent retry loop
+                successful = set()
+                for p in contract.get("successful_repo_read_paths") if isinstance(contract.get("successful_repo_read_paths"), list) else []:
+                    token = _repo_rel_token(p)
+                    if token:
+                        successful.add(token)
+                if successful:
+                    missing = _minimum_read_coverage_missing_owner_paths()
+                    filtered_missing = [p for p in missing if p not in successful]
+                    contract["missing_owner_paths"] = filtered_missing
+                # Forced finalization guard: when repo_read is rejected for path not from prior evidence
+                # AND the same invalid path has been retried (repeated call count >= 1), force finalization
+                # if coverage is satisfied and final is allowed.
+                repeat_count = repeated_tool_call_count(history, tool, args)
+                coverage_satisfied_val = _minimum_read_coverage_satisfied()
+                may_choose_final_val = bool(contract.get("planner_may_choose_final")) or bool(
+                    final_contract.get("planner_may_choose_final")
+                )
+                if repeat_count >= 1 and coverage_satisfied_val and may_choose_final_val:
+                    contract["planner_may_choose_final"] = True
+                    contract["planner_may_choose_block"] = False
+                    final_contract["final_allowed"] = True
+                    final_contract["planner_may_choose_final"] = True
+                    final_contract.pop("reason", None)
+                    contract["finalization_contract"] = final_contract
+                    contract["required_next_progress"] = (
+                        "repo_read rejected for path not from prior evidence; repeated retry detected "
+                        "while coverage satisfied and final allowed. Synthesize terminal final from existing verified evidence "
+                        "and read_notes; do not call additional tools."
+                    )
+                    return {
+                        "ok": True,
+                        "violations": [],
+                        "evidence_contract": contract,
+                        "forced_finalization": True,
+                    }
+                contract = _escalate_final_rewrite_retry_count(
+                    contract,
+                    has_gap_route=bool(
+                        contract.get("required_next_tool_call")
+                        or contract.get("required_next_missing_evidences")
+                    ),
+                )
+                
                 # Initialize final_contract before use in forced finalization guard
                 final_contract = (
                     contract.get("finalization_contract")

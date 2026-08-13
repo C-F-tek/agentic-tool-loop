@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from .config import PLANNER_MEMORY_DB, PLANNER_MEMORY_RETENTION_DAYS
+from .security import (
+    sanitize_sql_identifier,
+    validate_sql_query,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -41,7 +45,7 @@ def _preview(value: Any, *, limit: int = 500) -> str:
         return f"<unstringifiable:{type(exc).__name__}>"
 
 
-def _memory_sqlite_diagnostic(db_path: Path, exc: Exception, *, stage: str) -> dict[str, Any]:
+def _memory_sqlite_diagnostic(db_path: Path, exc: Exception, stage: str) -> dict[str, Any]:
     return {
         "schema": "runtime_sqlite_memory_diagnostic.v1",
         "diagnostic_only": True,
@@ -478,12 +482,13 @@ def _planner_prompt_context_read(args: dict[str, Any], root: Path) -> dict[str, 
         params.append(section)
     conn: sqlite3.Connection | None = None
     try:
+        # Sanitize table name
+        safe_table = sanitize_sql_identifier("planner_prompt_context_documents")
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+        # Use parameterized query - where conditions already built with ? placeholders
         rows = conn.execute(
-            "SELECT id, ts, section, text, text_hash, metadata_json "
-            f"FROM planner_prompt_context_documents WHERE {' AND '.join(where)} "
-            "ORDER BY ts DESC LIMIT ?",
+            f"SELECT id, ts, section, text, text_hash, metadata_json FROM {safe_table} WHERE {' AND '.join(where)} ORDER BY ts DESC LIMIT ?",
             [*params, limit],
         ).fetchall()
     except sqlite3.Error as exc:
@@ -776,17 +781,22 @@ def runtime_sqlite_memory_search(args: dict[str, Any], root: Path) -> dict[str, 
             if tag:
                 where.append("coalesce(m.tag, '') = ?")
                 params.append(tag)
+            # Sanitize table names for JOIN
+            safe_fts_table = sanitize_sql_identifier("broker_memory_records_fts")
+            safe_main_table = sanitize_sql_identifier("broker_memory_records")
+            
             if query:
+                # Use parameterized query - where conditions already built with ? placeholders
                 sql = (
-                    "SELECT m.* FROM broker_memory_records_fts f "
-                    "JOIN broker_memory_records m ON m.id = f.rowid "
-                    f"WHERE f.broker_memory_records_fts MATCH ? AND {' AND '.join(where)} "
+                    f"SELECT m.* FROM {safe_fts_table} f "
+                    f"JOIN {safe_main_table} m ON m.id = f.rowid "
+                    f"WHERE f.{safe_fts_table} MATCH ? AND {' AND '.join(where)} "
                     "ORDER BY m.updated_at DESC LIMIT ?"
                 )
                 params = [query] + params + [limit]
             else:
                 sql = (
-                    "SELECT m.* FROM broker_memory_records m "
+                    f"SELECT m.* FROM {safe_main_table} m "
                     f"WHERE {' AND '.join(where)} ORDER BY m.updated_at DESC LIMIT ?"
                 )
                 params.append(limit)
@@ -1014,6 +1024,9 @@ def runtime_sqlite_memory_cleanup(
             "error": "cleanup_requires_filter",
             "dry_run": dry_run,
         }
+    # Sanitize table name for cleanup operations
+    safe_cleanup_table = sanitize_sql_identifier("broker_memory_records")
+    
     try:
         conn = _connect_memory(db_path)
     except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
@@ -1027,8 +1040,9 @@ def runtime_sqlite_memory_cleanup(
         result["dry_run"] = dry_run
         return result
     try:
+        # Use parameterized query - where conditions already built with ? placeholders
         rows = [dict(row) for row in conn.execute(
-            f"SELECT id, kind, tag, updated_at, expires_at, pinned FROM broker_memory_records WHERE {' AND '.join(where)} ORDER BY updated_at LIMIT 500",
+            f"SELECT id, kind, tag, updated_at, expires_at, pinned FROM {safe_cleanup_table} WHERE {' AND '.join(where)} ORDER BY updated_at LIMIT 500",
             params,
         )]
         if not dry_run and rows:
@@ -1058,10 +1072,30 @@ def runtime_sqlite_memory_cleanup(
                     "items": rows[:100],
                 }
         if not dry_run and rows:
-            ids = [int(row["id"]) for row in rows]
-            placeholders = ",".join("?" for _ in ids)
-            conn.execute(f"DELETE FROM broker_memory_records WHERE id IN ({placeholders})", ids)
-            conn.commit()
+            # Validate IDs are integers before building placeholders
+            validated_ids = []
+            for row in rows:
+                try:
+                    id_val = int(row["id"])
+                    validated_ids.append(id_val)
+                except (TypeError, ValueError):
+                    return {
+                        "ok": False,
+                        "tool": "runtime_sqlite_memory_cleanup",
+                        "db": str(db_path),
+                        "dry_run": dry_run,
+                        "error": "invalid_record_id",
+                        "error_type": "non_integer_id",
+                    }
+            
+            if validated_ids:
+                # Use parameterized DELETE with ? placeholders
+                placeholders = ",".join("?" for _ in validated_ids)
+                conn.execute(
+                    f"DELETE FROM {safe_cleanup_table} WHERE id IN ({placeholders})",
+                    validated_ids,
+                )
+                conn.commit()
     except (PermissionError, sqlite3.OperationalError, sqlite3.DatabaseError, OSError) as exc:
         result = _memory_sqlite_error_result(
             "runtime_sqlite_memory_cleanup",
