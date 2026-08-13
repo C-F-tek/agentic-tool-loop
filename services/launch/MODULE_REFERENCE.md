@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # launch Module Reference
 
-Updated: 2026-06-01
+Updated: 2026-06-15
 
 `services\launch` contains the service launcher and shared PowerShell helpers.
 This area is operationally sensitive because it writes environment variables and

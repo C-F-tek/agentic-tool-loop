@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # aicarmine_broker Module Reference
 
-Updated: 2026-06-15
+Updated: 2026-08-13
 
 `aicarmine_broker` is the 3572 runtime package. It owns the controlled
 agentic loop, job persistence, internal tool dispatch, validator/finalization

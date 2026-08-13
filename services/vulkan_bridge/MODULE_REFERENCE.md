@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # vulkan_bridge Module Reference
 
-Updated: 2026-06-15
+Updated: 2026-08-13
 
 `vulkan_bridge` is the 3571 OpenWebUI-facing bridge. It must expose a stable
 public helper surface and hide internal 3572 implementation details. Its core

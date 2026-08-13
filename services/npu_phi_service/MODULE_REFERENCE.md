@@ -1,5 +1,7 @@
 # npu_phi_service Module Reference
 
+Updated: 2026-08-13
+
 `services\npu_phi_service` is a local diagnostic sidecar for
 `OpenVINO/Phi-3.5-mini-instruct-int4-cw-ov`.
 

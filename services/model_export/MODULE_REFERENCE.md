@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # model_export Module Reference
 
-Updated: 2026-06-01
+Updated: 2026-08-13
 
 `model_export` contains CLI-oriented model export implementation. It is not part
 of the 3571/3572 agentic loop, but launcher/OpenVINO configuration can share the

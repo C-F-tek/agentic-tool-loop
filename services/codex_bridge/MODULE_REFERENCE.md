@@ -6,7 +6,7 @@ Regole operative non negoziabili:
 <!-- AICARMINE_NON_NEGOTIABLE_CONTRACT_END -->
 # codex_bridge Module Reference
 
-Updated: 2026-06-15
+Updated: 2026-08-13
 
 `codex_bridge` contains optional Codex-facing integration services. These are
 not the OpenWebUI 3571 public bridge and are not planner-native 3572 tools.
