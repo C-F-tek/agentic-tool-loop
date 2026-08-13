@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Protocol, runtime_checkable
 
-from aicarmine_broker.domain import ToolResult
+from ..domain import ToolResult
 
 
 @runtime_checkable

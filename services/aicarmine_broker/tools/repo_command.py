@@ -7,13 +7,13 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 compatibility
     tomllib = None  # type: ignore[assignment]
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS
-from aicarmine_broker.config import LAB_REPO
-from aicarmine_broker.config.env_loader import env_str
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.application.command import evaluate_command_execution_policy
-from aicarmine_broker.tools.command_safety import classify_command
-from aicarmine_broker.tools.powershell_runner import run_ps
+from ..config import COMMAND_TIMEOUT_SECONDS
+from ..config import LAB_REPO
+from ..config.env_loader import env_str
+from ..job_store import now, write_json
+from ..application.command import evaluate_command_execution_policy
+from .command_safety import classify_command
+from .powershell_runner import run_ps
 
 
 def _repo_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:

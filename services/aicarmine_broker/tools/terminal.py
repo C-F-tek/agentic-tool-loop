@@ -6,12 +6,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO, parse_bool
-from aicarmine_broker.application.command import evaluate_command_execution_policy
-from aicarmine_broker.application.search import assess_search_quality
-from aicarmine_broker.config.env_loader import env_str
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.command_safety import classify_command, dangerous_command
+from ..config import COMMAND_TIMEOUT_SECONDS, LAB_REPO, parse_bool
+from ..application.command import evaluate_command_execution_policy
+from ..application.search import assess_search_quality
+from ..config.env_loader import env_str
+from ..job_store import now, write_json
+from .command_safety import classify_command, dangerous_command
 
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")

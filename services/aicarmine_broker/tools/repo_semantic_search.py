@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.application.controller.rag_preseed import (
+from ..application.controller.rag_preseed import (
     _default_controller_rag_db,
     _env_int,
     _fts_query,
@@ -18,8 +18,8 @@ from aicarmine_broker.application.controller.rag_preseed import (
     _query_terms,
     _sqlite_tables,
 )
-from aicarmine_broker.config import LAB_REPO
-from aicarmine_broker.tools.deterministic_common import (
+from ..config import LAB_REPO
+from .deterministic_common import (
     bounded_int_arg,
     deterministic_input_error,
     repo_existing_path,

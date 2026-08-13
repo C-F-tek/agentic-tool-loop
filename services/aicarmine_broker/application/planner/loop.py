@@ -34,7 +34,7 @@ def _list_field(mapping: Mapping[str, Any], key: str) -> list[Any]:
 
 
 def evaluate_initial_orientation_shadow(
-    *,
+    
     requested_mode: object,
     root_result: object,
     goal: object,
@@ -691,7 +691,7 @@ def evaluate_initial_orientation_shadow(
 
 def run_agentic_planner_job(
     job_id: str,
-    *,
+    
     deps: Mapping[str, Any],
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -804,7 +804,7 @@ def run_agentic_planner_job(
             counted_support_turns = max(0, counted_support_turns - 1)
         return max(1, physical_step - counted_support_turns)
 
-    def mark_support_subturn(row: dict[str, Any], *, semantic_step: int) -> None:
+    def mark_support_subturn(row: dict[str, Any],  semantic_step: int) -> None:
         nonlocal support_semantic_turns_used, support_subturns_used
         support_subturns_used += 1
         try:
@@ -869,7 +869,7 @@ def run_agentic_planner_job(
         return bool(_list_field(contract, "candidate_next_actions"))
 
     def runtime_debug_packet(
-        *,
+        
         step_number: int,
         phase: str,
         planner_decision: dict[str, Any],
@@ -1128,7 +1128,7 @@ def run_agentic_planner_job(
     def successful_prior_tool_results_for_feedback(
         tool: str,
         internal_args: dict[str, Any],
-        *,
+        
         limit: int = 3,
     ) -> list[dict[str, Any]]:
         wanted_tool = normalize_tool_name(tool)
@@ -1429,7 +1429,7 @@ def run_agentic_planner_job(
 
     def match_micro_batch_action(
         micro_batch_contract: dict[str, Any],
-        *,
+        
         tool: str,
         internal_args: dict[str, Any],
     ) -> dict[str, Any]:

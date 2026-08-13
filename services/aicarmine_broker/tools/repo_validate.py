@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import LAB_REPO, parse_bool
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.command_safety import classify_command
-from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
-from aicarmine_broker.tools.repo_command import (
+from ..config import LAB_REPO, parse_bool
+from ..job_store import now, write_json
+from .command_safety import classify_command
+from .powershell_runner import run_ps as _run_ps
+from .repo_command import (
     _compile_command_for_targets,
     resolve_compile_targets,
 )
-from aicarmine_broker.tools.deterministic_common import (
+from .deterministic_common import (
     bounded_int_arg as _bounded_int_arg,
     deterministic_input_error as _deterministic_input_error,
 )

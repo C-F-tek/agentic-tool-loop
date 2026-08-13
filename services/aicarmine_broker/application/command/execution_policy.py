@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.tools.command_safety import classify_command
+from ...tools.command_safety import classify_command
 
 
 SCHEMA = "command_execution_policy.v1"

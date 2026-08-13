@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Mapping
 
-from aicarmine_broker.domain import AgentJobSnapshot
+from ..domain import AgentJobSnapshot
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class JobStoreRepository:
     """Adapter over the legacy job_store module."""
 
     def load(self, job_id: str) -> AgentJobSnapshot:
-        from aicarmine_broker import job_store
+        from .. import job_store
 
         try:
             state = job_store.load_agent_job_state(job_id)
@@ -65,7 +65,7 @@ class JobStoreRepository:
         event_type: str,
         payload: Mapping[str, Any],
     ) -> None:
-        from aicarmine_broker import job_store
+        from .. import job_store
 
         payload_dict = _mapping_payload(payload, job_id=job_id, event_type=event_type)
         try:
@@ -92,7 +92,7 @@ class JobStoreRepository:
         status: str,
         payload: Mapping[str, Any],
     ) -> None:
-        from aicarmine_broker import job_store
+        from .. import job_store
 
         try:
             state = job_store.load_agent_job_state(job_id)

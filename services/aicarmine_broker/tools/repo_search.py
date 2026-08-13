@@ -6,11 +6,11 @@ from typing import Any
 
 import json
 
-from aicarmine_broker.config import LAB_REPO
-from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.command_safety import classify_command
-from aicarmine_broker.tools.powershell_runner import run_ps as _run_ps
+from ..config import LAB_REPO
+from ..infrastructure.filesystem_repo import safe_rel_path
+from ..job_store import now, write_json
+from .command_safety import classify_command
+from .powershell_runner import run_ps as _run_ps
 
 
 def repo_search(args: dict[str, Any], root: Path) -> dict[str, Any]:

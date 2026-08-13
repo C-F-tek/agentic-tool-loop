@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO
-from aicarmine_broker.infrastructure.command_runner import SubprocessCommandRunner
+from ..config import COMMAND_TIMEOUT_SECONDS, LAB_REPO
+from ..infrastructure.command_runner import SubprocessCommandRunner
 
 
 def run_ps(command: str, timeout: int = COMMAND_TIMEOUT_SECONDS) -> dict[str, Any]:

@@ -4,10 +4,10 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import LAB_REPO
-from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.deterministic_common import (
+from ..config import LAB_REPO
+from ..infrastructure.filesystem_repo import safe_rel_path
+from ..job_store import now, write_json
+from .deterministic_common import (
     bounded_int_arg,
     deterministic_input_error,
     resolve_deterministic_executable,

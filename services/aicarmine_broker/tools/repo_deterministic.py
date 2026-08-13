@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import LAB_REPO
-from aicarmine_broker.infrastructure.filesystem_repo import repo_rel
-from aicarmine_broker.tools.command_safety import dangerous_command
-from aicarmine_broker.tools.deterministic_common import (
+from ..config import LAB_REPO
+from ..infrastructure.filesystem_repo import repo_rel
+from .command_safety import dangerous_command
+from .deterministic_common import (
     TOOL_RESULT_ITEMS_LIMIT as _TOOL_RESULT_ITEMS_LIMIT,
     bounded_int_arg as _bounded_int_arg,
     deterministic_input_error as _deterministic_input_error,

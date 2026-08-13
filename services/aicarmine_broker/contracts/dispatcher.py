@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from aicarmine_broker.domain import ToolDecision, ToolResult
+from ..domain import ToolDecision, ToolResult
 
 
 class ToolDispatcher(Protocol):

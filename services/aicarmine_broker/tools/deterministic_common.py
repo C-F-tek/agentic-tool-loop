@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import COMMAND_TIMEOUT_SECONDS, LAB_REPO
-from aicarmine_broker.config.env_loader import env_str
-from aicarmine_broker.infrastructure.filesystem_repo import safe_rel_path
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tools.terminal import strip_terminal_ansi
+from ..config import COMMAND_TIMEOUT_SECONDS, LAB_REPO
+from ..config.env_loader import env_str
+from ..infrastructure.filesystem_repo import safe_rel_path
+from ..job_store import now, write_json
+from .terminal import strip_terminal_ansi
 
 
 TOOL_RESULT_TEXT_LIMIT = 120_000

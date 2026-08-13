@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Mapping
 
-from aicarmine_broker.contracts import CommandResult
+from ..contracts import CommandResult
 
 
 logger = logging.getLogger(__name__)

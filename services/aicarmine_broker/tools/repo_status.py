@@ -4,12 +4,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import LAB_REPO, REAL_REPO, VALID_INTERNAL_TOOLS
-from aicarmine_broker.job_store import now, write_json
-from aicarmine_broker.tool_registry import capability_map
-from aicarmine_broker.tools.command_safety import classify_command
-from aicarmine_broker.tools.powershell_runner import run_ps
-from aicarmine_broker.tools.repo_command import (
+from ..config import LAB_REPO, REAL_REPO, VALID_INTERNAL_TOOLS
+from ..job_store import now, write_json
+from ..tool_registry import capability_map
+from .command_safety import classify_command
+from .powershell_runner import run_ps
+from .repo_command import (
     _compile_command_for_targets,
     resolve_compile_targets,
 )

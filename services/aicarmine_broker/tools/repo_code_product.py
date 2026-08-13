@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from aicarmine_broker.config import LAB_REPO, parse_bool
-from aicarmine_broker.job_store import now, write_json
+from ..config import LAB_REPO, parse_bool
+from ..job_store import now, write_json
 
 
 def repo_propose_unified_diff(args: dict[str, Any], root: Path) -> dict[str, Any]:

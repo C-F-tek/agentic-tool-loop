@@ -1,6 +1,6 @@
 '''Domain objects for the 3572 agentic loop.'''
 
-from aicarmine_broker.domain.models import (
+from .models import (
     AgentJobSnapshot,
     EvidenceContract,
     EvidenceWindow,

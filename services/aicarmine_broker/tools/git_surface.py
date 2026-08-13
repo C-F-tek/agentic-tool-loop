@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from aicarmine_broker.infrastructure.filesystem_repo import repo_rel
+from ..infrastructure.filesystem_repo import repo_rel
 
 
 def git_candidate_files(repo_root: Path, base: Path) -> list[Path] | None:

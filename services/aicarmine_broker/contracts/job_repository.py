@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Protocol
 
-from aicarmine_broker.domain import AgentJobSnapshot
+from ..domain import AgentJobSnapshot
 
 
 class JobRepository(Protocol):
