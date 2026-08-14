@@ -29,6 +29,6 @@ class CommandRunner(Protocol):
     
         cwd: Path,
         env: Mapping[str, str] | None = None,
-        timeout_seconds: int,
+        timeout_seconds: int=60,
     ) -> CommandResult:
         """Run a bounded command without bypassing existing guards."""

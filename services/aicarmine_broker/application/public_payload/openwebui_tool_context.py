@@ -9,7 +9,11 @@ from ..shared.evidence_contract_summary import (
     compact_evidence_contract_summary,
     coverage_status_from_contract,
 )
-from .tool_context import slim_public_tool_context
+from .tool_context import (
+    ArtifactPayloadLoader,
+    RepoReadContentLoader,
+    slim_public_tool_context,
+)
 
 
 JobRootForId = Callable[[str], Any]
@@ -40,7 +44,19 @@ class OpenWebUIPayloadBuilder:
     _planner_decision_rows: HistoryToRows
     _validation_rejection_rows: HistoryToRows
     _executed_tool_rows: HistoryToRows
-    _planner_turn_memory: Callable[[list[dict[str, Any]], dict[str, Any]], dict[str, Any]]
+    _planner_turn_memory: Callable[
+        [
+            list[dict[str, Any]],
+            dict[str, Any] | None,
+            ArtifactPayloadLoader,
+            RepoReadContentLoader,
+            str,
+        ],
+        dict[str, Any],
+    ]
+    _same_tool_artifact_payload: ArtifactPayloadLoader
+    _repo_read_item_full_content: RepoReadContentLoader
+    _code_product_build_state_kind: str
     _compact_final_state_result: ResultToDict
     _public_tool_artifact_rows: HistoryToRows
     _public_tool_context_limits: HistoryToRows
@@ -187,7 +203,13 @@ class OpenWebUIPayloadBuilder:
         turn_memory = build_section(
             "turn_memory",
             {},
-            lambda: self._planner_turn_memory(history, terminal_decision),
+            lambda: self._planner_turn_memory(
+                history,
+                terminal_decision,
+                self._same_tool_artifact_payload,
+                self._repo_read_item_full_content,
+                self._code_product_build_state_kind,
+            ),
         )
         turn_memory = turn_memory if isinstance(turn_memory, dict) else {}
         result_digest = build_section(
@@ -343,13 +365,25 @@ def build_tool_context_for_30b(
     planner_decision_rows: HistoryToRows,
     validation_rejection_rows: HistoryToRows,
     executed_tool_rows: HistoryToRows,
-    planner_turn_memory: Callable[[list[dict[str, Any]], dict[str, Any]], dict[str, Any]],
     compact_final_state_result: ResultToDict,
     public_tool_artifact_rows: HistoryToRows,
     public_tool_context_limits: HistoryToRows,
     planner_evidence_contract: EvidenceContractBuilder,
     planner_history_ledger: HistoryToRows,
     strip_public_local_references: ValueCleaner,
+    same_tool_artifact_payload: ArtifactPayloadLoader | None = None,
+    repo_read_item_full_content: RepoReadContentLoader | None = None,
+    code_product_build_state_kind: str | None = None,
+    planner_turn_memory: Callable[
+        [
+            list[dict[str, Any]],
+            dict[str, Any] | None,
+            ArtifactPayloadLoader,
+            RepoReadContentLoader,
+            str,
+        ],
+        dict[str, Any],
+    ] | None = None,
 ) -> dict[str, Any]:
     """Compatibility entrypoint for the structured terminal context owner."""
     builder = OpenWebUIPayloadBuilder(
@@ -369,6 +403,9 @@ def build_tool_context_for_30b(
         _validation_rejection_rows=validation_rejection_rows,
         _executed_tool_rows=executed_tool_rows,
         _planner_turn_memory=planner_turn_memory,
+        _same_tool_artifact_payload=same_tool_artifact_payload,
+        _repo_read_item_full_content=repo_read_item_full_content,
+        _code_product_build_state_kind=code_product_build_state_kind,
         _compact_final_state_result=compact_final_state_result,
         _public_tool_artifact_rows=public_tool_artifact_rows,
         _public_tool_context_limits=public_tool_context_limits,

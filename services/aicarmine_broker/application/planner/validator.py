@@ -975,7 +975,7 @@ def validate_planner_decision_against_evidence(
             # Check for unexpected special tokens
             unexpected_special_tokens = special_token_state.get("unexpected_special_tokens")
             if unexpected_special_tokens:
-                detected.append(f"unexpected_special_tokens:{len(expected_special_tokens)}:suspect_token_injection")
+                detected.append(f"unexpected_special_tokens:{len(unexpected_special_tokens)}:suspect_token_injection")
         
         # Check 3: Detect embedding injection
         embedding_state_raw = _safe_get_prompt_state(inner_state, "embedding_state")

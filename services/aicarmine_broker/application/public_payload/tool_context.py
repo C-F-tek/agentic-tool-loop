@@ -497,10 +497,9 @@ def ollama_turn_rows(
 def planner_turn_memory(
     history: list[dict[str, Any]],
     terminal_decision: dict[str, Any] | None = None,
-    
-    same_tool_artifact_payload: ArtifactPayloadLoader,
-    repo_read_item_full_content: RepoReadContentLoader,
-    code_product_build_state_kind: str,
+    same_tool_artifact_payload: ArtifactPayloadLoader | None = None,
+    repo_read_item_full_content: RepoReadContentLoader | None = None,
+    code_product_build_state_kind: str | None = None,
 ) -> dict[str, Any]:
     return {
         "contract": (

@@ -1377,9 +1377,8 @@ def _structured_json_page(
     job_id: str,
     title: str,
     payload: Any,
-    
-    summary: dict[str, Any] | None = None,
     section_base_url: str,
+    summary: dict[str, Any] | None = None,
 ) -> str:
     payload_summary = {
         "payload_type": type(payload).__name__,

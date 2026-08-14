@@ -207,7 +207,7 @@ def _http_json(
     method: str,
     url: str,
     payload: dict[str, Any] | None = None,
-    timeout_seconds: int,
+    timeout_seconds: int = 30,
 ) -> dict[str, Any]:
     body = None
     headers = {"User-Agent": SERVER_NAME, "Accept": "application/json"}

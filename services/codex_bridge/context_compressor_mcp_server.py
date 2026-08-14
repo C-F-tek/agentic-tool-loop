@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pydantic import FilePath
+
 from repo_mcp_common import (
     ToolSpec,
     health_payload,
@@ -48,7 +50,7 @@ def _smart_summarize(lines: list[str], max_summary_len: int = 20) -> str:
     if total <= max_summary_len:
         return "\n".join(lines)
     
-    header = f"# {filepath}\n"
+    header = f"# {FilePath}\n"
     preview_count = max_summary_len // 3
     
     # First lines
