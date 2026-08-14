@@ -76,9 +76,7 @@ code-interpreter-workdir/**
 **/commands/
 **/reads/
 **/sessions/
-**/events.ndjson
-**/final.json
-**/final.md
+
 **/final_answer.*
 
 # Generated cache, indexes, RAG and knowledge packs
@@ -88,9 +86,6 @@ cache/**
 state/**
 !state/
 !state/README.md
-knowledge-*/**
-!knowledge-*/
-!knowledge-*/README.md
 *.sqlite
 *.sqlite3
 *.db
@@ -101,14 +96,12 @@ knowledge-*/**
 
 # Model stores and runtime backends
 models-*/**
+
 !models-*/
 !models-*/README.md
 npu-models/**
 !npu-models/
 !npu-models/README.md
-ovms-*/**
-!ovms-*/
-!ovms-*/README.md
 *.onnx
 *.bin
 *.safetensors
