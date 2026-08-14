@@ -56,7 +56,7 @@ def inline_diff_from_args(args: dict[str, Any]) -> str:
 
 def _structured_text(
     edit: dict[str, Any],
-    *,
+    
     index: int,
     field: str,
     allow_empty: bool = True,
@@ -128,7 +128,7 @@ def _complete_unified_diff_lines(lines: list[str]) -> str:
 
 
 def _structured_file_diff(
-    *,
+    
     path: str,
     before: str,
     after: str,
@@ -438,7 +438,7 @@ def _line_count(data: bytes) -> int:
 def inspect_unified_diff(
     root: Path,
     diff_text: str,
-    *,
+    
     capture_preimages: bool = True,
 ) -> dict[str, Any]:
     try:

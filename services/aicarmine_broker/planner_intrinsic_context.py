@@ -126,7 +126,7 @@ TOOL_PURPOSE_MANIFEST: tuple[dict[str, Any], ...] = (
 class ExternalRerankerHTTPError(RuntimeError):
     """Typed HTTP error from the optional external reranker."""
 
-    def __init__(self, *, status: int, reason: str, body_preview: str) -> None:
+    def __init__(self,  status: int, reason: str, body_preview: str) -> None:
         super().__init__(f"external reranker HTTP {status}: {reason}")
         self.status = status
         self.reason = reason
@@ -256,7 +256,7 @@ def _items_with_missing_rerank_scores(items: list[dict[str, Any]]) -> list[dict[
 
 
 def _external_rerank_items(
-    *,
+    
     goal: str,
     items: list[dict[str, Any]],
     engine: str,
@@ -397,7 +397,7 @@ def _external_rerank_items(
 
 
 def _rag_sqlite_chunks(
-    *,
+    
     goal: str,
     db_path: Path,
     top_k: int,
@@ -669,7 +669,7 @@ def _enforce_budget(context: dict[str, Any], max_chars: int) -> None:
 
 
 def build_planner_intrinsic_context(
-    *,
+    
     goal: str,
     history: list[dict[str, Any]],
     evidence_contract: dict[str, Any],

@@ -69,7 +69,6 @@ def _json_char_len(value: Any) -> int:
 
 def prompt_budget_report(
     user_payload: dict[str, Any],
-    *,
     system_prompt: str = "",
     extra_prompt_sections: dict[str, int] | None = None,
 ) -> dict[str, Any]:

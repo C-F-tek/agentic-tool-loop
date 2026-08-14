@@ -55,7 +55,7 @@ def compact_prompt_context_window_item(item: dict[str, Any]) -> dict[str, Any]:
 
 def bounded_prompt_context_tool_result_payload(
     result: dict[str, Any],
-    *,
+
     code_product_build_state_kind: str,
 ) -> dict[str, Any]:
     if not isinstance(result, dict):
@@ -105,7 +105,7 @@ RequiredToolCallFromAction = Callable[[dict[str, Any]], dict[str, Any]]
 
 def prompt_window_consumed_offsets(
     history: list[dict[str, Any]],
-    *,
+    
     history_tool_result: HistoryToolResult,
     code_product_build_state_kind: str,
 ) -> dict[str, int]:
@@ -135,7 +135,7 @@ def prompt_window_consumed_offsets(
 
 def prompt_window_tracking_metadata_errors(
     history: list[dict[str, Any]],
-    *,
+    
     history_tool_result: HistoryToolResult,
     code_product_build_state_kind: str,
 ) -> list[dict[str, Any]]:
@@ -172,7 +172,7 @@ def prompt_window_tracking_metadata_errors(
 
 def prompt_context_continue_action(
     window: dict[str, Any],
-    *,
+
     max_chars: int,
     reason: str,
     code_product_build_state_kind: str,
@@ -218,7 +218,7 @@ def prompt_context_continue_action(
 def planner_scratchpad_next_window_action_from_history(
     args: dict[str, Any],
     history: list[dict[str, Any]],
-    *,
+
     history_tool_result: HistoryToolResult,
     code_product_build_state_kind: str,
 ) -> dict[str, Any]:
@@ -285,7 +285,7 @@ def planner_scratchpad_next_window_action_from_history(
 
 def required_working_set_continuation_action(
     required_working_set: dict[str, Any],
-    *,
+
     history: list[dict[str, Any]],
     window_chars: int,
     history_tool_result: HistoryToolResult,
@@ -349,7 +349,7 @@ def required_working_set_continuation_action(
 
 def evidence_contract_continuation_action(
     evidence_contract: dict[str, Any],
-    *,
+  
     history: list[dict[str, Any]],
     window_chars: int,
     history_tool_result: HistoryToolResult,
@@ -393,8 +393,7 @@ def evidence_contract_continuation_action(
 
 def prompt_context_continuation_from_payload(
     payload: dict[str, Any],
-    *,
-    code_product_build_state_kind: str,
+        code_product_build_state_kind: str,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
@@ -439,7 +438,7 @@ def prompt_context_continuation_from_payload(
 def forbidden_repeated_prompt_window_calls(
     history: list[dict[str, Any]],
     continuation_action: dict[str, Any],
-    *,
+   
     history_tool_result: HistoryToolResult,
     required_next_tool_call_from_action: RequiredToolCallFromAction,
     code_product_build_state_kind: str,

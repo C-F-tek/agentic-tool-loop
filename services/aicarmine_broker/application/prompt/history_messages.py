@@ -265,7 +265,6 @@ def planner_history_evidence_payload(item: dict[str, Any], result: dict[str, Any
 def planner_tool_result_message_payload(
     item: dict[str, Any],
     result: dict[str, Any],
-    *,
     root: Path,
     goal: str,
     window_chars: int,
@@ -331,7 +330,7 @@ def planner_tool_result_message_payload(
 
 def planner_history_item_messages(
     item: dict[str, Any],
-    *,
+    
     root: Path,
     goal: str,
     window_chars: int,
@@ -417,7 +416,7 @@ def planner_history_item_messages(
 
 def planner_history_messages_for_ollama(
     history: list[dict[str, Any]],
-    *,
+    
     root: Path,
     goal: str,
     window_chars: int,

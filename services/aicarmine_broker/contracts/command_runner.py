@@ -26,7 +26,7 @@ class CommandRunner(Protocol):
     def run(
         self,
         command: tuple[str, ...],
-        *,
+    
         cwd: Path,
         env: Mapping[str, str] | None = None,
         timeout_seconds: int,

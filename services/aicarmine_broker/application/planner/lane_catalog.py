@@ -479,7 +479,7 @@ def validate_control_lane_catalog() -> list[str]:
 
 def control_lane_event_metadata(
     lane_id: str,
-    *,
+   
     step: int | None = None,
     attempt: int = 1,
     max_attempts: int | None = None,

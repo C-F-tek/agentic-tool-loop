@@ -69,7 +69,7 @@ TERMINAL_STATUSES = {
 }
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
+def string_prop(default: str | None = None,  enum: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if default is not None:
         schema["default"] = default
@@ -118,7 +118,7 @@ def _compact_text(value: Any, max_chars: int) -> tuple[str, bool]:
     return text[: max(0, max_chars - len(suffix))].rstrip() + suffix, True
 
 
-def _default_endpoint_for_path(expected_path: str, *, port: int | None = None) -> str:
+def _default_endpoint_for_path(expected_path: str,  port: int | None = None) -> str:
     selected_port = _safe_int(port, DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535)
     return f"http://127.0.0.1:{selected_port}{expected_path}"
 
@@ -133,7 +133,7 @@ def _endpoint_port(endpoint: str | None, default: int = DEFAULT_AGENTIC_LOOP_POR
     return default
 
 
-def _validate_endpoint(value: Any, *, expected_path: str, port: Any = None) -> tuple[str | None, dict[str, Any] | None]:
+def _validate_endpoint(value: Any,  expected_path: str, port: Any = None) -> tuple[str | None, dict[str, Any] | None]:
     raw = str(value or "").strip()
     if not raw:
         if port is not None:
@@ -172,7 +172,7 @@ def _validate_endpoint(value: Any, *, expected_path: str, port: Any = None) -> t
 
 def _validate_local_http_endpoint(
     value: Any,
-    *,
+    
     default_url: str,
     expected_path_prefix: str,
     default_port: int,
@@ -203,7 +203,7 @@ def _validate_local_http_endpoint(
 
 
 def _http_json(
-    *,
+    
     method: str,
     url: str,
     payload: dict[str, Any] | None = None,
@@ -249,15 +249,15 @@ def _http_json(
         }
 
 
-def _post_agent(endpoint: str, payload: dict[str, Any], *, timeout_seconds: int) -> dict[str, Any]:
+def _post_agent(endpoint: str, payload: dict[str, Any],  timeout_seconds: int) -> dict[str, Any]:
     return _http_json(method="POST", url=endpoint, payload=payload, timeout_seconds=timeout_seconds)
 
 
-def _get_health(endpoint: str, *, timeout_seconds: int) -> dict[str, Any]:
+def _get_health(endpoint: str,  timeout_seconds: int) -> dict[str, Any]:
     return _http_json(method="GET", url=endpoint, timeout_seconds=timeout_seconds)
 
 
-def _probe_reranker_functional(rerank_url: str, *, timeout_seconds: int) -> dict[str, Any]:
+def _probe_reranker_functional(rerank_url: str,  timeout_seconds: int) -> dict[str, Any]:
     started = time.monotonic()
     marker = "aicarmine_codex_mcp_reranker_functional_probe"
     effective_timeout = _safe_int(timeout_seconds, 30, 1, 60)
@@ -312,7 +312,7 @@ def _json_preview(value: Any, max_chars: int) -> dict[str, Any]:
     return {"text": text, "truncated": truncated}
 
 
-def _tail_text(path: Path, *, max_chars: int = 4000) -> str:
+def _tail_text(path: Path,  max_chars: int = 4000) -> str:
     try:
         if not path.is_file():
             return ""
@@ -352,7 +352,7 @@ def _select_python(root: Path) -> Path:
     return Path(sys.executable)
 
 
-def _port_listening(host: str = "127.0.0.1", port: int = DEFAULT_AGENTIC_LOOP_PORT, *, timeout_seconds: float = 0.5) -> bool:
+def _port_listening(host: str = "127.0.0.1", port: int = DEFAULT_AGENTIC_LOOP_PORT,  timeout_seconds: float = 0.5) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout_seconds):
             return True
@@ -467,7 +467,7 @@ def _broker_source_freshness(root: Path, port: int) -> dict[str, Any]:
 
 def _write_broker_process_metadata(
     root: Path,
-    *,
+    
     port: int,
     pid: int,
     command: list[str],
@@ -506,7 +506,7 @@ def _path_is_under(path: Path, parent: Path) -> bool:
 
 def _start_broker_process(
     root: Path,
-    *,
+    
     port: int,
     startup_timeout_seconds: int,
     rerank_url: str = DEFAULT_RERANKER_URL,
@@ -696,7 +696,7 @@ def _reranker_script(root: Path, args: dict[str, Any]) -> Path:
 
 def _start_reranker_process(
     root: Path,
-    *,
+    
     startup_timeout_seconds: int,
     ready_url: str,
     rerank_url: str,
@@ -1059,7 +1059,7 @@ def _ensure_broker(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
-def _collect_path_like(value: Any, *, limit: int, out: list[str] | None = None) -> list[str]:
+def _collect_path_like(value: Any,  limit: int, out: list[str] | None = None) -> list[str]:
     rows = out if out is not None else []
     if len(rows) >= limit:
         return rows
@@ -1081,7 +1081,7 @@ def _collect_path_like(value: Any, *, limit: int, out: list[str] | None = None) 
     return rows
 
 
-def _tool_history_digest(tool_context: Any, *, limit: int = 12) -> list[dict[str, Any]]:
+def _tool_history_digest(tool_context: Any,  limit: int = 12) -> list[dict[str, Any]]:
     if not isinstance(tool_context, dict):
         return []
     history = tool_context.get("history")
@@ -1105,7 +1105,7 @@ def _tool_history_digest(tool_context: Any, *, limit: int = 12) -> list[dict[str
     return rows
 
 
-def _compact_agent_response(response: dict[str, Any], *, response_budget_chars: int, include_raw: bool) -> dict[str, Any]:
+def _compact_agent_response(response: dict[str, Any],  response_budget_chars: int, include_raw: bool) -> dict[str, Any]:
     payload = response.get("payload") if response.get("ok") is True else response
     if not isinstance(payload, dict):
         payload = {"value": payload}
@@ -1277,7 +1277,7 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
     return payload, None
 
 
-def _build_job_action_payload(args: dict[str, Any], *, action: str, confirm_value: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def _build_job_action_payload(args: dict[str, Any],  action: str, confirm_value: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     job_id = str(args.get("job_id") or "").strip()
     if not job_id:
         return None, {"ok": False, "error": "missing_job_id"}

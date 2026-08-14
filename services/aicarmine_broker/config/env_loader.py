@@ -17,7 +17,7 @@ def _env(env: EnvMapping | None = None) -> EnvMapping:
     return os.environ if env is None else env
 
 
-def _safe_preview(value: object, *, limit: int = 200) -> str:
+def _safe_preview(value: object,  limit: int = 200) -> str:
     try:
         text = str(value)
     except Exception as exc:
@@ -27,7 +27,7 @@ def _safe_preview(value: object, *, limit: int = 200) -> str:
 
 def env_error_context(
     name: str,
-    *,
+    
     expected: str,
     value: object,
     exc: Exception | None = None,
@@ -53,7 +53,7 @@ def _format_env_error(context: Mapping[str, Any]) -> str:
     )
 
 
-def _env_text(name: str, value: object, *, expected: str) -> str:
+def _env_text(name: str, value: object,  expected: str) -> str:
     try:
         return str(value).strip()
     except Exception as exc:

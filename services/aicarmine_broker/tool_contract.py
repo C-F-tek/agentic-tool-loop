@@ -117,7 +117,7 @@ def _paths_from_items(value: object) -> list[str]:
     return paths
 
 
-def _preview(value: Any, *, limit: int = 300) -> str:
+def _preview(value: Any,  limit: int = 300) -> str:
     try:
         return str(value)[:limit]
     except Exception as exc:
@@ -127,7 +127,7 @@ def _preview(value: Any, *, limit: int = 300) -> str:
 def _diagnostic(
     diagnostics: list[dict[str, Any]],
     reason: str,
-    *,
+    
     field: str = "",
     value: Any = None,
 ) -> None:
@@ -154,7 +154,7 @@ def _dict_arg(value: Any, diagnostics: list[dict[str, Any]], field: str) -> dict
 
 def _bounded_int_arg(
     value: Any,
-    *,
+    
     default: int,
     minimum: int,
     maximum: int,

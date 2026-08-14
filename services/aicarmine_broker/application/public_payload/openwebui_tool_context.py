@@ -327,7 +327,7 @@ def build_tool_context_for_30b(
     status: str,
     final_summary: str,
     result: dict[str, Any] | None,
-    *,
+    
     planner_model: str,
     planner_url: str,
     job_root_for_id: JobRootForId,

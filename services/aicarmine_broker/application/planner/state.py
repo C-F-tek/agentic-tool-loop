@@ -24,11 +24,11 @@ class PlannerLoopState:
     _history_ledger: HistoryLedgerBuilder
     _evidence_builder: EvidenceBuilder
 
-    def append_history_row(self, row: dict[str, Any], *, update_evidence: bool = True) -> None:
+    def append_history_row(self, row: dict[str, Any], update_evidence: bool = True) -> None:
         self._history.append(row)
         self.refresh_history(update_evidence=update_evidence)
 
-    def refresh_history(self, *, update_evidence: bool = True) -> None:
+    def refresh_history(self, update_evidence: bool = True) -> None:
         self._state["history"] = self._history_ledger(self._history)
         self._state["history_count"] = len(self._history)
         if update_evidence:

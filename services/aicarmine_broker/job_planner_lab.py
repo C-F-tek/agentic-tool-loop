@@ -14,7 +14,7 @@ def _json_pretty(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
-def _html_page(title: str, body: str, *, initial_job_id: str = "") -> str:
+def _html_page(title: str, body: str,  initial_job_id: str = "") -> str:
     initial = json.dumps(str(initial_job_id or ""))
     css = BASE_CSS + PLANNER_LAB_EXTRA_CSS
     js = BASE_JS + PLANNER_LAB_JS
@@ -40,7 +40,7 @@ let activeRequestText = "";
 </html>"""
 
 
-def planner_lab_index_html(*, limit: int = 20) -> str:
+def planner_lab_index_html( limit: int = 20) -> str:
     recent_cards = []
     for job in list_agent_jobs(limit=max(1, min(int(limit or 20), 100))):
         job_id_raw = str(job.get("job_id") or "")

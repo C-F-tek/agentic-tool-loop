@@ -36,7 +36,7 @@ def _strip_dispatcher_narrative_aliases(result: dict[str, Any], evidence_guide: 
     return cleaned
 
 
-def deterministic_public_wrapper(*, public_tool_name: str, original_args: dict[str, Any], internal_tool: str, internal_args: dict[str, Any], dispatcher_result: dict[str, Any], selector_response: dict[str, Any], root: Path) -> dict[str, Any]:
+def deterministic_public_wrapper( public_tool_name: str, original_args: dict[str, Any], internal_tool: str, internal_args: dict[str, Any], dispatcher_result: dict[str, Any], selector_response: dict[str, Any], root: Path) -> dict[str, Any]:
     dispatcher_result = dict(dispatcher_result or {})
     dispatcher_result.setdefault('called_by_vulkan', internal_tool)
     ok = bool(dispatcher_result.get('ok', False))

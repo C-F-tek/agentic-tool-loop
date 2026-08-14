@@ -240,7 +240,7 @@ def repo_non_findings(status: dict[str, Any]) -> list[str]:
 
 
 def _helper_call_payload(
-    *,
+    
     purpose: str,
     request: str,
     function: str,
@@ -263,7 +263,7 @@ def _helper_call_payload(
 
 
 def useful_next_calls(
-    *,
+    
     verified_problems: list[dict[str, Any]],
     patch_targets: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -307,7 +307,7 @@ def useful_next_calls(
 
 
 def answer_for_30b(
-    *,
+    
     task: str,
     verified_problems: list[dict[str, Any]],
     status: dict[str, Any],

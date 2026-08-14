@@ -84,7 +84,7 @@ def _tool_names_from_available_tools_payload(available_tools: Mapping[str, Any])
 
 
 def _tool_shape_examples_for_transport(
-    *,
+    
     tool_shape_examples: Any,
     available_tool_names: set[str],
 ) -> dict[str, Any]:
@@ -134,7 +134,7 @@ def _filter_candidate_actions_by_available_tools(
 
 
 def _normalize_candidates_for_available_tools(
-    *,
+    
     evidence_contract: dict[str, Any],
     available_tool_names: set[str],
 ) -> None:
@@ -177,7 +177,7 @@ def _normalize_candidates_for_available_tools(
 
 
 def _normalize_transport_tool_surface_state(
-    *,
+    
     evidence_contract: dict[str, Any],
     available_tool_names: set[str],
 ) -> None:
@@ -302,7 +302,6 @@ class PromptPackBuilder:
 
     def build(
         self,
-        *,
         job_id: str,
         state: dict[str, Any],
         step: int,
@@ -376,7 +375,7 @@ class PromptPackBuilder:
             str(step_budget_guidance.get("mode") or "") == "force_terminal_decision"
         )
 
-        def assemble(*, compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
+        def assemble( compact_mode: bool, window_chars: int) -> tuple[dict[str, Any], dict[str, Any], int, list[dict[str, Any]]]:
             required_repo_read_window_budget = None
             required_repo_read_item_limit = None
             if compact_mode:
@@ -1022,7 +1021,7 @@ class PromptPackBuilder:
 
 
 def build_planner_user_payload(
-    *,
+    
     job_id: str,
     state: dict[str, Any],
     step: int,

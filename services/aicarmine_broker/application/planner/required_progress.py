@@ -36,7 +36,6 @@ def _metadata(metadata: dict[str, Any] | None = None, **extra: Any) -> dict[str,
 
 def progress_candidate_hint(
     human_text: str,
-    *,
     metadata: dict[str, Any] | None = None,
     **extra: Any,
 ) -> RequiredNextProgress:
@@ -49,7 +48,6 @@ def progress_candidate_hint(
 
 def progress_quality_gate_final_allowed(
     human_text: str,
-    *,
     metadata: dict[str, Any] | None = None,
     **extra: Any,
 ) -> RequiredNextProgress:
@@ -63,7 +61,7 @@ def progress_quality_gate_final_allowed(
 
 def progress_code_product_route_shift(
     human_text: str,
-    *,
+    
     metadata: dict[str, Any] | None = None,
     **extra: Any,
 ) -> RequiredNextProgress:
@@ -83,7 +81,7 @@ def progress_code_product_route_shift(
 
 def progress_forbidden_repeat_repo_read(
     human_text: str,
-    *,
+    
     target: str = "",
     metadata: dict[str, Any] | None = None,
     **extra: Any,
@@ -99,7 +97,6 @@ def progress_forbidden_repeat_repo_read(
 
 def progress_code_product_block_required(
     human_text: str,
-    *,
     metadata: dict[str, Any] | None = None,
     **extra: Any,
 ) -> RequiredNextProgress:
@@ -113,7 +110,7 @@ def progress_code_product_block_required(
 
 def progress_native_tool_required(
     human_text: str,
-    *,
+    
     metadata: dict[str, Any] | None = None,
     **extra: Any,
 ) -> RequiredNextProgress:
@@ -126,7 +123,7 @@ def progress_native_tool_required(
 
 def progress_prompt_context_continuation(
     human_text: str,
-    *,
+    
     metadata: dict[str, Any] | None = None,
     **extra: Any,
 ) -> RequiredNextProgress:
@@ -140,7 +137,7 @@ def progress_prompt_context_continuation(
 
 def required_next_progress_from_text(
     human_text: str,
-    *,
+    
     metadata: dict[str, Any] | None = None,
 ) -> RequiredNextProgress:
     text = str(human_text or "").strip()

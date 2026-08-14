@@ -24,7 +24,7 @@ try:
     )
 except ImportError:
     # Fallback: define minimal stubs if json_gzip_util not available
-    def smart_json_dumps(value, *, use_compression=None):
+    def smart_json_dumps(value,  use_compression=None):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
     def decompress_tool_text(text):
         return text
@@ -75,7 +75,7 @@ def log(server_name: str, message: str) -> None:
         print(f"[{server_name}] {message}", file=sys.stderr, flush=True)
 
 
-def json_dumps(value: Any, *, compact: bool = False) -> str:
+def json_dumps(value: Any,  compact: bool = False) -> str:
     if compact:
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
@@ -479,7 +479,7 @@ def call_tool(tools: dict[str, ToolSpec], name: str, arguments: Any) -> dict[str
 
 def handle_request(
     request: dict[str, Any],
-    *,
+    
     server_name: str,
     server_version: str,
     tools: dict[str, ToolSpec],
@@ -545,7 +545,7 @@ def mcp_text_result(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def self_test(
-    *,
+    
     server_name: str,
     server_version: str,
     tools: dict[str, ToolSpec],

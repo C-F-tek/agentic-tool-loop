@@ -232,7 +232,7 @@ def _read_sqlite_events(job_id: str) -> tuple[list[dict[str, Any]], dict[str, An
 
 
 def _select_replay_events(
-    *,
+    
     events_ndjson: list[dict[str, Any]],
     sqlite_events: list[dict[str, Any]],
     sqlite_diagnostic: dict[str, Any],
@@ -279,7 +279,7 @@ def _select_replay_events(
     }
 
 
-def _resolve_job_root(*, job_id: str | None, job_root: str | Path | None) -> Path:
+def _resolve_job_root( job_id: str | None, job_root: str | Path | None) -> Path:
     if job_root:
         return Path(job_root)
     if not job_id:
@@ -584,7 +584,7 @@ def _validator_rejections_from_events(events: list[dict[str, Any]]) -> list[dict
 
 
 def _recompute_validator_results(
-    *,
+    
     goal: str,
     history: list[dict[str, Any]],
     validator: Validator,
@@ -637,7 +637,7 @@ def _first_prompt_payload(prompt_files: list[Path]) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _planner_prompt_audit(first_prompt: dict[str, Any], *, target_tool: str) -> dict[str, Any]:
+def _planner_prompt_audit(first_prompt: dict[str, Any],  target_tool: str) -> dict[str, Any]:
     planner_payload = (
         first_prompt.get("planner_payload")
         if isinstance(first_prompt.get("planner_payload"), dict)
@@ -682,7 +682,7 @@ def _planner_prompt_audit(first_prompt: dict[str, Any], *, target_tool: str) -> 
 
 
 def _runtime_loop_artifact_audit(
-    *,
+    
     state: dict[str, Any],
     events: list[dict[str, Any]],
     prompt_files: list[Path],
@@ -781,7 +781,7 @@ def _runtime_loop_artifact_audit(
 
 
 def replay_loop_job(
-    *,
+    
     job_id: str | None = None,
     job_root: str | Path | None = None,
     target_tool: str | None = None,

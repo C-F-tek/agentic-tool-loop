@@ -15,7 +15,7 @@ def prompt_clip_text(value: Any, limit: int | None = None) -> str:
     return text[: max(0, max_chars - 40)] + "... <prompt_preview_truncated>"
 
 
-def prompt_clip_value(value: Any, *, text_limit: int | None = None, list_limit: int = 12, depth: int = 0) -> Any:
+def prompt_clip_value(value: Any,  text_limit: int | None = None, list_limit: int = 12, depth: int = 0) -> Any:
     if depth > 4:
         return prompt_clip_text(value, text_limit)
     if isinstance(value, str):

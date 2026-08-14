@@ -32,7 +32,7 @@ def _history_ledger_diagnostic(index: int, reason: str, exc: Exception | None = 
 
 def public_terminal_history_ledger(
     history: list[dict[str, Any]],
-    *,
+    
     repo_read_item_full_content: RepoReadContentLoader,
 ) -> list[dict[str, Any]]:
     ledger: list[dict[str, Any]] = []
@@ -145,7 +145,7 @@ def public_terminal_history_ledger(
 
 def public_terminal_result_for_30b(
     result: dict[str, Any] | None,
-    *,
+    
     repo_read_item_full_content: RepoReadContentLoader,
 ) -> dict[str, Any]:
     if not isinstance(result, dict):

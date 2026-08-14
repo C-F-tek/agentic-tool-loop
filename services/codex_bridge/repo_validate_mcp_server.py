@@ -42,7 +42,7 @@ def integer_prop(default: int, minimum: int, maximum: int) -> dict[str, Any]:
     }
 
 
-def paths_schema(*, default_path: str | None = None) -> dict[str, Any]:
+def paths_schema( default_path: str | None = None) -> dict[str, Any]:
     properties: dict[str, Any] = {
         "path": string_prop(default_path),
         "paths": {"type": "array", "items": {"type": "string"}},

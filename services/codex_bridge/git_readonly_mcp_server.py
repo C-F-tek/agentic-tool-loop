@@ -52,7 +52,7 @@ def _compact_text(text: str, max_chars: int) -> tuple[str, bool]:
     return text[: max(0, max_chars - 80)].rstrip() + f"\n...[truncated chars={len(text)}]", True
 
 
-def _validate_rev(value: Any, *, default: str = "HEAD", name: str = "rev") -> tuple[str | None, dict[str, Any] | None]:
+def _validate_rev(value: Any,  default: str = "HEAD", name: str = "rev") -> tuple[str | None, dict[str, Any] | None]:
     text = str(value or default).strip()
     if not text:
         return None, {"ok": False, "error": f"missing_{name}"}
@@ -102,7 +102,7 @@ def _pathspec(value: Any, root: Path) -> tuple[str | None, dict[str, Any] | None
         return str(resolved), None
 
 
-def _run_git(root: Path, args: list[str], *, timeout_seconds: int, max_chars: int) -> dict[str, Any]:
+def _run_git(root: Path, args: list[str],  timeout_seconds: int, max_chars: int) -> dict[str, Any]:
     command = ["git", "-C", str(root), *args]
     try:
         proc = subprocess.run(

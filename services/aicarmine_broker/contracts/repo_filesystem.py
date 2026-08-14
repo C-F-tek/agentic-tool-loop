@@ -14,7 +14,7 @@ class RepoFilesystem(Protocol):
     def exists(self, repo_path: str) -> bool:
         """Return whether a repo-relative path exists."""
 
-    def read_text(self, repo_path: str, *, encoding: str = "utf-8") -> str:
+    def read_text(self, repo_path: str,  encoding: str = "utf-8") -> str:
         """Read a repo-relative text file."""
 
     def list_files(self, repo_path: str = ".") -> tuple[str, ...]:

@@ -440,7 +440,7 @@ def _parse_rerank_results(value: Any) -> list[dict[str, Any]]:
 def _rerank(
     query: str,
     candidates: list[dict[str, Any]],
-    *,
+    
     enabled: bool,
     candidate_limit: int,
     doc_chars: int,
@@ -565,11 +565,11 @@ def _rerank(
     return ranked, warnings, meta
 
 
-def _env_int(name: str, default: int, *, low: int, high: int) -> int:
+def _env_int(name: str, default: int,  low: int, high: int) -> int:
     return _safe_int(os.environ.get(name), default, low=low, high=high)
 
 
-def _env_float(name: str, default: float, *, low: float, high: float) -> float:
+def _env_float(name: str, default: float,  low: float, high: float) -> float:
     return _safe_float(os.environ.get(name), default, low=low, high=high)
 
 

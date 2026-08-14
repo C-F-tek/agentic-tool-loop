@@ -133,14 +133,14 @@ def _find_job_dir(root: Path, job_id: str) -> Path | None:
     return None
 
 
-def _read_text(path: Path, *, max_chars: int) -> tuple[str, bool]:
+def _read_text(path: Path,  max_chars: int) -> tuple[str, bool]:
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         text = handle.read(max_chars + 1)
     truncated = len(text) > max_chars
     return text[:max_chars], truncated
 
 
-def _read_text_page(path: Path, *, offset: int, max_chars: int) -> dict[str, Any]:
+def _read_text_page(path: Path,  offset: int, max_chars: int) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="replace")
     start = max(0, min(int(offset or 0), len(text)))
     returned = text[start:start + max_chars]
@@ -158,7 +158,7 @@ def _read_text_page(path: Path, *, offset: int, max_chars: int) -> dict[str, Any
     }
 
 
-def _read_json(path: Path, *, max_chars: int = 2_000_000) -> Any:
+def _read_json(path: Path,  max_chars: int = 2_000_000) -> Any:
     try:
         del max_chars
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -203,7 +203,7 @@ def _json_path_select(value: Any, path: str) -> tuple[Any, str]:
     return current, ".".join(traversed)
 
 
-def _json_page(value: Any, *, path: str, offset: int, max_chars: int) -> dict[str, Any]:
+def _json_page(value: Any,  path: str, offset: int, max_chars: int) -> dict[str, Any]:
     try:
         selected, normalized_path = _json_path_select(value, path)
     except KeyError as exc:
@@ -231,7 +231,7 @@ def _json_page(value: Any, *, path: str, offset: int, max_chars: int) -> dict[st
     }
 
 
-def _json_overview(value: Any, *, path: str = "", depth: int = 0) -> dict[str, Any]:
+def _json_overview(value: Any,  path: str = "", depth: int = 0) -> dict[str, Any]:
     text = _json_text(value)
     if isinstance(value, dict):
         scalar_values: dict[str, Any] = {}
@@ -283,7 +283,7 @@ OPENWEBUI_INLINE_TRANSPORT_FIELDS = (
 )
 
 
-def _openwebui_inline_payload_view(final_json: Any, *, default_page_chars: int) -> dict[str, Any]:
+def _openwebui_inline_payload_view(final_json: Any,  default_page_chars: int) -> dict[str, Any]:
     if not isinstance(final_json, dict):
         return {
             "schema": "aicarmine.job_artifact_final.codex_payload_view.v1",
@@ -329,7 +329,7 @@ def _openwebui_inline_payload_view(final_json: Any, *, default_page_chars: int) 
     }
 
 
-def _read_events(path: Path, *, max_lines: int = 5000) -> list[dict[str, Any]]:
+def _read_events(path: Path,  max_lines: int = 5000) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     if not path.is_file():
         return events
@@ -389,7 +389,7 @@ def _tool_result_step_from_name(name: str) -> int | None:
         return None
 
 
-def _payload_preview(value: Any, *, max_chars: int) -> dict[str, Any]:
+def _payload_preview(value: Any,  max_chars: int) -> dict[str, Any]:
     text = json.dumps(value, ensure_ascii=False, default=str)
     return {
         "text": text[:max_chars],
@@ -398,7 +398,7 @@ def _payload_preview(value: Any, *, max_chars: int) -> dict[str, Any]:
     }
 
 
-def _compact_subturn_event(event: dict[str, Any], *, include_payload: bool, max_chars: int) -> dict[str, Any]:
+def _compact_subturn_event(event: dict[str, Any],  include_payload: bool, max_chars: int) -> dict[str, Any]:
     payload = _event_payload(event)
     args = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
     written = payload.get("written") if isinstance(payload.get("written"), dict) else {}
@@ -435,7 +435,7 @@ def _tool_from_result_payload_or_name(payload: Any, name: str) -> str:
     return ""
 
 
-def _compact_subturn_tool_result(path: Path, payload: Any, *, include_payload: bool, max_chars: int) -> dict[str, Any]:
+def _compact_subturn_tool_result(path: Path, payload: Any,  include_payload: bool, max_chars: int) -> dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
     written = data.get("written") if isinstance(data.get("written"), dict) else {}
     row: dict[str, Any] = {

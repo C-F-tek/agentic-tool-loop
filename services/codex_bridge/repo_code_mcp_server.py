@@ -262,7 +262,7 @@ def _tools() -> dict[str, ToolSpec]:
     def resolve_and_call(
         args: dict[str, Any],
         root: Path,
-        *,
+        
         stage: str,
         handler: Callable[[dict[str, Any], Path], dict[str, Any]],
     ) -> dict[str, Any]:

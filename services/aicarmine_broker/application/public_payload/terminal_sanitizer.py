@@ -38,7 +38,7 @@ def public_terminal_content_key(key: Any) -> bool:
     }
 
 
-def public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
+def public_terminal_sanitize_text(value: Any,  content: bool = False) -> str:
     text = str(value or "")
     if not text:
         return ""
@@ -63,7 +63,7 @@ def public_terminal_sanitize_text(value: Any, *, content: bool = False) -> str:
         return f"[terminal_sanitize_error:{type(exc).__name__}]"
 
 
-def public_terminal_sanitize_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
+def public_terminal_sanitize_value(value: Any,  key: str = "", depth: int = 0) -> Any:
     try:
         if depth > 12:
             return {"diagnostic_only": True, "reason": "sanitize_depth_limit"}

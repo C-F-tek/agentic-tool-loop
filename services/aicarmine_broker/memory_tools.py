@@ -20,7 +20,7 @@ from .security import (
 logger = logging.getLogger(__name__)
 
 
-def _memory_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], *, default: int, minimum: int, maximum: int) -> int:
+def _memory_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...],  default: int, minimum: int, maximum: int) -> int:
     """Helper locale per parsing bounded int senza dipendenze circolari."""
     keys = (names,) if isinstance(names, str) else names
     selected: Any = None
@@ -38,7 +38,7 @@ def _memory_bounded_int_arg(args: dict[str, Any], names: str | tuple[str, ...], 
     return max(minimum, min(parsed, maximum))
 
 
-def _preview(value: Any, *, limit: int = 500) -> str:
+def _preview(value: Any,  limit: int = 500) -> str:
     try:
         return str(value)[:limit]
     except Exception as exc:
@@ -60,7 +60,7 @@ def _memory_sqlite_error_result(
     tool: str,
     db_path: Path,
     exc: Exception,
-    *,
+    
     stage: str,
     error: str,
 ) -> dict[str, Any]:
@@ -173,7 +173,7 @@ CODE_PRODUCT_BUILD_STATE_STATUSES = {
 }
 
 
-def _window_text(text: str, *, query: str = "", max_chars: int = 3000) -> dict[str, Any]:
+def _window_text(text: str,  query: str = "", max_chars: int = 3000) -> dict[str, Any]:
     full = str(text or "")
     budget = max(500, int(max_chars or 3000))
     if len(full) <= budget:
@@ -215,7 +215,7 @@ def _window_text(text: str, *, query: str = "", max_chars: int = 3000) -> dict[s
 
 def planner_prompt_context_store_window(
     root: Path,
-    *,
+    
     section: str,
     text: str,
     query: str = "",

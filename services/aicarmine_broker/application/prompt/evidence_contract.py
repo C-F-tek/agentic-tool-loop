@@ -46,7 +46,7 @@ EVIDENCE_PROMPT_KEEP_KEYS = (
 
 def _counted_top_list(
     value: Any,
-    *,
+
     item_limit: int,
     text_limit: int,
 ) -> tuple[list[Any], int, int]:
@@ -64,7 +64,7 @@ def _counted_top_list(
 def _apply_counted_top_list(
     out: dict[str, Any],
     key: str,
-    *,
+    
     item_limit: int,
     text_limit: int,
 ) -> None:
@@ -81,7 +81,7 @@ def _apply_counted_top_list(
         out[f"{key}_omitted_count"] = omitted
 
 
-def _compact_verified_content_reads(value: Any, *, item_limit: int) -> list[dict[str, Any]]:
+def _compact_verified_content_reads(value: Any,  item_limit: int) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     compact: list[dict[str, Any]] = []
@@ -119,7 +119,7 @@ def _compact_verified_content_reads(value: Any, *, item_limit: int) -> list[dict
 
 def compact_evidence_contract_for_prompt(
     contract: dict[str, Any],
-    *,
+    
     prompt_preview_chars: int,
 ) -> dict[str, Any]:
     if not isinstance(contract, dict):
@@ -216,7 +216,7 @@ def compact_evidence_contract_for_prompt(
 
 def _compact_allowed_batch_actions_for_prompt(
     actions: Any,
-    *,
+    
     list_limit: int,
 ) -> list[dict[str, Any]]:
     compact: list[dict[str, Any]] = []
@@ -239,7 +239,7 @@ def _compact_allowed_batch_actions_for_prompt(
 
 def hard_budget_evidence_contract_summary(
     contract: dict[str, Any],
-    *,
+    
     reason: str,
 ) -> dict[str, Any]:
     compact: dict[str, Any] = {

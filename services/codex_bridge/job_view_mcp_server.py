@@ -60,7 +60,7 @@ VIEW_NAMES = {
 }
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
+def string_prop(default: str | None = None,  enum: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if default is not None:
         schema["default"] = default
@@ -299,7 +299,7 @@ class _HtmlOutlineParser(HTMLParser):
             self._summary = None
 
 
-def _html_outline(html_text: str, *, max_items: int = 80) -> dict[str, Any]:
+def _html_outline(html_text: str,  max_items: int = 80) -> dict[str, Any]:
     parser = _HtmlOutlineParser()
     parser.feed(html_text)
     parser.close()

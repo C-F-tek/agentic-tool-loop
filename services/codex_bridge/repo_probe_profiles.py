@@ -275,7 +275,7 @@ def _module_origin_status(
 def _bounded_int(
     args: dict[str, Any],
     name: str,
-    *,
+    
     default: int,
     minimum: int,
     maximum: int,
@@ -363,7 +363,7 @@ def _case(
 def _orientation_call(
     selector: Callable[..., dict[str, Any]],
     response_factory: Callable[[str, dict[str, Any], int], dict[str, Any]],
-    *,
+    
     candidates: list[dict[str, Any]] | None = None,
     semantic_intent: dict[str, Any] | None = None,
     goal: str = "Inspect the repository",
@@ -1109,7 +1109,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
 
 
 def _hypothesis_orientation_profile(
-    *,
+    
     max_examples: int,
     seed_value: int,
 ) -> dict[str, Any]:
@@ -1821,7 +1821,7 @@ def _deterministic_orientation_shadow_evaluator_profile() -> dict[str, Any]:
 
     def invoke(
         evaluator: Callable[..., dict[str, Any]],
-        *,
+        
         requested_mode: object,
         root_result: object,
         semantic_intent: object,

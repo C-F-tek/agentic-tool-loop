@@ -1517,7 +1517,7 @@ if (initialJobId) {
 """
 
 
-def render_page_shell(title: str, body: str, *, extra_css: str = "", extra_js: str = "") -> str:
+def render_page_shell(title: str, body: str,  extra_css: str = "", extra_js: str = "") -> str:
     """Render a basic page shell with title and body."""
     extra_css_attr = f'<style>{extra_css}</style>' if extra_css else ""
     extra_js_script = f'<script>{extra_js}</script>' if extra_js else ""
@@ -1535,7 +1535,7 @@ def render_page_shell(title: str, body: str, *, extra_css: str = "", extra_js: s
 </html>"""
 
 
-def render_json_page(title: str, payload: Any, *, section_url: str = "", max_chars: int = 300_000) -> str:
+def render_json_page(title: str, payload: Any,  section_url: str = "", max_chars: int = 300_000) -> str:
     """Render a JSON diagnostic page with title and pretty JSON."""
     json_text = _json_pretty(payload, max_chars=max_chars)
     body = f"""
@@ -1549,7 +1549,7 @@ def render_json_page(title: str, payload: Any, *, section_url: str = "", max_cha
     return render_page_shell(title, body)
 
 
-def render_json_section(title: str, payload: Any, *, parent_url: str = "", max_chars: int = 300_000) -> str:
+def render_json_section(title: str, payload: Any,  parent_url: str = "", max_chars: int = 300_000) -> str:
     """Render a JSON section (child of a parent page)."""
     json_text = _json_pretty(payload, max_chars=max_chars)
     body = f"""

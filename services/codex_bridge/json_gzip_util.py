@@ -50,7 +50,7 @@ def json_gzip_decompress(hex_data: str) -> Any:
     return json.loads(raw_bytes.decode("utf-8"))
 
 
-def smart_json_dumps(value: Any, *, use_compression: bool | None = None) -> str:
+def smart_json_dumps(value: Any,  use_compression: bool | None = None) -> str:
     """Smart JSON serialization: compresses if payload exceeds threshold.
     
     Returns either plain JSON or marker + compressed hex string.

@@ -42,7 +42,7 @@ def selector_fallback_tool(public_tool_name: str, task: str, original_args: dict
     # controller fallback unrelated to the user's request.
     return ('', {})
 
-def select_internal_tool(*, public_tool_name: str, task: str, original_args: dict[str, Any], timeout_seconds: int) -> tuple[str, dict[str, Any], dict[str, Any]]:
+def select_internal_tool( public_tool_name: str, task: str, original_args: dict[str, Any], timeout_seconds: int) -> tuple[str, dict[str, Any], dict[str, Any]]:
     system = f'Sei Vulkan GPU0 tool-call repair/JSON normalizer. Non sei planner. Devi solo riparare output sporco del planner 11434 in una decisione JSON valida già implicita nel testo. Non aggiungere strategia nuova. Non inventare file. Non produrre final_answer se action=tool. Se non è chiara una action/tool/arguments, restituisci action=block. Schema: {{"action":"tool|final|block", "tool":"{VALID_INTERNAL_TOOLS_PROMPT_EXCLUDING_VULKAN}", "arguments":{{}}, "reason":"...", "final_answer":"..."}}}}. Non aggiungere markdown.'
     user = f'PUBLIC_TOOL_X={public_tool_name}\nREQUEST={task}\nARGUMENTS_FROM_30B={json.dumps(original_args, ensure_ascii=False, indent=2, default=str)}\nFase richiesta: emetti una sola native tool_call interna L.'
     response = post_json(OLLAMA_TASK_URL, {'model': OLLAMA_TASK_MODEL, 'stream': False, 'keep_alive': OLLAMA_KEEP_ALIVE, 'think': False, 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 'tools': TOOLS_SCHEMA, 'options': ollama_options(num_predict=VULKAN_INTERPRETER_NUM_PREDICT)}, timeout=max(15, min(timeout_seconds, 240)))

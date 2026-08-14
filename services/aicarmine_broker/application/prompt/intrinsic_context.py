@@ -8,7 +8,7 @@ from .values import prompt_clip_value
 
 def compact_intrinsic_context_for_prompt(
     context: dict[str, Any],
-    *,
+    
     prompt_preview_chars: int,
 ) -> dict[str, Any]:
     if not isinstance(context, dict):

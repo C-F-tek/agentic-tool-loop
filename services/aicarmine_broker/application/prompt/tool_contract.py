@@ -14,7 +14,7 @@ REAL_TOOL_VALUE_SOURCES = [
 
 def available_tools_for_user_payload(
     compact_tools: list[dict[str, Any]],
-    *,
+    
     native_tools: bool,
 ) -> Any:
     if not native_tools:
@@ -34,7 +34,7 @@ def available_tools_for_user_payload(
 
 
 def tool_shape_examples_for_prompt(
-    *,
+    
     native_tools: bool,
     code_product_build_state_kind: str,
 ) -> dict[str, Any]:
@@ -167,7 +167,7 @@ def tool_shape_examples_for_prompt(
     }
 
 
-def hard_budget_tool_shape_examples_for_prompt(*, native_tools: bool) -> dict[str, Any]:
+def hard_budget_tool_shape_examples_for_prompt( native_tools: bool) -> dict[str, Any]:
     if native_tools:
         return {
             "schema": "planner_tool_shape_examples.v1",

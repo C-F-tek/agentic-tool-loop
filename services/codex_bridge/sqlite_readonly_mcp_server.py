@@ -167,7 +167,7 @@ def _sqlite_uri(path: Path) -> str:
     return f"file:{path.resolve().as_posix()}?mode=ro"
 
 
-def _connect_readonly(path: Path, *, timeout_seconds: int) -> sqlite3.Connection:
+def _connect_readonly(path: Path,  timeout_seconds: int) -> sqlite3.Connection:
     conn = sqlite3.connect(_sqlite_uri(path), uri=True, timeout=min(timeout_seconds, 10))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only = ON")
@@ -206,7 +206,7 @@ def _validate_select_sql(sql: Any) -> tuple[str | None, dict[str, Any] | None]:
     return text, None
 
 
-def _compact_value(value: Any, *, max_cell_chars: int) -> Any:
+def _compact_value(value: Any,  max_cell_chars: int) -> Any:
     if isinstance(value, bytes):
         digest = hashlib.sha256(value).hexdigest()
         return {"type": "bytes", "size": len(value), "sha256": digest}
@@ -215,14 +215,14 @@ def _compact_value(value: Any, *, max_cell_chars: int) -> Any:
     return value
 
 
-def _row_to_dict(row: sqlite3.Row, *, max_cell_chars: int) -> dict[str, Any]:
+def _row_to_dict(row: sqlite3.Row,  max_cell_chars: int) -> dict[str, Any]:
     return {key: _compact_value(row[key], max_cell_chars=max_cell_chars) for key in row.keys()}
 
 
 def _query_rows(
     conn: sqlite3.Connection,
     sql: str,
-    *,
+    
     row_limit: int,
     timeout_seconds: int,
     max_cell_chars: int,

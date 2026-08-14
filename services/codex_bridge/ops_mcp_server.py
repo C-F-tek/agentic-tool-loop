@@ -54,7 +54,7 @@ def _safe_int_param(
     default: int,
     low: int,
     high: int,
-    *,
+    
     name: str,
     diagnostics: list[dict[str, Any]] | None = None,
 ) -> int:
@@ -278,7 +278,7 @@ def _mcp_child_env(root: Path) -> dict[str, str]:
 
 
 def _probe_one_mcp(
-    *,
+    
     name: str,
     spec: LocalMcpServer,
     root: Path,

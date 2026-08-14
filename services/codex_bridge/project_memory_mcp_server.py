@@ -101,7 +101,7 @@ def _value_hash(value: str) -> str:
     return hashlib.sha256(str(value or "").encode("utf-8", errors="replace")).hexdigest()
 
 
-def _record_id(*, repo_root: Path, scope: str, branch: str, key: str, value_hash: str) -> str:
+def _record_id( repo_root: Path, scope: str, branch: str, key: str, value_hash: str) -> str:
     raw = "\x00".join([str(repo_root.resolve()), scope, branch, key, value_hash])
     return "pmem-" + hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:32]
 
@@ -128,7 +128,7 @@ def _db_allowed(db_path: Path, root: Path) -> bool:
     return _path_is_under(db_path, root)
 
 
-def _connect(root: Path, *, create: bool) -> sqlite3.Connection | None:
+def _connect(root: Path,  create: bool) -> sqlite3.Connection | None:
     db_path = _memory_db(root)
     if not _db_allowed(db_path, root):
         raise ValueError(f"memory db outside repo root: {db_path}")
@@ -144,7 +144,7 @@ def _connect(root: Path, *, create: bool) -> sqlite3.Connection | None:
 
 
 def _sqlite_failure_payload(
-    *,
+    
     tool: str,
     root: Path,
     stage: str,
@@ -443,7 +443,7 @@ def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
-def _active_identity_row(conn: sqlite3.Connection, *, root: Path, branch: str, scope: str, key: str) -> sqlite3.Row | None:
+def _active_identity_row(conn: sqlite3.Connection,  root: Path, branch: str, scope: str, key: str) -> sqlite3.Row | None:
     return conn.execute(
         """
         SELECT * FROM memory_records

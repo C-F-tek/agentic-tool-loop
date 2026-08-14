@@ -9,7 +9,7 @@ from .values import prompt_clip_value
 
 def compact_history_for_prompt(
     history: list[dict[str, Any]],
-    *,
+
     history_tail: int,
     prompt_preview_chars: int,
     ledger_builder: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],

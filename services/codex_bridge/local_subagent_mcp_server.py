@@ -29,7 +29,7 @@ SERVER_VERSION = "0.2.0"
 FORBIDDEN_PORTS = {3571, 3572, 8080, 11434, 11435}
 
 
-def string_prop(default: str | None = None, *, enum: list[str] | None = None) -> dict[str, Any]:
+def string_prop(default: str | None = None,  enum: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if default is not None:
         schema["default"] = default

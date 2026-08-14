@@ -284,7 +284,7 @@ def _planner_payload_capture_view(
 
 def _native_plain_text_final_decision(
     raw_text: str,
-    *,
+
     native_tool_names: list[str],
     prompt_context_continuation_required: dict[str, Any],
     stream_meta: dict[str, Any],
@@ -314,7 +314,6 @@ def _native_plain_text_final_decision(
 def _degenerate_output_block_decision(
     response: Mapping[str, Any],
     stream_path: Path,
-    *,
     stream_meta: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     partial = str(response.get("partial_content") or response.get("response") or "")
@@ -338,7 +337,6 @@ def _degenerate_output_block_decision(
 def _post_final_reject_turn_tool_names(
     evidence_contract: dict[str, Any],
     tool_names: list[str],
-    *,
     known_tool_names: set[str] | None = None,
 ) -> list[str]:
     known_by_lower = {}
@@ -402,8 +400,7 @@ def planner_decision(
     job_id: str,
     state: dict[str, Any],
     step: int,
-    history: list[dict[str, Any]],
-    *,
+    history: list[dict[str, Any]],  
     deps: Mapping[str, Any],
     config: Mapping[str, Any],
 ) -> dict[str, Any]:

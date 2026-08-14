@@ -114,7 +114,7 @@ def _sqlite_operator_hint(category: str) -> str:
     }.get(category, "SQLite secondary index failed; inspect filesystem job state and broker logs.")
 
 
-def _sqlite_warning(exc: Exception, *, filesystem_state_written: bool = True) -> dict[str, Any]:
+def _sqlite_warning(exc: Exception,  filesystem_state_written: bool = True) -> dict[str, Any]:
     category = _sqlite_error_category(exc)
     return {
         "sqlite_write_failed": True,
@@ -238,7 +238,7 @@ def load_agent_job_state(job_id: str) -> dict[str, Any]:
 
 def _job_list_row_from_state(
     state: dict[str, Any],
-    *,
+    
     index_source: str,
     sqlite_index_present: bool = False,
     sqlite_index_missing: bool = False,
@@ -418,7 +418,7 @@ def public_result_digest(result: Any) -> dict[str, Any]:
     return build_public_result_digest(result, AGENT_PUBLIC_RESULT_INLINE_CHARS)
 
 
-def compact_agent_terminal_response(job_id: str, *, audience: str = "operator") -> dict[str, Any]:
+def compact_agent_terminal_response(job_id: str,  audience: str = "operator") -> dict[str, Any]:
     state = load_agent_job_state(job_id)
     if not state:
         return build_missing_job_response(job_id)

@@ -123,7 +123,7 @@ def _iter_files(root: Path, suffixes: set[str], max_file_bytes: int, source: str
     raise ValueError(f"unsupported source: {source}")
 
 
-def _read_text(path: Path, *, max_file_bytes: int | None = None) -> str | None:
+def _read_text(path: Path,  max_file_bytes: int | None = None) -> str | None:
     try:
         if max_file_bytes is not None and path.stat().st_size > max_file_bytes:
             return None
@@ -273,7 +273,7 @@ def _upsert_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def _read_file_hash(path: Path, *, max_file_bytes: int | None = None) -> str | None:
+def _read_file_hash(path: Path,  max_file_bytes: int | None = None) -> str | None:
     try:
         if max_file_bytes is not None and path.stat().st_size > max_file_bytes:
             return None

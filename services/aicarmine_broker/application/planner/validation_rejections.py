@@ -170,7 +170,6 @@ def disallowed_invalid_code_product_signatures(
 
 def compact_validation_rejections_tail(
     validation_rejections: list[dict[str, Any]],
-    *,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
     compacted: list[dict[str, Any]] = []

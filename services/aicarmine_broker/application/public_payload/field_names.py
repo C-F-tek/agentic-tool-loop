@@ -75,7 +75,7 @@ def replace_public_field_name_references(text: str) -> str:
     return out
 
 
-def normalize_public_payload_field_names(value: Any, *, parent_key: str = "") -> Any:
+def normalize_public_payload_field_names(value: Any,  parent_key: str = "") -> Any:
     """Rename public field names without rewriting concrete inline payload text."""
 
     if isinstance(value, dict):

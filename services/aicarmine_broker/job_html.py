@@ -15,7 +15,7 @@ IA_VIEW_STEP_STRIP_LIMIT = 24
 HTML_PRETTY_TEXT_LIMIT = 300_000
 
 
-def _safe_text(value: Any, *, limit: int = 500) -> str:
+def _safe_text(value: Any,  limit: int = 500) -> str:
     try:
         text = str(value)
     except Exception as exc:
@@ -23,13 +23,13 @@ def _safe_text(value: Any, *, limit: int = 500) -> str:
     return text[:limit] + (f"... <truncated {len(text) - limit} chars>" if len(text) > limit else "")
 
 
-def _clip_text(text: str, *, limit: int = HTML_PRETTY_TEXT_LIMIT) -> str:
+def _clip_text(text: str,  limit: int = HTML_PRETTY_TEXT_LIMIT) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n... <truncated {len(text) - limit} chars>"
 
 
-def _json_pretty(value: Any, *, max_chars: int = HTML_PRETTY_TEXT_LIMIT) -> str:
+def _json_pretty(value: Any,  max_chars: int = HTML_PRETTY_TEXT_LIMIT) -> str:
     try:
         text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
     except Exception as exc:
@@ -153,7 +153,7 @@ def _contains_preview_only(value: Any) -> bool:
     return False
 
 
-def _prompt_window_item_violations(item: dict[str, Any], *, prefix: str) -> list[str]:
+def _prompt_window_item_violations(item: dict[str, Any],  prefix: str) -> list[str]:
     required = (
         "document_id", "section", "window_start", "window_end", "full_chars",
         "window_chars", "complete", "has_more_before", "has_more_after",
@@ -388,7 +388,7 @@ def _html_pre(value: Any) -> str:
     return f"<pre>{html.escape(text)}</pre>"
 
 
-def _html_page(title: str, body: str, *, extra_css: str = "", extra_js: str = "") -> str:
+def _html_page(title: str, body: str,  extra_css: str = "", extra_js: str = "") -> str:
     extra_css_attr = f'<style>{extra_css}</style>' if extra_css else ""
     extra_js_script = f'<script>{extra_js}</script>' if extra_js else ""
     return f"""<!doctype html>
@@ -405,7 +405,7 @@ def _html_page(title: str, body: str, *, extra_css: str = "", extra_js: str = ""
 </html>"""
 
 
-def _html_json_page(title: str, payload: Any, *, section_url: str = "", max_chars: int = 300_000) -> str:
+def _html_json_page(title: str, payload: Any,  section_url: str = "", max_chars: int = 300_000) -> str:
     json_text = _json_pretty(payload, max_chars=max_chars)
     body = f"""
 <div class="card">
@@ -418,7 +418,7 @@ def _html_json_page(title: str, payload: Any, *, section_url: str = "", max_char
     return _html_page(title, body)
 
 
-def _html_json_section(title: str, payload: Any, *, parent_url: str = "", max_chars: int = 300_000) -> str:
+def _html_json_section(title: str, payload: Any,  parent_url: str = "", max_chars: int = 300_000) -> str:
     json_text = _json_pretty(payload, max_chars=max_chars)
     body = f"""
 <h3>{html.escape(title)}</h3>
@@ -521,7 +521,7 @@ def _html_recent_job_card(job_id: str, goal: str, actions: list[tuple[str, str]]
 
 
 def _ia_debug_lanes(
-    *,
+    
     selected_step: dict[str, Any],
     prompt_available: bool,
     stream_available: bool,
@@ -592,7 +592,7 @@ def _safe_detail_key(value: Any) -> str:
 def _html_detail_block(
     title: str,
     inner_html: str,
-    *,
+    
     open_by_default: bool = False,
     detail_key: str | None = None,
 ) -> str:
@@ -605,7 +605,7 @@ def _html_detail_block(
     )
 
 
-def _html_details(title: str, value: Any, *, open_by_default: bool = False) -> str:
+def _html_details(title: str, value: Any,  open_by_default: bool = False) -> str:
     if value in (None, "", [], {}):
         return ""
     return _html_detail_block(
@@ -623,7 +623,7 @@ def _json_payload_char_count(value: Any) -> int:
         return len(_safe_text(value, limit=HTML_PRETTY_TEXT_LIMIT))
 
 
-def _json_preview(value: Any, *, max_chars: int = 220) -> str:
+def _json_preview(value: Any,  max_chars: int = 220) -> str:
     if isinstance(value, dict):
         keys = [_safe_text(key, limit=80) for key in list(value.keys())[:8]]
         suffix = " ..." if len(value) > len(keys) else ""
@@ -639,7 +639,7 @@ def _json_preview(value: Any, *, max_chars: int = 220) -> str:
     return text[:max_chars] + ("..." if len(text) > max_chars else "")
 
 
-def _html_json_payload_index(payload: Any, *, section_base_url: str, path: str) -> str:
+def _html_json_payload_index(payload: Any,  section_base_url: str, path: str) -> str:
     safe_base = section_base_url.rstrip("/")
     if isinstance(payload, dict):
         rows: list[str] = []
@@ -697,7 +697,7 @@ def _html_json_payload_index(payload: Any, *, section_base_url: str, path: str) 
 def _html_lazy_details(
     title: str,
     url: str,
-    *,
+    
     open_by_default: bool = False,
     detail_key: str | None = None,
 ) -> str:
@@ -782,7 +782,7 @@ def _decode_structured_json_text(value: str) -> Any:
     return decoded if isinstance(decoded, (dict, list)) else None
 
 
-def _html_json_tree(value: Any, *, path: str = "root", depth: int = 0, _seen: set[int] | None = None) -> str:
+def _html_json_tree(value: Any,  path: str = "root", depth: int = 0, _seen: set[int] | None = None) -> str:
     seen = _seen if _seen is not None else set()
     if isinstance(value, (dict, list)):
         marker = id(value)
@@ -1203,7 +1203,7 @@ def _step_strip_html(job_id: str, steps: list[dict[str, Any]], current_step: int
 
 
 def _html_control_panel(
-    *,
+    
     title: str,
     role: str,
     available: bool | None,
@@ -1339,7 +1339,7 @@ def _dashboard_links(job_id: str) -> str:
     )
 
 
-def _html_page(title: str, body_html: str, *, refresh_seconds: int = 0, job_id: str | None = None) -> str:
+def _html_page(title: str, body_html: str,  refresh_seconds: int = 0, job_id: str | None = None) -> str:
     gpu0_panel = _gpu0_panel_html(job_id) if job_id else ""
     return f"""<!doctype html>
 <html>
@@ -1377,7 +1377,7 @@ def _structured_json_page(
     job_id: str,
     title: str,
     payload: Any,
-    *,
+    
     summary: dict[str, Any] | None = None,
     section_base_url: str,
 ) -> str:
@@ -1418,7 +1418,7 @@ def _structured_json_section_html(
     title: str,
     payload: Any,
     section: str,
-    *,
+    
     key: str = "",
     index: int = 0,
 ) -> str:
@@ -1470,7 +1470,7 @@ def agent_job_status_json_view_html(job_id: str) -> str:
     )
 
 
-def agent_job_status_json_section_html(job_id: str, section: str, *, key: str = "", index: int = 0) -> str:
+def agent_job_status_json_section_html(job_id: str, section: str,  key: str = "", index: int = 0) -> str:
     payload = compact_agent_status(job_id, include_events=True)
     return _structured_json_section_html("Compact Status JSON View", payload, section, key=key, index=index)
 
@@ -1501,7 +1501,7 @@ def agent_job_final_json_view_html(job_id: str) -> str:
     )
 
 
-def agent_job_final_json_section_html(job_id: str, section: str, *, key: str = "", index: int = 0) -> str:
+def agent_job_final_json_section_html(job_id: str, section: str,  key: str = "", index: int = 0) -> str:
     root = agent_job_root(job_id)
     path = root / "final.json"
     if not path.exists():
@@ -1634,7 +1634,7 @@ def agent_job_events_view_html(job_id: str) -> str:
     return _html_page("Events View", body, refresh_seconds=2, job_id=job_id)
 
 
-def agent_job_events_section_html(job_id: str, section: str, *, step: str = "", index: int = 0) -> str:
+def agent_job_events_section_html(job_id: str, section: str,  step: str = "", index: int = 0) -> str:
     root = agent_job_root(job_id)
     raw, events = _read_events_ndjson(root)
     section = str(section or "").strip()
@@ -1956,7 +1956,7 @@ def _contains_gpu0_repair_text(value: Any) -> bool:
     return any(marker in text for marker in ("repair", "repaired", "correz", "correction"))
 
 
-def _collect_gpu0_repair_nodes(value: Any, *, path: str = "root") -> list[dict[str, Any]]:
+def _collect_gpu0_repair_nodes(value: Any,  path: str = "root") -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
     if isinstance(value, dict):
         for key, item in value.items():
@@ -2037,7 +2037,7 @@ def _gpu0_panel_html(job_id: str) -> str:
     )
 
 
-def agent_jobs_index_html(*, limit: int, title: str, refresh_seconds: int) -> str:
+def agent_jobs_index_html( limit: int, title: str, refresh_seconds: int) -> str:
     safe_limit = max(1, min(int(limit or 50), 200))
     jobs = list_agent_jobs(limit=safe_limit)
     rows: list[str] = []
@@ -2098,7 +2098,7 @@ pre {{ white-space: pre-wrap; margin: 0; font-size: 12px; line-height: 1.35; }}
 </html>"""
 
 
-def agent_job_ia_view_payload(job_id: str, *, include_heavy: bool = True) -> dict[str, Any]:
+def agent_job_ia_view_payload(job_id: str,  include_heavy: bool = True) -> dict[str, Any]:
     state = load_agent_job_state(job_id)
     if not state:
         return {"ok": False, "job_id": job_id, "error": "job_not_found"}
@@ -2271,7 +2271,7 @@ def _ia_view_payload_step(payload: dict[str, Any], requested_step: int = 0) -> d
     return {}
 
 
-def agent_job_ia_view_section_html(job_id: str, section: str, *, step: int = 0) -> str:
+def agent_job_ia_view_section_html(job_id: str, section: str,  step: int = 0) -> str:
     root = agent_job_root(job_id)
     section_name = str(section or "").strip()
     try:

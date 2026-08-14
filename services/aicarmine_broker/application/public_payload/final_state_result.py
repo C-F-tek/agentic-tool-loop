@@ -10,7 +10,7 @@ HistoryLedgerBuilder = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
 
 def compact_final_state_result(
     result: dict[str, Any] | None,
-    *,
+    
     history_ledger_builder: HistoryLedgerBuilder,
 ) -> dict[str, Any]:
     if not isinstance(result, dict):

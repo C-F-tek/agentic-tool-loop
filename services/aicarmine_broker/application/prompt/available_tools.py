@@ -12,7 +12,6 @@ StorePromptTextWindow = Callable[..., dict[str, Any]]
 
 def available_tools_window_pack(
     root: Path,
-    *,
     goal: str,
     available_tools: Any,
     window_chars: int,

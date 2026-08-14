@@ -58,7 +58,7 @@ def _clean(value: Any) -> Any:
     return value
 
 
-def _priority_item_from_artifact(row: dict[str, Any], *, artifact_index: int) -> dict[str, Any]:
+def _priority_item_from_artifact(row: dict[str, Any],  artifact_index: int) -> dict[str, Any]:
     artifact = _as_dict(row.get("artifact"))
     kind = str(artifact.get("kind") or "")
     tool = row.get("tool")
@@ -147,7 +147,7 @@ def _priority_item_from_artifact(row: dict[str, Any], *, artifact_index: int) ->
     return {}
 
 
-def _generic_tool_result_priority_item(row: dict[str, Any], *, artifact_index: int) -> dict[str, Any]:
+def _generic_tool_result_priority_item(row: dict[str, Any],  artifact_index: int) -> dict[str, Any]:
     artifact = _as_dict(row.get("artifact"))
     if not artifact:
         return {}
@@ -613,7 +613,7 @@ def _append_unique(values: list[str], value: str) -> None:
 
 
 def _payload_search_order(
-    *,
+    
     concrete_results: list[dict[str, Any]],
     partial_results: list[dict[str, Any]],
     descriptive_only: list[dict[str, Any]],
@@ -656,7 +656,7 @@ def _owner_for_priority_item(item: dict[str, Any], row: dict[str, Any] | None = 
 
 
 def _primary_descriptor_from_row(
-    *,
+    
     row: dict[str, Any],
     item: dict[str, Any],
     item_index: int | None,
@@ -749,7 +749,7 @@ class PublicEvidenceMaterializer:
 
     def materialize(
         self,
-        *,
+        
         tool_context: dict[str, Any] | str | None,
         evidence_guide: str = "",
         completed: bool = False,
@@ -780,7 +780,7 @@ class PublicEvidenceMaterializer:
         self,
         tool_context: dict[str, Any],
         evidence_guide: str,
-        *,
+        
         completed: bool,
     ) -> dict[str, Any]:
         artifact_rows = [_as_dict(row) for row in _as_list(tool_context.get("artifacts"))]
@@ -837,7 +837,7 @@ class PublicEvidenceMaterializer:
         self,
         priority_evidence: dict[str, Any],
         tool_context: dict[str, Any],
-        *,
+        
         completed: bool,
     ) -> dict[str, Any]:
         concrete_results: list[dict[str, Any]] = []
@@ -905,7 +905,7 @@ class PublicEvidenceMaterializer:
 
     def _materialization_report(
         self,
-        *,
+        
         tool_context: dict[str, Any],
         priority_evidence: dict[str, Any],
         payload_index: dict[str, Any],
@@ -968,7 +968,7 @@ class PublicEvidenceMaterializer:
 
 
 def materialize_public_evidence(
-    *,
+    
     tool_context: dict[str, Any] | str | None,
     evidence_guide: str = "",
     completed: bool = False,

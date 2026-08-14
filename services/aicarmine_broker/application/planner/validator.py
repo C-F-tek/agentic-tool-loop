@@ -2587,6 +2587,46 @@ def validate_planner_decision_against_evidence(
         violations.append(f"invalid_tool:{tool}")
         return {"ok": False, "violations": violations, "evidence_contract": contract}
 
+    # Explicit check: reject repo_read on paths already in verified_content_reads
+    # This prevents the planner from repeatedly calling repo_read for files it has already read.
+    if tool == "repo_read":
+        decision_paths_list = args.get("paths", []) if isinstance(args.get("arguments"), dict) else []
+        if not isinstance(decision_paths_list, list):
+            decision_paths_list = [args.get("path")] if args.get("path") else []
+        decision_paths_list = [p for p in decision_paths_list if p]
+        
+        verified_rows = contract.get("verified_content_reads") if isinstance(contract.get("verified_content_reads"), list) else []
+        verified_paths = {
+            _repo_rel_token(row.get("path"))
+            for row in verified_rows
+            if isinstance(row, dict) and row.get("path")
+        }
+        
+        # Check if any requested path is already verified
+        already_read = []
+        for dp in decision_paths_list:
+            token = _repo_rel_token(dp)
+            if token and token in verified_paths:
+                already_read.append(token)
+        
+        if already_read:
+            violations.append(f"repo_read_already_successful:" + ",".join(already_read[:5]))
+            contract["required_next_tool_call"] = {}
+            contract.pop("required_next_tool_call_validated", None)
+            contract.pop("required_next_tool_call_validation_source", None)
+            contract["forbidden_repeated_repo_read_paths"] = list(set(already_read)[:40])
+            contract["duplicate_repo_read_recovery_count"] = {
+                p: int(contract.get("duplicate_repo_read_recovery_count", {}).get(p, 0) + 1)
+                for p in already_read
+            }
+            contract["required_next_progress"] = (
+                "repo_read target paths are already in verified_content_reads. "
+                f"Already read: {already_read[:5]}. "
+                "Use evidence from existing verified reads instead of calling repo_read again. "
+                "Choose a different unread path or action=final/block."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if _contract_final_required_now(contract) and not prompt_context_continuation_matches:
         final_composition_tools = _final_composition_tool_names_from_candidates(contract)
         if tool not in SUPPORT_SUBTURN_TOOLS and tool not in final_composition_tools:

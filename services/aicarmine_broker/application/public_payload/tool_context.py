@@ -149,7 +149,7 @@ def strip_public_local_references(value: Any) -> Any:
 
 def public_tool_response(
     tool_result: dict[str, Any],
-    *,
+    
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
@@ -272,7 +272,7 @@ def public_tool_response(
 
 def _public_tool_turns(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
@@ -320,7 +320,7 @@ def _public_tool_turns(
 
 def successful_tool_turns(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
@@ -336,7 +336,7 @@ def successful_tool_turns(
 
 def failed_tool_turns(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
@@ -352,7 +352,7 @@ def failed_tool_turns(
 
 def public_tool_artifact_rows(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,
@@ -497,7 +497,7 @@ def ollama_turn_rows(
 def planner_turn_memory(
     history: list[dict[str, Any]],
     terminal_decision: dict[str, Any] | None = None,
-    *,
+    
     same_tool_artifact_payload: ArtifactPayloadLoader,
     repo_read_item_full_content: RepoReadContentLoader,
     code_product_build_state_kind: str,

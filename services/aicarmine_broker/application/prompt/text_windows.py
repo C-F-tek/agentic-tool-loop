@@ -8,7 +8,7 @@ from .values import text_hash
 
 def window_text(
     text: str,
-    *,
+    
     center: str = "",
     max_chars: int = 6000,
 ) -> dict[str, Any]:
@@ -48,7 +48,7 @@ def window_text(
     }
 
 
-def diff_chunks(diff_text: str, *, chunk_chars: int = 6000) -> list[dict[str, Any]]:
+def diff_chunks(diff_text: str, chunk_chars: int = 6000) -> list[dict[str, Any]]:
     text = str(diff_text or "")
     if not text:
         return []

@@ -81,7 +81,7 @@ class BrokerConfig:
     max_tool_result_chars: int
     v6_marker: str
 
-def _normalized_lane_mode(value: object, *, default: str = "legacy") -> str:
+def _normalized_lane_mode(value: object,  default: str = "legacy") -> str:
     """Normalize lane mode value.
     Contract:
     - valori ammessi: legacy, shadow, active;
@@ -98,7 +98,7 @@ def _normalized_lane_mode(value: object, *, default: str = "legacy") -> str:
         return normalized
     return default
 
-def _resolved_path(value: Any, *, env_name: str) -> Path:
+def _resolved_path(value: Any,  env_name: str) -> Path:
     try:
         raw = str(value).strip()
     except Exception as exc:
@@ -228,8 +228,8 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         planner_top_p=env_float("AICARMINE_AGENTIC_PLANNER_TOP_P", 0.85, env),
         planner_presence_penalty=env_float("AICARMINE_AGENTIC_PLANNER_PRESENCE_PENALTY", 0.0, env),
         planner_incomprehensible_retries=env_int("AICARMINE_AGENTIC_PLANNER_INCOMPREHENSIBLE_RETRIES", 3, env),
-        native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", True, env),
-        require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", True, env),
+        native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_NATIVE_TOOLS", False, env),
+        require_native_tools=env_bool("AICARMINE_AGENTIC_PLANNER_REQUIRE_NATIVE_TOOLS", False, env),
         native_max_parallel_readonly=env_int("AICARMINE_AGENTIC_PLANNER_NATIVE_MAX_PARALLEL_READONLY", 8, env),
         agent_default_max_steps=env_int("AICARMINE_AGENT_DEFAULT_MAX_STEPS", 20, env),
         agent_max_steps=env_int("AICARMINE_AGENT_MAX_STEPS", 60, env),

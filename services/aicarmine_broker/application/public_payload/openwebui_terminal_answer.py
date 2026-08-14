@@ -79,7 +79,7 @@ def _terminal_evidence_first_text(
     status_text: str,
     summary: str,
     result: dict[str, Any],
-    *,
+    
     execution_evidence_digest_text: ResultTextBuilder,
 ) -> str:
     evidence = execution_evidence_digest_text(result)
@@ -101,7 +101,7 @@ def answer_for_openwebui(
     status: str,
     final_summary: str,
     result: dict[str, Any] | None,
-    *,
+    
     code_product_answer_text: ResultTextBuilder,
     execution_evidence_digest_text: ResultTextBuilder,
     partial_product_answer_text: ResultTextBuilder,

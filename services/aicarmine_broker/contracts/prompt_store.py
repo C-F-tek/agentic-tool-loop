@@ -12,7 +12,7 @@ class PromptStore(Protocol):
     text windows with tracking metadata for evidence reconstruction.
     """
 
-    def write_document(self, *, section: str, text: str) -> str:
+    def write_document(self,  section: str, text: str) -> str:
         """Persist a complete prompt document and return its document id.
 
         Args:
@@ -23,7 +23,7 @@ class PromptStore(Protocol):
         """
     def read_window(
         self,
-        *,
+        
         document_id: str,
         offset: int,
         max_chars: int,
