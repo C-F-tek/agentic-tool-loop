@@ -116,7 +116,7 @@ def _resolved_path(value: Any, *, env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "mio-qwen-code-6:latest"
+DEFAULT_PLANNER_MODEL = "Qwen_Qwen3.6-35B_v1:latest"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -184,7 +184,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         ),
         ollama_task_model=env_first(
             ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
-            "mio-qwen-code-6:latest",
+            "Qwen_Qwen3.6-35B_v1:latest",
             env,
         ),
         ollama_keep_alive=env_first(
