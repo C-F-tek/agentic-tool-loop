@@ -68,9 +68,15 @@ Start from these documents before changing runtime behavior:
 12. [services/codex_bridge/MODULE_REFERENCE.md](services/codex_bridge/MODULE_REFERENCE.md)
    - Codex bridge module reference.
 13. [services/codex_bridge/MCP_GUIDE.md](services/codex_bridge/MCP_GUIDE.md)
-   - Codex MCP server/tool map, client JSON compatibility, confirmation gates
-     and debug playbooks.
-14. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
+    - Codex MCP server/tool map, client JSON compatibility, confirmation gates
+      and debug playbooks.
+14. [services/MCP_TOOL_INDEX.md](services/MCP_TOOL_INDEX.md)
+    - Central index of all available MCP servers and tools with categorization
+      and tool selection guide.
+15. [services/SKILLS_INDEX.md](services/SKILLS_INDEX.md)
+    - Central index of all Cline/Coder skills with activation guide and
+      cross-reference to task types.
+16. [services/launch/MODULE_REFERENCE.md](services/launch/MODULE_REFERENCE.md)
    - Launch-script module reference.
 15. [services/model_export/MODULE_REFERENCE.md](services/model_export/MODULE_REFERENCE.md)
    - Model export module reference.

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1080" viewBox="0 0 1280 1080" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1100" viewBox="0 0 1280 1100" role="img" aria-labelledby="title desc">
   <title id="title">Agentic Tool Loop Runtime Flow</title>
-  <desc id="desc">OpenWebUI calls 3571 vulkan_helper, 3571 forwards to 3572 broker, 3572 runs planner validation and tools, local storage is rehydrated internally, and 3571 returns inline payloads to OpenWebUI.</desc>
+  <desc id="desc">OpenWebUI calls 3571 vulkan_helper, 3571 forwards to 3572 broker, 3572 runs planner validation and tools, local storage is rehydrated internally, and 3571 returns inline payloads to OpenWebUI. MCP tool surface authoritative.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
@@ -23,6 +23,7 @@
       .boxOrange { fill: #fff7ed; stroke: #ea580c; stroke-width: 1.6; rx: 10; }
       .boxRed { fill: #fef2f2; stroke: #b91c1c; stroke-width: 1.6; rx: 10; }
       .boxGray { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.6; rx: 10; }
+      .boxPurple { fill: #faf5ff; stroke: #a855f7; stroke-width: 1.6; rx: 10; }
       .title { font-family: Segoe UI, Arial, sans-serif; font-size: 26px; font-weight: 700; fill: #0f172a; }
       .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 14px; fill: #475569; }
       .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
@@ -36,9 +37,9 @@
     </style>
   </defs>
 
-  <rect class="bg" x="0" y="0" width="1280" height="1080"/>
+  <rect class="bg" x="0" y="0" width="1280" height="1100"/>
   <text class="title" x="40" y="44">Agentic Tool Loop Runtime Flow</text>
-  <text class="subtitle" x="40" y="68">3571 exposes only vulkan_helper to OpenWebUI. 3572 owns planner loop, validation, storage and internal tools.</text>
+  <text class="subtitle" x="40" y="68">3571 exposes only vulkan_helper to OpenWebUI. 3572 owns planner loop, validation, storage and internal tools. MCP tool surface authoritative.</text>
 
   <rect class="lane" x="32" y="100" width="285" height="740" rx="18"/>
   <text class="label" x="54" y="128">Public OpenWebUI Surface</text>
@@ -52,6 +53,7 @@
   <text class="label" x="944" y="128">Local Storage And Diagnostics</text>
   <text class="tiny" x="944" y="148">Operator/dashboard only</text>
 
+  <!-- Row 1: Core flow -->
   <rect class="boxBlue" x="62" y="180" width="225" height="96"/>
   <text class="label" x="82" y="208">OpenWebUI / 30B</text>
   <text class="small" x="82" y="231">calls one public tool</text>
@@ -124,6 +126,7 @@
   <text class="small" x="972" y="633">raw payload inspection</text>
   <text class="small" x="972" y="654">read-only diagnostics</text>
 
+  <!-- Row 3: Supporting services -->
   <rect class="boxBlue" x="62" y="610" width="225" height="140"/>
   <text class="label" x="82" y="638">3571 Public Result</text>
   <text class="small" x="82" y="661">payload_index_for_30b</text>
@@ -131,10 +134,23 @@
   <text class="small" x="82" y="703">openwebui_usage</text>
   <text class="small" x="82" y="724">tool_context_for_30b JSON</text>
 
-  <rect class="boxRed" x="384" y="730" width="828" height="70"/>
-  <text class="warn" x="406" y="758">Public payload rule</text>
-  <text class="small" x="406" y="782">OpenWebUI never reads final_path, artifact_path, workspace, SQLite ids, reads/*.json or tool-results/*.json. 3571 may load them only to expand inline content.</text>
+  <rect class="boxPurple" x="384" y="690" width="228" height="90"/>
+  <text class="label" x="404" y="715">MCP Tool Surface</text>
+  <text class="small" x="404" y="738">26+ MCP servers (authoritative)</text>
+  <text class="small" x="404" y="758">tools/list as source of truth</text>
+  <text class="small" x="404" y="778">No HTTP fallback for missing tools</text>
 
+  <rect class="boxPurple" x="654" y="690" width="224" height="90"/>
+  <text class="label" x="674" y="715">RAG Agent Loop</text>
+  <text class="small" x="674" y="738">agentic_loop_logc_app</text>
+  <text class="small" x="674" y="758">SQLite/PostgreSQL connector</text>
+  <text class="small" x="674" y="778">RAG indexer + retriever + reranker</text>
+
+  <rect class="boxRed" x="384" y="790" width="828" height="70"/>
+  <text class="warn" x="406" y="818">Public payload rule</text>
+  <text class="small" x="406" y="842">OpenWebUI never reads final_path, artifact_path, workspace, SQLite ids, reads/*.json or tool-results/*.json. 3571 may load them only to expand inline content.</text>
+
+  <!-- Arrows -->
   <path class="arrow" d="M 174 276 L 174 340"/>
   <path class="arrow" d="M 287 403 L 384 236"/>
   <path class="arrow" d="M 612 236 L 654 236"/>
@@ -153,6 +169,7 @@
   <path class="arrowGreen" d="M 287 680 L 62 680"/>
   <path class="arrowRed" d="M 952 760 L 300 760"/>
 
+  <!-- Labels -->
   <text class="tiny" x="310" y="214">forward request</text>
   <text class="tiny" x="617" y="220">planner turn</text>
   <text class="tiny" x="685" y="326">validate</text>
@@ -161,19 +178,28 @@
   <text class="tiny" x="812" y="235">write/read local evidence</text>
   <text class="tiny" x="610" y="704">rehydrate internally, sanitize public output</text>
 
-  <rect class="boxGray" x="40" y="850" width="1208" height="134" rx="14"/>
-  <text class="label" x="62" y="878">Folder Flow Index</text>
-  <text class="tiny" x="62" y="900">Each linked SVG is stored in the owning folder and links back to this runtime flow.</text>
-  <a href="services/flow.svg"><rect class="box" x="62" y="922" width="210" height="30" rx="8"/><text class="small" x="76" y="942">services</text></a>
-  <a href="services/aicarmine_broker/flow.svg"><rect class="box" x="300" y="922" width="210" height="30" rx="8"/><text class="small" x="314" y="942">3572 broker</text></a>
-  <a href="services/vulkan_bridge/flow.svg"><rect class="box" x="538" y="922" width="210" height="30" rx="8"/><text class="small" x="552" y="942">3571 bridge</text></a>
-  <a href="services/launch/flow.svg"><rect class="box" x="776" y="922" width="210" height="30" rx="8"/><text class="small" x="790" y="942">launch</text></a>
-  <a href="services/codex_bridge/flow.svg"><rect class="box" x="1014" y="922" width="210" height="30" rx="8"/><text class="small" x="1028" y="942">codex bridge</text></a>
-  <a href="services/model_export/flow.svg"><rect class="box" x="62" y="964" width="210" height="30" rx="8"/><text class="small" x="76" y="984">model export</text></a>
-  <a href="codex_ollama_bridge_applied/flow.svg"><rect class="box" x="300" y="964" width="210" height="30" rx="8"/><text class="small" x="314" y="984">applied bridge</text></a>
-  <a href="codex_ollama_bridge_applied/useful_tools/flow.svg"><rect class="box" x="538" y="964" width="210" height="30" rx="8"/><text class="small" x="552" y="984">useful tools</text></a>
-  <a href="codex_ollama_bridge_applied/useful_tools/context/flow.svg"><rect class="box" x="776" y="964" width="210" height="30" rx="8"/><text class="small" x="790" y="984">context</text></a>
-  <a href="codex_ollama_bridge_applied/useful_tools/memory/flow.svg"><rect class="box" x="1014" y="964" width="210" height="30" rx="8"/><text class="small" x="1028" y="984">memory</text></a>
+  <!-- Folder Flow Index -->
+  <rect class="boxGray" x="40" y="870" width="1208" height="190" rx="14"/>
+  <text class="label" x="62" y="898">Folder Flow Index</text>
+  <text class="tiny" x="62" y="920">Each linked SVG is stored in the owning folder and links back to this runtime flow.</text>
+  
+  <a href="services/flow.svg"><rect class="box" x="62" y="934" width="210" height="30" rx="8"/><text class="small" x="76" y="954">services</text></a>
+  <a href="services/aicarmine_broker/flow.svg"><rect class="box" x="300" y="934" width="210" height="30" rx="8"/><text class="small" x="314" y="954">3572 broker</text></a>
+  <a href="services/vulkan_bridge/flow.svg"><rect class="box" x="538" y="934" width="210" height="30" rx="8"/><text class="small" x="552" y="954">3571 bridge</text></a>
+  <a href="services/launch/flow.svg"><rect class="box" x="776" y="934" width="210" height="30" rx="8"/><text class="small" x="790" y="954">launch</text></a>
+  <a href="services/codex_bridge/flow.svg"><rect class="box" x="1014" y="934" width="210" height="30" rx="8"/><text class="small" x="1028" y="954">codex bridge</text></a>
+  
+  <a href="services/model_export/flow.svg"><rect class="box" x="62" y="974" width="210" height="30" rx="8"/><text class="small" x="76" y="994">model export</text></a>
+  <a href="codex_ollama_bridge_applied/flow.svg"><rect class="box" x="300" y="974" width="210" height="30" rx="8"/><text class="small" x="314" y="994">applied bridge</text></a>
+  <a href="codex_ollama_bridge_applied/useful_tools/flow.svg"><rect class="box" x="538" y="974" width="210" height="30" rx="8"/><text class="small" x="552" y="994">useful tools</text></a>
+  <a href="codex_ollama_bridge_applied/useful_tools/context/flow.svg"><rect class="box" x="776" y="974" width="210" height="30" rx="8"/><text class="small" x="790" y="994">context</text></a>
+  <a href="codex_ollama_bridge_applied/useful_tools/memory/flow.svg"><rect class="box" x="1014" y="974" width="210" height="30" rx="8"/><text class="small" x="1028" y="994">memory</text></a>
 
-  <text class="subtitle" x="40" y="1040">Test-backed invariants: filesystem survives SQLite failure; 3571 OpenAPI exposes only /vulkan_helper; command tools classify consent; final_path rehydration does not leak local paths.</text>
+  <!-- Documentation links -->
+  <a href="services/MCP_TOOL_INDEX.md"><rect class="boxBlue" x="62" y="1014" width="210" height="30" rx="8"/><text class="small" x="76" y="1034">MCP Tool Index</text></a>
+  <a href="services/SKILLS_INDEX.md"><rect class="boxGreen" x="300" y="1014" width="210" height="30" rx="8"/><text class="small" x="314" y="1034">Skills Index</text></a>
+  <a href="services/END_TO_END_AGENTIC_FLOW.md"><rect class="boxOrange" x="538" y="1014" width="210" height="30" rx="8"/><text class="small" x="552" y="1034">End-to-End Flow</text></a>
+  <a href="README.md"><rect class="boxGray" x="776" y="1014" width="210" height="30" rx="8"/><text class="small" x="790" y="1034">README</text></a>
+
+  <text class="subtitle" x="40" y="1080">Test-backed invariants: filesystem survives SQLite failure; 3571 OpenAPI exposes only /vulkan_helper; command tools classify consent; final_path rehydration does not leak local paths; MCP tool surface is authoritative.</text>
 </svg>

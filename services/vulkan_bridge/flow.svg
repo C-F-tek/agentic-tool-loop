@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="720" viewBox="0 0 1060 720" role="img">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
@@ -14,69 +14,115 @@
     .orange { fill: #fff7ed; stroke: #ea580c; }
     .gray { fill: #f1f5f9; stroke: #64748b; }
     .red { fill: #fef2f2; stroke: #b91c1c; }
+    .purple { fill: #faf5ff; stroke: #a855f7; }
     .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
     .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
     .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
     .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
     .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
     .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
-
     </style>
   </defs>
-  <rect class="bg" x="0" y="0" width="980" height="640"/>
+  <rect class="bg" x="0" y="0" width="1060" height="720"/>
   <text class="title" x="34" y="42">3571 Public Bridge Flow</text>
-  <text class="subtitle" x="34" y="64">OpenWebUI-facing surface: one public tool, inline payloads, no local path dependency.</text>
-  <path class="arrow" d="M 268 164 L 360 164"/>
-  <text class="tiny" x="286" y="152">public call</text>
-  <path class="arrow" d="M 590 164 L 676 164"/>
-  <text class="tiny" x="612" y="152">forward</text>
-  <path class="arrow" d="M 676 362 L 590 362"/>
-  <text class="tiny" x="602" y="350">terminal data</text>
-  <path class="arrow" d="M 268 362 L 360 362"/>
-  <text class="tiny" x="290" y="350">shape</text>
-  <rect class="box blue" x="48" y="112" width="220" height="104" rx="10"/>
-    <text class="label" x="64" y="139">OpenWebUI call</text>
-    <text class="small" x="64" y="163">POST /vulkan_helper</text>
-    <text class="small" x="64" y="182">request/action/job_id</text>
-    <text class="small" x="64" y="201">wait_seconds</text>
+  <text class="subtitle" x="34" y="64">OpenWebUI-facing surface: one public tool, inline payloads, no local path dependency. MCP tool surface authoritative.</text>
+  
+  <!-- Arrows -->
+  <path class="arrow" d="M 280 164 L 390 164"/>
+  <text class="tiny" x="298" y="152">public call</text>
+  <path class="arrow" d="M 640 164 L 744 164"/>
+  <text class="tiny" x="662" y="152">forward</text>
+  <path class="arrow" d="M 744 362 L 640 362"/>
+  <text class="tiny" x="672" y="350">terminal data</text>
+  <path class="arrow" d="M 280 362 L 390 362"/>
+  <text class="tiny" x="302" y="350">shape</text>
+  
+  <!-- Row 1: Core flow -->
+  <rect class="box blue" x="48" y="112" width="232" height="104"/>
+  <text class="label" x="64" y="139">OpenWebUI call</text>
+  <text class="small" x="64" y="163">POST /vulkan_helper</text>
+  <text class="small" x="64" y="182">request/action/job_id</text>
+  <text class="small" x="64" y="201">wait_seconds</text>
+
   <a href="app.py">
-    <rect class="box green" x="360" y="112" width="230" height="104" rx="10"/>
-    <text class="label" x="376" y="139">Request routing</text>
-    <text class="small" x="376" y="163">normalize payload</text>
-    <text class="small" x="376" y="182">select 3572 action</text>
-    <text class="small" x="376" y="201">post to agent URL</text>
+    <rect class="box green" x="390" y="112" width="250" height="104" rx="10"/>
+    <text class="label" x="406" y="139">Request routing</text>
+    <text class="small" x="406" y="163">normalize payload</text>
+    <text class="small" x="406" y="182">select 3572 action</text>
+    <text class="small" x="406" y="201">post to agent URL</text>
   </a>
+  
   <a href="../aicarmine_broker/flow.svg">
-    <rect class="box gray" x="676" y="112" width="220" height="104" rx="10"/>
-    <text class="label" x="692" y="139">3572 broker</text>
-    <text class="small" x="692" y="163">start/status/result</text>
-    <text class="small" x="692" y="182">terminal response</text>
-    <text class="small" x="692" y="201">internal job state</text>
+    <rect class="box gray" x="744" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="760" y="139">3572 broker</text>
+    <text class="small" x="760" y="163">start/status/result</text>
+    <text class="small" x="760" y="182">terminal response</text>
+    <text class="small" x="760" y="201">internal job state</text>
   </a>
+
+  <!-- Row 2: Terminal wrapper and payload -->
   <a href="app.py">
-    <rect class="box green" x="48" y="310" width="220" height="112" rx="10"/>
+    <rect class="box green" x="48" y="310" width="232" height="112" rx="10"/>
     <text class="label" x="64" y="337">Terminal wrapper</text>
     <text class="small" x="64" y="361">rehydrate final_path internally</text>
     <text class="small" x="64" y="380">sanitize local paths</text>
     <text class="small" x="64" y="399">preserve inline evidence</text>
   </a>
-  <a href="openapi_builder.py">
-    <rect class="box blue" x="360" y="310" width="230" height="112" rx="10"/>
-    <text class="label" x="376" y="337">Public payload</text>
-    <text class="small" x="376" y="361">payload_index_for_30b</text>
-    <text class="small" x="376" y="380">priority_evidence_for_30b</text>
-    <text class="small" x="376" y="399">tool_context_for_30b</text>
+
+  <a href="../aicarmine_broker/public_wrapper.py">
+    <rect class="box blue" x="390" y="310" width="250" height="112" rx="10"/>
+    <text class="label" x="406" y="337">Public payload builder</text>
+    <text class="small" x="406" y="361">payload_index_for_30b</text>
+    <text class="small" x="406" y="380">priority_evidence_for_30b</text>
+    <text class="small" x="406" y="399">tool_context_for_30b JSON</text>
   </a>
-  <a href="openapi_builder.py">
-    <rect class="box orange" x="676" y="310" width="220" height="112" rx="10"/>
-    <text class="label" x="692" y="337">OpenAPI contract</text>
-    <text class="small" x="692" y="361">only vulkan_helper visible</text>
-    <text class="small" x="692" y="380">no internal tools</text>
-    <text class="small" x="692" y="399">schema names payload fields</text>
+
+  <a href="../aicarmine_broker/tool_contract.py">
+    <rect class="box orange" x="744" y="310" width="230" height="112" rx="10"/>
+    <text class="label" x="760" y="337">OpenAPI contract</text>
+    <text class="small" x="760" y="361">only vulkan_helper visible</text>
+    <text class="small" x="760" y="380">no internal tools exposed</text>
+    <text class="small" x="760" y="399">schema names payload fields</text>
   </a>
-  <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
-  <a href="../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
-  <a href="../flow.svg"><text class="link" x="162" y="602">Services flow</text></a>
-  <a href="MODULE_REFERENCE.md"><text class="link" x="300" y="602">Module ref</text></a>
-  <a href="README.md"><text class="link" x="414" y="602">README</text></a>
+
+  <!-- Row 3: Supporting components -->
+  <a href="../aicarmine_broker/application/public_payload/terminal_sanitizer.py">
+    <rect class="box purple" x="48" y="500" width="232" height="96" rx="10"/>
+    <text class="label" x="64" y="525">Terminal sanitizer</text>
+    <text class="small" x="64" y="549">strip local paths</text>
+    <text class="small" x="64" y="569">expand inline content</text>
+    <text class="small" x="64" y="589">evidence materializer</text>
+  </a>
+
+  <a href="../aicarmine_broker/application/public_payload/evidence_materializer.py">
+    <rect class="box green" x="390" y="500" width="250" height="96" rx="10"/>
+    <text class="label" x="406" y="525">Evidence materializer</text>
+    <text class="small" x="406" y="549">rehydrate from filesystem</text>
+    <text class="small" x="406" y="569">SQLite secondary index</text>
+    <text class="small" x="406" y="589">tool_context_for_30b builder</text>
+  </a>
+
+  <a href="../MCP_TOOL_INDEX.md">
+    <rect class="box blue" x="744" y="500" width="230" height="96" rx="10"/>
+    <text class="label" x="760" y="525">MCP Tool Index</text>
+    <text class="small" x="760" y="549">authoritative tool surface</text>
+    <text class="small" x="760" y="569">tools/list as source of truth</text>
+    <text class="small" x="760" y="589">No HTTP fallback policy</text>
+  </a>
+
+  <!-- Navigation footer -->
+  <rect class="box gray" x="34" y="610" width="992" height="80" rx="10"/>
+  <text class="label" x="52" y="638">Navigation Links</text>
+  <a href="../../flow.svg"><text class="link" x="52" y="662">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="662">Services flow</text></a>
+  <a href="../aicarmine_broker/flow.svg"><text class="link" x="272" y="662">Broker flow</text></a>
+  <a href="app.py"><text class="link" x="390" y="662">App.py</text></a>
+  <a href="../aicarmine_broker/public_wrapper.py"><text class="link" x="500" y="662">Public Wrapper</text></a>
+  <a href="../aicarmine_broker/application/public_payload/terminal_sanitizer.py"><text class="link" x="630" y="662">Sanitizer</text></a>
+  <a href="../aicarmine_broker/application/public_payload/evidence_materializer.py"><text class="link" x="750" y="662">Evidence Materializer</text></a>
+  <a href="../MCP_TOOL_INDEX.md"><text class="link" x="890" y="662">MCP Index</text></a>
+
+  <!-- Updated invariant text -->
+  <rect class="box gray" x="34" y="680" width="992" height="30" rx="8"/>
+  <text class="tiny" x="52" y="700">Test-backed invariants: filesystem survives SQLite failure; 3571 OpenAPI exposes only /vulkan_helper; command tools classify consent; final_path rehydration does not leak local paths.</text>
 </svg>
