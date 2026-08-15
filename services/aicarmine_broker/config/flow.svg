@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="720" viewBox="0 0 1060 720" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .purple { fill: #faf5ff; stroke: #a855f7; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1060" height="720"/>
+  <text class="title" x="34" y="42">Configuration Layer Flow</text>
+  <text class="subtitle" x="34" y="64">Environment loading, model configuration, and settings management for broker services. MCP tool surface authoritative.</text>
+  
+  <!-- Arrows -->
+  <path class="arrow" d="M 280 164 L 390 164"/>
+  <text class="tiny" x="298" y="152">loads</text>
+  <path class="arrow" d="M 640 164 L 744 164"/>
+  <text class="tiny" x="662" y="152">applies</text>
+  
+  <!-- Row 1: Core config modules -->
+  <a href="__init__.py">
+    <rect class="box blue" x="48" y="112" width="232" height="104" rx="10"/>
+    <text class="label" x="64" y="139">Config Package Init</text>
+    <text class="small" x="64" y="163">exports all config models</text>
+    <text class="small" x="64" y="182">env_loader, models</text>
+    <text class="small" x="64" y="201">unified import surface</text>
+  </a>
+
+  <a href="env_loader.py">
+    <rect class="box green" x="390" y="112" width="250" height="104" rx="10"/>
+    <text class="label" x="406" y="139">Env Loader</text>
+    <text class="small" x="406" y="163">AICARMINE_LAB_REPO resolution</text>
+    <text class="small" x="406" y="182">port configuration loading</text>
+    <text class="small" x="406" y="201">environment variable mapping</text>
+  </a>
+  
+  <a href="models.py">
+    <rect class="box orange" x="744" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="760" y="139">Config Models</text>
+    <text class="small" x="760" y="163">BrokerConfig dataclass</text>
+    <text class="small" x="760" y="182">PortSettings, RepoPathPolicy</text>
+    <text class="small" x="760" y="201">validation rules</text>
+  </a>
+
+  <!-- Row 2: Config usage patterns -->
+  <a href="../domain/config.py">
+    <rect class="box purple" x="48" y="310" width="232" height="112" rx="10"/>
+    <text class="label" x="64" y="337">Domain Config Models</text>
+    <text class="small" x="64" y="361">config in domain layer</text>
+    <text class="small" x="64" y="380">pure dataclasses, no I/O</text>
+    <text class="small" x="64" y="399">implements config contract</text>
+  </a>
+
+  <a href="../app.py">
+    <rect class="box blue" x="390" y="310" width="250" height="112" rx="10"/>
+    <text class="label" x="406" y="337">App Config Usage</text>
+    <text class="small" x="406" y="361">broker app initialization</text>
+    <text class="small" x="406" y="380">port binding from config</text>
+    <text class="small" x="406" y="399">repo root resolution</text>
+  </a>
+
+  <a href="../../MCP_TOOL_INDEX.md">
+    <rect class="box green" x="744" y="310" width="230" height="112" rx="10"/>
+    <text class="label" x="760" y="337">MCP Tool Index</text>
+    <text class="small" x="760" y="361">authoritative tool surface</text>
+    <text class="small" x="760" y="380">tools/list as source of truth</text>
+    <text class="small" x="760" y="399">No HTTP fallback policy</text>
+  </a>
+
+  <!-- Row 3: Config validation -->
+  <a href="../config/models.py">
+    <rect class="box orange" x="48" y="500" width="232" height="96" rx="10"/>
+    <text class="label" x="64" y="525">Model Validation</text>
+    <text class="small" x="64" y="549">type hints on config fields</text>
+    <text class="small" x="64" y="569">default value enforcement</text>
+    <text class="small" x="64" y="589">pyright type checking</text>
+  </a>
+
+  <a href="../tests/test_planner.py">
+    <rect class="box purple" x="390" y="500" width="250" height="96" rx="10"/>
+    <text class="label" x="406" y="525">Config Tests</text>
+    <text class="small" x="406" y="549">test_planner.py references</text>
+    <text class="small" x="406" y="569">config fixture setup</text>
+    <text class="small" x="406" y="589">port validation tests</text>
+  </a>
+
+  <!-- Navigation footer -->
+  <rect class="box gray" x="34" y="610" width="992" height="80" rx="10"/>
+  <text class="label" x="52" y="638">Navigation Links</text>
+  <a href="../../flow.svg"><text class="link" x="52" y="662">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="662">Services flow</text></a>
+  <a href="../aicarmine_broker/flow.svg"><text class="link" x="272" y="662">Broker flow</text></a>
+  <a href="../app.py"><text class="link" x="390" y="662">App Entry</text></a>
+  <a href="../agent_entry.py"><text class="link" x="500" y="662">Agent Entry</text></a>
+  <a href="../domain/config.py"><text class="link" x="610" y="662">Domain Config</text></a>
+  <a href="../planner.py"><text class="link" x="730" y="662">Planner Config</text></a>
+  <a href="../../MCP_TOOL_INDEX.md"><text class="link" x="890" y="662">MCP Index</text></a>
+
+  <!-- Invariant text -->
+  <rect class="box gray" x="34" y="680" width="992" height="30" rx="8"/>
+  <text class="tiny" x="52" y="700">Test-backed invariants: config models are pure dataclasses; env_loader resolves AICARMINE_LAB_REPO correctly; port configuration validated at startup; MCP tool surface authoritative.</text>
+</svg>

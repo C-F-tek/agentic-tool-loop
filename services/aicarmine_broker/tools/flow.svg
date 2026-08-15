@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="720" viewBox="0 0 1060 720" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .purple { fill: #faf5ff; stroke: #a855f7; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1060" height="720"/>
+  <text class="title" x="34" y="42">Tools Layer Flow</text>
+  <text class="subtitle" x="34" y="64">Repository, command, and validation tools wrapping MCP surface. MCP tool surface authoritative.</text>
+  
+  <!-- Arrows -->
+  <path class="arrow" d="M 280 164 L 390 164"/>
+  <text class="tiny" x="298" y="152">execute</text>
+  <path class="arrow" d="M 640 164 L 744 164"/>
+  <text class="tiny" x="662" y="152">validate</text>
+  
+  <!-- Row 1: Core tools -->
+  <a href="repo_deterministic.py">
+    <rect class="box blue" x="48" y="112" width="232" height="104" rx="10"/>
+    <text class="label" x="64" y="139">Deterministic Tools</text>
+    <text class="small" x="64" y="163">repo_search_det, fd_files</text>
+    <text class="small" x="64" y="182">rg_search, ast_grep_search</text>
+    <text class="small" x="64" y="201">ctags_symbols, jq_query</text>
+  </a>
+
+  <a href="repo_read.py">
+    <rect class="box green" x="390" y="112" width="250" height="104" rx="10"/>
+    <text class="label" x="406" y="139">File Operations</text>
+    <text class="small" x="406" y="163">repo_read, list_files</text>
+    <text class="small" x="406" y="182">tree, status</text>
+    <text class="small" x="406" y="201">search, code_product</text>
+  </a>
+  
+  <a href="repo_patch.py">
+    <rect class="box orange" x="744" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="760" y="139">Patch Operations</text>
+    <text class="small" x="760" y="163">old_text/new_text patch</text>
+    <text class="small" x="760" y="182">max_replacements control</text>
+    <text class="small" x="760" y="201">change_set_id propagation</text>
+  </a>
+
+  <!-- Row 2: Command and validation tools -->
+  <a href="command_safety.py">
+    <rect class="box purple" x="48" y="310" width="232" height="112" rx="10"/>
+    <text class="label" x="64" y="337">Command Safety</text>
+    <text class="small" x="64" y="361">consent classification</text>
+    <text class="small" x="64" y="380">dangerous_operation_check</text>
+    <text class="small" x="64" y="399">execution_policy.py</text>
+  </a>
+
+  <a href="powershell_runner.py">
+    <rect class="box blue" x="390" y="310" width="250" height="112" rx="10"/>
+    <text class="label" x="406" y="337">PowerShell Runner</text>
+    <text class="small" x="406" y="361">-LiteralPath usage</text>
+    <text class="small" x="406" y="380">quoted paths, env resolution</text>
+    <text class="small" x="406" y="399">executable_resolver.py</text>
+  </a>
+
+  <a href="repo_validate.py">
+    <rect class="box green" x="744" y="310" width="230" height="112" rx="10"/>
+    <text class="label" x="760" y="337">Validation Tools</text>
+    <text class="small" x="760" y="361">ruff_check, pyright_check</text>
+    <text class="small" x="760" y="380">shellcheck, semgrep_scan</text>
+    <text class="small" x="760" y="399">pytest_run wrapper</text>
+  </a>
+
+  <!-- Row 3: Git and terminal tools -->
+  <a href="git_surface.py">
+    <rect class="box orange" x="48" y="500" width="232" height="96" rx="10"/>
+    <text class="label" x="64" y="525">Git Surface Tools</text>
+    <text class="small" x="64" y="549">log, show, diff</text>
+    <text class="small" x="64" y="569">blame, branch_compare</text>
+    <text class="small" x="64" y="589">read-only git operations</text>
+  </a>
+
+  <a href="terminal.py">
+    <rect class="box purple" x="390" y="500" width="250" height="96" rx="10"/>
+    <text class="label" x="406" y="525">Terminal Tools</text>
+    <text class="small" x="406" y="549">list_files, search_files</text>
+    <text class="small" x="406" y="569">read_file wrapper</text>
+    <text class="small" x="406" y="589">bounded output control</text>
+  </a>
+
+  <a href="../MCP_TOOL_INDEX.md">
+    <rect class="box blue" x="744" y="500" width="230" height="96" rx="10"/>
+    <text class="label" x="760" y="525">MCP Tool Index</text>
+    <text class="small" x="760" y="549">authoritative tool surface</text>
+    <text class="small" x="760" y="569">tools/list as source of truth</text>
+    <text class="small" x="760" y="589">No HTTP fallback policy</text>
+  </a>
+
+  <!-- Navigation footer -->
+  <rect class="box gray" x="34" y="610" width="992" height="80" rx="10"/>
+  <text class="label" x="52" y="638">Navigation Links</text>
+  <a href="../../flow.svg"><text class="link" x="52" y="662">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="662">Services flow</text></a>
+  <a href="../aicarmine_broker/flow.svg"><text class="link" x="272" y="662">Broker flow</text></a>
+  <a href="../tool_dispatch.py"><text class="link" x="390" y="662">Tool Dispatch</text></a>
+  <a href="../tool_registry.py"><text class="link" x="500" y="662">Tool Registry</text></a>
+  <a href="../tool_contract.py"><text class="link" x="610" y="662">Tool Contract</text></a>
+  <a href="../tool_selection.py"><text class="link" x="730" y="662">Tool Selection</text></a>
+  <a href="../MCP_TOOL_INDEX.md"><text class="link" x="890" y="662">MCP Index</text></a>
+
+  <!-- Invariant text -->
+  <rect class="box gray" x="34" y="680" width="992" height="30" rx="8"/>
+  <text class="tiny" x="52" y="700">Test-backed invariants: command tools classify consent; PowerShell -LiteralPath prevents injection; MCP tool surface authoritative over all wrappers.</text>
+</svg>

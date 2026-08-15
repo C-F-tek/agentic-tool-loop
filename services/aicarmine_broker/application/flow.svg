@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="720" viewBox="0 0 1060 720" role="img">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+    .bg { fill: #f8fafc; }
+    .title { font-family: Segoe UI, Arial, sans-serif; font-size: 25px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: Segoe UI, Arial, sans-serif; font-size: 13.5px; fill: #475569; }
+    .box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; rx: 10; }
+    .blue { fill: #eff6ff; stroke: #2563eb; }
+    .green { fill: #ecfdf5; stroke: #047857; }
+    .orange { fill: #fff7ed; stroke: #ea580c; }
+    .gray { fill: #f1f5f9; stroke: #64748b; }
+    .red { fill: #fef2f2; stroke: #b91c1c; }
+    .purple { fill: #faf5ff; stroke: #a855f7; }
+    .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+    .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1060" height="720"/>
+  <text class="title" x="34" y="42">Application Layer Flow</text>
+  <text class="subtitle" x="34" y="64">Core broker application modules: evidence, planner, controller, payload, prompt, job routing. MCP tool surface authoritative.</text>
+  
+  <!-- Arrows -->
+  <path class="arrow" d="M 280 164 L 390 164"/>
+  <text class="tiny" x="298" y="152">dispatch</text>
+  <path class="arrow" d="M 640 164 L 744 164"/>
+  <text class="tiny" x="662" y="152">route</text>
+  <path class="dash" d="M 280 362 L 390 362"/>
+  <text class="tiny" x="298" y="350">memory policy</text>
+  <path class="dash" d="M 640 362 L 744 362"/>
+  <text class="tiny" x="662" y="350">validation</text>
+  
+  <!-- Row 1: Core flow -->
+  <a href="evidence/">
+    <rect class="box blue" x="48" y="112" width="232" height="104" rx="10"/>
+    <text class="label" x="64" y="139">Evidence Layer</text>
+    <text class="small" x="64" y="163">goal_classifier.py</text>
+    <text class="small" x="64" y="182">initial_orientation.py</text>
+    <text class="small" x="64" y="201">required_working_set.py</text>
+  </a>
+
+  <a href="planner/">
+    <rect class="box green" x="390" y="112" width="250" height="104" rx="10"/>
+    <text class="label" x="406" y="139">Planner Layer</text>
+    <text class="small" x="406" y="163">turn.py, state.py</text>
+    <text class="small" x="406" y="182">decision_normalizer.py</text>
+    <text class="small" x="406" y="201">validation_rejections.py</text>
+  </a>
+  
+  <a href="controller/">
+    <rect class="box orange" x="744" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="760" y="139">Controller Layer</text>
+    <text class="small" x="760" y="163">orientation_lane.py</text>
+    <text class="small" x="760" y="182">memory.py, guards.py</text>
+    <text class="small" x="760" y="201">preseed, rag_preseed</text>
+  </a>
+
+  <!-- Row 2: Supporting components -->
+  <a href="public_payload/">
+    <rect class="box purple" x="48" y="310" width="232" height="112" rx="10"/>
+    <text class="label" x="64" y="337">Public Payload Layer</text>
+    <text class="small" x="64" y="361">evidence_materializer.py</text>
+    <text class="small" x="64" y="380">terminal_sanitizer.py</text>
+    <text class="small" x="64" y="399">field_names, final_state_result</text>
+  </a>
+
+  <a href="prompt/">
+    <rect class="box blue" x="390" y="310" width="250" height="112" rx="10"/>
+    <text class="label" x="406" y="337">Prompt Layer</text>
+    <text class="small" x="406" y="361">system_prompt.py</text>
+    <text class="small" x="406" y="380">intrinsic_context.py</text>
+    <text class="small" x="406" y="399">pack_builder, text_windows</text>
+  </a>
+
+  <a href="job/">
+    <rect class="box green" x="744" y="310" width="230" height="112" rx="10"/>
+    <text class="label" x="760" y="337">Job Layer</text>
+    <text class="small" x="760" y="361">worker.py, action_router.py</text>
+    <text class="small" x="760" y="380">selector_runner.py</text>
+    <text class="small" x="760" y="399">IA_BROKER_FLOWS.md</text>
+  </a>
+
+  <!-- Row 3: Infrastructure and utilities -->
+  <a href="memory/">
+    <rect class="box orange" x="48" y="500" width="232" height="96" rx="10"/>
+    <text class="label" x="64" y="525">Memory Layer</text>
+    <text class="small" x="64" y="549">agent_memory_policy.py</text>
+    <text class="small" x="64" y="569">agent_state.py, routing_policy</text>
+    <text class="small" x="64" y="589">MEM_SYSTEM.md reference</text>
+  </a>
+
+  <a href="../dispatcher.py">
+    <rect class="box purple" x="390" y="500" width="250" height="96" rx="10"/>
+    <text class="label" x="406" y="525">Dispatcher</text>
+    <text class="small" x="406" y="549">application/dispatcher.py</text>
+    <text class="small" x="406" y="569">contracts/dispatcher.py</text>
+    <text class="small" x="406" y="589">test_dispatcher.py</text>
+  </a>
+
+  <a href="../MCP_TOOL_INDEX.md">
+    <rect class="box blue" x="744" y="500" width="230" height="96" rx="10"/>
+    <text class="label" x="760" y="525">MCP Tool Index</text>
+    <text class="small" x="760" y="549">authoritative tool surface</text>
+    <text class="small" x="760" y="569">tools/list as source of truth</text>
+    <text class="small" x="760" y="589">No HTTP fallback policy</text>
+  </a>
+
+  <!-- Navigation footer -->
+  <rect class="box gray" x="34" y="610" width="992" height="80" rx="10"/>
+  <text class="label" x="52" y="638">Navigation Links</text>
+  <a href="../../flow.svg"><text class="link" x="52" y="662">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="662">Services flow</text></a>
+  <a href="../aicarmine_broker/flow.svg"><text class="link" x="272" y="662">Broker flow</text></a>
+  <a href="../planner.py"><text class="link" x="390" y="662">Planner.py</text></a>
+  <a href="../dispatcher.py"><text class="link" x="500" y="662">Dispatcher</text></a>
+  <a href="evidence/goal_classifier.py"><text class="link" x="630" y="662">Goal Classifier</text></a>
+  <a href="planner/turn.py"><text class="link" x="750" y="662">Turn Model</text></a>
+  <a href="../MCP_TOOL_INDEX.md"><text class="link" x="890" y="662">MCP Index</text></a>
+
+  <!-- Invariant text -->
+  <rect class="box gray" x="34" y="680" width="992" height="30" rx="8"/>
+  <text class="tiny" x="52" y="700">Test-backed invariants: evidence layer precedes planner; controller gates memory writes; public payload never leaks local paths; MCP tool surface authoritative.</text>
+</svg>

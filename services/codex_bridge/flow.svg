@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="720" viewBox="0 0 1060 720" role="img">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
@@ -14,62 +14,113 @@
     .orange { fill: #fff7ed; stroke: #ea580c; }
     .gray { fill: #f1f5f9; stroke: #64748b; }
     .red { fill: #fef2f2; stroke: #b91c1c; }
+    .purple { fill: #faf5ff; stroke: #a855f7; }
     .label { font-family: Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
     .small { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #334155; }
     .tiny { font-family: Segoe UI, Arial, sans-serif; font-size: 11px; fill: #475569; }
     .link { font-family: Segoe UI, Arial, sans-serif; font-size: 12px; fill: #1d4ed8; text-decoration: underline; }
     .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
     .dash { stroke: #64748b; stroke-width: 1.7; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrow); }
-
     </style>
   </defs>
-  <rect class="bg" x="0" y="0" width="980" height="640"/>
-  <text class="title" x="34" y="42">Codex Bridge Flow</text>
-  <text class="subtitle" x="34" y="64">Codex-facing helper bridge with lazy imports and no heavy broker load at module import.</text>
-  <path class="arrow" d="M 300 168 L 378 168"/>
-  <text class="tiny" x="316" y="156">lazy resolve</text>
-  <path class="arrow" d="M 608 168 L 684 168"/>
-  <text class="tiny" x="624" y="156">optional bridge</text>
-  <path class="arrow" d="M 454 382 L 566 382"/>
-  <text class="tiny" x="478" y="370">invoke only</text>
-  <a href="mcp_server.py">
-    <rect class="box blue" x="70" y="116" width="230" height="104" rx="10"/>
-    <text class="label" x="86" y="143">MCP server</text>
-    <text class="small" x="86" y="167">stdio/protocol only</text>
-    <text class="small" x="86" y="186">lazy tool handling</text>
-    <text class="small" x="86" y="205">no top-level broker import</text>
+  <rect class="bg" x="0" y="0" width="1060" height="720"/>
+  <text class="title" x="34" y="42">Codex Bridge MCP Server Flow</text>
+  <text class="subtitle" x="34" y="64">MCP server implementations: repo operations, validation, job artifacts, RAG, network monitoring. MCP tool surface authoritative.</text>
+  
+  <!-- Arrows -->
+  <path class="arrow" d="M 280 164 L 390 164"/>
+  <text class="tiny" x="298" y="152">exposes</text>
+  <path class="arrow" d="M 640 164 L 744 164"/>
+  <text class="tiny" x="662" y="152">consumes</text>
+  
+  <!-- Row 1: Core MCP servers -->
+  <a href="repo_mcp_common.py">
+    <rect class="box blue" x="48" y="112" width="232" height="104" rx="10"/>
+    <text class="label" x="64" y="139">Repo Common</text>
+    <text class="small" x="64" y="163">shared repo utilities</text>
+    <text class="small" x="64" y="182">bounded output control</text>
+    <text class="small" x="64" y="201">path validation helpers</text>
   </a>
-  <a href="mcp_server.py">
-    <rect class="box green" x="378" y="116" width="230" height="104" rx="10"/>
-    <text class="label" x="394" y="143">Registry lazy load</text>
-    <text class="small" x="394" y="167">capability map on demand</text>
-    <text class="small" x="394" y="186">survives broker failure</text>
-    <text class="small" x="394" y="205">no startup side effects</text>
+
+  <a href="repo_code_mcp_server.py">
+    <rect class="box green" x="390" y="112" width="250" height="104" rx="10"/>
+    <text class="label" x="406" y="139">Repo Code Server</text>
+    <text class="small" x="406" y="163">propose_edit, unidiff_validate</text>
+    <text class="small" x="406" y="182">git_apply_check, apply_patch</text>
+    <text class="small" x="406" y="201">change_set_id propagation</text>
   </a>
-  <a href="ollama_responses_bridge.py">
-    <rect class="box gray" x="684" y="116" width="230" height="104" rx="10"/>
-    <text class="label" x="700" y="143">Ollama bridge</text>
-    <text class="small" x="700" y="167">Responses-compatible</text>
-    <text class="small" x="700" y="186">state roundtrip</text>
-    <text class="small" x="700" y="205">native passthrough</text>
+  
+  <a href="repo_validate_mcp_server.py">
+    <rect class="box orange" x="744" y="112" width="230" height="104" rx="10"/>
+    <text class="label" x="760" y="139">Repo Validate Server</text>
+    <text class="small" x="760" y="163">ruff_check, pyright_check</text>
+    <text class="small" x="760" y="182">shellcheck, semgrep_scan</text>
+    <text class="small" x="760" y="201">pytest_run wrapper</text>
   </a>
-  <a href="README.md">
-    <rect class="box orange" x="224" y="330" width="230" height="104" rx="10"/>
-    <text class="label" x="240" y="357">Codex caller</text>
-    <text class="small" x="240" y="381">tool request</text>
-    <text class="small" x="240" y="400">bridge response</text>
-    <text class="small" x="240" y="419">no runtime mutation</text>
+
+  <!-- Row 2: Job and artifact servers -->
+  <a href="job_artifact_mcp_server.py">
+    <rect class="box purple" x="48" y="310" width="232" height="112" rx="10"/>
+    <text class="label" x="64" y="337">Job Artifact Server</text>
+    <text class="small" x="64" y="361">list_jobs, job_detail</text>
+    <text class="small" x="64" y="380">events, final, tool_results</text>
+    <text class="small" x="64" y="399">planner_payload, rejections</text>
   </a>
-  <a href="../aicarmine_broker/flow.svg">
-    <rect class="box green" x="566" y="330" width="230" height="104" rx="10"/>
-    <text class="label" x="582" y="357">Local runtime</text>
-    <text class="small" x="582" y="381">optional broker calls</text>
-    <text class="small" x="582" y="400">when tool invoked</text>
-    <text class="small" x="582" y="419">not at import time</text>
+
+  <a href="job_view_mcp_server.py">
+    <rect class="box blue" x="390" y="310" width="250" height="112" rx="10"/>
+    <text class="label" x="406" y="337">Job View Server</text>
+    <text class="small" x="406" y="361">render HTML views</text>
+    <text class="small" x="406" y="380">ia_view, planner_lab</text>
+    <text class="small" x="406" y="399">outline, links, validate_html</text>
   </a>
-  <rect class="box gray" x="34" y="574" width="912" height="44" rx="10"/>
-  <a href="../../flow.svg"><text class="link" x="52" y="602">Root flow</text></a>
-  <a href="../flow.svg"><text class="link" x="162" y="602">Services flow</text></a>
-  <a href="MODULE_REFERENCE.md"><text class="link" x="300" y="602">Module ref</text></a>
-  <a href="README.md"><text class="link" x="414" y="602">README</text></a>
+
+  <a href="agentic_loop_client_mcp_server.py">
+    <rect class="box green" x="744" y="310" width="230" height="112" rx="10"/>
+    <text class="label" x="760" y="337">Agentic Loop Client</text>
+    <text class="small" x="760" y="361">run, status, result</text>
+    <text class="small" x="760" y="380">ensure_broker, ensure_reranker</text>
+    <text class="small" x="760" y="399">port-3579 dedicated router</text>
+  </a>
+
+  <!-- Row 3: RAG and semantic servers -->
+  <a href="rag_mcp_server.py">
+    <rect class="box orange" x="48" y="500" width="232" height="96" rx="10"/>
+    <text class="label" x="64" y="525">RAG Server</text>
+    <text class="small" x="64" y="549">context search, rerank</text>
+    <text class="small" x="64" y="569">index_status, reindex</text>
+    <text class="small" x="64" y="589">SQLite FTS5 index</text>
+  </a>
+
+  <a href="symbol_rag_mcp_server.py">
+    <rect class="box purple" x="390" y="500" width="250" height="96" rx="10"/>
+    <text class="label" x="406" y="525">Symbol RAG Server</text>
+    <text class="small" x="406" y="549">build symbol index</text>
+    <text class="small" x="406" y="569">search symbols by query</text>
+    <text class="small" x="406" y="589">status check endpoint</text>
+  </a>
+
+  <a href="../MCP_TOOL_INDEX.md">
+    <rect class="box blue" x="744" y="500" width="230" height="96" rx="10"/>
+    <text class="label" x="760" y="525">MCP Tool Index</text>
+    <text class="small" x="760" y="549">authoritative tool surface</text>
+    <text class="small" x="760" y="569">tools/list as source of truth</text>
+    <text class="small" x="760" y="589">No HTTP fallback policy</text>
+  </a>
+
+  <!-- Navigation footer -->
+  <rect class="box gray" x="34" y="610" width="992" height="80" rx="10"/>
+  <text class="label" x="52" y="638">Navigation Links</text>
+  <a href="../../flow.svg"><text class="link" x="52" y="662">Root flow</text></a>
+  <a href="../flow.svg"><text class="link" x="162" y="662">Services flow</text></a>
+  <a href="../aicarmine_broker/flow.svg"><text class="link" x="272" y="662">Broker flow</text></a>
+  <a href="../mcp_server.py"><text class="link" x="390" y="662">MCP Server Entry</text></a>
+  <a href="../broker_planner_mcp_server.py"><text class="link" x="500" y="662">Planner MCP</text></a>
+  <a href="../project_memory_mcp_server.py"><text class="link" x="610" y="662">Project Memory</text></a>
+  <a href="../rag_index_repo.py"><text class="link" x="730" y="662">RAG Index</text></a>
+  <a href="../MCP_TOOL_INDEX.md"><text class="link" x="890" y="662">MCP Index</text></a>
+
+  <!-- Invariant text -->
+  <rect class="box gray" x="34" y="680" width="992" height="30" rx="8"/>
+  <text class="tiny" x="52" y="700">Test-backed invariants: MCP stdio transport authoritative; job artifacts survive broker restart; RAG index delta rebuild preserves state; MCP tool surface authoritative.</text>
 </svg>
