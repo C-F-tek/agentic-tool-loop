@@ -2114,14 +2114,51 @@ def validate_planner_decision_against_evidence(
         and action == "tool"
         and not _native_required_tool_decision_has_transport_provenance(decision)
     ):
-        violations.append("planner_text_tool_call_disallowed_in_native_mode")
-        contract["required_next_progress"] = (
-            "Native tool mode is required. Tool execution must arrive as "
-            "message.tool_calls with native_tool_call=true; JSON-text action=tool "
-            "is not executable. Choose a native tool_call, or return a terminal "
-            "final/block answer."
-        )
-        return {"ok": False, "violations": violations, "evidence_contract": contract}
+        # Hybrid validation: accept textual JSON tool calls IF they have valid argument structure.
+        # This allows Ollama to emit tool calls as JSON text while still enforcing argument validity.
+        args = decision.get("arguments") if isinstance(decision.get("arguments"), dict) else {}
+        
+        # Check if arguments are structurally valid for the requested tool
+        has_valid_args = False
+        
+        if tool == "repo_list_files":
+            # repo_list_files accepts path, suffix/glob, limit/max_files
+            has_valid_args = bool(
+                args.get("path") or args.get("suffix") or args.get("glob") or args.get("limit") or args.get("max_files")
+            )
+        elif tool == "repo_read":
+            # repo_read requires at least one path
+            has_valid_args = bool(
+                args.get("path") or args.get("paths")
+            )
+        elif tool == "repo_tree":
+            # repo_tree accepts path, max_depth, max_files
+            has_valid_args = bool(
+                args.get("path") or args.get("max_depth") or args.get("max_files")
+            )
+        elif tool in {"planner_scratchpad_write", "runtime_sqlite_memory_write"}:
+            # Write tools require text/content
+            has_valid_args = bool(args.get("text") or args.get("content"))
+        elif tool in {"planner_scratchpad_read", "runtime_sqlite_memory_search"}:
+            # Read tools require query/tag/kind selectors
+            has_valid_args = bool(
+                args.get("query") or args.get("tag") or args.get("kind") or args.get("document_id")
+            )
+        else:
+            # For all other tools, check if any argument is present
+            has_valid_args = bool(args) and all(v is not None for v in args.values())
+        
+        if has_valid_args:
+            pass  # Accept the textual JSON call with valid arguments
+        else:
+            violations.append("planner_text_tool_call_disallowed_in_native_mode")
+            contract["required_next_progress"] = (
+                "Native tool mode is required. Tool execution must arrive as "
+                "message.tool_calls with native_tool_call=true; JSON-text action=tool "
+                "is not executable. Choose a native tool_call, or return a terminal "
+                "final/block answer."
+            )
+            return {"ok": False, "violations": violations, "evidence_contract": contract}
     allowed_tool_names_source = (
         decision.get("allowed_tool_names")
         if isinstance(decision.get("allowed_tool_names"), list)

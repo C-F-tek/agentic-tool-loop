@@ -2894,6 +2894,10 @@ def run_agentic_planner_job(
                 guard_result["invalid_decision_signature"] = rejection_signature
                 guard_result["invalid_decision_repeat_count"] = repeated_rejection_count + 1
                 guard_result["retry_limit"] = repeated_rejection_limit
+                terminal_contract = planner_evidence_contract(str(state.get("goal") or ""), history)
+                coverage_satisfied = _coverage_satisfied(terminal_contract)
+                guard_result["coverage_satisfied"] = coverage_satisfied
+                guard_result["repeated_identical_planner_rejection"] = True
                 enrich_repeated_tool_guard_feedback(guard_result, decision, validation)
                 append_agent_event(
                     job_id,
@@ -2923,6 +2927,12 @@ def run_agentic_planner_job(
                         "validator-rejected decision after controller feedback. Controller "
                         "stopped the loop and preserved available payloads instead of "
                         "consuming max_steps."
+                        + (
+                            " Evidence contract coverage is satisfied; planner had sufficient "
+                            "evidence to finalize/block but kept repeating invalid decisions."
+                            if coverage_satisfied
+                            else ""
+                        )
                     ),
                     {
                         "history": history,
@@ -2931,6 +2941,7 @@ def run_agentic_planner_job(
                         "validation": validation,
                         "invalid_decision_signature": rejection_signature,
                         "invalid_decision_repeat_count": repeated_rejection_count + 1,
+                        "coverage_satisfied": coverage_satisfied,
                         "agent_flow_diagnostics": _agent_flow_diagnostics(
                             str(state.get("goal") or ""),
                             history,

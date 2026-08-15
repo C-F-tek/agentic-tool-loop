@@ -16,7 +16,7 @@ KeyLineExtractor = Callable[[str], list[str]]
 
 def repo_read_content_views(
     history: list[dict[str, Any]],
-    *,
+    
     repo_read_item_full_content: RepoReadContentLoader,
     per_item_limit: int = 60000,
     total_limit: int = 180000,
@@ -84,7 +84,7 @@ def repo_read_content_views(
 
 def execution_evidence_digest_text(
     result: dict[str, Any] | None,
-    *,
+    
     repo_read_item_full_content: RepoReadContentLoader,
     extract_key_lines: KeyLineExtractor,
     limit: int = 12000,

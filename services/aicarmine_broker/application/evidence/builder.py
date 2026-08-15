@@ -116,7 +116,7 @@ def _semantic_classification_with_preplanner_intent(
 
 
 def _goal_requests_code_product_from_semantics(
-    *,
+    
     fallback_value: bool,
     preplanner_intent: Mapping[str, Any],
 ) -> bool:
@@ -132,7 +132,7 @@ def _goal_requests_code_product_from_semantics(
 
 
 def _goal_requests_apply_from_semantics(
-    *,
+    
     fallback_value: bool,
     preplanner_intent: Mapping[str, Any],
 ) -> bool:
@@ -146,7 +146,7 @@ def _goal_requests_apply_from_semantics(
 
 def _micro_batch_contract_from_candidates(
     candidates: list[dict[str, Any]],
-    *,
+    
     max_actions: int = MICRO_BATCH_MAX_ACTIONS,
 ) -> dict[str, Any]:
     """Expose independent read-only candidate actions that may share one planner turn."""
@@ -220,7 +220,7 @@ def _history_result(row: dict[str, Any]) -> dict[str, Any]:
 
 def _collect_result_paths(
     value: Any,
-    *,
+    
     repo_rel_token: Callable[[Any], str],
     output: list[str],
 ) -> None:
@@ -240,7 +240,7 @@ def _collect_result_paths(
         output.append(path)
 
 
-def _tool_result_paths(result: dict[str, Any], *, repo_rel_token: Callable[[Any], str]) -> list[str]:
+def _tool_result_paths(result: dict[str, Any],  repo_rel_token: Callable[[Any], str]) -> list[str]:
     paths: list[str] = []
     for key in ("modified_paths", "paths", "path", "target", "targets", "target_file"):
         _collect_result_paths(result.get(key), repo_rel_token=repo_rel_token, output=paths)
@@ -287,7 +287,7 @@ def _validation_covers_modified_files(validation_paths: list[str], modified_file
 
 def _post_write_validation_candidates(
     modified_files: list[str],
-    *,
+    
     validation_failed: bool,
 ) -> list[dict[str, Any]]:
     paths = modified_files[:8]
@@ -325,7 +325,7 @@ def _post_write_validation_candidates(
 
 def _post_write_validation_contract(
     history: list[dict[str, Any]],
-    *,
+    
     repo_rel_token: Callable[[Any], str],
 ) -> dict[str, Any]:
     write_events: list[dict[str, Any]] = []
@@ -1125,7 +1125,7 @@ class EvidenceBuilder:
         code_product_candidate_line_count = 0
         code_product_requested_target_files: list[str] = []
 
-        def add_code_product_requested_target(raw_path: Any, *, explicit: bool = False) -> None:
+        def add_code_product_requested_target(raw_path: Any,  explicit: bool = False) -> None:
             p = _repo_rel_token(raw_path)
             if (
                 p

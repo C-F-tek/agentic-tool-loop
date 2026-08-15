@@ -18,7 +18,7 @@ MeaningfulReadCandidates = Callable[[list[dict[str, Any]], set[str]], list[str]]
 def add_core_discovery_candidate(
     out: list[dict[str, Any]],
     seen: set[str],
-    *,
+    
     path: str,
     source: str,
     rank: int,
@@ -65,7 +65,7 @@ def add_core_discovery_candidate(
 
 
 def core_discovery_candidates_from_intrinsic(
-    *,
+    
     intrinsic_context: dict[str, Any] | None,
     list_rows: list[dict[str, Any]],
     read_ok: list[str],
@@ -176,7 +176,7 @@ def core_discovery_candidates_from_intrinsic(
 
 def core_discovery_read_paths(
     candidates: list[dict[str, Any]] | None,
-    *,
+    
     read_ok: set[str],
     target_scope: str,
     limit: int,

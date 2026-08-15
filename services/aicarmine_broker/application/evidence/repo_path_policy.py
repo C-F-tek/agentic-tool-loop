@@ -12,7 +12,7 @@ SafeRelPath = Callable[[str], str]
 
 
 
-def repo_existing_dir(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
+def repo_existing_dir(path: str,  repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
     try:
         rel = safe_rel_path(repo_rel_token(path))
         full = (repo_root / rel).resolve(strict=False)
@@ -22,7 +22,7 @@ def repo_existing_dir(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath)
         return False
 
 
-def repo_existing_file(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
+def repo_existing_file(path: str,  repo_root: Path, safe_rel_path: SafeRelPath) -> bool:
     try:
         rel = safe_rel_path(repo_rel_token(path))
         full = (repo_root / rel).resolve(strict=False)
@@ -32,7 +32,7 @@ def repo_existing_file(path: str, *, repo_root: Path, safe_rel_path: SafeRelPath
         return False
 
 
-def repo_path_kind(path: str, *, repo_root: Path) -> str:
+def repo_path_kind(path: str,  repo_root: Path) -> str:
     p = repo_rel_token(path)
     try:
         full = (repo_root / p).resolve(strict=False)
@@ -49,7 +49,7 @@ def repo_path_kind(path: str, *, repo_root: Path) -> str:
     return "dir"
 
 
-def repo_doc_or_config(path: str, *, repo_root: Path) -> bool:
+def repo_doc_or_config(path: str,  repo_root: Path) -> bool:
     p = repo_rel_token(path)
     if not p or p == "." or repo_path_kind(p, repo_root=repo_root) == "dir":
         return False
@@ -72,7 +72,7 @@ def repo_code_file(path: str) -> bool:
 
 def repo_readable_evidence_file(
     path: str,
-    *,
+    
     repo_root: Path,
     generic_readable_suffixes: Sequence[str],
 ) -> bool:
@@ -113,7 +113,7 @@ def low_signal_top_dir(path: str) -> bool:
 
 def read_candidate_sort_key(
     path: str,
-    *,
+    
     repo_root: Path,
     named_read_priority: Mapping[str, int],
 ) -> tuple[int, int, int, int, str]:

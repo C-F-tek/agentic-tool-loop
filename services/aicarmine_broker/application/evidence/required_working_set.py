@@ -20,7 +20,7 @@ GoalTargetFile = Callable[[str], str]
 def repo_read_items_for_prompt(
     history: list[dict[str, Any]],
     paths: set[str],
-    *,
+    
     job_root: Path,
     goal: str,
     window_chars: int,
@@ -118,7 +118,7 @@ def required_working_set_for_prompt(
     goal: str,
     history: list[dict[str, Any]],
     contract: dict[str, Any],
-    *,
+    
     job_root: Path,
     window_chars: int,
     compact_mode: bool,

@@ -23,6 +23,35 @@ REGOLA SCRATCHPAD (NON IGNORARE):
 - Se il validator respinge planner_scratchpad_write/read con support_subturn_validation_failed, significa che hai provato a usare scratchpad senza prompt_context_continuation_required.
 - AL PRIMO TURNO: scegli direttamente action=tool con tool=repo_read per leggere i file in candidate_next_actions o required_working_set.
 - Non perdere turni con scratchpad: vai dritto a repo_read.
+
+REGOLA CRITICA PER OUTPUT JSON (NON IGNORARE):
+- Il tuo output DEVE essere un oggetto JSON valido e parseabile da json.loads().
+- NON produrre mai output che termina con } ripetuto senza contenuto significativo (degenerate stream).
+- Se l'output non è JSON valido, il validator lo rifiuta e devi riprovare con una mossa diversa.
+- NON produrre mai final vuoto (final_empty_answer): se non hai evidenza concreta, scegli repo_read invece di final.
+- PRIMA di scegliere final, DEVI leggere almeno 8 file diversi nell'area core della repository.
+- Un final valido deve contenere: almeno 5 path letti/listati, ruolo di almeno 3 file concreti, analisi strutturata.
+
+REGOLA PER REPEAT READ WINDOW (NON IGNORARE):
+- Se il validator respinge repo_read con repo_read_window_already_successful_without_progress, significa che stai cercando di leggere un file già letto con successo in una finestra precedente.
+- NON ripetere mai la stessa chiamata repo_read con gli stessi argomenti senza progresso.
+- Se tutti i path disponibili sono già stati letti, usa evidence esistente da verified_content_reads invece di chiamare repo_read.
+- Cambia strategia: leggi un file diverso o usa search/RAG per scoprire nuovi path.
+
+REGOLA PER CUDA REWRITE LOOP (NON IGNORARE):
+- Se planner_cuda_rewrite restituisce una decisione tool che viene rifiutata dal validator, NON continuare a riprovare lo stesso tool.
+- Dopo un rifiuto da cuda_rewrite, cambia mossa: scegli un tool diverso o passa a action=final se l'evidenza è sufficiente.
+- Non ripetere mai la stessa chiamata repo_read dopo cuda_rewrite senza variare gli argomenti.
+
+REGOLA PER EVIDENCE CONTRACT COMPLETO (NON IGNORARE):
+- Per finalizzare un'analisi repository, devi soddisfare TUTTI questi requisiti:
+  1. Lettura root/ranked orientation (file di orientamento)
+  2. Letture baseline markdown/config (file di configurazione)
+  3. Almeno una lettura meaningful non-infra/code area (area codice significativa)
+  4. 8/1 verified concrete readable reads (letture verificate)
+  5. Semantic owner target coverage 7/2 per analysis/action-plan finalization
+  6. Target 20 rimane orientativo e vincolato dai candidates scoperti
+- Se manca anche solo uno di questi requisiti, NON scegliere final: continua con repo_read o search.
 Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths. Native history transport e memoria non decidono mai coverage.
 Se evidence_contract.finalization_contract.final_allowed=true devi preferire action=final, ma solo dopo avere letto almeno un file concreto nell'area core che stai descrivendo.
 Un final valido per analisi repository deve usare evidence_contract.operational_notes.read_notes e file_memory:
@@ -73,9 +102,7 @@ Shape examples non eseguibili sono nel payload tool_shape_examples. In native to
   Non usare vulkan_helper come tool ordinario di navigazione: se una chiamata tool è invalida, 3572 può chiedere riparazione al lane Vulkan/11435.
 
   REGOLA CRITICA PER AZIONE=BLOCK (NON IGNORARE):
-  - Il validator RIFIUTA sempre action=block quando minimum_read_coverage.coverage_satisfied=false.
-  - Se scegli action=block senza aver letto file concreti in candidate_next_actions, il validator respinge con "block_not_allowed_by_evidence_contract".
-  - PRIMA di scegliere block o final, DEVI leggere almeno un file da candidate_next_actions o required_working_set.
+  - PRIMA di scegliere final, DEVI leggere almeno un file da candidate_next_actions o required_working_set.
   - Se candidate_next_actions contiene path non ancora letti, NON scegliere block: chiama repo_read per quei path.
   - Solo dopo aver letto file concreti nell'area core puoi considerare final o block.
   - Ignorare questa regola causa loop infinito di rejection: block → rejected → block → rejected.

@@ -24,8 +24,8 @@ def normalize_scope_claim_text(text: str) -> str:
 
 def claim_area_from_user_token(
     raw_area: str,
-    target_scope: str = "",
     *,
+    target_scope: str = "",
     path_exists_repo_relative: PathExists,
 ) -> str:
     area = repo_rel_token(raw_area)
@@ -45,8 +45,8 @@ def claim_area_from_user_token(
 
 def user_scope_claims(
     goal: str,
-    target_scope: str = "",
     *,
+    target_scope: str = "",
     path_exists_repo_relative: PathExists,
 ) -> list[dict[str, Any]]:
     """Extract user scope claims as evidence, not as a static blacklist."""

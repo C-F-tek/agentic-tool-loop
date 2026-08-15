@@ -28,13 +28,13 @@ def _clip_text(value: Any, limit: int) -> str:
     return text[: max(0, limit)] + f"\n...[truncated {len(text) - limit} chars]"
 
 
-def _compact_list(values: Any, *, limit: int = 12) -> list[Any]:
+def _compact_list(values: Any,  limit: int = 12) -> list[Any]:
     if not isinstance(values, list):
         return []
     return values[: max(0, int(limit or 0))]
 
 
-def _compact_mapping(value: Any, *, text_limit: int = 500, list_limit: int = 8) -> Any:
+def _compact_mapping(value: Any,  text_limit: int = 500, list_limit: int = 8) -> Any:
     if isinstance(value, dict):
         out: dict[str, Any] = {}
         for key, item in value.items():
@@ -312,7 +312,7 @@ def _final_path_tokens(final_answer: str) -> list[str]:
     return tokens
 
 
-def _coalesce_unique_paths(values: Any, *, limit: int = 10) -> list[str]:
+def _coalesce_unique_paths(values: Any,  limit: int = 10) -> list[str]:
     rows = values if isinstance(values, list) else []
     out: list[str] = []
     for raw in rows:
@@ -504,7 +504,7 @@ def _search_query_is_concrete(value: Any) -> bool:
 
 def _record_invalid_required_next_tool_call(
     diagnostics: dict[str, Any] | None,
-    *,
+    
     reason: str,
     paths: list[str] | None = None,
     query: Any = None,
@@ -650,7 +650,7 @@ def _known_path_tokens(contract: dict[str, Any], paths: list[str], core_paths: l
 def _unverified_final_path_tokens(
     final_answer: str,
     contract: dict[str, Any],
-    *,
+    
     paths: list[str],
     core_paths: list[str],
 ) -> list[str]:
@@ -1095,7 +1095,7 @@ _ALLOWED_FINAL_QUALITY_ROUTE_ARGS = {
 def repo_analysis_final_answer_model_quality_request(
     final_answer: str,
     contract: dict[str, Any],
-    *,
+    
     goal: str,
 ) -> dict[str, Any]:
     """Build the LLM judge request for repo-analysis final validation."""

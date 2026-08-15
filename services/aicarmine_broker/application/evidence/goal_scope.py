@@ -28,7 +28,7 @@ _KNOWN_DOTFILE_NAMES = (
 )
 
 
-def _existing_repo_file(candidate: str, *, repo_root: Path, safe_rel_path: SafeRelPath) -> str:
+def _existing_repo_file(candidate: str,  repo_root: Path, safe_rel_path: SafeRelPath) -> str:
     normalized = repo_rel_token(candidate)
     if not normalized:
         return ""
@@ -54,7 +54,7 @@ def _goal_path_candidates(text: str) -> list[str]:
 
 def extract_existing_goal_path(
     goal: str,
-    *,
+    
     repo_root: Path,
     safe_rel_path: SafeRelPath,
 ) -> str:
@@ -70,7 +70,7 @@ def extract_existing_goal_path(
 
 def extract_existing_goal_paths(
     goal: str,
-    *,
+    
     repo_root: Path,
     safe_rel_path: SafeRelPath,
 ) -> list[str]:
@@ -101,7 +101,7 @@ def requested_file_limit_from_goal(goal: str, default: int = 0) -> int:
 
 def goal_requested_repo_scope(
     goal: str,
-    *,
+    
     repo_root: Path,
     safe_rel_path: SafeRelPath,
 ) -> str:

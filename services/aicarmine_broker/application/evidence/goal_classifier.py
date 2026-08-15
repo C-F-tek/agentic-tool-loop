@@ -276,7 +276,7 @@ def final_answer_is_action_plan_without_code_product(text: str) -> bool:
     return any(marker in low for marker in markers)
 
 
-def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> dict[str, Any]:
+def semantic_goal_classification(goal: str,  repo_analysis: bool = False) -> dict[str, Any]:
     """Classify the requested deliverable without changing planner ownership."""
     text = semantic_goal_text(goal)
     intent_text = goal_operational_intent_text(goal)
@@ -369,7 +369,7 @@ def semantic_goal_classification(goal: str, *, repo_analysis: bool = False) -> d
 def effective_repo_analysis_goal(
     goal: str,
     semantic_classification: Mapping[str, Any] | None,
-    *,
+    
     repo_analysis_goal: Callable[[str], bool],
 ) -> bool:
     """Return the repository-analysis gate decision from the canonical semantics."""

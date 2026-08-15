@@ -25,7 +25,7 @@ def append_unique(seq: list[Any], value: Any) -> None:
 
 def read_items_from_history(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: SameToolArtifactPayload,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
@@ -100,7 +100,7 @@ def extract_mentioned_paths(content: str) -> list[str]:
 
 def file_memory_from_history(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: SameToolArtifactPayload,
 ) -> list[dict[str, Any]]:
     memory: list[dict[str, Any]] = []
@@ -123,7 +123,7 @@ def file_memory_from_history(
 
 def repo_list_evidence(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: SameToolArtifactPayload,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -168,7 +168,7 @@ def repo_list_evidence(
 
 def successful_repo_read_paths(
     history: list[dict[str, Any]],
-    *,
+    
     same_tool_artifact_payload: SameToolArtifactPayload,
 ) -> list[str]:
     paths: list[str] = []
@@ -222,7 +222,7 @@ def failed_repo_list_files_paths(history: list[dict[str, Any]]) -> list[str]:
 def rank_core_candidates(
     file_memory: list[dict[str, Any]],
     list_rows: list[dict[str, Any]],
-    *,
+    
     repo_root: Path,
     safe_rel_path: SafeRelPath,
 ) -> list[dict[str, Any]]:
