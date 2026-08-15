@@ -114,6 +114,11 @@ def answer_for_openwebui(
         code_product_answer = code_product_answer_text(result)
         if code_product_answer:
             return code_product_answer
+        # Check for answer_chunk in planner_decision (non-code-product final)
+        planner_decision = result.get("planner_decision") if isinstance(result.get("planner_decision"), dict) else {}
+        answer_chunk = str(planner_decision.get("answer_chunk") or "").strip()
+        if answer_chunk:
+            return answer_chunk
         return summary
     if status_text == "blocked_needs_attention":
         blocked_by = str(result.get("blocked_by") or "unknown")

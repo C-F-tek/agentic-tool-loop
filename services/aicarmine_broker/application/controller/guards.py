@@ -125,6 +125,237 @@ def recoverable_planner_block(decision: dict[str, Any]) -> bool:
         "planner stream degenerate output", "planner forced stream degenerate output",
         "planner emitted non-repairable non-json output", "no_json_object_candidate",
         "dead_or_stop_token_output", "role_boundary_marker", "role-boundary",
-        "<|endoftext|>", ".readbyte",
+        ".readbyte",
     )
     return any(marker in combined for marker in markers)
+
+
+# ---------------------------------------------------------------------------
+# Replay rules: guide planner away from repeated reads
+# ---------------------------------------------------------------------------
+
+def _detect_repeated_read_loop(history: list[dict[str, Any]], tool: str = "repo_read") -> dict[str, Any]:
+    """Detect when the planner is stuck in a loop of repeated repo_read calls.
+
+    Returns a dict with:
+    - detected: bool
+    - repeated_paths: list[str]
+    - repeated_count: int
+    - guidance: str
+    """
+    if not isinstance(history, list):
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    # Collect successful repo_read calls with their paths
+    successful_reads: list[dict[str, Any]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        result = history_tool_result(item)
+        if result.get("tool") != tool or result.get("ok") is not True:
+            continue
+        successful_reads.append(result)
+
+    if len(successful_reads) < 3:
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    # Extract paths from successful reads
+    path_counts: dict[str, int] = {}
+    for read_result in successful_reads:
+        path = str(read_result.get("path") or read_result.get("repo_path") or "")
+        if path:
+            path_counts[path] = path_counts.get(path, 0) + 1
+
+    # Check for paths read multiple times
+    repeated_paths = [path for path, count in path_counts.items() if count >= 2]
+    if not repeated_paths:
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    total_repeats = sum(count for path, count in path_counts.items() if count >= 2)
+    guidance = (
+        f"Planner is stuck in a read loop: {len(repeated_paths)} path(s) read {total_repeats}+ times total. "
+        f"Repeated paths: {', '.join(repeated_paths[:5])}. "
+        f"Do NOT call repo_read again for these paths. "
+        f"Choose one of: (1) final with existing evidence if sufficient, "
+        f"(2) repo_list_files for a NEW subdirectory, "
+        f"(3) planner_scratchpad_read for a known window, "
+        f"(4) typed block if no progress possible."
+    )
+
+    return {"detected": True, "repeated_paths": repeated_paths, "repeated_count": total_repeats, "guidance": guidance}
+
+
+def _detect_repeated_list_files_loop(history: list[dict[str, Any]]) -> dict[str, Any]:
+    """Detect when the planner is stuck in a loop of repeated repo_list_files calls."""
+    if not isinstance(history, list):
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    successful_lists: list[dict[str, Any]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        result = history_tool_result(item)
+        if result.get("tool") != "repo_list_files" or result.get("ok") is not True:
+            continue
+        successful_lists.append(result)
+
+    if len(successful_lists) < 3:
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    path_counts: dict[str, int] = {}
+    for list_result in successful_lists:
+        path = str(list_result.get("path") or ".")
+        path_counts[path] = path_counts.get(path, 0) + 1
+
+    repeated_paths = [path for path, count in path_counts.items() if count >= 2]
+    if not repeated_paths:
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    total_repeats = sum(count for path, count in path_counts.items() if count >= 2)
+    guidance = (
+        f"Planner is stuck in a list_files loop: {len(repeated_paths)} path(s) listed {total_repeats}+ times total. "
+        f"Repeated paths: {', '.join(repeated_paths[:5])}. "
+        f"Do NOT call repo_list_files again for these paths. "
+        f"Choose one of: (1) final with existing evidence if sufficient, "
+        f"(2) repo_read for a NEW file, "
+        f"(3) planner_scratchpad_read for a known window, "
+        f"(4) typed block if no progress possible."
+    )
+
+    return {"detected": True, "repeated_paths": repeated_paths, "repeated_count": total_repeats, "guidance": guidance}
+
+
+def _detect_repeated_scratchpad_loop(history: list[dict[str, Any]]) -> dict[str, Any]:
+    """Detect when the planner is stuck in a loop of repeated planner_scratchpad_read calls."""
+    if not isinstance(history, list):
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    successful_reads: list[dict[str, Any]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        result = history_tool_result(item)
+        if result.get("tool") != "planner_scratchpad_read" or result.get("ok") is not True:
+            continue
+        successful_reads.append(result)
+
+    if len(successful_reads) < 2:
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    # Check for repeated document_id or section calls
+    doc_counts: dict[str, int] = {}
+    for read_result in successful_reads:
+        doc_id = str(read_result.get("document_id") or read_result.get("section") or "")
+        if doc_id:
+            doc_counts[doc_id] = doc_counts.get(doc_id, 0) + 1
+
+    repeated_docs = [doc for doc, count in doc_counts.items() if count >= 2]
+    if not repeated_docs:
+        return {"detected": False, "repeated_paths": [], "repeated_count": 0, "guidance": ""}
+
+    total_repeats = sum(count for doc, count in doc_counts.items() if count >= 2)
+    guidance = (
+        f"Planner is stuck in a scratchpad read loop: {len(repeated_docs)} document(s)/section(s) read {total_repeats}+ times total. "
+        f"Repeated selectors: {', '.join(repeated_docs[:5])}. "
+        f"Do NOT call planner_scratchpad_read again for these selectors. "
+        f"Choose one of: (1) final with existing evidence if sufficient, "
+        f"(2) repo_read for a NEW file, "
+        f"(3) typed block if no progress possible."
+    )
+
+    return {"detected": True, "repeated_paths": repeated_docs, "repeated_count": total_repeats, "guidance": guidance}
+
+
+def _generate_replay_guidance(history: list[dict[str, Any]], violations: list[str]) -> str:
+    """Generate replay guidance based on detected loops and violations.
+
+    This function detects repeated read patterns and generates specific guidance
+    to help the planner choose different actions.
+    """
+    if not isinstance(history, list) or not violations:
+        return ""
+
+    # Detect repeated read loops
+    read_loop = _detect_repeated_read_loop(history)
+    list_loop = _detect_repeated_list_files_loop(history)
+    scratchpad_loop = _detect_repeated_scratchpad_loop(history)
+
+    # Build guidance from detected loops
+    guidance_parts: list[str] = []
+
+    if read_loop.get("detected"):
+        guidance_parts.append(read_loop.get("guidance", ""))
+
+    if list_loop.get("detected"):
+        guidance_parts.append(list_loop.get("guidance", ""))
+
+    if scratchpad_loop.get("detected"):
+        guidance_parts.append(scratchpad_loop.get("guidance", ""))
+
+    if not guidance_parts:
+        return ""
+
+    # Add violation-specific guidance
+    violation_text = " ".join(str(v) for v in violations).lower()
+
+    if "repo_read_already_successful" in violation_text:
+        guidance_parts.append(
+            "Violation: repo_read_already_successful. Do NOT repeat repo_read for already-read paths. "
+            "Choose a NEW path or final/block."
+        )
+
+    if "repeated_same_tool_arguments_without_progress" in violation_text:
+        guidance_parts.append(
+            "Violation: repeated_same_tool_arguments_without_progress. The planner is repeating the same tool call "
+            "without progress. Change the tool, change the arguments, or choose final/block."
+        )
+
+    if "repo_read_window_already_successful" in violation_text:
+        guidance_parts.append(
+            "Violation: repo_read_window_already_successful. Do NOT repeat repo_read for already-read windows. "
+            "Choose a NEW window or final/block."
+        )
+
+    return "\n\n".join(g for g in guidance_parts if g)
+
+
+def _should_attempt_vulkan_repair_for_repeated_reads(
+    decision: dict[str, Any],
+    validation: dict[str, Any],
+    history: list[dict[str, Any]],
+) -> bool:
+    """Check if the planner is stuck in a repeated-read loop and needs repair guidance.
+
+    This is a dedicated check for repeated-read loops that should trigger vulkan repair
+    to provide the planner with alternative action guidance.
+    """
+    if not isinstance(history, list):
+        return False
+
+    violations = validation.get("violations") if isinstance(validation.get("violations"), list) else []
+    if not violations:
+        return False
+
+    # Check for repeated-read violations
+    repeated_read_violations = [
+        v for v in violations
+        if isinstance(v, str) and (
+            "repo_read_already_successful" in v
+            or "repo_read_window_already_successful" in v
+            or "repeated_repo_read" in v
+            or "repeated_same_tool_arguments_without_progress" in v
+            or "repo_read_no_progress" in v
+        )
+    ]
+
+    if not repeated_read_violations:
+        return False
+
+    # Detect the loop
+    read_loop = _detect_repeated_read_loop(history)
+    list_loop = _detect_repeated_list_files_loop(history)
+
+    if read_loop.get("detected") or list_loop.get("detected"):
+        return True
+
+    return False

@@ -3509,9 +3509,14 @@ def _decision_raw_planner_text(decision: dict[str, Any]) -> str:
 
 
 def _vulkan_repair_seen(history: list[dict[str, Any]]) -> int:
-    """Count explicit Vulkan/GPU0 repair attempts already surfaced in history."""
+    """Count explicit Vulkan/GPU0 repair attempts already surfaced in history.
+
+    Returns the count of repair attempts in the *current* agentic segment
+    (since the last successful tool result or non-repair guard).  This allows
+    one repair per segment rather than one per entire job.
+    """
     count = 0
-    for item in history if isinstance(history, list) else []:
+    for item in reversed(history if isinstance(history, list) else []):
         if not isinstance(item, dict):
             continue
         result = _dict_or_empty(item.get("tool_result"))
@@ -3519,6 +3524,27 @@ def _vulkan_repair_seen(history: list[dict[str, Any]]) -> int:
             count += 1
         elif isinstance(result.get("vulkan_repair"), dict):
             count += 1
+        elif result.get("tool") in {"repo_read", "repo_list_files", "repo_search"} and result.get("ok") is True:
+            # Successful tool result resets the segment counter.
+            break
+    return count
+
+
+def _vulkan_repair_seen_per_turn(history: list[dict[str, Any]], current_turn: int = 0) -> int:
+    """Count repair attempts within the current turn (last planner decision)."""
+    count = 0
+    for item in reversed(history if isinstance(history, list) else []):
+        if not isinstance(item, dict):
+            continue
+        result = _dict_or_empty(item.get("tool_result"))
+        if result.get("guard_type") == "vulkan_decision_repair":
+            count += 1
+        elif isinstance(result.get("vulkan_repair"), dict):
+            count += 1
+        elif result.get("tool") in {"repo_read", "repo_list_files", "repo_search"} and result.get("ok") is True:
+            break
+        elif item.get("step") != current_turn:
+            break
     return count
 
 
@@ -4829,10 +4855,13 @@ def _should_attempt_vulkan_repair(
 ) -> bool:
     """Allow explicit IA repair, but no controller fallback/normalization.
 
-    Vulkan/GPU0 11435 may be asked once to convert the planner's own malformed
-    emission or invalid tool proposal into a valid loop JSON decision. The
-    original planner text remains visible in events/history/wrapper; the
+    Vulkan/GPU0 11435 may be asked once per segment to convert the planner's own
+    malformed emission or invalid tool proposal into a valid loop JSON decision.
+    The original planner text remains visible in events/history/wrapper; the
     controller does not invent a substitute action.
+
+    Expanded activation: also triggers on protocol-shaped text classification and
+    final-quality violations (too_short / missing_workflow / generic_language / unverified_paths).
     """
     if _vulkan_repair_seen(history) >= 1:
         return False
@@ -4849,6 +4878,49 @@ def _should_attempt_vulkan_repair(
         or bool(semantic.get("must_produce_code_product"))
     ):
         return False
+
+    # --- Expanded activation: protocol-shaped text ---
+    raw_planner_text = _decision_raw_planner_text(decision)
+    classification = _raw_planner_text_classification(raw_planner_text) if raw_planner_text else ""
+    protocol_shaped_repairable = classification in {
+        "plain_text_non_json",
+        "mixed_prose_with_embedded_json",
+        "markdown_fenced_json_non_json",
+        "long_mixed_json_examples",
+        "native_notebook_cell_output",
+    }
+    if action == "block" and protocol_shaped_repairable:
+        reason_low = reason.lower()
+        repairable_reasons = (
+            "invalid_planner_output_non_json" in reason_low
+            or "non-json" in reason_low
+            or "no_json" in reason_low
+            or "degenerate" in reason_low
+            or "timeout" in reason_low
+            or reason.startswith("PLANNER_DEGENERATE_OUTPUT")
+            or "planner_native_mode_non_json_output" in reason_low
+            or "repeated_identical_planner_rejection" in reason_low
+            or "validation_rejection_loop" in reason_low
+        )
+        if raw_planner_text and repairable_reasons:
+            return True
+
+    # --- Expanded activation: final-quality violations ---
+    if action == "final":
+        violations = _list_or_empty(validation.get("violations"))
+        quality_violation_tokens = (
+            "repo_analysis_final_too_short",
+            "missing_workflow_or_entrypoint",
+            "generic_template_language",
+            "unverified_paths",
+            "final_not_allowed_by_evidence_contract",
+            "final_empty_answer",
+        )
+        violation_text = " ".join(str(v) for v in violations).lower()
+        has_quality_violation = any(tok in violation_text for tok in quality_violation_tokens)
+        if has_quality_violation:
+            return True
+
     if action == "block":
         raw_planner_text = _decision_raw_planner_text(decision)
         reason_low = reason.lower()
@@ -4895,7 +4967,22 @@ def _should_attempt_vulkan_repair(
         ):
             return False
         if "repeated_same_tool_arguments_without_progress" in violations:
-            return False
+            # Allow repair when the planner is stuck in a loop of repeated reads
+            # without producing any new progress. This is a clear sign the planner
+            # needs guidance to choose a different action.
+            return True
+        # Additional detection: repeated repo_read on same paths without progress
+        repeated_read_violations = [
+            v for v in violations
+            if isinstance(v, str) and (
+                "repo_read_already_successful" in v
+                or "repo_read_window_already_successful" in v
+                or "repeated_repo_read" in v
+                or "repo_read_no_progress" in v
+            )
+        ]
+        if repeated_read_violations:
+            return True
         return True
     return False
 
@@ -5019,6 +5106,70 @@ def vulkan_repair_invalid_planner_decision(
     }
 
 
+def _generate_replay_guidance_from_history(
+    history: list[dict[str, Any]],
+    violations: list[str],
+) -> str:
+    """Generate replay guidance based on detected repeated-read loops.
+    
+    This is the integrated version that uses the guards module helpers.
+    """
+    if not isinstance(history, list) or not violations:
+        return ""
+    
+    # Import the guards module helpers
+    try:
+        from .application.controller.guards import (
+            _detect_repeated_read_loop,
+            _detect_repeated_list_files_loop,
+            _detect_repeated_scratchpad_loop,
+        )
+    except ImportError:
+        return ""
+    
+    guidance_parts: list[str] = []
+    
+    # Detect repeated read loops
+    read_loop = _detect_repeated_read_loop(history)
+    list_loop = _detect_repeated_list_files_loop(history)
+    scratchpad_loop = _detect_repeated_scratchpad_loop(history)
+    
+    if read_loop.get("detected"):
+        guidance_parts.append(read_loop.get("guidance", ""))
+    
+    if list_loop.get("detected"):
+        guidance_parts.append(list_loop.get("guidance", ""))
+    
+    if scratchpad_loop.get("detected"):
+        guidance_parts.append(scratchpad_loop.get("guidance", ""))
+    
+    if not guidance_parts:
+        return ""
+    
+    # Add violation-specific guidance
+    violation_text = " ".join(str(v) for v in violations).lower()
+    
+    if "repo_read_already_successful" in violation_text:
+        guidance_parts.append(
+            "Violation: repo_read_already_successful. Do NOT repeat repo_read for already-read paths. "
+            "Choose a NEW path or final/block."
+        )
+    
+    if "repeated_same_tool_arguments_without_progress" in violation_text:
+        guidance_parts.append(
+            "Violation: repeated_same_tool_arguments_without_progress. The planner is repeating the same tool call "
+            "without progress. Change the tool, change the arguments, or choose final/block."
+        )
+    
+    if "repo_read_window_already_successful" in violation_text:
+        guidance_parts.append(
+            "Violation: repo_read_window_already_successful. Do NOT repeat repo_read for already-read windows. "
+            "Choose a NEW window or final/block."
+        )
+    
+    return "\n\n".join(g for g in guidance_parts if g)
+
+
 def controller_guard_result_for_validation(
     validation: dict[str, Any],
     decision: dict[str, Any],
@@ -5082,6 +5233,19 @@ def controller_guard_result_for_validation(
     if replan_specialist:
         guard["planner_replan_specialist"] = replan_specialist
     required_next_progress = str(contract.get("required_next_progress") or "").strip()
+    
+    # Add replay guidance for repeated-read loops
+    replay_guidance = _generate_replay_guidance_from_history(
+        history=validation.get("evidence_contract", {}).get("successful_repo_read_paths", []) if isinstance(validation.get("evidence_contract"), dict) else [],
+        violations=[str(v) for v in violations],
+    )
+    if replay_guidance:
+        guard["replay_guidance"] = replay_guidance
+        if not guard.get("next_instruction"):
+            guard["next_instruction"] = replay_guidance
+        elif required_next_progress:
+            guard["next_instruction"] = required_next_progress + "\n\n" + replay_guidance
+    
     if required_next_progress:
         guard["next_instruction"] = required_next_progress
     required_next_tool_call = _dict_or_empty(contract.get("required_next_tool_call"))
