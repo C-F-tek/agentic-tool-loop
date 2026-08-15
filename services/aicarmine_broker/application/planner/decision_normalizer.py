@@ -246,6 +246,20 @@ def normalize_planner_decision(
     diagnostics = parse_strict_json_object_diagnostics(raw_text)
     decoded = diagnostics.get("decoded") if diagnostics.get("ok") is True else {}
     if decoded:
+        # If strict JSON succeeded but contains tool_calls, convert via native tool call path.
+        # This handles the case where the model emits valid JSON with {"tool_calls": [...]} format
+        # (e.g., Ollama/Qwen native tool calls), which _normalize_terminal_planner_decision cannot handle
+        # because it expects action/tool fields, not OpenAI-style tool_calls.
+        if isinstance(decoded, dict) and "tool_calls" in decoded:
+            tool_calls = decoded["tool_calls"]
+            if isinstance(tool_calls, list) and tool_calls:
+                native_decision = _native_tool_calls_decision(tool_calls, raw_text)
+                if native_decision:
+                    normalized = _normalize_terminal_planner_decision(native_decision)
+                    normalized["json_extraction_fallback"] = True
+                    normalized["json_extraction_source"] = "strict_json_native_conversion"
+                    return normalized
+        
         normalized = _normalize_terminal_planner_decision(decoded)
         if str(normalized.get("action") or "tool").strip().lower() == "tool" and not normalized.get("tool"):
             for alias in ("name", "tool_name", "function"):
@@ -311,14 +325,26 @@ def _try_native_tool_calls_fallback(raw_text: str) -> dict[str, Any]:
     This handles cases where the model emits Ollama native tool_calls format
     instead of pure JSON, which is the common failure mode when
     native tool calls aren't available.
+    
+    Robust parsing strategy:
+    1. Try strict JSON parse on full text first (handles valid {"tool_calls": [...]})
+    2. Fall back to regex + raw_decode with context window
+    3. Extract JSON boundaries explicitly if needed ({...} nesting)
     """
-    # Check for native tool_calls pattern in the raw text.
-    # The model may emit tool_calls in a format like:
-    # {"tool_calls": [{"name": "final_answer", "arguments": {...}}]}
     import json
     import re
     
-    # Try to find a JSON object containing tool_calls key.
+    # Strategy 1: Strict JSON parse on full text (most reliable for valid JSON output)
+    try:
+        decoded = json.loads(str(raw_text or "").strip())
+        if isinstance(decoded, dict) and "tool_calls" in decoded:
+            tool_calls = decoded["tool_calls"]
+            if isinstance(tool_calls, list) and tool_calls:
+                return _native_tool_calls_decision(tool_calls, raw_text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    
+    # Strategy 2: Regex + raw_decode with context window
     tool_calls_match = re.search(r'"tool_calls"\s*:\s*\[', raw_text)
     if tool_calls_match:
         try:
@@ -328,7 +354,20 @@ def _try_native_tool_calls_fallback(raw_text: str) -> dict[str, Any]:
             if isinstance(decoded, dict) and "tool_calls" in decoded:
                 tool_calls = decoded["tool_calls"]
                 if isinstance(tool_calls, list) and tool_calls:
-                    # Convert to native tool call decision.
+                    return _native_tool_calls_decision(tool_calls, raw_text)
+        except Exception:
+            pass
+    
+    # Strategy 3: Extract JSON boundaries explicitly (handles prose-wrapped JSON)
+    # Find first { and matching closing }
+    first_brace = raw_text.find('{')
+    if first_brace >= 0:
+        try:
+            decoder = json.JSONDecoder()
+            decoded, end = decoder.raw_decode(raw_text[first_brace:])
+            if isinstance(decoded, dict) and "tool_calls" in decoded:
+                tool_calls = decoded["tool_calls"]
+                if isinstance(tool_calls, list) and tool_calls:
                     return _native_tool_calls_decision(tool_calls, raw_text)
         except Exception:
             pass

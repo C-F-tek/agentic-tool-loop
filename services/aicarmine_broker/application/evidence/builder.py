@@ -694,7 +694,7 @@ class EvidenceBuilder:
         ]
         scope_available_read_candidates = _scope_read_candidates_from_evidence(list_rows, target_scope) if target_scope else []
         scope_required_read_count = _scoped_required_read_count(scope_available_read_candidates) if target_scope else 0
-        user_scope_claims = _user_scope_claims(goal, target_scope)
+        user_scope_claims = _user_scope_claims(goal, target_scope=target_scope)
         core_discovery_candidates, core_discovery_status = _core_discovery_candidates_from_intrinsic(
             intrinsic_context=intrinsic_context,
             list_rows=list_rows,

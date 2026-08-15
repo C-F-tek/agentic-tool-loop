@@ -2856,7 +2856,6 @@ def validate_planner_decision_against_evidence(
                 contract["required_next_progress"] = (
                     "Rewrite lane requires a concrete required_next_tool_call, but it has no path arguments."
                 )
-
     if tool == "repo_search" and not _any_argument_group_present(args, [["query"], ["pattern"], ["symbol"]]):
         violations.append("repo_search_missing_query_pattern_or_symbol")
     elif tool == "repo_semantic_search" and not _argument_value_present(args, "query"):
