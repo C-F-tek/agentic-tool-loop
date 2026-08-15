@@ -2474,7 +2474,7 @@ def _claim_area_from_user_token(raw_area: str, target_scope: str = "") -> str:
 def _user_scope_claims(goal: str, target_scope: str = "") -> list[dict[str, Any]]:
     return _user_scope_claims_impl(
         goal,
-        target_scope,
+        target_scope=target_scope,
         path_exists_repo_relative=_path_exists_repo_relative,
     )
 
