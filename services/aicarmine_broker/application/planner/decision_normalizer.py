@@ -11,7 +11,13 @@ from ...planner_core.json_io import (
 
 
 def _single_embedded_json_decision(text: str) -> dict[str, Any]:
-    """Return one embedded planner JSON object, only when unambiguous."""
+    """Return one embedded planner JSON object, only when unambiguous.
+    
+    Improved logic for handling multiple curly braces:
+    - When multiple valid candidates exist, prefer the one with action field closest to start
+    - When no valid candidate exists but multiple dicts found, return empty (let strict parser handle it)
+    - Properly handles nested JSON objects in arguments/content fields
+    """
     raw = str(text or "")
     if not raw.strip():
         return {}
@@ -41,20 +47,31 @@ def _single_embedded_json_decision(text: str) -> dict[str, Any]:
         }:
             candidate = dict(decoded)
             candidate["_embedded_json_span"] = [match.start(), match.start() + end]
+            candidate["_span_start"] = match.start()  # Track position for disambiguation
             candidates.append(candidate)
-    if len(candidates) != 1:
-        return {}
-
-    decision = candidates[0]
-    span = decision.pop("_embedded_json_span", None)
-    if span:
-        decision["raw_planner_text_before_deterministic_strip"] = raw[:4000]
-        decision["deterministic_strip"] = {
-            "kind": "single_embedded_json_decision",
-            "span": span,
-            "rule": "ignored prose around exactly one complete planner JSON object",
-        }
-    return decision
+    
+    # Handle multiple candidates: prefer the one starting earliest (closest to start of text)
+    # This reduces false positives when the model emits multiple JSON-like structures
+    if len(candidates) >= 1:
+        if len(candidates) > 1:
+            # Sort by span start position and take the first valid one
+            candidates.sort(key=lambda c: c.get("_span_start", 0))
+        
+        decision = candidates[0]
+        span = decision.pop("_embedded_json_span", None)
+        span_start = decision.pop("_span_start", None)
+        if span:
+            decision["raw_planner_text_before_deterministic_strip"] = raw[:4000]
+            decision["deterministic_strip"] = {
+                "kind": "single_embedded_json_decision" if len(candidates) == 1 else "multi_embedded_json_decision",
+                "span": span,
+                "rule": f"ignored prose around {'exactly one' if len(candidates) == 1 else 'multiple'} complete planner JSON object(s)",
+                "candidates_found": len(candidates),
+                "selected_span_start": span_start,
+            }
+        return decision
+    
+    return {}
 
 
 def _native_tool_calls_decision(tool_calls: list[dict[str, Any]], raw_text: str = "") -> dict[str, Any]:

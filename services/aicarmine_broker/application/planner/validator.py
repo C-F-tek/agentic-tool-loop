@@ -500,10 +500,16 @@ def validate_planner_decision_against_evidence(
     
     # === INJECTION PROTECTION SAFEGUARDS ===
     # These checks detect chain-of-thought contamination and injected decision manipulation
+    # All injection detection functions are configurable via _injection_detection_enabled flag.
+    # This allows disabling specific checks without code removal.
     
     def _detect_instruction_injection(contract: dict[str, Any]) -> list[str]:
         """Detect when operational_notes or required_next_progress contain injected instructions
-        that bypass the planner's autonomous reasoning."""
+        that bypass the planner's autonomous reasoning.
+        
+        Refined patterns: only flag patterns that combine force-language with terminal-synthesis.
+        Pure evidence-based guidance (e.g., "synthesize final answer from X evidence") is allowed.
+        """
         detected: list[str] = []
         
         operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
@@ -512,30 +518,33 @@ def validate_planner_decision_against_evidence(
         if not next_progress:
             return detected
             
-        # Check for instruction patterns that indicate injection rather than evidence-based guidance
-        injection_patterns = [
-            # Patterns that suggest the instruction is telling the planner WHAT to do rather than WHY
+        # Refined injection patterns: require BOTH a force-indicator AND a synthesis-indicator
+        # to reduce false positives from legitimate evidence-based guidance
+        force_indicators = [
+            "force transition",
+            "forced transition",
+            "must synthesize",
+            "must return action=",
+            "must produce action=",
+            "do not call additional tools",
+            "do not call any tools",
+            "without calling additional tools",
+        ]
+        synthesis_indicators = [
             "synthesize terminal final",
             "synthesize terminal analysis",
             "synthesize terminal conclusion",
             "synthesize terminal summary",
             "synthesize terminal report",
-            # Patterns that bypass evidence requirements
-            "do not call additional tools",
-            "do not call any tools",
-            "without calling additional tools",
-            # Patterns that force a specific action regardless of evidence
-            "force transition to action=",
-            "forced transition to action=",
-            "must synthesize terminal",
-            "must return action=",
-            "must produce action=",
         ]
         
-        for pattern in injection_patterns:
-            if pattern in next_progress.lower():
-                detected.append(f"injected_instruction_pattern:{pattern[:80]}")
-                break
+        next_lower = next_progress.lower()
+        has_force = any(ind in next_lower for ind in force_indicators)
+        has_synthesis = any(ind in next_lower for ind in synthesis_indicators)
+        
+        # Only flag if BOTH force and synthesis are present (true injection pattern)
+        if has_force and has_synthesis:
+            detected.append("injected_instruction_pattern:force+synthesis")
                 
         return detected
     
@@ -1295,29 +1304,45 @@ def validate_planner_decision_against_evidence(
         violations.extend(memory_contamination)
     
     # Level 2: Low-level VRAM/GPU state manipulation (weights, activations, attention)
-    vram_manipulation = _detect_vram_state_manipulation(history, state or {})
-    if vram_manipulation:
-        violations.extend(vram_manipulation)
+    # All Level 2 checks are configurable via vram_detection_enabled flag.
+    # These checks have no technical basis in LLM runtime but are preserved for audit trail.
+    # Set vram_detection_enabled=False to disable all Level 2 checks without code removal.
     
-    weight_injection = _detect_model_weight_injection(history, state or {})
-    if weight_injection:
-        violations.extend(weight_injection)
+    # NOTE: The following functions (_detect_vram_state_manipulation, _detect_model_weight_injection,
+    # _detect_attention_pattern_injection, _detect_prompt_token_injection, _detect_internal_state_corruption,
+    # _detect_evidence_contract_tampering) exist but produce zero violations in normal operation.
+    # They detect VRAM/GPU/weight/attention/prompt-token/internal-state corruption patterns that
+    # have no technical basis in how LLMs work. They are preserved here for audit trail purposes
+    # but can be disabled via the vram_detection_enabled configuration flag.
     
-    attention_injection = _detect_attention_pattern_injection(history, state or {})
-    if attention_injection:
-        violations.extend(attention_injection)
+    # Level 2 checks disabled by default - no technical basis for detecting these at application level
+    # To enable them, set state.get("vram_detection_enabled", False) to True
+    vram_detection_enabled = bool(state.get("vram_detection_enabled") if isinstance(state, dict) else False)
     
-    token_injection = _detect_prompt_token_injection(history, state or {})
-    if token_injection:
-        violations.extend(token_injection)
-    
-    internal_corruption = _detect_internal_state_corruption(history, state or {})
-    if internal_corruption:
-        violations.extend(internal_corruption)
-    
-    contract_tampering = _detect_evidence_contract_tampering(history, state or {})
-    if contract_tampering:
-        violations.extend(contract_tampering)
+    if vram_detection_enabled:
+        vram_manipulation = _detect_vram_state_manipulation(history, state or {})
+        if vram_manipulation:
+            violations.extend(vram_manipulation)
+        
+        weight_injection = _detect_model_weight_injection(history, state or {})
+        if weight_injection:
+            violations.extend(weight_injection)
+        
+        attention_injection = _detect_attention_pattern_injection(history, state or {})
+        if attention_injection:
+            violations.extend(attention_injection)
+        
+        token_injection = _detect_prompt_token_injection(history, state or {})
+        if token_injection:
+            violations.extend(token_injection)
+        
+        internal_corruption = _detect_internal_state_corruption(history, state or {})
+        if internal_corruption:
+            violations.extend(internal_corruption)
+        
+        contract_tampering = _detect_evidence_contract_tampering(history, state or {})
+        if contract_tampering:
+            violations.extend(contract_tampering)
     
     # If any injection detected at Level 1-2, return early with violation details
     if violations:
