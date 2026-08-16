@@ -15,16 +15,35 @@ from .tool_registry import TOOL_ALIASES, TOOLS_SCHEMA
 
 
 def parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Parse a tool call from Ollama/Qwen native format into (tool_name, arguments).
+    
+    Handles both OpenAI-style and Ollama-native tool_calls format:
+    - {"function": {"name": "repo_list_files", "arguments": "{\"path\": \".\"}"}}  (stringified JSON)
+    - {"function": {"name": "repo_list_files", "arguments": {"path": "."}}}  (parsed JSON)
+    - {"name": "repo_list_files", "arguments": "..."}  (flat format)
+    """
     function = call.get("function") if isinstance(call.get("function"), dict) else {}
     name = str(function.get("name") or call.get("name") or "").strip()
+    
+    # Get arguments from function object or flat call object
     raw_args = function.get("arguments", call.get("arguments", {}))
+    
+    # Handle stringified JSON arguments (common in Ollama native format)
     if isinstance(raw_args, str):
         try:
             decoded = json.loads(raw_args) if raw_args.strip() else {}
+            if isinstance(decoded, dict):
+                return (name, decoded)
         except Exception:
-            decoded = {}
-        raw_args = decoded
-    return (name, dict(raw_args or {}) if isinstance(raw_args, dict) else {})
+            pass
+        raw_args = {}
+    
+    # Handle dict arguments
+    if isinstance(raw_args, dict):
+        return (name, raw_args)
+    
+    # Fallback: empty dict
+    return (name, {})
 
 
 def normalize_tool_name(value: str) -> str:
