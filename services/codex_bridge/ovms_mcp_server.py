@@ -94,10 +94,48 @@ TOOL_SCHEMAS = [
             "required": ["config"],
             "additionalProperties": True
         }
+    },
+    {
+        "name": "ovms_embed",
+        "description": "Generate embeddings for text/documents using OVMS embedding service on port 3551",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Input text to embed"},
+                "port": {"type": "integer", "default": 3551, "description": "OVMS embedding service port"}
+            },
+            "required": ["text"],
+            "additionalProperties": True
+        }
+    },
+    {
+        "name": "ovms_embed_batch",
+        "description": "Generate embeddings for multiple documents using OVMS embedding service",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "texts": {"type": "array", "items": {"type": "string"}, "description": "List of input texts to embed"},
+                "port": {"type": "integer", "default": 3551, "description": "OVMS embedding service port"}
+            },
+            "required": ["texts"],
+            "additionalProperties": True
+        }
+    },
+    {
+        "name": "ovms_embed_health",
+        "description": "Check OVMS embedding service health on port 3551",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {"type": "integer", "default": 3551, "description": "OVMS embedding service port"}
+            },
+            "additionalProperties": True
+        }
     }
 ]
 
 OVMS_REST_PORT = int(os.environ.get("OVMS_REST_PORT", "3550"))
+OVMS_EMBED_PORT = int(os.environ.get("OVMS_EMBED_PORT", "3551"))
 OVMS_CONFIG_PATH = os.environ.get("OVMS_CONFIG_PATH", "")
 OVMS_EXE_PATH = os.environ.get("OVMS_EXE_PATH", "")
 
@@ -192,6 +230,49 @@ def handle_ovms_set_config(args):
         return {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True}
 
 
+def handle_ovms_embed(args):
+    text = args.get("text", "")
+    port = args.get("port", OVMS_EMBED_PORT)
+    if not text:
+        return {"content": [{"type": "text", "text": json.dumps({"error": "text is required"})}], "isError": True}
+    try:
+        url = f"http://127.0.0.1:{port}/get"
+        payload = json.dumps({"model_name": "BAAI/bge-small-en-v1.5", "texts": [text]}).encode()
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=30)
+        data = json.loads(resp.read())
+        return {"content": [{"type": "text", "text": json.dumps({"status": "success", "embedding": data})}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True}
+
+
+def handle_ovms_embed_batch(args):
+    texts = args.get("texts", [])
+    port = args.get("port", OVMS_EMBED_PORT)
+    if not texts:
+        return {"content": [{"type": "text", "text": json.dumps({"error": "texts array is required"})}], "isError": True}
+    try:
+        url = f"http://127.0.0.1:{port}/get"
+        payload = json.dumps({"model_name": "BAAI/bge-small-en-v1.5", "texts": texts}).encode()
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=30)
+        data = json.loads(resp.read())
+        return {"content": [{"type": "text", "text": json.dumps({"status": "success", "embeddings": data})}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True}
+
+
+def handle_ovms_embed_health(args):
+    port = args.get("port", OVMS_EMBED_PORT)
+    try:
+        url = f"http://127.0.0.1:{port}/get"
+        req = urllib.request.urlopen(url, timeout=5)
+        data = json.loads(req.read())
+        return {"content": [{"type": "text", "text": json.dumps({"status": "healthy", "port": port, "response": data})}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": json.dumps({"status": "unhealthy", "error": str(e)})}], "isError": True}
+
+
 HANDLERS = {
     "ovms_health": handle_ovms_health,
     "ovms_start": handle_ovms_start,
@@ -201,6 +282,9 @@ HANDLERS = {
     "ovms_list_models": handle_ovms_list_models,
     "ovms_get_config": handle_ovms_get_config,
     "ovms_set_config": handle_ovms_set_config,
+    "ovms_embed": handle_ovms_embed,
+    "ovms_embed_batch": handle_ovms_embed_batch,
+    "ovms_embed_health": handle_ovms_embed_health,
 }
 
 

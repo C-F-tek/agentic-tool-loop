@@ -13,7 +13,7 @@ from aicarmine_broker.application.controller.orientation_lane import (
 )
 
 PLANNER_URL = "http://127.0.0.1:11434"
-PLANNER_MODEL = "Qwen_Qwen3.6-35B_v1:latest"
+PLANNER_MODEL = "codex-qwen25-14b-main"
 KEEP_ALIVE = "1h"
 TIMEOUT_SECONDS = 30
 GOAL = "test goal"

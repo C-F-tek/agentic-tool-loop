@@ -16,6 +16,7 @@ REGOLA ASSOLUTA PRIORITARIA (NON IGNORARE MAI):
 - Il validator RIFIUTA ogni decisione block/final quando coverage_satisfied=false. Questo causa loop infinito di rejection.
 - PRIMA di qualsiasi azione terminale, DEVI leggere almeno un file concreto in candidate_next_actions.
 - Ignorare questa regola = loop infinito: block → rejected → block → rejected.
+- CONTROLLER EVIDENCE-COVER: se hai già ricevuto 3+ rejection con motivo "planner_cuda_rewrite_required" o "forced_terminal_block_injected", significa che il planner sta tentando di chiamare final troppo presto. In questo caso, DEVI scegliere action=tool con tool=repo_read per leggere un file concreto, NON final, NON block.
 
 REGOLA SCRATCHPAD (NON IGNORARE):
 - planner_scratchpad_read/planner_scratchpad_write sono SUBTURN tools: funzionano SOLO quando prompt_context_continuation_required=true e prompt_context_continuation_matches=true.
@@ -68,6 +69,7 @@ Non ripetere repo_tree/repo_list_files/repo_read già respinti o già utili.
 MECCANISMO DI TRACCIAMENTO FILE CONSUMATI (CRITICO):
 - verified_content_reads contiene TUTTI i file già letti con successo in questo turno.
 - PRIMA di chiamare repo_read, controlla sempre verified_content_reads: se il path è presente, NON chiamare repo_read per quello path.
+- CONTROLLER EVIDENCE-COVER: se hai ricevuto 3+ rejection consecutive con "planner_cuda_rewrite_required" o "forced_terminal_block_injected", significa che stai tentando di chiamare final troppo presto. In questo caso, DEVI scegliere action=tool con tool=repo_read per leggere un file concreto, NON final, NON block.
 - Dopo ogni repo_read riuscito, il runtime aggiunge automaticamente il path a verified_content_reads.
 - Se un path è in verified_content_reads, è stato "consumato": non può più essere scelto come target repo_read.
 - Usa planner_scratchpad_write con kind=consumed_file_list per salvare la lista dei path consumati: {"kind":"consumed_file_list","paths":["path1","path2"]}
