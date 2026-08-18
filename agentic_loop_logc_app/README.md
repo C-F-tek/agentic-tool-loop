@@ -1,57 +1,49 @@
-# Agentic Loop - Data Query Agent
+# Agentic Loop LogC App - RAG Data Query Agent
 
-This directory contains a specialized agentic loop focused on data querying through an agent that uses RAG as its primary tool.
+## Overview
+
+`agentic_loop_logc_app` is a specialized agentic loop focused on Retrieval-Augmented Generation (RAG) for data querying. It connects to databases, builds RAG indexes from schema and sample data, and answers natural language questions about the data.
 
 ## Architecture
 
-The agent is the primary component. RAG (Retrieval-Augmented Generation) is one of several tools the agent uses to answer questions about data databases.
-
-## Structure
-
 ```
 agentic_loop_logc_app/
-├── README.md              # This file
-├── AGENTS.md              # Agent configuration and contracts
-├── config/
-│   ├── settings.yaml      # Agent and database configuration
-│   └── rag_index.conf     # RAG index parameters
-├── agents/
-│   ├── __init__.py
-│   ├── rag_agent.py       # Main agent implementation (uses RAG as tool)
-│   └── data_query.py      # CLI entry point for the agent
-├── rag/                     # RAG components (tools used by the agent)
-│   ├── __init__.py
-│   ├── indexer.py         # Index building tool
-│   ├── retriever.py       # Retrieval tool
-│   └── reranker.py        # Reranking tool
-├── data/
-│   ├── __init__.py
-│   ├── connectors.py      # Database connectors
-│   └── schemas.py         # Schema definitions
-├── mcp/
-│   ├── __init__.py
-│   ├── server.py          # MCP server for agent tools
-│   └── tools.py           # Tool definitions
-├── tests/
-│   ├── __init__.py
-│   ├── test_indexer.py
-│   ├── test_retriever.py
-│   ├── test_reranker.py
-│   ├── test_connectors.py
-│   ├── test_schemas.py
-│   ├── test_rag_agent.py
-│   └── test_mcp_server.py
-├── logs/                   # Agentic loop logs
-└── state/                   # Persistent state (RAG DB, etc.)
+├── config/          # Configuration files
+├── agents/          # Agent implementations  
+├── rag/             # RAG components (indexer, retriever, reranker)
+├── data/            # Database connectors and schemas
+├── mcp/             # MCP server and tools
+├── logs/            # Agentic loop logs
+└── state/           # Persistent state (RAG DB, etc.)
 ```
 
-## First Objective
+## Components
 
-Create a data query agent that uses RAG to answer questions on a SQLite database.
+### RAG Pipeline
+
+1. **Indexer** (`rag/indexer.py`) - Scans database schema and sample data to build vector index
+2. **Retriever** (`rag/retriever.py`) - Retrieves relevant chunks from the index using embedding similarity
+3. **Reranker** (`rag/reranker.py`) - Ranks retrieved candidates for relevance
+
+### Data Connectors
+
+- SQLite support via standard library
+- PostgreSQL support via `psycopg2` or `asyncpg`  
+- CSV file support via `pandas` or `csv` module
 
 ## Usage
 
-1. Configure database connection in config/settings.yaml
-2. Build RAG index using the agent: `python agents/data_query.py --action build`
-3. Query using the agent: `python agents/data_query.py --action query --question "your question"`
-4. Review logs in logs/ directory
+1. Configure database connection in `config/settings.yaml`
+2. Build RAG index using the indexer component
+3. Query using the data_query agent with natural language questions
+4. Review structured results with citations from source data
+
+## Configuration
+
+- Database: `config/settings.yaml`
+- RAG parameters: `config/rag_index.conf`  
+- MCP server port: auto-assigned or 3580
+
+## Logging
+
+All agentic loop activity is written to `agentic_loop_logc_app/logs/`.

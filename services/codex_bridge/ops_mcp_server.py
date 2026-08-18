@@ -111,6 +111,10 @@ LOCAL_MCP_SERVERS: dict[str, LocalMcpServer] = {
         "agentic_loop_client_mcp_server.py",
         "aicarmine_agentic_loop_health",
     ),
+    "aicarmine_intelligent_search": LocalMcpServer(
+        "intelligent_search_mcp_server.py",
+        "intelligent_search_health",
+    ),
 }
 
 
