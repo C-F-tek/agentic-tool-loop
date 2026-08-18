@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 """
-AICarmine Embedding MCP Server (fixed v3 - using correct OVMS API from config)
+AICarmine Ollama Embedding MCP Server (Cline-compatible)
 
-OVMS embedding service config.json shows:
-  model_name: "BAAI/bge-small-en-v1.5"
-  base_path: "sentence-transformers/all-MiniLM-L6-v2"
+Uses Ollama's /api/embed endpoint to generate real FP32 embeddings.
+Model: nomic-embed-text (768-dimensional vectors).
 
-The OVMS gRPC/HTTP API uses the standard OpenVINO serving format:
-  POST http://127.0.0.1:3551/v2/models/<model_name>/infer
-  Body: {"inputs": [{"content": "<text>"}]}
-  
-But the test script uses a different format:
-  POST http://127.0.0.1:3551/get
-  Body: {"model_name": "BAAI/bge-small-en-v1.5", "texts": ["<text>"]}
-
-This version tries both formats and falls back gracefully.
+MCP stdio protocol:
+  - Read JSON-RPC requests from stdin
+  - Write JSON-RPC responses to stdout
 """
 from __future__ import annotations
 
@@ -26,29 +19,28 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-SERVER_NAME = "aicarmine-embedding-mcp"
+SERVER_NAME = "aicarmine-ollama-embedding-mcp"
 SERVER_VERSION = "1.0.0"
 
-# OVMS embedding service URLs - try both formats
-DEFAULT_EMBEDDING_URL = "http://127.0.0.1:3551/get"
-DEFAULT_READY_URL = "http://127.0.0.1:3551/get"
-ALTERNATE_EMBEDDING_URL = "http://127.0.0.1:3551/v2/models/BAAI%2Fbge-small-en-v1.5/infer"
+# Ollama embedding service URL (port 11435)
+OLLAMA_EMBEDDING_URL = "http://127.0.0.1:11435/api/embed"
+OLLAMA_MODEL = "nomic-embed-text"
 
 # Tool schemas for MCP tools/list
 TOOL_SCHEMAS = [
     {
-        "name": "ovms_embedding_health",
-        "description": "Check OVMS embedding service health on port 3551",
+        "name": "ollama_embedding_health",
+        "description": "Check Ollama embedding service health on port 11435",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True}
     },
     {
-        "name": "ovms_embedding_list_models",
-        "description": "List available models in OVMS embedding service",
+        "name": "ollama_embedding_list_models",
+        "description": "List available Ollama embedding models",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True}
     },
     {
-        "name": "ovms_embedding_embed_text",
-        "description": "Generate embedding for a single text via OVMS",
+        "name": "ollama_embedding_embed_text",
+        "description": "Generate embedding for a single text via Ollama nomic-embed-text",
         "inputSchema": {
             "type": "object",
             "properties": {"text": {"type": "string", "description": "Input text to embed"}},
@@ -57,8 +49,8 @@ TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "ovms_embedding_embed_batch",
-        "description": "Generate embeddings for multiple texts via OVMS",
+        "name": "ollama_embedding_embed_batch",
+        "description": "Generate embeddings for multiple texts via Ollama",
         "inputSchema": {
             "type": "object",
             "properties": {"texts": {"type": "array", "items": {"type": "string"}, "description": "List of input texts to embed"}},
@@ -68,7 +60,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "embedding_search",
-        "description": "Search embeddings by similarity in SQLite DB",
+        "description": "Search embeddings by similarity in SQLite DB using Ollama embeddings",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -81,7 +73,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "embedding_similarity",
-        "description": "Compute similarity between two texts via embeddings",
+        "description": "Compute similarity between two texts via Ollama embeddings",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -94,7 +86,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "embedding_mcp_health",
-        "description": "Check embedding MCP server health (DB + OVMS)",
+        "description": "Check embedding MCP server health (DB + Ollama)",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": True}
     },
     {
@@ -114,7 +106,7 @@ def _default_db() -> Path:
 
 
 def _log(message: str) -> None:
-    debug = os.environ.get("AICARMINE_EMBEDDING_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
+    debug = os.environ.get("AICARMINE_OLLAMA_EMBEDDING_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
     if debug:
         print(f"[{SERVER_NAME}] {message}", file=sys.stderr, flush=True)
 
@@ -123,90 +115,54 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
-def _check_ovms_ready(url: str = DEFAULT_READY_URL, timeout: int = 10) -> bool:
-    """Check if OVMS embedding service is ready using the correct API format."""
-    # Try the /get endpoint first (from test_ovms_embed.py)
+def _check_ollama_ready(url: str = OLLAMA_EMBEDDING_URL, timeout: int = 10) -> bool:
+    """Check if Ollama embedding service is ready."""
     try:
-        payload = json.dumps({"model_name": "BAAI/bge-small-en-v1.5", "texts": [""]}).encode("utf-8")
+        payload = json.dumps({"model": OLLAMA_MODEL, "input": ""}).encode("utf-8")
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=timeout) as response:
             data = json.loads(response.read())
-            return "outputs" in data or "embeddings" in data
+            return "embedding" in data or "embeddings" in data
     except Exception:
-        pass
-    
-    # Try the v2/models/<name>/infer endpoint (standard OVMS format)
-    try:
-        payload = json.dumps({"inputs": [{"content": ""}]}).encode("utf-8")
-        req = urllib.request.Request(
-            ALTERNATE_EMBEDDING_URL,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            data = json.loads(response.read())
-            return "outputs" in data
-    except Exception:
-        pass
-    
-    return False
+        return False
 
 
-def _generate_embedding(text: str, url: str = DEFAULT_EMBEDDING_URL, timeout: int = 30) -> list[float] | None:
-    """Generate embedding using OVMS embedding service - try both API formats."""
-    # Try format 1: POST /get with {"model_name": ..., "texts": [...]}
+def _generate_embedding(text: str, url: str = OLLAMA_EMBEDDING_URL, timeout: int = 30) -> list[float] | None:
+    """Generate embedding using Ollama nomic-embed-text model."""
     try:
-        payload = json.dumps({"model_name": "BAAI/bge-small-en-v1.5", "texts": [text]}).encode("utf-8")
+        payload = json.dumps({"model": OLLAMA_MODEL, "input": text}).encode("utf-8")
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=timeout) as response:
             result = json.loads(response.read().decode("utf-8"))
-            if "outputs" in result:
-                return result["outputs"][0]
+            if "embedding" in result:
+                return list(result["embedding"])
             elif "embeddings" in result:
-                return result["embeddings"][0]
-    except Exception:
-        pass
-    
-    # Try format 2: POST /v2/models/<name>/infer with {"inputs": [{"content": ...}]}
-    try:
-        payload = json.dumps({"inputs": [{"content": text}]}).encode("utf-8")
-        req = urllib.request.Request(
-            ALTERNATE_EMBEDDING_URL,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            if "outputs" in result:
-                return result["outputs"][0]
-    except Exception:
-        pass
-    
+                return list(result["embeddings"][0])
+    except Exception as e:
+        _log(f"Embedding generation failed: {e}")
     return None
 
 
 def _handle_tool_call(method: str, params: dict) -> dict:
     """Handle MCP tool calls."""
-    if method == "ovms_embedding_health":
-        ovms_ready = _check_ovms_ready()
+    if method == "ollama_embedding_health":
+        ollama_ready = _check_ollama_ready()
         db_path = _default_db()
         exists = os.path.exists(str(db_path))
-        return {"content": [{"type": "text", "text": json.dumps({"ovms_ready": ovms_ready, "db_exists": exists})}]}
+        return {"content": [{"type": "text", "text": json.dumps({"ollama_ready": ollama_ready, "db_exists": exists})}]}
 
-    elif method == "ovms_embedding_list_models":
+    elif method == "ollama_embedding_list_models":
         try:
-            url = f"http://127.0.0.1:3551/get"
-            payload = json.dumps({"model_name": "BAAI/bge-small-en-v1.5", "texts": ["test"]}).encode("utf-8")
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            url = "http://127.0.0.1:11435/api/tags"
+            req = urllib.request.Request(url)
             resp = urllib.request.urlopen(req, timeout=5)
             data = json.loads(resp.read())
-            return {"content": [{"type": "text", "text": json.dumps({"status": "success", "response_keys": list(data.keys())})}]}
+            models = [m["name"] for m in data.get("models", [])]
+            return {"content": [{"type": "text", "text": json.dumps({"status": "success", "models": models})}]}
         except Exception as e:
             return {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True}
 
-    elif method == "ovms_embedding_embed_text":
+    elif method == "ollama_embedding_embed_text":
         text = params.get("text", "")
         if not text:
             return {"content": [{"type": "text", "text": json.dumps({"error": "text is required"})}], "isError": True}
@@ -215,7 +171,7 @@ def _handle_tool_call(method: str, params: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps({"embedding_shape": len(embedding), "first_5": embedding[:5], "success": True})}]}
         return {"content": [{"type": "text", "text": json.dumps({"error": "embedding generation failed"})}], "isError": True}
 
-    elif method == "ovms_embedding_embed_batch":
+    elif method == "ollama_embedding_embed_batch":
         texts = params.get("texts", [])
         if not texts:
             return {"content": [{"type": "text", "text": json.dumps({"error": "texts array is required"})}], "isError": True}
@@ -254,11 +210,11 @@ def _handle_tool_call(method: str, params: dict) -> dict:
         return {"content": [{"type": "text", "text": json.dumps({"similarity": similarity})}]}
 
     elif method == "embedding_mcp_health" or method == "aicarmine_embedding_health":
-        ovms_ready = _check_ovms_ready()
+        ollama_ready = _check_ollama_ready()
         db_path = _default_db()
         exists = os.path.exists(str(db_path))
         size = os.path.getsize(str(db_path)) if exists else 0
-        return {"content": [{"type": "text", "text": json.dumps({"ovms_ready": ovms_ready, "db_exists": exists, "db_size": size})}]}
+        return {"content": [{"type": "text", "text": json.dumps({"ollama_ready": ollama_ready, "db_exists": exists, "db_size": size})}]}
 
     return {"content": [{"type": "text", "text": json.dumps({"error": f"Unknown method: {method}"})}], "isError": True}
 
@@ -277,7 +233,7 @@ def _write_response(response: dict) -> None:
 
 
 def main() -> None:
-    _log("Starting AICarmine Embedding MCP Server v3")
+    _log("Starting AICarmine Ollama Embedding MCP Server (Cline-compatible)")
 
     while True:
         try:

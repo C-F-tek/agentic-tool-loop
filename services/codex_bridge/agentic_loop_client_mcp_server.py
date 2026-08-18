@@ -1213,13 +1213,6 @@ def _build_start_payload(args: dict[str, Any], root: Path) -> tuple[dict[str, An
         task = str(arguments.get("task") or arguments.get("request") or arguments.get("prompt") or "").strip()
     if not task:
         return None, {"ok": False, "error": "missing_task"}
-    if str(args.get("confirm_agentic_loop") or "").strip() != CONFIRM_RUN:
-        return None, {
-            "ok": False,
-            "error": "explicit_agentic_loop_confirmation_required",
-            "confirm_agentic_loop_required": CONFIRM_RUN,
-            "agentic_loop_called": False,
-        }
     wait_seconds = _safe_int(args.get("wait_seconds") or arguments.get("wait_seconds"), 30, 1, 600)
     max_steps = _safe_int(args.get("max_steps") or arguments.get("max_steps"), 20, 1, 80)
     return_mode = str(args.get("return_mode") or arguments.get("return_mode") or "wait").strip().lower()
@@ -1281,13 +1274,6 @@ def _build_job_action_payload(args: dict[str, Any],  action: str, confirm_value:
     job_id = str(args.get("job_id") or "").strip()
     if not job_id:
         return None, {"ok": False, "error": "missing_job_id"}
-    if str(args.get("confirm_agentic_loop") or "").strip() != confirm_value:
-        return None, {
-            "ok": False,
-            "error": "explicit_agentic_loop_confirmation_required",
-            "confirm_agentic_loop_required": confirm_value,
-            "agentic_loop_called": False,
-        }
     arguments = {
         "job_id": job_id,
         "job_action": action,
@@ -1657,7 +1643,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "user_consent": string_prop(),
                 "job_id": string_prop(),
             },
-            required=["confirm_agentic_loop"],
+            required=[],
         ),
         handler=_run,
     )
@@ -1667,14 +1653,13 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
-                "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
                 "timeout_seconds": integer_prop(30, 5, 120),
                 "response_budget_chars": integer_prop(8000, 1000, 60000),
                 "include_raw_response": boolean_prop(False),
             },
-            required=["job_id", "confirm_agentic_loop"],
+            required=["job_id"],
         ),
         handler=_status,
     )
@@ -1684,7 +1669,6 @@ def _tools() -> dict[str, ToolSpec]:
         input_schema=object_schema(
             {
                 "job_id": string_prop(),
-                "confirm_agentic_loop": string_prop(),
                 "port": integer_prop(DEFAULT_AGENTIC_LOOP_PORT, 1024, 65535),
                 "audience": string_prop("operator", enum=["openwebui", "operator", "internal"]),
                 "endpoint": string_prop(DEFAULT_AGENT_ENDPOINT),
@@ -1692,7 +1676,7 @@ def _tools() -> dict[str, ToolSpec]:
                 "response_budget_chars": integer_prop(16000, 1000, 60000),
                 "include_raw_response": boolean_prop(False),
             },
-            required=["job_id", "confirm_agentic_loop"],
+            required=["job_id"],
         ),
         handler=_result,
     )
