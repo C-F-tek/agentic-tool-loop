@@ -46,7 +46,7 @@ PLANNER_MODEL = (
     os.environ.get("AICARMINE_AGENT_PLANNER_MODEL")
     or os.environ.get("AICARMINE_PLANNER_MODEL")
     or os.environ.get("AICARMINE_OLLAMA_PLANNER_MODEL")
-    or "codex-qwen25-7b-main"
+    or "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
 )
 AGENTIC_PLANNER_ENABLED = os.environ.get("AICARMINE_AGENTIC_PLANNER_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 AGENTIC_FALLBACK_ONESHOT = os.environ.get("AICARMINE_AGENTIC_FALLBACK_ONESHOT", "1").strip().lower() in {"1", "true", "yes", "on"}
