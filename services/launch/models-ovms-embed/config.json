@@ -2,8 +2,8 @@
     "model_config_list": [
         {
             "config": {
-                "name": "BAAI/bge-small-en-v1.5",
-                "base_path": "C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\sentence-transformers\\all-MiniLM-L6-v2",
+                "name": "sentence-transformers/all-MiniLM-L6-v2",
+                "base_path": "C:\\Users\\someo\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\sentence-transformers\\all-MiniLM-L6-v2",
                 "target_device": "CPU",
                 "plugin_config": {
                     "PERFORMANCE_HINT": "LATENCY",

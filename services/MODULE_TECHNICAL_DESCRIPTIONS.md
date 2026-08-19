@@ -462,7 +462,7 @@ optional AST evidence from Tree-sitter, Python AST anchors and `ast-grep`.
 ### `aicarmine_broker/tool_contract.py`
 
 Shared tool-call contract. It parses planner/native tool calls, normalizes tool
-names and aliases, extracts public args/text, detects bad paths and sanitizes
+names and aliases, extracts public args/text, detects bad paths and someoizes
 internal tool arguments.
 
 - Reads: planner/public payload dictionaries.

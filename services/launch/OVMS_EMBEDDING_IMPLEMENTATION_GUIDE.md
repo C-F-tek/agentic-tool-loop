@@ -27,13 +27,13 @@ Questo documento descrive come configurare il server **OpenVINO Model Serving (O
 
 ---
 
-## Percorsi File (Ambiente Utente sanit)
+## Percorsi File (Ambiente Utente someo)
 
 | Elemento | Percorso |
 |----------|----------|
-| **ovms.exe** | `C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe` |
-| **config.json** | `C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\config.json` |
-| **graph.pbtxt** | `C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5\graph.pbtxt` |
+| **ovms.exe** | `C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe` |
+| **config.json** | `C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\config.json` |
+| **graph.pbtxt** | `C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5\graph.pbtxt` |
 
 ---
 
@@ -42,10 +42,10 @@ Questo documento descrive come configurare il server **OpenVINO Model Serving (O
 ### Comando Minimo (Senza Setupvars)
 
 ```powershell
-& "C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
+& "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
   --rest_port 3551 `
   --rest_bind_address 127.0.0.1 `
-  --config_path "C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\config.json"
+  --config_path "C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\config.json"
 ```
 
 ---
@@ -58,7 +58,7 @@ Questo documento descrive come configurare il server **OpenVINO Model Serving (O
         {
             "config": {
                 "name": "BAAI/bge-small-en-v1.5",
-                "base_path": "C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\BAAI\\bge-small-en-v1.5",
+                "base_path": "C:\\Users\\someo\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\BAAI\\bge-small-en-v1.5",
                 "target_device": "CPU",
                 "plugin_config": {
                     "PERFORMANCE_HINT": "LATENCY",
@@ -89,25 +89,25 @@ Questo documento descrive come configurare il server **OpenVINO Model Serving (O
 ### Passo 1: Download da Hugging Face
 
 ```powershell
-huggingface-cli download BAAI/bge-small-en-v1.5 --local-dir C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
+huggingface-cli download BAAI/bge-small-en-v1.5 --local-dir C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
 ```
 
 ### Passo 2: Conversione a ONNX
 
 ```powershell
-optimum-cli export onnx --model "BAAI/bge-small-en-v1.5" --output C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
+optimum-cli export onnx --model "BAAI/bge-small-en-v1.5" --output C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
 ```
 
 ### Passo 3: Conversione a OpenVINO IR
 
 ```powershell
-mo --input_model C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5\model.onnx --output_dir C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
+mo --input_model C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5\model.onnx --output_dir C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
 ```
 
 ### Passo 4: Verifica File
 
 ```powershell
-ls C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
+ls C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5
 # Dovrebbe contenere: bge-small-en-v1.5.xml, bge-small-en-v1.5.bin
 ```
 
@@ -149,10 +149,10 @@ Invoke-WebRequest -Uri "http://127.0.0.1:3551/v2/models/BAAI%2Fbge-small-en-v1.5
 
 ```powershell
 # Comando completo per copiare-incollare
-& "C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
+& "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
   --rest_port 3551 `
   --rest_bind-address 127.0.0.1 `
-  --config_path "C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\config.json"
+  --config_path "C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\config.json"
 ```
 
 | Elemento | Valore |

@@ -70,9 +70,9 @@ AGENT_TERMINAL_STATUSES = {
     "cancelled",
 }
 
-LAB_REPO = Path(os.environ.get("AICARMINE_LAB_REPO", r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab")).resolve(strict=False)
-REAL_REPO = Path(os.environ.get("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project")).resolve(strict=False)
-WORKSPACE = Path(os.environ.get("AICARMINE_VULKAN_WORKSPACE", r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker")).resolve(strict=False)
+LAB_REPO = Path(os.environ.get("AICARMINE_LAB_REPO", r"C:\Users\someo\agentic-tool-loop")).resolve(strict=False)
+REAL_REPO = Path(os.environ.get("AICARMINE_REAL_REPO", r"C:\Users\someo\agentic-tool-loop")).resolve(strict=False)
+WORKSPACE = Path(os.environ.get("AICARMINE_VULKAN_WORKSPACE", r"C:\Users\someo\agentic-tool-loop\services\codex_bridge\workspace")).resolve(strict=False)
 
 AGENT_JOB_ROOT = Path(
     os.environ.get("AICARMINE_AGENT_JOB_ROOT", str(WORKSPACE / "agent-jobs"))

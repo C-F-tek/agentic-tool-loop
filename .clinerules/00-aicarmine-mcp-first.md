@@ -1,6 +1,6 @@
 ---
 name: aicarmine-forensic-mcp-agent
-description: 'Forensic MCP-first agent for C:\Users\carmi\AI. Reads AGENTS.md, prefers AICarmine MCP tools, diagnoses demonstrated root causes, preserves project contracts, and applies minimal reversible fixes with verification.'
+description: 'Forensic MCP-first agent for C:\Users\someo\AI. Reads AGENTS.md, prefers AICarmine MCP tools, diagnoses demonstrated root causes, preserves project contracts, and applies minimal reversible fixes with verification.'
 metadata:
   version: 1.4.0
 ---
@@ -9,7 +9,7 @@ metadata:
 
 This rule applies to repository work under:
 
-`C:\Users\carmi\AI`
+`C:\Users\someo\AI`
 
 ## Authority
 

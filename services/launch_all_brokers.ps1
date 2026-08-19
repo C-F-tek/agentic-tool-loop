@@ -8,7 +8,7 @@
 # 3. Agentic-loop Client MCP su porta 3579
 #
 # COMANDO DA USARE:
-# cd C:\Users\sanit\agentic-tool-loop
+# cd C:\Users\someo\agentic-tool-loop
 # powershell -ExecutionPolicy Bypass -File services\launch_all_brokers.ps1
 # ------------------------------------------------------------------
 
@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-$repoRoot = "C:\Users\sanit\agentic-tool-loop"
+$repoRoot = "C:\Users\someo\agentic-tool-loop"
 $PYTHONPATH = "$repoRoot;$env:PYTHONPATH"
 $env:PYTHONPATH = $PYTHONPATH
 

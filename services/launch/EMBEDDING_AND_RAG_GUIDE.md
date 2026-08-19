@@ -50,12 +50,12 @@ The embedding database is **derived from** the RAG indexer:
 Repo Files → RAG Index (chunks) → Embedding Index (embeddings)
 ```
 
-- **RAG DB**: `C:\Users\sanit\AI\state\codex_rag\code_rag.sqlite3`
+- **RAG DB**: `C:\Users\someo\\AI\state\codex_rag\code_rag.sqlite3`
   - Contains: chunks, chunks_fts, files, index_meta, symbols
   - Source: git ls-files --cached --others --exclude-standard
   - Mode: full reindex = 1773 files, 3198 chunks
 
-- **Embedding DB**: `C:\Users\sanit\AI\state\codex_rag\embeddings.sqlite3`
+- **Embedding DB**: `C:\Users\someo\\AI\state\codex_rag\embeddings.sqlite3`
   - Contains: embeddings, embeddings_fts
   - Source: RAG chunks (SELECT FROM chunks)
   - Embeddings: Generated via Ollama nomic-embed-text API
@@ -324,8 +324,8 @@ similarity = embedding_similarity(text1="MCP tool usage", text2="How to use MCP 
 
 ```powershell
 # Delete existing DBs and rebuild
-Remove-Item "C:\Users\sanit\AI\state\codex_rag\code_rag.sqlite3" -Force
-Remove-Item "C:\Users\sanit\AI\state\codex_rag\embeddings.sqlite3" -Force
+Remove-Item "C:\Users\someo\\AI\state\codex_rag\code_rag.sqlite3" -Force
+Remove-Item "C:\Users\someo\\AI\state\codex_rag\embeddings.sqlite3" -Force
 
 # Rebuild RAG index
 python -c "from services.codex_bridge.rag_mcp_server import build_index; ..."
@@ -343,16 +343,16 @@ curl -s -X POST http://127.0.0.1:11435/api/embed `
   -d '{"model": "nomic-embed-text", "input": ""}'
 
 # Check SQLite DB size
-ls "C:\Users\sanit\AI\state\codex_rag\code_rag.sqlite3"
-ls "C:\Users\sanit\AI\state\codex_rag\embeddings.sqlite3"
+ls "C:\Users\someo\\AI\state\codex_rag\code_rag.sqlite3"
+ls "C:\Users\someo\\AI\state\codex_rag\embeddings.sqlite3"
 ```
 
 ### 7.3 Backup
 
 ```powershell
 # Backup SQLite DBs
-Copy-Item "C:\Users\sanit\AI\state\codex_rag\code_rag.sqlite3" "C:\Users\sanit\AI\state\codex_rag\code_rag.backup.sqlite3"
-Copy-Item "C:\Users\sanit\AI\state\codex_rag\embeddings.sqlite3" "C:\Users\sanit\AI\state\codex_rag\embeddings.backup.sqlite3"
+Copy-Item "C:\Users\someo\\AI\state\codex_rag\code_rag.sqlite3" "C:\Users\someo\\AI\state\codex_rag\code_rag.backup.sqlite3"
+Copy-Item "C:\Users\someo\\AI\state\codex_rag\embeddings.sqlite3" "C:\Users\someo\\AI\state\codex_rag\embeddings.backup.sqlite3"
 ```
 
 ## 8. Known Issues

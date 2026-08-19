@@ -12,7 +12,7 @@ $ErrorActionPreference = "Continue"
 # ------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------
-$RepoRoot = "C:\Users\sanit\agentic-tool-loop"
+$RepoRoot = "C:\Users\someo\agentic-tool-loop"
 $ServicesRoot = Join-Path $RepoRoot "services"
 $LogsRoot = Join-Path $RepoRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogsRoot | Out-Null
@@ -24,7 +24,7 @@ $env:PYTHONPATH = $PYTHONPATH
 $PythonExe = ".venv\Scripts\python.exe"
 
 # Fix OVMS environment variables for current user
-$OVMS_ROOT = "C:\Users\sanit\progeetsbat\agentic-tool-loop\ovms-runtime\ovms"
+$OVMS_ROOT = "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms"
 $OVMS_EXE = Join-Path $OVMS_ROOT "ovms.exe"
 $OVMS_SETUP = Join-Path $OVMS_ROOT "setupvars.ps1"
 $OVMS_RERANK_MODELS = Join-Path $ServicesRoot "models-ovms-rerank"

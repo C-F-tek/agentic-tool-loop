@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-OUTPUT_DIR = r"C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5"
+OUTPUT_DIR = r"C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\BAAI\bge-small-en-v1.5"
 
 
 def export_to_onnx():
@@ -95,11 +95,11 @@ def main():
 2. Export to ONNX:
    python -c "from transformers import AutoModel; import torch; model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5'); torch.onnx.export(model, (torch.ones((1, 16), dtype=torch.long), torch.ones((1, 16), dtype=torch.long)), 'model.onnx', input_names=['input_ids', 'attention_mask'], opset_version=14)"
 
-3. Convert to OpenVINO IR:
-   mo --input_model model.onnx --output_dir C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\BAAI\\bge-small-en-v1.5
+ 3. Convert to OpenVINO IR:
+    mo --input_model model.onnx --output_dir C:\\Users\\someo\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\BAAI\\bge-small-en-v1.5
 
 4. Verify files exist:
-   ls C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\BAAI\\bge-small-en-v1.5
+   ls C:\\Users\\someo\\agentic-tool-loop\\services\\launch\\models-ovms-embed\\BAAI\\bge-small-en-v1.5
 
 5. Start OVMS embedding service:
    powershell -File services/launch/ovms-embed.ps1

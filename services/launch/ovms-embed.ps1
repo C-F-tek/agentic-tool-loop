@@ -1,8 +1,8 @@
 # OVMS Embedding Service Launch Script
 # Starts OVMS embedding service on port 3551
 
-$OVMS_EXE = "C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe"
-$CONFIG_PATH = "C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-embed\config.json"
+$OVMS_EXE = "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe"
+$CONFIG_PATH = "C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-embed\config.json"
 $PORT = 3551
 
 Write-Host "Starting OVMS Embedding Service on port $PORT..."
