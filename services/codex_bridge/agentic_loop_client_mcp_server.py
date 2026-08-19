@@ -23,6 +23,69 @@ from repo_mcp_common import (
     serve,
 )
 
+# Import pointer memory and chunk management modules
+try:
+    from .pointer_memory import (
+        PointerGraph,
+        PointerNode,
+        ResumeContext,
+        RevisionPointer,
+        get_previous_block_id,
+        get_next_block_id,
+        get_refines_block_id,
+        get_resume_from_block_id,
+        has_previous,
+        has_next,
+        has_refines,
+        resume_anchor,
+        can_resume_forward,
+        build_resume_context,
+        build_revision_pointer,
+        extract_pointer_fields,
+        build_pointer_contract,
+    )
+except ImportError:
+    PointerGraph = None
+    PointerNode = None
+    ResumeContext = None
+    RevisionPointer = None
+    get_previous_block_id = None
+    get_next_block_id = None
+    get_refines_block_id = None
+    get_resume_from_block_id = None
+    has_previous = None
+    has_next = None
+    has_refines = None
+    resume_anchor = None
+    can_resume_forward = None
+    build_resume_context = None
+    build_revision_pointer = None
+    extract_pointer_fields = None
+    build_pointer_contract = None
+
+try:
+    from .chunk_management import (
+        CodeChunk,
+        EvidenceChunk,
+        ProposalChunk,
+        build_code_chunk_sequence,
+        concat_code_chunks,
+        build_evidence_chunk_sequence,
+        concat_evidence_chunks,
+        build_proposal_chunk_sequence,
+        concat_proposal_chunks,
+    )
+except ImportError:
+    CodeChunk = None
+    EvidenceChunk = None
+    ProposalChunk = None
+    build_code_chunk_sequence = None
+    concat_code_chunks = None
+    build_evidence_chunk_sequence = None
+    concat_evidence_chunks = None
+    build_proposal_chunk_sequence = None
+    concat_proposal_chunks = None+++++++ REPLACE
+
 SERVER_NAME = "aicarmine-agentic-loop-client-mcp"
 SERVER_VERSION = "0.1.0"
 

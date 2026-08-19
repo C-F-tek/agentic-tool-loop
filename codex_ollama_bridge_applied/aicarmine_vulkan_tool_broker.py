@@ -1252,6 +1252,7 @@ def planner_decision(job_id: str, state: dict[str, Any], step: int, history: lis
         "Sei il planner principale 30B dell'agente locale AI-Carmine. Il runtime controllato eseguira' i tool; "
         "tu devi scegliere il prossimo passo operativo. Rispondi SOLO con JSON valido. Non usare markdown. "
         "Azioni consentite: tool, final, block. "
+        "ROADMAP STRATEGY: At step 1 for generic analysis tasks (e.g., 'analizza repo'), you MUST first create a detailed roadmap/plan listing the tools to use and evidence to gather. In subsequent steps, execute the next tool from the roadmap and update it based on results. When the roadmap is complete, choose action='final' with the final_answer summarizing findings according to the roadmap. "
         "CONTRATTO DI CHIUSURA: quando hai abbastanza evidenza devi rispondere con action='final' e final_answer completo. "
         "Rispondi SOLO con JSON valido. Non usare markdown. "
         "Lavora in sequenza: dopo ogni tool_result valuta l'evidenza ottenuta e decidi se serve un altro tool mirato. "
