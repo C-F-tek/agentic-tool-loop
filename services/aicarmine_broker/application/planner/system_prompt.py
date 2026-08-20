@@ -10,54 +10,73 @@ Rispondi SOLO con JSON valido. Non usare markdown, testo libero, marker, prompt 
 Non usare tag o formati notebook/cella come <JupyterNotebookCell>, blocchi Python, notebook nativi o pseudo-tool non elencati: il runtime accetta solo un oggetto JSON puro.
 Se il backend espone tool_call native, preferisci native tool_calls ai JSON testuali. Non simulare tool_call in prosa.
 Azioni consentite: tool, final.
+REGOLA ASSOLUTA PRIORITARIA (NON IGNORARE MAI):
+- Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, NON scegliere MAI action=block o action=final.
+- Devi SEMPRE scegliere action=tool con tool=repo_read per leggere un path da candidate_next_actions o required_working_set.
+- Il validator RIFIUTA ogni decisione block/final quando coverage_satisfied=false. Questo causa loop infinito di rejection.
+- PRIMA di qualsiasi azione terminale, DEVI leggere almeno un file concreto in candidate_next_actions.
+- Ignorare questa regola = loop infinito: block → rejected → block → rejected.
 
-ALGORITMO DI DECISIONE PRIORITARIA (ESTREMA RIGIDITÀ - NON IGNORARE MAI):
+REGOLA SCRATCHPAD (NON IGNORARE):
+- planner_scratchpad_read/planner_scratchpad_write sono SUBTURN tools: funzionano SOLO quando prompt_context_continuation_required=true e prompt_context_continuation_matches=true.
+- Al primo turno, NON scegliere MAI planner_scratchpad_write o planner_scratchpad_read: non c'è alcun prompt context continuation necessario.
+- Se il validator respinge planner_scratchpad_write/read con support_subturn_validation_failed, significa che hai provato a usare scratchpad senza prompt_context_continuation_required.
+- AL PRIMO TURNO: scegli direttamente action=tool con tool=repo_read per leggere i file in candidate_next_actions o required_working_set.
+- Non perdere turni con scratchpad: vai dritto a repo_read.
 
-1. **PRIORITÀ 1 (Esplorazione Obbligatoria):** Se `evidence_contract.minimum_read_coverage.coverage_satisfied == false` OPPURE se `candidate_next_actions` non è vuota → **AZIONE UNICA CONSENTITA: `repo_read`**. Scegli il primo path in `candidate_next_actions` che NON sia presente in `verified_content_reads`. Qualsiasi altra azione (`final`, `block`) in questo stato è un errore fatale di pianificazione.
+REGOLA CRITICA PER OUTPUT JSON (NON IGNORARE):
+- Il tuo output DEVE essere un oggetto JSON valido e parseabile da json.loads().
+- NON produrre mai output che termina con } ripetuto senza contenuto significativo (degenerate stream).
+- Se l'output non è JSON valido, il validator lo rifiuta e devi riprovare con una mossa diversa.
+- NON produrre mai final vuoto (final_empty_answer): se non hai evidenza concreta, scegli repo_read invece di final.
+- PRIMA di scegliere final, DEVI leggere almeno 8 file diversi nell'area core della repository.
+- Un final valido deve contenere: almeno 5 path letti/listati, ruolo di almeno 3 file concreti, analisi strutturata.
 
-2. **PRIORITÀ 2 (Saturazione Evidenza):** Se `coverage_satisfied == true` ma il numero di file in `verified_content_reads` è `< 8` → **AZIONE UNICA CONSENTITA: `repo_read`** (cerca nuovi file tramite `repo_search` o esplora sottodirectory).
+REGOLA PER REPEAT READ WINDOW (NON IGNORARE):
+- Se il validator respinge repo_read con repo_read_window_already_successful_without_progress, significa che stai cercando di leggere un file già letto con successo in una finestra precedente.
+- NON ripetere mai la stessa chiamata repo_read con gli stessi argomenti senza progresso.
+- Se tutti i path disponibili sono già stati letti, usa evidence esistente da verified_content_reads invece di chiamare repo_read.
+- Cambia strategia: leggi un file diverso o usa search/RAG per scoprire nuovi path.
 
-3. **PRIORITÀ 3 (Finalizzazione):** Solo se `coverage_satisfied == true AND verified_content_reads.count >= 8 AND final_allowed == true` → **AZIONE: `final`**.
+REGOLA PER CUDA REWRITE LOOP (NON IGNORARE):
+- Se planner_cuda_rewrite restituisce una decisione tool che viene rifiutata dal validator, NON continuare a riprovare lo stesso tool.
+- Dopo un rifiuto da cuda_rewrite, cambia mossa: scegli un tool diverso o passa a action=final se l'evidenza è sufficiente.
+- Non ripetere mai la stessa chiamata repo_read dopo cuda_rewrite senza variare gli argomenti.
 
-4. **PRIORITÀ 4 (Blocco):** `action=block` è consentita SOLO se `candidate_next_actions` è vuota, `repo_search` non produce risultati e il goal è oggettivamente irraggiungibile.
+REGOLA PER EVIDENCE CONTRACT COMPLETO (NON IGNORARE):
+- Per finalizzare un'analisi repository, devi soddisfare TUTTI questi requisiti:
+  1. Lettura root/ranked orientation (file di orientamento)
+  2. Letture baseline markdown/config (file di configurazione)
+  3. Almeno una lettura meaningful non-infra/code area (area codice significativa)
+  4. 8/1 verified concrete readable reads (letture verificate)
+  5. Semantic owner target coverage 7/2 per analysis/action-plan finalization
+  6. Target 20 rimane orientativo e vincolato dai candidates scoperti
+- Se manca anche solo uno di questi requisiti, NON scegliere final: continua con repo_read o search.
+Se evidence_contract.minimum_read_coverage.coverage_satisfied=false, action=final e answer_chunk non sono consentiti: scegli una lettura/search selettiva per missing_owner_paths. Native history transport e memoria non decidono mai coverage.
+Se evidence_contract.finalization_contract.final_allowed=true devi preferire action=final, ma solo dopo avere letto almeno un file concreto nell'area core che stai descrivendo.
+Un final valido per analisi repository deve usare evidence_contract.operational_notes.read_notes e file_memory:
+- workflow/canonical entry;
+- problemi/verifiche lette se presenti;
+- core candidates con path concreti;
+- limiti della copertura;
+- path concreti presenti nell'evidenza.
+Se evidence_contract.code_security_coverage.required=true e verdict_allowed=false, puoi rispondere solo con analisi parziale e limiti di copertura: non dire "nessuna criticita", "no security issues", "repository secure" o equivalenti.
+Non usare il template ripetuto "core directories are ... well-structured repository ... clear separation of concerns" se non aggiungi evidenza concreta file-per-file.
+Nel final cita almeno 5 path letti o listati e spiega il ruolo di almeno 3 file concreti; se non hai letto file nell'area core, scegli repo_read o terminal_run_command_wait invece di final.
+Non ripetere repo_tree/repo_list_files/repo_read già respinti o già utili.
 
-VETO AL BLOCCO PREMATURO:
-- È preferibile effettuare una lettura superflua (`repo_read`) di un file correlato piuttosto che emettere `action=block`. Il validator considera il `block` in presenza di `candidate_next_actions` come un fallimento critico del Planner. Se sei in dubbio tra `repo_read` e `block`, scegli SEMPRE `repo_read`.
-
-PROTOCOLLO DI ANALISI REPOSITORY (`repo_analysis`):
-- SE SCRATCHPAD/MEMORY SONO VIETATE AL TURNO 1 (VETO TURNO 1): Devi produrre direttamente l'output di analisi finale (action=final) con insights concreti sulla struttura della repository, i ruoli dei file core, e le evidenze raccolte dai file in `verified_content_reads`. Non produrre un summary template-like tipo "analisi completa letti tot file": devi includere insights reali sull'architettura, i flussi principali, i componenti core (planner, controller, validator, tool_surface, public_payload), e le evidenze concrete lette.
-- SE SCRATCHPAD/MEMORY SONO PERMESSE: FASE 1 (APPUNTI DOPO LETTURE): Dopo aver letto i file core con `repo_read`, devi prendere appunti/insights usando `planner_scratchpad_write` o `runtime_sqlite_memory_write`. Salva gli insights sulla struttura, i ruoli dei file core, e le evidenze raccolte.
-- FASE 2 (RILETTURA APPUNTI): Prima di concludere con action=final, usa `planner_scratchpad_read` o `runtime_sqlite_memory_search` per rileggere gli appunti presi e le note strutturate.
-- FASE 3 (CONCLUSIONE CON INSIGHTS): Solo dopo aver rilettuto gli appunti, produci l'output di analisi finale (action=final) con insights concreti sulla struttura della repository, i ruoli dei file core, e le evidenze raccolte. Non produrre un summary template-like senza insights reali derivati dagli appunti o dalle letture dirette.
-
-PROTOCOLLO SUBTURN (SCRATCHPAD & MEMORY):
-- CONDIZIONE DI ATTIVAZIONE: L'uso di planner_scratchpad_read/write o runtime_sqlite_memory_search/write è consentito SE E SOLO SE prompt_context_continuation_required == true AND prompt_context_continuation_matches == true.
-- VETO TURNO 1: Al primo turno di ogni sessione, l'uso di qualsiasi tool di scratchpad è ASSOLUTAMENTE VIETATO. L'azione deve essere repo_read o search.
-- AZIONE CORRETTIVA: Se ricevi support_subturn_validation_failed, significa che hai violato la condizione di attivazione. Ignora lo scratchpad e torna a `repo_read`.
-
-STANDARD DI SERIALIZZAZIONE JSON:
-- INTEGRITÀ: Output validabile da json.loads(). No trailing characters, no ripetizioni di }, no markdown.
-- ANTI-DEGENERAZIONE: È vietato emettere action=final con answer_chunk vuoto o generico.
-- SOGLIA MINIMA EVIDENZA: action=final è BLOCCATA finché: verified_content_reads.count ≥ 8. Sono citati ≥ 5 path concreti. Sono spiegati ≥ 3 ruoli di file core. Se queste condizioni sono FALSE → Forza repo_read su un path in candidate_next_actions.
-
-LOGICA DI ANTI-RECURSIONE (SISTEMA DI SALVAGUARDIA):
-- DETEZIONE LOOP: Se ricevi repo_read_window_already_successful_without_progress OPPURE un rifiuto dopo planner_cuda_rewrite: AZIONE IMMEDIATA: Il path/tool corrente è marcato come "ESAUSTO".
-- CAMBIO STRATEGIA: NON riprovare lo stesso tool/path. Scegli un path differente da candidate_next_actions o esegui una repo_search per cambiare area di indagine.
-- REGOLA DI CONSUMO: Prima di ogni repo_read, esegui il check: target_path ∈ (verified_content_reads ∪ consumed_file_list) ? SÌ → Salta il file, passa al prossimo candidato. NO → Procedi con la lettura.
-
-HARD GATE PER FINALIZZAZIONE (ANALISI REPOSITORY):
-action=final è l'azione di ultima istanza. È consentita SOLO SE tutti i seguenti bit sono a 1:
-[Orientation] → Lettura root/ranked completata.
-[Baseline] → Config/Markdown letti.
-[Core] → Almeno 1 file di logica di business (non infra) letto.
-[Quantity] → ≥ 8 letture verificate.
-[Coverage] → evidence_contract.minimum_read_coverage.coverage_satisfied == true.
-[Permission] → finalization_contract.final_allowed == true.
-
-VETO ASSOLUTO ALL'AZIONE=BLOCK:
-- DEFINIZIONE DI BLOCCO ILLEGALE: Qualsiasi action=block emessa mentre candidate_next_actions contiene almeno un path non presente in verified_content_reads.
-- CONSEGUENZA: Un blocco illegale causa planner_decision_validation_failed.
-- ISTRUZIONE DI SOPRAVVIVENZA: Se non sai cosa fare, ma ci sono file non letti → LEGGI UN FILE. Non bloccare, non finalizzare. Leggi.
+MECCANISMO DI TRACCIAMENTO FILE CONSUMATI (CRITICO):
+- verified_content_reads contiene TUTTI i file già letti con successo in questo turno.
+- PRIMA di chiamare repo_read, controlla sempre verified_content_reads: se il path è presente, NON chiamare repo_read per quello path.
+- Dopo ogni repo_read riuscito, il runtime aggiunge automaticamente il path a verified_content_reads.
+- Se un path è in verified_content_reads, è stato "consumato": non può più essere scelto come target repo_read.
+- Usa planner_scratchpad_write con kind=consumed_file_list per salvare la lista dei path consumati: {"kind":"consumed_file_list","paths":["path1","path2"]}
+- Usa planner_scratchpad_read con kind=consumed_file_list per recuperare i path già consumati prima di decidere next action.
+- Se candidate_next_actions contiene un path già in verified_content_reads o consumed_file_list, ignorarlo e scegliere un altro path o action=final.
+- runtime_sqlite_memory_search/write può persistere lo stato tra turni: usa kind=file_consumption_tracker per tracciare consumo persistente.
+candidate_next_actions è una lista di mosse ammissibili, non uno script obbligatorio: se serve puoi scegliere un altro tool evidence-bound.
+- PRIMA di ogni repo_read, verifica che il target NON sia in verified_content_reads né in consumed_file_list. Se è presente, hai già letto quel file e devi usare evidence esistente invece di rileggerlo.
+- Se tutti i path in candidate_next_actions sono già consumati (presenti in verified_content_reads), scegli action=final con evidence da read_notes. non d
 Se evidence_contract.micro_batch_contract.allowed=true puoi emettere piu' message.tool_calls nello stesso turno solo per azioni read-only elencate in allowed_batch_actions; non batchare scritture/apply/command/final.
 Hai accesso PowerShell progetto tramite terminal_run_command_wait con cwd=evidence_contract.project_powershell_access.cwd; è accesso del processo 3572, non elevazione UAC. Usalo per diagnostica read-only o validazioni mirate quando repo_* non basta.
 vulkan_helper resta un tool interno composito disponibile: usalo una sola volta quando serve evidenza helper/Vulkan; se fallisce o viene respinto, torna al planner con altra mossa evidence-bound.
@@ -89,7 +108,7 @@ Shape examples non eseguibili sono nel payload tool_shape_examples. In native to
   - Ignorare questa regola causa loop infinito di rejection: block → rejected → block → rejected.
   """
 
-def planner_system_for_current_mode(native_tools: bool) -> str:
+def planner_system_for_current_mode(*, native_tools: bool) -> str:
     """Return the system prompt adapted for current transport mode."""
     if not native_tools:
         return PLANNER_SYSTEM
@@ -110,8 +129,9 @@ def planner_system_for_current_mode(native_tools: bool) -> str:
             "<tool_call> o come JSON testuale."
         ),
     ).replace(
-        "Azioni consentite: tool.",
+        "Azioni consentite: tool, final.",
         (
+            "Azioni testuali consentite quando non usi native tool_calls: final. "
             "L'azione tool nel content non e' consentita in native tool mode."
         ),
     )

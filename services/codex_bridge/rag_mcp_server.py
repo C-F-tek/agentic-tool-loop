@@ -40,22 +40,6 @@ from rag_index_repo import (
     build_index,
 )
 
-# Import chunk management modules for RAG index building integration
-try:
-    from .chunk_management import (
-        CodeChunk,
-        EvidenceChunk,
-        ProposalChunk,
-        build_code_chunk_sequence,
-        concat_code_chunks,
-    )
-except ImportError:
-    CodeChunk = None
-    EvidenceChunk = None
-    ProposalChunk = None
-    build_code_chunk_sequence = None
-    concat_code_chunks = None
-
 SERVER_NAME = "aicarmine-codex-rag-mcp"
 SERVER_VERSION = "1.2.0"
 STDIO_TRANSPORT = os.environ.get("AICARMINE_RAG_MCP_STDIO_TRANSPORT", "").strip().lower()

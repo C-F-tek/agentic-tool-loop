@@ -116,7 +116,7 @@ def _resolved_path(value: Any,  env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
+DEFAULT_PLANNER_MODEL = "Qwen_Qwen3.6-35B_v1:latest"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -137,13 +137,13 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         else num_ctx_requested
     )
     real_repo = _resolved_path(
-        env_str("AICARMINE_REAL_REPO", r"C:\Users\someo\agentic-tool-loop", env),
+        env_str("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project", env),
         env_name="AICARMINE_REAL_REPO",
     )
     workspace = _resolved_path(
         env_str(
             "AICARMINE_VULKAN_WORKSPACE",
-            r"C:\Users\someo\agentic-tool-loop\services\codex_bridge\workspace",
+            r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker",
             env,
         ),
         env_name="AICARMINE_VULKAN_WORKSPACE",
@@ -182,9 +182,9 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
             "http://127.0.0.1:11435/api/chat",
             env,
         ),
-            ollama_task_model=env_first(
-                ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
-                "codex-qwen25-7b-vulkan",
+        ollama_task_model=env_first(
+            ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
+            "Qwen_Qwen3.6-35B_v1:latest",
             env,
         ),
         ollama_keep_alive=env_first(
@@ -242,7 +242,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         lab_repo=_resolved_path(
             env_str(
                 "AICARMINE_LAB_REPO",
-                r"C:\Users\someo\agentic-tool-loop",
+                r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab",
                 env,
             ),
             env_name="AICARMINE_LAB_REPO",

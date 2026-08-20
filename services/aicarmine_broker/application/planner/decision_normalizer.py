@@ -77,6 +77,7 @@ def _single_embedded_json_decision(text: str) -> dict[str, Any]:
 def _native_tool_calls_decision(tool_calls: list[dict[str, Any]], raw_text: str = "") -> dict[str, Any]:
     """Convert Ollama native tool_calls into the existing planner decision shape."""
     from ...tool_contract import normalize_tool_name, parse_tool_call
+
     calls: list[dict[str, Any]] = []
     for index, call in enumerate(tool_calls if isinstance(tool_calls, list) else []):
         if not isinstance(call, dict):

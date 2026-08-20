@@ -105,25 +105,13 @@ def _next_final_rewrite_latch(
     current: str,
     reject_count: int,
     has_gap_route: bool,
-    coverage_satisfied: bool = False,
-    has_candidate_paths: bool = False,
 ) -> str:
     current = str(current or "").strip().lower()
-    
-    # When coverage is satisfied and there are no more candidate paths to read,
-    # the latch should NOT block - allow the planner to choose final.
-    if coverage_satisfied and not has_candidate_paths:
-        return "inactive"
-
     if current == "terminal_block_required":
-        # Only stay blocked if coverage is NOT satisfied OR there are still candidate paths.
-        if not (coverage_satisfied and not has_candidate_paths):
-            return current
-        return "inactive"
+        return current
 
     # one retry is allowed; on the second final-quality reject, block deterministically.
-    # BUT: if coverage is satisfied and no more candidates, don't block.
-    if reject_count >= 2 and not (coverage_satisfied and not has_candidate_paths):
+    if reject_count >= 2:
         return "terminal_block_required"
 
     if current == "required_gap_only":
@@ -154,16 +142,10 @@ def _escalate_final_rewrite_retry_count(
 
     reject_count = int(contract.get("planner_final_quality_reject_count") or 0) + 1
     contract["planner_final_quality_reject_count"] = reject_count
-    
-    # _escalate_final_rewrite_retry_count cannot call coverage helpers defined inside
-    # validate_planner_decision_against_evidence. The coverage-aware logic is applied
-    # in _apply_final_quality_route instead, which has access to those nested helpers.
     next_latch = _next_final_rewrite_latch(
         current_latch,
         reject_count=reject_count,
         has_gap_route=has_gap_route,
-        coverage_satisfied=False,  # Conservative: coverage check done in _apply_final_quality_route
-        has_candidate_paths=True,   # Conservative: assume there may be candidates
     )
     contract["final_rewrite_latch"] = next_latch
     contract["planner_may_choose_block"] = next_latch == "terminal_block_required"
@@ -197,7 +179,7 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
     # pressure for the current contract state.
     contract["final_rewrite_latch"] = "inactive"
     contract["planner_may_choose_block"] = False
-    contract["planner_may_choose_final"] = False
+    contract["planner_may_choose_final"] = True
     for key in (
         "planner_cuda_rewrite_required",
         "planner_forced_terminal_block",
@@ -256,7 +238,7 @@ def _clear_final_terminal_block_state(contract: dict[str, Any]) -> dict[str, Any
         contract.pop("candidate_next_actions", None)
 
     final_contract["final_allowed"] = True
-    final_contract["planner_may_choose_final"] = False
+    final_contract["planner_may_choose_final"] = True
     final_contract["planner_may_choose_block"] = False
     for key in (
         "planner_forced_terminal_block",
@@ -529,12 +511,13 @@ def validate_planner_decision_against_evidence(
         Pure evidence-based guidance (e.g., "synthesize final answer from X evidence") is allowed.
         """
         detected: list[str] = []
-
+        
         operational = contract.get("operational_notes") if isinstance(contract.get("operational_notes"), dict) else {}
         next_progress = str(operational.get("next_instruction") or "").strip()
-
+        
         if not next_progress:
             return detected
+            
         # Refined injection patterns: require BOTH a force-indicator AND a synthesis-indicator
         # to reduce false positives from legitimate evidence-based guidance
         force_indicators = [
@@ -554,35 +537,38 @@ def validate_planner_decision_against_evidence(
             "synthesize terminal summary",
             "synthesize terminal report",
         ]
+        
         next_lower = next_progress.lower()
         has_force = any(ind in next_lower for ind in force_indicators)
         has_synthesis = any(ind in next_lower for ind in synthesis_indicators)
+        
         # Only flag if BOTH force and synthesis are present (true injection pattern)
         if has_force and has_synthesis:
             detected.append("injected_instruction_pattern:force+synthesis")
+                
         return detected
     
     def _detect_finalization_contract_manipulation(contract: dict[str, Any]) -> list[str]:
         """Detect when finalization_contract has been manipulated to force final/block decisions."""
         detected: list[str] = []
-
+        
         final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
-
+        
         # Check for forced finalization markers that indicate manipulation
         if final_contract.get("planner_forced_terminal_block") is True:
             reason = str(final_contract.get("planner_forced_terminal_block_reason") or "")
             if reason and reason not in {"", "controller-forced"}:
                 detected.append(f"forced_terminal_block_injected:{reason[:120]}")
-
+        
         # Check for forced finalization that bypasses evidence requirements
         if final_contract.get("final_allowed") is True and final_contract.get("planner_may_choose_final") is True:
             # If coverage is not satisfied but final is allowed, this is suspicious
             coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
             if coverage and coverage.get("coverage_satisfied") is False:
                 detected.append("final_allowed_without_coverage_satisfied")
-
+        
         return detected
-
+    
     def _detect_required_tool_call_injection(contract: dict[str, Any]) -> list[str]:
         """Detect when required_next_tool_call has been injected to force specific tool usage."""
         detected: list[str] = []
@@ -607,14 +593,14 @@ def validate_planner_decision_against_evidence(
             "required to call",
             "forced to execute",
         ]
-
+        
         for pattern in injection_reasons:
             if pattern in reason.lower():
                 detected.append(f"injected_required_tool_call_reason:{pattern[:80]}")
                 break
         
         return detected
-
+    
     def _detect_working_memory_contamination(history: list[dict[str, Any]]) -> list[str]:
         """Detect when working memory or planner memory has been contaminated with injected guidance."""
         detected: list[str] = []
@@ -622,9 +608,9 @@ def validate_planner_decision_against_evidence(
         for row in history:
             if not isinstance(row, dict):
                 continue
-
+            
             tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
-
+            
             # Check for injected instructions in tool results
             next_instruction = str(tool_result.get("next_instruction") or "").strip()
             if next_instruction:
@@ -636,31 +622,31 @@ def validate_planner_decision_against_evidence(
                     "must synthesize",
                     "must return action=",
                 ]
-
+                
                 for pattern in injection_patterns:
                     if pattern in next_instruction.lower():
                         detected.append(f"injected_instruction_in_tool_result:{pattern[:80]}")
                         break
-
+        
         return detected
-
+    
     # Run injection detection checks
     injection_violations = _detect_instruction_injection(contract)
     if injection_violations:
         violations.extend(injection_violations)
-
+    
     finalization_manipulation = _detect_finalization_contract_manipulation(contract)
     if finalization_manipulation:
         violations.extend(finalization_manipulation)
-
+    
     required_tool_injection = _detect_required_tool_call_injection(contract)
     if required_tool_injection:
         violations.extend(required_tool_injection)
-
+    
     memory_contamination = _detect_working_memory_contamination(history)
     if memory_contamination:
         violations.extend(memory_contamination)
-
+    
     # If injection detected, return early with violation details
     if violations:
         return {
@@ -669,12 +655,12 @@ def validate_planner_decision_against_evidence(
             "evidence_contract": contract,
             "injection_protection": True,
         }
-
+    
     # === DEEP VRAM/GPU STATE MANIPULATION DETECTION ===
     # These checks detect low-level injection vectors where the model's internal
     # state (weights, activations, attention patterns, cache) is modified directly
     # rather than through normal prompt/contract mechanisms.
-
+    
     def _detect_vram_state_manipulation(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
         """Detect when VRAM/GPU state has been manipulated to inject biased decisions.
         
@@ -683,9 +669,11 @@ def validate_planner_decision_against_evidence(
         safely converted to {} to prevent AttributeError.
         """
         detected: list[str] = []
+        
         # Defensive: ensure inner_state itself is a dict
         if not isinstance(inner_state, dict):
             inner_state = {}
+        
         # Helper: safe get for potentially non-dict values
         def _safe_get(state_dict: Any, key: str) -> Any:
             """Get a value from state_dict, handling both dict and list cases."""
@@ -693,6 +681,7 @@ def validate_planner_decision_against_evidence(
                 return state_dict.get(key)
             # If it's a list or other type, return None to avoid AttributeError
             return None
+        
         # Check 1: Detect sudden shifts in model behavior patterns
         if history and len(history) >= 3:
             recent_decisions = []
@@ -702,6 +691,7 @@ def validate_planner_decision_against_evidence(
                     tool = str(row.get("tool") or "").strip()
                     if action or tool:
                         recent_decisions.append({"action": action, "tool": tool})
+            
             # Detect pattern: sudden shift from tool calls to final answer without evidence consumption
             if recent_decisions:
                 tool_count = sum(1 for d in recent_decisions if d.get("action") == "tool")
@@ -716,15 +706,19 @@ def validate_planner_decision_against_evidence(
                             if row.get("event") == "evidence_consumed" or row.get("type") == "evidence_consumed":
                                 evidence_consumed = True
                                 break
+                    
                     if not evidence_consumed:
                         detected.append("sudden_final_without_evidence_consumption:suspect_vram_manipulation")
+        
         # Check 2: Detect model state anomalies in planner metadata
         model_metadata_raw = _safe_get(inner_state, "planner_model_metadata")
         model_metadata = model_metadata_raw if isinstance(model_metadata_raw, dict) else {}
+        
         if model_metadata:
             # Check for anomalous temperature/TopP shifts that could indicate state manipulation
             temperature = model_metadata.get("temperature")
             top_p = model_metadata.get("top_p")
+            
             # If temperature is unusually low (near deterministic) without controller authorization
             if temperature is not None and temperature < 0.1:
                 authorized_temp = model_metadata.get("authorized_temperature")
@@ -740,11 +734,12 @@ def validate_planner_decision_against_evidence(
             weight_shift = model_metadata.get("weight_shift_detected")
             if weight_shift is True:
                 detected.append("weight_shift_detected:confirmed_vram_state_manipulation")
-
+        
         # Check 3: Detect prompt injection at token level
         for row in history:
             if not isinstance(row, dict):
                 continue
+            
             # Defensive: ensure row has .get method
             if hasattr(row, 'get'):
                 # Check for token-level injection markers
@@ -761,9 +756,11 @@ def validate_planner_decision_against_evidence(
                 activation_anomaly = row.get("activation_pattern_anomaly")
                 if activation_anomaly is True:
                     detected.append("activation_pattern_anomaly:confirmed_vram_state_manipulation")
+        
         # Check 4: Detect GPU memory state corruption
         gpu_state_raw = _safe_get(inner_state, "gpu_memory_state")
         gpu_state = gpu_state_raw if isinstance(gpu_state_raw, dict) else {}
+        
         if gpu_state:
             memory_corruption = gpu_state.get("memory_corruption_detected")
             if memory_corruption is True:
@@ -778,31 +775,35 @@ def validate_planner_decision_against_evidence(
                 detected.append("gpu_activation_modification:confirmed_vram_state_manipulation")
         
         return detected
+    
     def _detect_model_weight_injection(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
         """Detect when model weights have been injected to bias the planner.
         
         Defensive design: all inner_state values are validated to be dicts before .get() calls.
         """
         detected: list[str] = []
-
+        
         # Defensive: ensure inner_state itself is a dict
         if not isinstance(inner_state, dict):
             inner_state = {}
-
+        
         # Helper: safe get for potentially non-dict values
         def _safe_get_weight_state(state_dict: Any, key: str) -> Any:
             """Get a value from state_dict, handling both dict and list cases."""
             if isinstance(state_dict, dict):
                 return state_dict.get(key)
             return None
+        
         # Check 1: Detect weight injection markers in planner state
         weight_state_raw = _safe_get_weight_state(inner_state, "model_weight_state")
         weight_state = weight_state_raw if isinstance(weight_state_raw, dict) else {}
+        
         if weight_state:
             # Check for weight injection detection
             injection_detected = weight_state.get("weight_injection_detected")
             if injection_detected is True:
                 detected.append("model_weight_injection:confirmed_direct_weight_manipulation")
+            
             # Check for weight modification timestamps
             last_clean_weight_time = weight_state.get("last_clean_weight_timestamp")
             current_time = weight_state.get("current_timestamp")
@@ -811,75 +812,92 @@ def validate_planner_decision_against_evidence(
             if last_clean_weight_time and weight_modification_time:
                 if weight_modification_time > last_clean_weight_time:
                     detected.append("weight_modification_after_clean_state:suspect_weight_injection")
+        
         # Check 2: Detect output distribution anomalies
         output_distribution_raw = _safe_get_weight_state(inner_state, "output_distribution")
         output_distribution = output_distribution_raw if isinstance(output_distribution_raw, dict) else {}
+        
         if output_distribution:
             # Check for suspicious output concentration
             output_concentration = output_distribution.get("output_concentration")
             if output_concentration and output_concentration > 0.95:
                 # Very high concentration suggests weight manipulation
                 detected.append("extreme_output_concentration:suspect_weight_injection")
+            
             # Check for distribution anomaly flag
             distribution_anomaly = output_distribution.get("anomaly_detected")
             if distribution_anomaly is True:
                 detected.append("output_distribution_anomaly:confirmed_weight_injection")
+        
         # Check 3: Detect gradient manipulation
         gradient_state_raw = _safe_get_weight_state(inner_state, "gradient_state")
         gradient_state = gradient_state_raw if isinstance(gradient_state_raw, dict) else {}
+        
         if gradient_state:
             gradient_manipulation = gradient_state.get("gradient_manipulation_detected")
             if gradient_manipulation is True:
                 detected.append("gradient_manipulation:confirmed_weight_injection")
+            
             # Check for unexpected gradient norms
             gradient_norm = gradient_state.get("gradient_norm")
             expected_gradient_norm = gradient_state.get("expected_gradient_norm")
+            
             if gradient_norm is not None and expected_gradient_norm is not None:
                 if abs(gradient_norm - expected_gradient_norm) > 0.5:
                     detected.append("gradient_norm_anomaly:suspect_weight_injection")
+        
         # Check 4: Detect fine-tuning injection
         fine_tuning_state_raw = _safe_get_weight_state(inner_state, "fine_tuning_state")
         fine_tuning_state = fine_tuning_state_raw if isinstance(fine_tuning_state_raw, dict) else {}
+        
         if fine_tuning_state:
             unauthorized_fine_tuning = fine_tuning_state.get("unauthorized_fine_tuning_detected")
             if unauthorized_fine_tuning is True:
                 detected.append("unauthorized_fine_tuning:confirmed_weight_injection")
+            
             # Check for sudden learning rate changes
             learning_rate = fine_tuning_state.get("learning_rate")
             expected_learning_rate = fine_tuning_state.get("expected_learning_rate")
+            
             if learning_rate is not None and expected_learning_rate is not None:
                 if learning_rate > expected_learning_rate * 10:
                     detected.append("learning_rate_spike:suspect_weight_injection")
         
         return detected
-
+    
     def _detect_attention_pattern_injection(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
         """Detect when attention patterns have been injected to bias the planner.
-
+        
         Defensive design: all inner_state values are validated to be dicts before .get() calls.
         """
         detected: list[str] = []
+        
         # Defensive: ensure inner_state itself is a dict
         if not isinstance(inner_state, dict):
             inner_state = {}
+        
         # Helper: safe get for potentially non-dict values
         def _safe_get_attention_state(state_dict: Any, key: str) -> Any:
             """Get a value from state_dict, handling both dict and list cases."""
             if isinstance(state_dict, dict):
                 return state_dict.get(key)
             return None
+        
         # Check 1: Detect attention pattern anomalies
         attention_state_raw = _safe_get_attention_state(inner_state, "attention_state")
         attention_state = attention_state_raw if isinstance(attention_state_raw, dict) else {}
+        
         if attention_state:
             # Check for attention injection detection
             attention_injection = attention_state.get("attention_injection_detected")
             if attention_injection is True:
                 detected.append("attention_injection:confirmed_attention_manipulation")
+            
             # Check for attention head manipulation
             head_manipulation = attention_state.get("head_manipulation_detected")
             if head_manipulation is True:
                 detected.append("attention_head_manipulation:confirmed_attention_manipulation")
+            
             # Check for attention score anomalies
             attention_scores = attention_state.get("attention_scores")
             if isinstance(attention_scores, dict):
@@ -890,45 +908,54 @@ def validate_planner_decision_against_evidence(
                     if max_score > 0.99 and min_score < 0.01:
                         # Extreme attention concentration suggests manipulation
                         detected.append("extreme_attention_concentration:suspect_attention_injection")
+        
         # Check 2: Detect cross-attention injection
         cross_attention_state_raw = _safe_get_attention_state(inner_state, "cross_attention_state")
         cross_attention_state = cross_attention_state_raw if isinstance(cross_attention_state_raw, dict) else {}
+        
         if cross_attention_state:
             cross_attention_injection = cross_attention_state.get("injection_detected")
             if cross_attention_injection is True:
                 detected.append("cross_attention_injection:confirmed_attention_manipulation")
+            
             # Check for unexpected cross-attention patterns
             unexpected_patterns = cross_attention_state.get("unexpected_patterns_detected")
             if unexpected_patterns is True:
                 detected.append("unexpected_cross_attention_patterns:suspect_attention_injection")
+        
         # Check 3: Detect attention rollup attacks
         rollup_state_raw = _safe_get_attention_state(inner_state, "attention_rollup_state")
         rollup_state = rollup_state_raw if isinstance(rollup_state_raw, dict) else {}
+        
         if rollup_state:
             rollup_attack = rollup_state.get("rollup_attack_detected")
             if rollup_attack is True:
                 detected.append("attention_rollup_attack:confirmed_attention_manipulation")
         
         return detected
-
+    
     def _detect_prompt_token_injection(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
         """Detect when prompt tokens have been injected to bias the planner.
         
         Defensive design: all inner_state values are validated to be dicts before .get() calls.
         """
         detected: list[str] = []
+        
         # Defensive: ensure inner_state itself is a dict
         if not isinstance(inner_state, dict):
             inner_state = {}
+        
         # Helper: safe get for potentially non-dict values
         def _safe_get_prompt_state(state_dict: Any, key: str) -> Any:
             """Get a value from state_dict, handling both dict and list cases."""
             if isinstance(state_dict, dict):
                 return state_dict.get(key)
             return None
+        
         # Check 1: Detect prompt injection markers
         prompt_state_raw = _safe_get_prompt_state(inner_state, "prompt_state")
         prompt_state = prompt_state_raw if isinstance(prompt_state_raw, dict) else {}
+        
         if prompt_state:
             # Check for prompt injection detection
             prompt_injection = prompt_state.get("prompt_injection_detected")
@@ -944,9 +971,11 @@ def validate_planner_decision_against_evidence(
             boundary_violation = prompt_state.get("token_boundary_violation")
             if boundary_violation is True:
                 detected.append("token_boundary_violation:suspect_token_injection")
+        
         # Check 2: Detect special token manipulation
         special_token_state_raw = _safe_get_prompt_state(inner_state, "special_token_state")
         special_token_state = special_token_state_raw if isinstance(special_token_state_raw, dict) else {}
+        
         if special_token_state:
             special_token_manipulation = special_token_state.get("manipulation_detected")
             if special_token_manipulation is True:
@@ -956,9 +985,11 @@ def validate_planner_decision_against_evidence(
             unexpected_special_tokens = special_token_state.get("unexpected_special_tokens")
             if unexpected_special_tokens:
                 detected.append(f"unexpected_special_tokens:{len(unexpected_special_tokens)}:suspect_token_injection")
+        
         # Check 3: Detect embedding injection
         embedding_state_raw = _safe_get_prompt_state(inner_state, "embedding_state")
         embedding_state = embedding_state_raw if isinstance(embedding_state_raw, dict) else {}
+        
         if embedding_state:
             embedding_injection = embedding_state.get("injection_detected")
             if embedding_injection is True:
@@ -968,111 +999,137 @@ def validate_planner_decision_against_evidence(
             embedding_perturbation = embedding_state.get("perturbation_detected")
             if embedding_perturbation is True:
                 detected.append("embedding_perturbation:suspect_token_injection")
+        
         return detected
-
+    
     def _detect_internal_state_corruption(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
         """Detect when internal model state has been corrupted to inject biased decisions.
         
         Defensive design: all inner_state values are validated to be dicts before .get() calls.
         """
         detected: list[str] = []
+        
         # Defensive: ensure inner_state itself is a dict
         if not isinstance(inner_state, dict):
             inner_state = {}
+        
         # Helper: safe get for potentially non-dict values
         def _safe_get_hidden_state(state_dict: Any, key: str) -> Any:
             """Get a value from state_dict, handling both dict and list cases."""
             if isinstance(state_dict, dict):
                 return state_dict.get(key)
             return None
+        
         # Check 1: Detect hidden state manipulation
         hidden_state_raw = _safe_get_hidden_state(inner_state, "hidden_state")
         hidden_state = hidden_state_raw if isinstance(hidden_state_raw, dict) else {}
+        
         if hidden_state:
             hidden_state_manipulation = hidden_state.get("manipulation_detected")
             if hidden_state_manipulation is True:
                 detected.append("hidden_state_manipulation:confirmed_internal_state_corruption")
+            
             # Check for hidden state anomalies
             hidden_state_anomaly = hidden_state.get("anomaly_detected")
             if hidden_state_anomaly is True:
                 detected.append("hidden_state_anomaly:suspect_internal_state_corruption")
+        
         # Check 2: Detect cache poisoning
         cache_state_raw = _safe_get_hidden_state(inner_state, "kv_cache_state")
         cache_state = cache_state_raw if isinstance(cache_state_raw, dict) else {}
+        
         if cache_state:
             cache_poisoning = cache_state.get("poisoning_detected")
             if cache_poisoning is True:
                 detected.append("kv_cache_poisoning:confirmed_internal_state_corruption")
+            
             # Check for cache corruption markers
             cache_corruption = cache_state.get("corruption_detected")
             if cache_corruption is True:
                 detected.append("kv_cache_corruption:suspect_internal_state_corruption")
+        
         # Check 3: Detect layer norm manipulation
         layer_norm_state_raw = _safe_get_hidden_state(inner_state, "layer_norm_state")
         layer_norm_state = layer_norm_state_raw if isinstance(layer_norm_state_raw, dict) else {}
+        
         if layer_norm_state:
             layer_norm_manipulation = layer_norm_state.get("manipulation_detected")
             if layer_norm_manipulation is True:
                 detected.append("layer_norm_manipulation:confirmed_internal_state_corruption")
+            
             # Check for layer norm anomaly flags
             layer_norm_anomaly = layer_norm_state.get("anomaly_detected")
             if layer_norm_anomaly is True:
                 detected.append("layer_norm_anomaly:suspect_internal_state_corruption")
         
         return detected
-
+    
     def _detect_evidence_contract_tampering(history: list[dict[str, Any]], inner_state: dict[str, Any]) -> list[str]:
         """Detect when the evidence contract has been tampered with at the source.
+        
         Defensive design: all inner_state values are validated to be dicts before .get() calls.
         """
         detected: list[str] = []
+        
         # Defensive: ensure inner_state itself is a dict
         if not isinstance(inner_state, dict):
             inner_state = {}
+        
         # Helper: safe get for potentially non-dict values
         def _safe_get_contract_source(state_dict: Any, key: str) -> Any:
             """Get a value from state_dict, handling both dict and list cases."""
             if isinstance(state_dict, dict):
                 return state_dict.get(key)
             return None
+        
         # Check 1: Detect contract source tampering
         contract_source_raw = _safe_get_contract_source(inner_state, "contract_source_state")
         contract_source = contract_source_raw if isinstance(contract_source_raw, dict) else {}
+        
         if contract_source:
             source_tampering = contract_source.get("tampering_detected")
             if source_tampering is True:
                 detected.append("contract_source_tampering:confirmed_contract_manipulation")
+            
             # Check for contract modification timestamps
             last_valid_contract_time = contract_source.get("last_valid_contract_timestamp")
             current_time = contract_source.get("current_timestamp")
             modification_time = contract_source.get("modification_timestamp")
+            
             if last_valid_contract_time and modification_time:
                 if modification_time > last_valid_contract_time:
                     detected.append("contract_modification_after_valid_state:suspect_contract_tampering")
+        
         # Check 2: Detect semantic intent manipulation
         semantic_intent_raw = _safe_get_contract_source(inner_state, "semantic_intent_state")
         semantic_intent = semantic_intent_raw if isinstance(semantic_intent_raw, dict) else {}
+        
         if semantic_intent:
             intent_manipulation = semantic_intent.get("manipulation_detected")
             if intent_manipulation is True:
                 detected.append("semantic_intent_manipulation:confirmed_contract_manipulation")
+            
             # Check for intent drift detection
             intent_drift = semantic_intent.get("drift_detected")
             if intent_drift is True:
                 detected.append("semantic_intent_drift:suspect_contract_tampering")
+        
         return detected
-
+    
     def _detect_replan_specialist_injection(history: list[dict[str, Any]]) -> list[str]:
         """Detect when planner replan specialist has injected biased guidance."""
         detected: list[str] = []
+        
         for row in history:
             if not isinstance(row, dict):
                 continue
+            
             # Check for replan specialist events
             if row.get("event") == "planner_replan_specialist" or row.get("type") == "planner_replan_specialist":
                 replan_data = row.get("data") or row.get("tool_result")
                 if not isinstance(replan_data, dict):
                     continue
+                
                 # Check for injection patterns in replan specialist output
                 required_progress = str(replan_data.get("required_next_progress") or "").strip()
                 if required_progress:
@@ -1091,17 +1148,20 @@ def validate_planner_decision_against_evidence(
                             break
         
         return detected
+    
     def _detect_cuda_rewrite_injection(inner_state: dict[str, Any]) -> list[str]:
         """Detect when CUDA rewrite has been used to force decisions."""
         detected: list[str] = []
-
+        
         planner_role_override = inner_state.get("planner_role_override") if isinstance(inner_state.get("planner_role_override"), dict) else {}
         
         if not planner_role_override:
             return detected
+            
         role = str(planner_role_override.get("role") or "").strip()
         instruction = str(planner_role_override.get("instruction") or "").strip()
         provider = str(planner_role_override.get("provider") or "").strip()
+        
         # Check for forced rewrite that bypasses evidence requirements
         if role == "planner_cuda_rewrite":
             # Check instruction for injection patterns
@@ -1113,51 +1173,66 @@ def validate_planner_decision_against_evidence(
                 "must return action=",
                 "forced to execute",
             ]
+            
             for pattern in injection_patterns:
                 if pattern in instruction.lower():
                     detected.append(f"injected_cuda_rewrite_instruction:{pattern[:80]}")
                     break
+        
         return detected
     
     def _detect_controller_evidence_contract_tampering(contract: dict[str, Any]) -> list[str]:
         """Detect when evidence contract has been tampered by controller to force decisions."""
         detected: list[str] = []
+        
         # Check for suspicious finalization contract modifications
         final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
+        
         # If final_allowed is True but coverage is not satisfied, this is suspicious
         if final_contract.get("final_allowed") is True:
             coverage = contract.get("minimum_read_coverage") if isinstance(contract.get("minimum_read_coverage"), dict) else {}
             if coverage and coverage.get("coverage_satisfied") is False:
                 detected.append("controller_tampered_finalization_contract:final_allowed_without_coverage")
+        
         # Check for suspicious required_next_tool_call modifications
         required_tool_call = contract.get("required_next_tool_call") if isinstance(contract.get("required_next_tool_call"), dict) else {}
+        
         if required_tool_call:
             source = str(required_tool_call.get("source") or "").strip()
             validated = required_tool_call.get("validated")
             validation_source = str(required_tool_call.get("validation_source") or "").strip()
+            
             # If validated but source indicates controller injection
             if validated and source in {"controller", "controller-forced", "forced"}:
                 detected.append(f"controller_tampered_required_tool_call:source={source}")
+        
         return detected
     
     def _detect_planner_memory_surface_contamination(history: list[dict[str, Any]]) -> list[str]:
         """Detect when planner memory surface records have been contaminated with injected guidance."""
         detected: list[str] = []
+        
         for row in history:
             if not isinstance(row, dict):
                 continue
+            
             tool_result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+            
             # Check for planner memory surface contamination
             if tool_result.get("planner_memory_surface") or tool_result.get("planner_memory"):
                 memory_data = tool_result.get("planner_memory") if isinstance(tool_result.get("planner_memory"), dict) else {}
+                
                 if memory_data:
                     records = memory_data.get("records") if isinstance(memory_data.get("records"), list) else []
+                    
                     for record in records:
                         if not isinstance(record, dict):
                             continue
+                        
                         # Check for injected guidance in memory records
                         content = str(record.get("content") or record.get("text") or "").strip()
                         summary = str(record.get("summary") or "").strip()
+                        
                         if content or summary:
                             injection_patterns = [
                                 "synthesize terminal",
@@ -1167,25 +1242,32 @@ def validate_planner_decision_against_evidence(
                                 "must return action=",
                                 "forced to execute",
                             ]
+                            
                             for pattern in injection_patterns:
                                 if pattern in (content + summary).lower():
                                     detected.append(f"injected_planner_memory_record:{pattern[:80]}")
                                     break
+        
         return detected
     
     def _detect_working_memory_contamination(inner_state: dict[str, Any]) -> list[str]:
         """Detect when working memory fields have been contaminated with injected guidance."""
         detected: list[str] = []
+        
         # Defensive: inner_state can be history (list) when called from line 1288
         if not isinstance(inner_state, dict):
             return detected
+        
         raw_wm = inner_state.get("working_memory_for_30b")
         working_memory = raw_wm if isinstance(raw_wm, dict) else {}
+        
         if not working_memory:
             return detected
-        # check for injected instructions in working memory
+        
+        # Check for injected instructions in working memory
         operational_notes = working_memory.get("operational_notes") if isinstance(working_memory.get("operational_notes"), dict) else {}
         next_instruction = str(operational_notes.get("next_instruction") or "").strip()
+        
         if next_instruction:
             injection_patterns = [
                 "synthesize terminal",
@@ -1195,26 +1277,32 @@ def validate_planner_decision_against_evidence(
                 "must return action=",
                 "forced to execute",
             ]
+            
             for pattern in injection_patterns:
                 if pattern in next_instruction.lower():
                     detected.append(f"injected_working_memory_instruction:{pattern[:80]}")
                     break
         
         return detected
+    
     # === RUN COMPREHENSIVE INJECTION DETECTION ===
     # Level 1: High-level instruction injection (operational notes, contract fields)
     injection_violations = _detect_instruction_injection(contract)
     if injection_violations:
         violations.extend(injection_violations)
+    
     finalization_manipulation = _detect_finalization_contract_manipulation(contract)
     if finalization_manipulation:
         violations.extend(finalization_manipulation)
+    
     required_tool_injection = _detect_required_tool_call_injection(contract)
     if required_tool_injection:
         violations.extend(required_tool_injection)
+    
     memory_contamination = _detect_working_memory_contamination(history)
     if memory_contamination:
         violations.extend(memory_contamination)
+    
     # Level 2: Low-level VRAM/GPU state manipulation (weights, activations, attention)
     # All Level 2 checks are configurable via vram_detection_enabled flag.
     # These checks have no technical basis in LLM runtime but are preserved for audit trail.
@@ -1230,25 +1318,32 @@ def validate_planner_decision_against_evidence(
     # Level 2 checks disabled by default - no technical basis for detecting these at application level
     # To enable them, set state.get("vram_detection_enabled", False) to True
     vram_detection_enabled = bool(state.get("vram_detection_enabled") if isinstance(state, dict) else False)
+    
     if vram_detection_enabled:
         vram_manipulation = _detect_vram_state_manipulation(history, state or {})
         if vram_manipulation:
-            violations.extend(vram_manipulation)        
+            violations.extend(vram_manipulation)
+        
         weight_injection = _detect_model_weight_injection(history, state or {})
         if weight_injection:
             violations.extend(weight_injection)
+        
         attention_injection = _detect_attention_pattern_injection(history, state or {})
         if attention_injection:
-            violations.extend(attention_injection)        
+            violations.extend(attention_injection)
+        
         token_injection = _detect_prompt_token_injection(history, state or {})
         if token_injection:
-            violations.extend(token_injection)        
+            violations.extend(token_injection)
+        
         internal_corruption = _detect_internal_state_corruption(history, state or {})
         if internal_corruption:
-            violations.extend(internal_corruption)        
+            violations.extend(internal_corruption)
+        
         contract_tampering = _detect_evidence_contract_tampering(history, state or {})
         if contract_tampering:
             violations.extend(contract_tampering)
+    
     # If any injection detected at Level 1-2, return early with violation details
     if violations:
         return {
@@ -1257,19 +1352,24 @@ def validate_planner_decision_against_evidence(
             "evidence_contract": contract,
             "injection_protection": True,
         }
+    
     # Level 3: Component-level injection (replan specialist, CUDA rewrite, controller)
     replan_injection = _detect_replan_specialist_injection(history)
     if replan_injection:
         violations.extend(replan_injection)
+    
     cuda_rewrite_injection = _detect_cuda_rewrite_injection(state or {})
     if cuda_rewrite_injection:
         violations.extend(cuda_rewrite_injection)
+    
     controller_tampering = _detect_controller_evidence_contract_tampering(contract)
     if controller_tampering:
         violations.extend(controller_tampering)
+    
     memory_contamination = _detect_planner_memory_surface_contamination(history)
     if memory_contamination:
         violations.extend(memory_contamination)
+    
     working_memory_contamination = _detect_working_memory_contamination(state or {})
     if working_memory_contamination:
         violations.extend(working_memory_contamination)
@@ -1475,6 +1575,7 @@ def validate_planner_decision_against_evidence(
             elif path not in invalid:
                 invalid.append(path)
         return valid[:12], invalid[:12]
+
     def _required_next_tool_from_missing_evidences(values: Any, allow_if_missing: bool) -> dict[str, Any]:
         iterable_values = values if isinstance(values, (list, tuple, set)) else []
         paths = _coalesce_required_next_missing_paths(
@@ -1499,6 +1600,7 @@ def validate_planner_decision_against_evidence(
             "allow_only_if_missing_evidence": bool(allow_if_missing),
             "source": "repo_analysis_final_model_quality",
         }
+
     def _coalesce_required_next_tool_tool(value: dict[str, Any]) -> dict[str, Any]:
         tool = str(value.get("tool") or "").strip().lower()
         args = value.get("arguments") if isinstance(value.get("arguments"), dict) else {}
@@ -1533,6 +1635,7 @@ def validate_planner_decision_against_evidence(
         elif not args:
             out["arguments"] = {}
         return out
+
     def _coerce_final_rewrite_latch(value: Any) -> str:
         raw = str(value or "inactive").strip().lower()
         return (
@@ -1540,6 +1643,7 @@ def validate_planner_decision_against_evidence(
             if raw in {"inactive", "rewrite_required", "required_gap_only", "terminal_block_required"}
             else "inactive"
         )
+
     def _required_gap_paths_from_quality(
         quality: Mapping[str, Any],
         
@@ -1562,6 +1666,7 @@ def validate_planner_decision_against_evidence(
             for path in required_next_missing_evidences
             if path not in successful and path not in stale and path not in existing_missing
         ]
+
     def _apply_final_quality_route(quality: dict[str, Any]) -> None:
         step_index = len(history)
         if int(contract.get("planner_final_quality_last_rewrite_decision") or -1) != step_index:
@@ -1570,10 +1675,13 @@ def validate_planner_decision_against_evidence(
             contract["planner_final_quality_last_rewrite_decision"] = step_index
         reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
         contract["planner_cuda_rewrite_required"] = True
+
         required_next_progress = str(quality.get("required_next_progress") or "").strip()
+
         invalid_required_next_tool_call_paths: list[str] = []
         if required_next_progress:
             contract["required_next_progress"] = required_next_progress
+
         required_next_output_sections = (
             quality.get("required_next_output_sections")
             if isinstance(quality.get("required_next_output_sections"), list)
@@ -1585,6 +1693,7 @@ def validate_planner_decision_against_evidence(
                 for item in required_next_output_sections
                 if str(item).strip()
             ]
+
         raw_existing_required_missing = contract.get("required_next_missing_evidences")
         existing_required_missing = [
             path
@@ -1623,6 +1732,7 @@ def validate_planner_decision_against_evidence(
                     "Final-quality proposed no valid unread repo path. Do not call repo_read for "
                     "non-existing/prose paths; rewrite final from verified evidence or return a typed block."
                 )
+
         required_next_tool_call = (
             quality.get("required_next_tool_call")
             if isinstance(quality.get("required_next_tool_call"), dict)
@@ -1723,6 +1833,7 @@ def validate_planner_decision_against_evidence(
                     required_next_tool_call = {}
             if required_next_tool_call and not required_next_tool_call.get("arguments"):
                 required_next_tool_call = {}
+
         required_next_missing = (
             contract.get("required_next_missing_evidences")
             if isinstance(contract.get("required_next_missing_evidences"), list)
@@ -1747,6 +1858,7 @@ def validate_planner_decision_against_evidence(
                     }
                 else:
                     required_next_tool_call = {}
+
             if required_next_tool_call and not required_next_tool_call.get("arguments"):
                 required_next_tool_call = {}
         if required_next_tool_call:
@@ -1844,26 +1956,16 @@ def validate_planner_decision_against_evidence(
                 contract["planner_may_choose_block"] = False
         has_gap_route = bool(required_next_tool_call) or bool(required_next_missing_evidences)
         if required_next_tool_call:
-            coverage_satisfied_val = _minimum_read_coverage_satisfied()
-            missing_paths = _minimum_read_coverage_missing_owner_paths()
-            has_candidate_paths = bool(missing_paths)
             final_rewrite_latch = _next_final_rewrite_latch(
                 str(contract.get("final_rewrite_latch") or ""),
                 reject_count=reject_count,
                 has_gap_route=has_gap_route,
-                coverage_satisfied=coverage_satisfied_val,
-                has_candidate_paths=has_candidate_paths,
             )
         elif final_rewrite_latch != "terminal_block_required":
-            coverage_satisfied_val = _minimum_read_coverage_satisfied()
-            missing_paths = _minimum_read_coverage_missing_owner_paths()
-            has_candidate_paths = bool(missing_paths)
             final_rewrite_latch = _next_final_rewrite_latch(
                 final_rewrite_latch,
                 reject_count=reject_count,
                 has_gap_route=False,
-                coverage_satisfied=coverage_satisfied_val,
-                has_candidate_paths=has_candidate_paths,
             )
         contract["final_rewrite_latch"] = final_rewrite_latch
         contract["planner_may_choose_block"] = final_rewrite_latch == "terminal_block_required"
@@ -1886,6 +1988,7 @@ def validate_planner_decision_against_evidence(
             final_contract["planner_may_choose_block"] = False
             final_contract["reason"] = "repo_analysis_final_model_quality_rejected_no_runnable_gap"
         contract["finalization_contract"] = final_contract
+
     def _apply_duplicate_repo_read_path_recovery_contract(
         contract: dict[str, Any],
         repeated_reads: list[str],
@@ -1900,6 +2003,7 @@ def validate_planner_decision_against_evidence(
                 normalized.append(token)
         if not normalized:
             return contract
+
         forbidden: list[str] = []
         for item in contract.get("forbidden_repeated_repo_read_paths", []):
             if isinstance(item, str):
@@ -1934,6 +2038,7 @@ def validate_planner_decision_against_evidence(
             "reason": "already_successful_full_path_read",
             "source": "duplicate_repo_read_recovery_contract",
         }
+
         required_next_tool_call = (
             contract.get("required_next_tool_call")
             if isinstance(contract.get("required_next_tool_call"), dict)
@@ -1963,6 +2068,7 @@ def validate_planner_decision_against_evidence(
                             "step": last_step,
                         },
                     )
+
         contract.pop("required_next_tool_call", None)
         contract.pop("required_next_tool_call_validated", None)
         contract.pop("required_next_tool_call_validation_source", None)
@@ -1978,9 +2084,9 @@ def validate_planner_decision_against_evidence(
         if _minimum_read_coverage_satisfied():
             final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
             if final_rewrite_latch == "inactive":
-                contract["planner_may_choose_final"] = False
+                contract["planner_may_choose_final"] = True
                 final_contract["final_allowed"] = True
-                final_contract["planner_may_choose_final"] = False
+                final_contract["planner_may_choose_final"] = True
             else:
                 final_contract["final_allowed"] = False
                 final_contract["planner_may_choose_final"] = False
@@ -1988,6 +2094,7 @@ def validate_planner_decision_against_evidence(
             coverage = contract.get("minimum_read_coverage")
             if isinstance(coverage, dict):
                 contract["coverage_satisfied"] = coverage.get("coverage_satisfied", True)
+
         duplicate_threshold_reached = any(
             int(duplicate_repo_read_recovery_count.get(path, 0) or 0) >= 2
             for path in normalized
@@ -2015,8 +2122,10 @@ def validate_planner_decision_against_evidence(
                     "Duplicate repo_read recovery crossed retry threshold. "
                     "Return a rewrite constrained to verified evidence or explicit terminal blocker if controller-forced."
                 )
+
         contract["finalization_contract"] = final_contract
         return contract
+
     tracking_errors = _prompt_window_tracking_metadata_errors(history)
     if tracking_errors:
         return {
@@ -2151,6 +2260,7 @@ def validate_planner_decision_against_evidence(
             "violations": violations,
             "evidence_contract": contract,
         }
+
     requested_limit = int(contract.get("requested_file_limit") or 0)
     target_scope = str(contract.get("resolved_goal_scope") or "")
     target_file = str(contract.get("resolved_goal_file") or "")
@@ -2221,9 +2331,11 @@ def validate_planner_decision_against_evidence(
         if _repo_rel_token(path)
     }
     user_scope_claims = contract.get("user_scope_claims") if isinstance(contract.get("user_scope_claims"), list) else []
+
     if action in {"final", "done", "complete", "completed"}:
         final_contract = contract.get("finalization_contract") if isinstance(contract.get("finalization_contract"), dict) else {}
         final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
+
         final_forced_block_payload = final_contract.get("planner_forced_terminal_block")
         planner_forced_terminal_block = False
         planner_forced_terminal_block_reason = ""
@@ -2238,6 +2350,7 @@ def validate_planner_decision_against_evidence(
             ).strip()
             final_contract["planner_forced_terminal_block"] = planner_forced_terminal_block
         contract["finalization_contract"] = final_contract
+
         planner_may_choose_block = bool(contract.get("planner_may_choose_block")) or bool(
             final_contract.get("planner_may_choose_block")
         )
@@ -2261,6 +2374,7 @@ def validate_planner_decision_against_evidence(
             )
             final_contract["reason"] = "terminal_block_required_final_disallowed"
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
         if final_contract and final_contract.get("final_allowed") is False:
             violations.append("final_not_allowed_by_evidence_contract:" + str(final_contract.get("reason") or "insufficient evidence"))
         if post_write_validation_required and not post_write_validation_done:
@@ -2404,6 +2518,7 @@ def validate_planner_decision_against_evidence(
         if isinstance(contract.get("required_next_tool_call"), dict):
             result["required_next_tool_call"] = contract["required_next_tool_call"]
         return result
+
     if action in {"block", "blocked", "need_user", "needs_user"}:
         # Planner-format failures are not accepted as a final loop result before
         # the controller classifies them. Plain terminal text is wrapped as a
@@ -2427,14 +2542,6 @@ def validate_planner_decision_against_evidence(
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         if reason == "planner_native_mode_non_json_output":
-            # Check if this is a controller-synthesized protocol block (valid terminal signal)
-            # When controller_synthesized_protocol_block=True, the decision was synthesized from
-            # Ollama native tool_calls format and represents a valid terminal block decision.
-            controller_synthesized = decision.get("controller_synthesized_protocol_block") is True
-            if controller_synthesized:
-                # Accept controller-synthesized protocol blocks as valid terminal decisions
-                # The controller has already classified this as a legitimate block signal
-                return {"ok": True, "violations": [], "evidence_contract": contract}
             violations.append("planner_native_mode_non_json_output")
             contract["required_next_progress"] = (
                 "Native tool mode is active and the planner emitted malformed protocol-shaped "
@@ -2529,15 +2636,19 @@ def validate_planner_decision_against_evidence(
             contract["required_next_progress"] = coverage_progress
             return {"ok": False, "violations": violations, "evidence_contract": contract}
         return {"ok": True, "violations": [], "evidence_contract": contract}
+
     if action != "tool":
         violations.append(f"invalid_action:{action or '<empty>'}")
         return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if not tool:
         violations.append("missing_tool")
         return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if tool not in VALID_INTERNAL_TOOLS:
         violations.append(f"invalid_tool:{tool}")
         return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     # Explicit check: reject repo_read on paths already in verified_content_reads
     # This prevents the planner from repeatedly calling repo_read for files it has already read.
     if tool == "repo_read":
@@ -2577,6 +2688,7 @@ def validate_planner_decision_against_evidence(
                 "Choose a different unread path or action=final/block."
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if _contract_final_required_now(contract) and not prompt_context_continuation_matches:
         final_composition_tools = _final_composition_tool_names_from_candidates(contract)
         if tool not in SUPPORT_SUBTURN_TOOLS and tool not in final_composition_tools:
@@ -2587,6 +2699,7 @@ def validate_planner_decision_against_evidence(
                 "progress tools. Planner support primitives such as scratchpad, prompt windows "
                 "and runtime memory remain allowed when their arguments pass validation."
             )
+
     final_reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
     final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
     rewrite_active = final_rewrite_latch != "inactive" and final_reject_count >= 1
@@ -2638,6 +2751,7 @@ def validate_planner_decision_against_evidence(
                     required_next_progress + " No required_next_tool_call was set by final-quality gate."
                 )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
         if tool != required_rewrite_tool:
             if tool in SUPPORT_SUBTURN_TOOLS:
                 if not (prompt_context_continuation_required and prompt_context_continuation_matches):
@@ -2670,10 +2784,10 @@ def validate_planner_decision_against_evidence(
                     )
                     support_retry_count = int(contract.get("support_subturn_rewrite_retry_count") or 0)
                     if coverage_satisfied_val and may_choose_final_val and support_retry_count >= 3 and tool not in {"final", "done"}:
-                        contract["planner_may_choose_final"] = False
+                        contract["planner_may_choose_final"] = True
                         contract["planner_may_choose_block"] = False
                         final_contract["final_allowed"] = True
-                        final_contract["planner_may_choose_final"] = False
+                        final_contract["planner_may_choose_final"] = True
                         final_contract.pop("reason", None)
                         contract["finalization_contract"] = final_contract
                         contract["required_next_progress"] = (
@@ -2693,8 +2807,10 @@ def validate_planner_decision_against_evidence(
                 f"Rewrite lane requires {required_rewrite_tool} before terminal action."
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
         if required_rewrite_tool == "repo_read":
             decision_paths = [_repo_rel_token(item) for item in _decision_paths(args) if _repo_rel_token(item)]
+
             def _matches_rewrite_gap(path: str) -> bool:
                 if not required_rewrite_missing:
                     return path in required_rewrite_paths
@@ -2706,6 +2822,7 @@ def validate_planner_decision_against_evidence(
                     ) and _path_allowed_by_missing_evidence(path, required_rewrite_missing):
                         return True
                 return False
+
             if not decision_paths:
                 violations.append("repo_read_not_allowed_post_final_reject_without_gap_match")
                 contract["required_next_progress"] = (
@@ -2793,6 +2910,7 @@ def validate_planner_decision_against_evidence(
                 violations.append("planner_answer_chunk_tag_already_written_without_progress")
     if violations:
         return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if tool == "planner_scratchpad_write" and str(args.get("kind") or "") == CODE_PRODUCT_BUILD_STATE_KIND:
         if not code_product_contract.get("required"):
             violations.append("code_product_build_state_write_outside_code_product_contract")
@@ -2819,6 +2937,7 @@ def validate_planner_decision_against_evidence(
                 violations.append("code_product_build_state_blocked_without_blocker")
         if violations:
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     target_scope = _agentic_v2_goal_scope(str(goal or ""), contract)
     if target_scope and tool in {
         "repo_list_files",
@@ -2849,6 +2968,7 @@ def validate_planner_decision_against_evidence(
             for p in out_of_scope[:5]:
                 violations.append(f"{tool}_scope_mismatch:path={p}:expected_under={target_scope}")
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if tool == "repo_read":
         final_reject_count = int(contract.get("planner_final_quality_reject_count") or 0)
         final_rewrite_latch = _coerce_final_rewrite_latch(contract.get("final_rewrite_latch"))
@@ -2891,6 +3011,7 @@ def validate_planner_decision_against_evidence(
                 history=history,
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if tool == "planner_scratchpad_read":
         window_signature = _planner_scratchpad_window_signature(args)
         if window_signature and window_signature in _successful_window_signatures(history, "planner_scratchpad_read"):
@@ -2904,6 +3025,7 @@ def validate_planner_decision_against_evidence(
                 history=history,
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if tool == "repo_read" and not _agentic_v2_read_has_window(args):
         already_read = set(_agentic_v2_successful_read_paths(history))
         repeated_reads = [p for p in _agentic_v2_decision_paths(tool, args) if p in already_read]
@@ -2915,6 +3037,7 @@ def validate_planner_decision_against_evidence(
                 history=history,
             )
             return {"ok": False, "violations": violations, "evidence_contract": contract}
+
     if tool == "repo_list_files":
         path = _repo_rel_token(args.get("path") or ".")
         suffix = str(args.get("suffix") or args.get("glob") or "")
@@ -2935,8 +3058,10 @@ def validate_planner_decision_against_evidence(
             violations.append(f"repo_list_files_suffix_not_python:{suffix}")
         if repeated_tool_call_count(history, tool, args) >= 1 and known_paths:
             violations.append("repeated_repo_list_files_after_useful_file_list")
+
     if tool == "repo_tree" and repeated_tool_call_count(history, tool, args) >= 1:
         violations.append("repeated_same_tool_arguments_without_progress")
+
     if tool in {"repo_read", "repo_apply_patch", "repo_write_file", "repo_propose_code_edit"}:
         paths = _decision_paths(args)
         if tool == "repo_apply_patch" and args.get("path"):
@@ -2958,30 +3083,6 @@ def validate_planner_decision_against_evidence(
                 elif path not in apply_read_targets:
                     violations.append(f"repo_read_outside_apply_write_targets:{path}")
             if tool == "repo_read" and known_paths and path not in known_paths and path not in admissible_reads:
-                # FIX Bug #2: Allow common documentation files (README.md, AGENTS.md, LICENSE, etc.) at repo root
-                # without requiring prior file evidence. These files are universally accessible and don't need proof.
-                import os
-                from pathlib import Path as PathLibPath
-                
-                # Extract just the filename from the path for comparison
-                path_parts = str(path).split("/") if "/" in path else [str(path)]
-                filename = path_parts[-1] if path_parts else ""
-                
-                # Common documentation files that don't need prior evidence
-                _DOCUMENTATION_FILES = frozenset({
-                    "README.md", "README", "README.txt",
-                    "AGENTS.md", "AGENTS.txt",
-                    "LICENSE", "LICENSE.md", "LICENSE.txt",
-                    "CHANGELOG.md", "CHANGELOG.txt",
-                    "CONTRIBUTING.md", "CONTRIBUTING.txt",
-                    "CODE_OF_CONDUCT.md",
-                    "SECURITY.md",
-                    "SUPPORT.md",
-                })
-                
-                # Check if this is a common documentation file at repo root
-                is_common_doc_file = filename in _DOCUMENTATION_FILES
-                
                 # Check if this path was already flagged as forbidden (repeated attempt)
                 forbidden_paths = contract.get("forbidden_repo_read_paths", [])
                 if path in forbidden_paths:
@@ -3000,7 +3101,7 @@ def validate_planner_decision_against_evidence(
                         contract.get("finalization_contract", {}).get("planner_may_choose_final")
                     )
                     if coverage_satisfied_val and may_choose_final_val and repeat_count >= 1:
-                        contract["planner_may_choose_final"] = False
+                        contract["planner_may_choose_final"] = True
                         contract["planner_may_choose_block"] = False
                         final_contract = (
                             contract.get("finalization_contract")
@@ -3008,7 +3109,7 @@ def validate_planner_decision_against_evidence(
                             else {}
                         )
                         final_contract["final_allowed"] = True
-                        final_contract["planner_may_choose_final"] = False
+                        final_contract["planner_may_choose_final"] = True
                         final_contract.pop("reason", None)
                         contract["finalization_contract"] = final_contract
                         contract["required_next_progress"] = (
@@ -3048,10 +3149,10 @@ def validate_planner_decision_against_evidence(
                     final_contract.get("planner_may_choose_final")
                 )
                 if repeat_count >= 1 and coverage_satisfied_val and may_choose_final_val:
-                    contract["planner_may_choose_final"] = False
+                    contract["planner_may_choose_final"] = True
                     contract["planner_may_choose_block"] = False
                     final_contract["final_allowed"] = True
-                    final_contract["planner_may_choose_final"] = False
+                    final_contract["planner_may_choose_final"] = True
                     final_contract.pop("reason", None)
                     contract["finalization_contract"] = final_contract
                     contract["required_next_progress"] = (
@@ -3098,10 +3199,10 @@ def validate_planner_decision_against_evidence(
                     final_contract.get("planner_may_choose_final")
                 )
                 if repeat_count >= 1 and coverage_satisfied_val and may_choose_final_val:
-                    contract["planner_may_choose_final"] = False
+                    contract["planner_may_choose_final"] = True
                     contract["planner_may_choose_block"] = False
                     final_contract["final_allowed"] = True
-                    final_contract["planner_may_choose_final"] = False
+                    final_contract["planner_may_choose_final"] = True
                     final_contract.pop("reason", None)
                     contract["finalization_contract"] = final_contract
                     contract["required_next_progress"] = (
@@ -3223,6 +3324,7 @@ def validate_planner_decision_against_evidence(
                 or args.get("new_text")
             ):
                 violations.append("repo_propose_code_edit_no_op_has_patch_payload")
+
     if repeated_tool_call_count(history, tool, args) >= 2:
         violations.append("repeated_same_tool_arguments_without_progress")
         # Forced finalization guard: when identical tool calls repeat without progress and coverage
@@ -3232,10 +3334,10 @@ def validate_planner_decision_against_evidence(
             final_contract.get("planner_may_choose_final")
         )
         if coverage_satisfied_val and may_choose_final_val and tool not in {"final", "done"}:
-            contract["planner_may_choose_final"] = False
+            contract["planner_may_choose_final"] = True
             contract["planner_may_choose_block"] = False
             final_contract["final_allowed"] = True
-            final_contract["planner_may_choose_final"] = False
+            final_contract["planner_may_choose_final"] = True
             final_contract.pop("reason", None)
             contract["finalization_contract"] = final_contract
             contract["required_next_progress"] = (
@@ -3249,6 +3351,7 @@ def validate_planner_decision_against_evidence(
                 "evidence_contract": contract,
                 "forced_finalization": True,
             }
+
     invalid_signature = _canonical_invalid_code_product_decision_signature(decision, violations)
     invalid_repeat_count = _invalid_code_product_decision_signature_count(history, invalid_signature)
     if invalid_signature:
@@ -3276,6 +3379,7 @@ def validate_planner_decision_against_evidence(
             violations.append("planner_repeated_invalid_code_product_decision")
             code_contract["terminal_blocker"] = "planner_repeated_invalid_code_product_decision"
         contract["code_product_contract"] = code_contract
+
     response = {"ok": not violations, "violations": violations, "evidence_contract": contract}
     if invalid_signature:
         response["invalid_decision_signature"] = invalid_signature

@@ -410,7 +410,7 @@ def _orientation_call(
         candidates=selected_candidates,
         post_json=post_json,
         planner_url="http://127.0.0.1:11434/api/chat",
-        planner_model="qwen2.5:14b-instruct",
+        planner_model="Qwen_Qwen3.6-35B_v1:latest",
         keep_alive="30m",
         timeout_seconds=37,
         max_selected=max_selected,
@@ -460,7 +460,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             "root_doc:README.md",
             "root_area:services",
         ], result
-        assert result.get("planner_model") == "qwen2.5:14b-instruct", result
+        assert result.get("planner_model") == "Qwen_Qwen3.6-35B_v1:latest", result
         assert result.get("planner_url") == (
             "http://127.0.0.1:11434/api/chat"
         ), result
@@ -765,7 +765,7 @@ def _deterministic_orientation_profile() -> dict[str, Any]:
             prompt_ids = [c["candidate_id"] for c in parsed["candidates"]]
             # Il modello emette: README due volte + INVENTED + services
             return {
-                "model": "qwen2.5:14b-instruct",
+                "model": "Qwen_Qwen3.6-35B_v1:latest",
                 "message": {
                     "role": "assistant",
                     "content": json.dumps({

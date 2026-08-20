@@ -33,12 +33,12 @@ processes. The stable shape is:
 ```json
 {
   "type": "stdio",
-  "command": "C:\\Users\\someo\\agentic-tool-loop\\.venv-py147\\Scripts\\python.exe",
-  "args": ["-u", "C:\\Users\\someo\\agentic-tool-loop\\services\\codex_bridge\\rag_mcp_server.py"],
-  "cwd": "C:\\Users\\someo\\agentic-tool-loop",
+  "command": "C:\\Users\\carmi\\AI\\venvs\\labtools\\Scripts\\python.exe",
+  "args": ["-u", "C:\\Users\\carmi\\AI\\services\\codex_bridge\\rag_mcp_server.py"],
+  "cwd": "C:\\Users\\carmi\\AI",
   "env": {
-    "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\someo\\agentic-tool-loop",
-    "AICARMINE_LAB_REPO": "C:\\Users\\someo\\agentic-tool-loop"
+    "AICARMINE_CODEX_MCP_REPO_ROOT": "C:\\Users\\carmi\\AI",
+    "AICARMINE_LAB_REPO": "C:\\Users\\carmi\\AI"
   }
 }
 ```

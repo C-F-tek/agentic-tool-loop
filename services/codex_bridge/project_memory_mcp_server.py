@@ -22,18 +22,6 @@ from repo_mcp_common import (
     serve,
 )
 
-# Import agent memory models for AgentMicroTask support
-try:
-    from .agent_memory_models import (
-        MemoryRecord,
-        AgentMicroTask,
-        build_state_packet,
-    )
-except ImportError:
-    MemoryRecord = None
-    AgentMicroTask = None
-    build_state_packet = None
-
 SERVER_NAME = "aicarmine-project-memory-mcp"
 SERVER_VERSION = "0.1.0"
 

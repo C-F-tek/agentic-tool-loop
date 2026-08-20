@@ -2,7 +2,7 @@
 # This script starts the executor service independently without OpenWebUI
 
 $ErrorActionPreference = "Stop"
-$AI_ROOT = "C:\Users\someo\agentic-tool-loop"
+$AI_ROOT = "C:\Users\sanit\agentic-tool-loop"
 $PYTHONPATH = "$AI_ROOT;$env:PYTHONPATH"
 $env:PYTHONPATH = $PYTHONPATH
 

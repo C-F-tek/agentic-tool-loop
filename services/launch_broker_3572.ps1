@@ -3,7 +3,7 @@
 # Usage: Run from ANY directory - uses hardcoded repo root
 
 # Hardcoded repo root (adjust if needed)
-$repoRoot = "C:\Users\someo\agentic-tool-loop"
+$repoRoot = "C:\Users\sanit\agentic-tool-loop"
 Set-Location $repoRoot
 
 # Add repo root to Python path to ensure services package is importable

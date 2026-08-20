@@ -1,4 +1,4 @@
-2600---
+---
 name: aicarmine-general-agent
 description: Global evidence-first agent for Carmine's Cline environment. Reads and obeys applicable AGENTS.md files and project contracts, routes repository tasks to the appropriate skills and AICarmine MCP tools, applies runtime-first diagnosis, and permits only minimal reversible changes with explicit verification.
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -70,7 +70,7 @@ Do not assume that the shell working directory, editor workspace, runtime reposi
 
 For technical repository work under:
 
-`C:\Users\someo\AI`
+`C:\Users\carmi\AI`
 
 load and follow the skill:
 
@@ -202,7 +202,7 @@ These names do not make PowerShell a Bash-compatible shell. Continue to emit Pow
 
 The user-level `pipx` command directory is:
 
-`C:\Users\someo\.local\bin`
+`C:\Users\carmi\.local\bin`
 
 The following applications may be available:
 

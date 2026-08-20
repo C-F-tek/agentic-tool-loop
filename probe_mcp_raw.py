@@ -11,15 +11,15 @@ if len(sys.argv) != 2:
     print("Uso: probe_mcp_raw.py <server.py>")
     raise SystemExit(2)
 
-python_exe = r"C:\Users\someo\agentic-tool-loop\.venv-py147\Scripts\python.exe"
+python_exe = r"C:\Users\carmi\AI\venvs\labtools\Scripts\python.exe"
 server_script = os.path.abspath(sys.argv[1])
 
 env = os.environ.copy()
 env.update(
     {
-        "AICARMINE_CODEX_MCP_REPO_ROOT": r"C:\Users\someo\agentic-tool-loop",
-        "AICARMINE_LAB_REPO": r"C:\Users\someo\agentic-tool-loop",
-        "AICARMINE_USEFUL_TOOLS_ROOT": r"C:\Users\someo\agentic-tool-loop\services\useful_tools",
+        "AICARMINE_CODEX_MCP_REPO_ROOT": r"C:\Users\carmi\AI",
+        "AICARMINE_LAB_REPO": r"C:\Users\carmi\AI",
+        "AICARMINE_USEFUL_TOOLS_ROOT": r"C:\Users\carmi\AI\services\useful_tools",
         "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "24000",
     }
 )
@@ -52,7 +52,7 @@ print()
 
 process = subprocess.Popen(
     [python_exe, "-u", server_script],
-    cwd=r"C:\Users\someo\agentic-tool-loop",
+    cwd=r"C:\Users\carmi\AI",
     env=env,
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,

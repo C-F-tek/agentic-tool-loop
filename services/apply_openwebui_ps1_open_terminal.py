@@ -99,7 +99,7 @@ function Start-AICOpenTerminal {{
     $labRepoForTerminal = Get-AICFirstNonEmpty @(
         $env:AICARMINE_LAB_REPO,
         [Environment]::GetEnvironmentVariable("AICARMINE_LAB_REPO", "User"),
-        "C:\\Users\\someo\\agentic-tool-loop"
+        "C:\\Users\\carmi\\AI\\lab-worktrees\\blender-audio-project-lab"
     )
     $cwd = Get-AICFirstNonEmpty @($labRepoForTerminal, $env:OPEN_TERMINAL_CWD)
     if ([string]::IsNullOrWhiteSpace($cwd) -or -not (Test-Path -LiteralPath $cwd)) {{

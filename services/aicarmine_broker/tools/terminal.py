@@ -132,9 +132,9 @@ def terminal_environment_contract() -> dict[str, Any]:
             "recommended_path_format": "C:\\Users\\...",
             "valid_example": str(cwd),
             "invalid_examples": [
-                "\\\\Users\\\\someo\\\\AI\\\\services",
-                "/Users/someo/AI/services",
-                "Users/someo/AI/services",
+                "\\\\Users\\\\carmi\\\\AI\\\\services",
+                "/Users/carmi/AI/services",
+                "Users/carmi/AI/services",
             ],
             "normalizer_accepts_missing_drive_under_users": True,
         },
@@ -173,7 +173,7 @@ def _terminal_command_repair(command: str) -> dict[str, Any] | None:
             "bad_command": raw,
             "auto_repair_available": False,
             "reason": "path_missing_drive",
-            "repairs": ["Use an absolute Windows path with drive, e.g. C:\\Users\\someo\\AI\\services"],
+            "repairs": ["Use an absolute Windows path with drive, e.g. C:\\Users\\carmi\\AI\\services"],
             "terminal_environment_contract": terminal_environment_contract(),
         }
     if not repaired:

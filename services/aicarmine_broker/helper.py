@@ -24,18 +24,6 @@ from .repo_tools import compact, repo_read, repo_search, repo_status
 
 
 def helper_text(args: dict[str, Any]) -> str:
-    """Extract task/request text from nested argument dictionaries.
-
-    Scans args, original_30b_arguments, and arguments for the first non-empty
-    string found under keys like 'task', 'request', 'query', etc. Falls back to
-    compacting the full payload when no direct instruction is found.
-
-    Args:
-        args: Nested argument dictionary from tool calls.
-
-    Returns:
-        The extracted task string, truncated at 4000 characters if needed.
-    """
     for src in (args, args.get("original_30b_arguments") or {}, args.get("arguments") or {}):
         if not isinstance(src, dict):
             continue
@@ -47,19 +35,6 @@ def helper_text(args: dict[str, Any]) -> str:
 
 
 def helper_search_queries(task: str, public_tool: str) -> list[str]:
-    """Build deterministic search query patterns from task keywords.
-
-    Maps semantic categories (bridge/broker, patch/fix, analysis) to ripgrep-style
-    queries that the broker uses for evidence gathering. Returns up to 8 unique
-    queries deduplicated and sorted by relevance.
-
-    Args:
-        task: The user-facing task string.
-        public_tool: Name of the public tool being invoked.
-
-    Returns:
-        List of search query strings, max 8 entries.
-    """
     low = (task + " " + public_tool).lower()
     queries: list[str] = []
     if any(t in low for t in ("bridge", "broker", "3571", "3572", "vulkan", "dispatcher")):
@@ -90,19 +65,6 @@ def helper_search_queries(task: str, public_tool: str) -> list[str]:
 
 
 def evidence_from_search(result: dict[str, Any], limit: int = 12) -> list[dict[str, Any]]:
-    """Parse search result matches into structured evidence rows.
-
-    Extracts path, line number, and text from each match using colon-separated
-    format (path:line:text). Returns a list of dicts suitable for downstream
-    problem extraction.
-
-    Args:
-        result: Dict containing 'matches' array from repo_search tool output.
-        limit: Maximum number of rows to return (default 12).
-
-    Returns:
-        List of evidence dicts with keys: raw, text, path, line, text.
-    """
     evidence: list[dict[str, Any]] = []
     for raw in (result.get("matches") or [])[:limit]:
         text = str(raw)
@@ -115,17 +77,6 @@ def evidence_from_search(result: dict[str, Any], limit: int = 12) -> list[dict[s
 
 
 def changed_files_from_status(status: dict[str, Any]) -> list[str]:
-    """Extract modified file paths from git diff --name-status output.
-
-    Parses the stdout_tail of a diff_name_status result, splitting each line on
-    whitespace and collecting the last token as the file path.
-
-    Args:
-        status: Dict containing results from repo_status tool with diff data.
-
-    Returns:
-            List of changed file paths (empty list if parsing fails).
-    """
     try:
         text = status["results"]["diff_name_status"]["stdout_tail"]
     except Exception:
@@ -144,18 +95,6 @@ def changed_files_from_status(status: dict[str, Any]) -> list[str]:
 
 
 def review_docs(task: str, root: Path) -> list[dict[str, Any]]:
-    """Read repository documentation files when the task indicates analysis intent.
-
-    Checks for problems.md, AGENTS.md, README.md, and CONTEXT_INDEX.md under the
-    repo root. Only reads files that exist; returns empty list otherwise.
-
-    Args:
-        task: User-facing instruction string (lowercase keywords checked).
-        root: Repository root Path object.
-
-    Returns:
-        List of doc read results from repo_read tool, max 4 items.
-    """
     low = task.lower()
     if not any(t in low for t in ("analizza", "analyze", "review", "problema", "issue", "repo")):
         return []
@@ -168,18 +107,6 @@ def review_docs(task: str, root: Path) -> list[dict[str, Any]]:
 
 
 def first_read_item(docs: list[dict[str, Any]], path: str) -> dict[str, Any] | None:
-    """Find the first successful read item matching a specific file path.
-
-    Iterates through doc results looking for an item where ok=True and path matches
-        exactly. Used as lookup helper for extract_open_problems.
-
-    Args:
-        docs: List of doc read result dicts from review_docs.
-        path: Target file path string (e.g., 'problems.md').
-
-    Returns:
-        The matching dict or None if no match found.
-    """
     for doc in docs:
         for item in doc.get("items") or []:
             if item.get("ok") and item.get("path") == path:
@@ -188,19 +115,6 @@ def first_read_item(docs: list[dict[str, Any]], path: str) -> dict[str, Any] | N
 
 
 def fenced_field(block: str, label: str, limit: int = 1400) -> str:
-    """Extract a named fenced code block from markdown content.
-
-    Parses triple-backtick text blocks labeled with the given field name and returns
-    the inner text truncated to the specified character limit.
-
-    Args:
-        block: Full markdown content string containing fenced blocks.
-        label: Field name to search for (e.g., 'Evidence from code/document review').
-        limit: Maximum output characters (default 1400).
-
-    Returns:
-        The extracted field text, stripped and truncated; empty string if not found.
-    """
     pattern = re.compile(
         rf"{re.escape(label)}:\s*\n\s*```text\s*\n(.*?)\n```", re.DOTALL
     )
@@ -212,17 +126,6 @@ def fenced_field(block: str, label: str, limit: int = 1400) -> str:
 
 
 def extract_open_problems(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Parse open problem headings from a problems.md document.
-
-    Scans for ### P-* heading patterns and extracts status, evidence, impact, and
-    expected fix fields using fenced_field extraction. Filters out closed problems.
-
-    Args:
-        docs: List of doc read results containing problems.md content.
-
-    Returns:
-        List of problem dicts with keys: id, title, status, source, evidence, why_it_matters, expected_fix.
-    """
     item = first_read_item(docs, "problems.md")
     if not item:
         return []
@@ -263,17 +166,6 @@ def extract_open_problems(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def verified_problem_evidence(
     problems: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Build minimal evidence rows from verified problem dicts.
-
-    Extracts id, path, text (evidence or title), and status for each open problem.
-        Used to populate the evidence array in final answer payloads.
-
-    Args:
-        problems: List of problem dicts from extract_open_problems.
-
-    Returns:
-        List of minimal evidence dicts with keys: problem_id, path, text, status.
-    """
     return [
         {
             "problem_id": p.get("id"),
@@ -288,17 +180,6 @@ def verified_problem_evidence(
 def patch_targets_from_verified_problems(
     problems: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Extract file paths referenced in verified problem evidence/fix text.
-
-    Scans title, evidence, and expected_fix fields for backtick-wrapped file paths
-        (containing / or \\). Builds a deduplicated target list with associated problem IDs.
-
-    Args:
-        problems: List of verified open problem dicts.
-
-    Returns:
-        List of patch target dicts with keys: path, problem_ids, reason.
-    """
     targets: dict[str, dict[str, Any]] = {}
     for p in problems:
         text = "\n".join(str(p.get(k) or "") for k in ("title", "evidence", "expected_fix"))
@@ -316,17 +197,6 @@ def patch_targets_from_verified_problems(
 
 
 def compact_review_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Truncate doc read items to metadata and short content excerpts.
-
-    Removes full content from each item, keeping only path, size_bytes, line_count,
-        truncated flag, artifact reference, and a compact excerpt (1800 chars for problems.md, 700 otherwise).
-
-    Args:
-        docs: Full doc read results from review_docs.
-
-    Returns:
-        Truncated doc results suitable for summary output.
-    """
     out: list[dict[str, Any]] = []
     for doc in docs:
         items = []
@@ -351,17 +221,6 @@ def compact_review_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def repo_non_findings(status: dict[str, Any]) -> list[str]:
-    """Build non-finding lines from git diff status and diff-check results.
-
-    Collects the count of changed files from worktree state plus git diff --check
-        return code and stderr tail for conflict detection reporting.
-
-    Args:
-        status: Dict containing diff_name_status and diff_check results.
-
-    Returns:
-        List of human-readable non-finding strings for answer output.
-    """
     changed = changed_files_from_status(status)
     lines = [f"{len(changed)} changed files are worktree state, not automatic problems."]
     try:
@@ -388,21 +247,6 @@ def _helper_call_payload(
     parameters: dict[str, Any] | None = None,
     expected_output: str = "",
 ) -> dict[str, Any]:
-    """Build a structured tool call payload for the operational helper pipeline.
-
-    Creates a nested dictionary containing the target function name, parameters,
-        purpose description, and expected output contract. Used by useful_next_calls to generate follow-up instructions.
-
-    Args:
-        purpose: Human-readable description of why this call is needed.
-        request: Natural language instruction for the 30b model.
-        function: Target tool function name (e.g., 'repo_read', 'vulkan_helper').
-        parameters: Tool-specific argument dict passed to the target function.
-        expected_output: Contract string describing what the caller should return.
-
-    Returns:
-        Dict with keys: tool, fallback_tool, purpose, payload containing function_name and operation_id.
-    """
     payload: dict[str, Any] = {
         "request": request,
         "function": function,
@@ -423,19 +267,6 @@ def useful_next_calls(
     verified_problems: list[dict[str, Any]],
     patch_targets: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Generate a prioritized sequence of follow-up tool calls based on verified problems.
-
-    Builds up to 8 structured call payloads including: (1) read problems.md register,
-        (2) read each patch target file, (3) request scoped patch plan for problem IDs,
-        (4) re-check git diff --check status after edits.
-
-    Args:
-        verified_problems: List of open problem dicts from extract_open_problems.
-        patch_targets: File path targets extracted from problem evidence text.
-
-    Returns:
-        List of call payload dicts max 8 entries, ordered by priority.
-    """
     calls: list[dict[str, Any]] = [
         _helper_call_payload(
             purpose="Read the verified problem register before reporting or patching.",
@@ -482,21 +313,6 @@ def answer_for_30b(
     status: dict[str, Any],
     useful_calls: list[dict[str, Any]],
 ) -> str:
-    """Build the final 30b model answer using only verified problems as evidence.
-
-    Constructs a structured response starting with STRICT_EVIDENCE_ONLY directive,
-        listing each verified problem with ID, title, status, evidence excerpt, impact,
-        and expected fix. Appends non-findings from git diff and useful next calls.
-
-    Args:
-        task: Original user instruction string.
-        verified_problems: List of open problems with evidence from extract_open_problems.
-        status: Git diff status dict for worktree state reporting.
-        useful_calls: Follow-up tool call payloads from useful_next_calls.
-
-    Returns:
-        Compact answer string (max 9000 chars) suitable as instruction_for_30b.
-    """
     lines = [
         "RISPOSTA FINALE VINCOLATA ALL'EVIDENZA DEL TOOL.",
         "Non aggiungere file, moduli o problemi non presenti in verified_problems.",
@@ -537,24 +353,6 @@ def helper_summary(
     docs: list[dict[str, Any]],
     verified_problems: list[dict[str, Any]],
 ) -> str:
-    """Build a compact operational summary for the vulkan_helper result.
-
-    Concatenates tool name, task, problem counts, changed file count, search matches,
-        patch targets, git diff check status, doc excerpts, and search results into a single structured string.
-
-    Args:
-        public_tool: Name of the invoked public tool (e.g., 'helper_for_all').
-        task: User-facing instruction string.
-        status: Git diff result dict for worktree state.
-        searches: List of search query results with match counts and return codes.
-        evidence: Parsed evidence rows from evidence_from_search.
-        patch_targets: File path targets from patch_targets_from_verified_problems.
-        docs: Doc read results from review_docs.
-        verified_problems: Open problem dicts from extract_open_problems.
-
-    Returns:
-        Compact summary string (max 9000 chars) for result['summary'] field.
-    """
     changed = changed_files_from_status(status)
     lines = [
         f"Operational helper result for public tool X `{public_tool}`.",
@@ -598,26 +396,6 @@ def helper_summary(
 
 
 def vulkan_helper(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    """Main entry point for the composite operational helper tool.
-
-    Orchestrates evidence gathering pipeline: (1) extract task from args, (2) run
-        repo_status check, (3) execute search queries via helper_search_queries patterns,
-        (4) read docs via review_docs, (5) extract open problems, (6) build patch targets,
-        (7) generate useful_next_calls and answer_for_30b. Writes result JSON to tool-results/.
-
-    Args:
-        args: Tool arguments dict from the broker dispatcher containing public_tool_name and task.
-        root: Repository root Path object for file resolution.
-
-    Returns:
-        Dict with keys: ok, tool (vulkan_helper), kind, public_tool_name, task, answer_for_30b,
-            verified_problems, useful_next_calls, wrapper_call_contract, non_findings, summary,
-            context_for_30b, evidence, secondary_search_evidence, patch_targets, review_docs,
-            searches, repo_status, next_actions, input_args, artifact path.
-
-    Raises:
-        No explicit exceptions; errors are captured in result['ok'] field.
-    """
     from .job_store import write_json, now  # noqa: PLC0415
 
     args = dict(args or {})

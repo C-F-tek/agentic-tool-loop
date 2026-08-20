@@ -85,7 +85,7 @@ sequenceDiagram
     end
     B3572-->>B3571: compact terminal job response
     B3571->>Store: rehydrate terminal/final JSON when referenced
-    B3571->>B3571: someoize local pointers + build tool_context_for_30b
+    B3571->>B3571: sanitize local pointers + build tool_context_for_30b
     B3571-->>OWUI: payload_index_for_30b + priority_evidence_for_30b + pretty JSON tool_context_for_30b
 ```
 
@@ -356,7 +356,7 @@ Verified behavior:
 - Every planner decision is checked by
   `validate_planner_decision_against_evidence()`.
 - If a tool decision is valid, 3572 calls `dispatch_tool()` with the normalized
-  internal tool and someoized args.
+  internal tool and sanitized args.
 - `dispatch_tool()` is the compatibility facade. The explicit registry lives
   in `application/tool_surface/dispatcher.py`, while concrete repo, terminal,
   memory and helper behavior lives in the owning modules under `tools/` and

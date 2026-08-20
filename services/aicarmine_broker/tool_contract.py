@@ -20,19 +20,13 @@ def parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     Handles both OpenAI-style and Ollama-native tool_calls format:
     - {"function": {"name": "repo_list_files", "arguments": "{\"path\": \".\"}"}}  (stringified JSON)
     - {"function": {"name": "repo_list_files", "arguments": {"path": "."}}}  (parsed JSON)
-    - {"name": "repo_list_files", "arguments": "..."}  (flat format with name key)
-    - {"tool": "repo_list_files", "arguments": {...}}  (flat format with tool key - Ollama/Qwen native)
+    - {"name": "repo_list_files", "arguments": "..."}  (flat format)
     """
     function = call.get("function") if isinstance(call.get("function"), dict) else {}
-    name = str(function.get("name") or call.get("name") or call.get("tool") or "").strip()
+    name = str(function.get("name") or call.get("name") or "").strip()
     
     # Get arguments from function object or flat call object
     raw_args = function.get("arguments", call.get("arguments", {}))
-    
-    # If function object has no arguments, try nested tool_calls structure
-    if not raw_args and isinstance(function, dict) and not raw_args:
-        # Handle case where arguments are at top level of call but not in function
-        pass
     
     # Handle stringified JSON arguments (common in Ollama native format)
     if isinstance(raw_args, str):

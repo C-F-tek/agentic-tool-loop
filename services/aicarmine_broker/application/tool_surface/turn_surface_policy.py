@@ -67,12 +67,12 @@ class ToolSurfacePolicy:
         "runtime_sqlite_memory_write",
     }
 
-    def __init__(self,  order_tool_names: OrderToolNames) -> None:
+    def __init__(self, *, order_tool_names: OrderToolNames) -> None:
         self._order_tool_names = order_tool_names
 
     def tools_for_turn(
         self,
-        
+        *,
         goal: str,
         evidence_contract: dict[str, Any],
         intrinsic_context: dict[str, Any],
@@ -667,12 +667,6 @@ class ToolSurfacePolicy:
         )
         if final_contract.get("final_allowed") is not True:
             return False
-            
-        # Force no final if planner_may_choose_final is explicitly False or not satisfied
-        planner_may_choose_final = bool(contract.get("planner_may_choose_final")) or bool(final_contract.get("planner_may_choose_final"))
-        if not planner_may_choose_final:
-            return False
-            
         terminal_guidance = (
             contract.get("terminal_decision_guidance")
             if isinstance(contract.get("terminal_decision_guidance"), dict)
@@ -809,7 +803,7 @@ class ToolSurfacePolicy:
 
     def _base_tools_for_goal_class(
         self,
-        
+        *,
         goal_class: str,
         code_product_required: bool,
         apply_required: bool,
@@ -841,15 +835,10 @@ class ToolSurfacePolicy:
             names.add("repo_hyperfine_benchmark")
 
     def _add_candidate_tools(self, names: set[str], contract: dict[str, Any]) -> None:
-        # Exclude terminal actions (final, done, complete, block) from being added as tools
-        terminal_actions = {"final", "done", "complete", "completed", "block", "blocked"}
         for candidate in self._candidate_tool_names(contract):
             if candidate.startswith("runtime_sqlite_memory_"):
                 continue
             if candidate == "planner_scratchpad_read":
-                continue
-            # Exclude terminal action tools unless they are valid tool calls (they aren't; final/block are actions not tools)
-            if candidate in terminal_actions:
                 continue
             names.add(candidate)
 
@@ -911,7 +900,7 @@ class ToolSurfacePolicy:
         policy: dict[str, Any],
         filtered: list[dict[str, Any]],
         reason: str,
-        
+        *,
         suppress_support_expansion: bool = False,
     ) -> None:
         filtered = dedupe_candidate_actions(filtered)
@@ -937,7 +926,7 @@ class ToolSurfacePolicy:
         policy: dict[str, Any],
         allowed_names: set[str],
         reason: str,
-        
+        *,
         suppress_support_expansion: bool = False,
     ) -> None:
         normalized_allowed = {
@@ -1040,7 +1029,7 @@ def intrinsic_context_declares_selective_memory_gap(intrinsic_context: dict[str,
 
 
 def tool_surface_names_for_turn(
-    
+    *,
     goal: str,
     evidence_contract: dict[str, Any],
     intrinsic_context: dict[str, Any],
@@ -1055,5 +1044,5 @@ def tool_surface_names_for_turn(
     )
 
 
-def apply_turn_surface_policy(contract: dict[str, Any],  order_tool_names: OrderToolNames) -> dict[str, Any]:
+def apply_turn_surface_policy(contract: dict[str, Any], *, order_tool_names: OrderToolNames) -> dict[str, Any]:
     return ToolSurfacePolicy(order_tool_names=order_tool_names).apply(contract)

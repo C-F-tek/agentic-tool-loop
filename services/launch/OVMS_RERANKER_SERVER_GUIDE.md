@@ -27,14 +27,14 @@ Questo documento descrive come avviare il server **OpenVINO Model Serving (OVMS)
 
 ---
 
-## Percorsi File (Ambiente Utente someo)
+## Percorsi File (Ambiente Utente sanit)
 
 | Elemento | Percorso |
 |----------|----------|
-| **ovms.exe** | `C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe` |
-| **setupvars.ps1** | `C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\setupvars.ps1` |
-| **config.json** | `C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-rerank\config.json` |
-| **graph.pbtxt** | `C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-rerank\BAAI\bge-reranker-v2-m3\graph.pbtxt` |
+| **ovms.exe** | `C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe` |
+| **setupvars.ps1** | `C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\setupvars.ps1` |
+| **config.json** | `C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-rerank\config.json` |
+| **graph.pbtxt** | `C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-rerank\BAAI\bge-reranker-v2-m3\graph.pbtxt` |
 
 > **Nota:** Il file `ovms-reranker-npu.ps1` assume un percorso errato (`bin\ovms.exe`). Nel tuo ambiente, `ovms.exe` si trova nella root di `ovms-runtime/ovms`, non in `bin/`.
 
@@ -45,10 +45,10 @@ Questo documento descrive come avviare il server **OpenVINO Model Serving (OVMS)
 ### Comando Minimo (Senza Setupvars)
 
 ```powershell
-& "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
+& "C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
   --rest_port 3550 `
   --rest_bind_address 127.0.0.1 `
-  --config_path "C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-rerank\config.json"
+  --config_path "C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-rerank\config.json"
 ```
 
 Questo è il comando più semplice e diretto per avviare il server OVMS con il modello reranker.
@@ -81,7 +81,7 @@ Il file `config.json` definisce come OVMS deve servire il modello:
         {
             "config": {
                 "name": "BAAI/bge-reranker-v2-m3",
-                "base_path": "C:\\Users\\someo\\agentic-tool-loop\\services\\launch\\models-ovms-rerank\\BAAI\\bge-reranker-v2-m3",
+                "base_path": "C:\\Users\\sanit\\agentic-tool-loop\\services\\launch\\models-ovms-rerank\\BAAI\\bge-reranker-v2-m3",
                 "target_device": "CPU",
                 "plugin_config": {
                     "PERFORMANCE_HINT": "LATENCY",
@@ -232,7 +232,7 @@ Se ricevi un errore che `ovms.exe` non è trovato, verifica il percorso esatto:
 
 ```powershell
 # Verifica esistenza file
-Test-Path "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe"
+Test-Path "C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe"
 ```
 
 Il file si trova in `ovms/ovms.exe`, **non** in `ovms/bin/ovms.exe`.
@@ -283,10 +283,10 @@ L'endpoint `/v3/rerank` di OVMS è chiamato dal modulo RAG per il reranking fina
 
 ```powershell
 # Comando completo per copiare-incollare
-& "C:\Users\someo\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
+& "C:\Users\sanit\agentic-tool-loop\ovms-runtime\ovms\ovms.exe" `
   --rest_port 3550 `
   --rest_bind_address 127.0.0.1 `
-  --config_path "C:\Users\someo\agentic-tool-loop\services\launch\models-ovms-rerank\config.json"
+  --config_path "C:\Users\sanit\agentic-tool-loop\services\launch\models-ovms-rerank\config.json"
 ```
 
 | Elemento | Valore |

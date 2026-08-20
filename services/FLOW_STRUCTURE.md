@@ -163,7 +163,7 @@ config/
 security/
 ├── __init__.py            - Security module init
 ├── injection_audit.py     - Injection audit
-└── someoization.py        - Input someoization
+└── sanitization.py        - Input sanitization
 ```
 
 ## codex_bridge Internal Flow
