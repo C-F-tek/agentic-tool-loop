@@ -1,5 +1,5 @@
 import re
-with open('C:/Users/carmi/AI/services/aicarmine_broker/application/planner/validator.py', 'r', encoding='utf-8') as f:
+with open('services/aicarmine_broker/application/planner/validator.py', 'r', encoding='utf-8') as f:
     content = f.read()
 
 # P1: Correggere condizione di promotion per required_next_tool_call={}
@@ -11,7 +11,7 @@ new_code = '''and (not contract.get("required_next_tool_call") or \
 
 if old_code in content:
     content = content.replace(old_code, new_code)
-    with open('C:/Users/carmi/AI/services/aicarmine_broker/application/planner/validator.py', 'w', encoding='utf-8') as f:
+    with open('services/aicarmine_broker/application/planner/validator.py', 'w', encoding='utf-8') as f:
         f.write(content)
     print('P1 applicata: promotion ora scatta anche per required_next_tool_call={}')
 else:

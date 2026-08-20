@@ -2609,8 +2609,19 @@ def validate_planner_decision_against_evidence(
             required_next_tool_call = contract.get("required_next_tool_call")
             if isinstance(required_next_tool_call, dict):
                 required_tool = str(required_next_tool_call.get("tool") or "").strip()
+            
+            # Check if final is allowed or coverage is satisfied - if so, convert block decision to final
+            final_contract = (
+                contract.get("finalization_contract")
+                if isinstance(contract.get("finalization_contract"), dict)
+                else {}
+            )
+            final_allowed = bool(final_contract.get("final_allowed") is True) or bool(
+                contract.get("planner_may_choose_final") is True
+            ) or coverage_satisfied
+            
             coverage_progress = (
-                f"Block is not authorized after {final_quality_reject_count} final-quality reject"
+                "Block is not authorized after {final_quality_reject_count} final-quality reject"
                 f"{'s' if final_quality_reject_count != 1 else ''}; "
                 "provide rewrite evidence before terminal."
             )
@@ -2632,6 +2643,44 @@ def validate_planner_decision_against_evidence(
                     f"required_next_progress: {str(contract.get('required_next_progress') or '')[:180] or 'resolve remaining lane'}. "
                     "Resume rewrite using verified evidence and required evidence gaps."
                 )
+            
+            # If final is allowed or coverage is satisfied, convert block decision to final instead of rejecting
+            if final_allowed:
+                # Convert the block decision to a final decision
+                decision["action"] = "final"
+                decision["reason"] = "block_converted_to_final_by_evidence_contract_or_coverage_satisfied"
+                violations.append("block_not_allowed_by_evidence_contract_converted_to_final")
+                contract["required_next_progress"] = coverage_progress
+                
+                # Ensure final is allowed in the contract
+                if not final_contract.get("final_allowed"):
+                    final_contract["final_allowed"] = True
+                    final_contract["planner_may_choose_final"] = True
+                    final_contract.pop("reason", None)
+                    contract["finalization_contract"] = final_contract
+                
+                contract["planner_may_choose_final"] = True
+                contract["planner_may_choose_block"] = False
+                
+                return {"ok": True, "violations": violations, "evidence_contract": contract}
+            
+            # If not final_allowed, still allow final if coverage is satisfied or force it to prevent block loop
+            if coverage_satisfied:
+                decision["action"] = "final"
+                decision["reason"] = "block_converted_to_final_by_coverage_satisfied_prevent_loop"
+                violations.append("block_not_allowed_by_evidence_contract_converted_to_final_coverage_satisfied")
+                contract["required_next_progress"] = coverage_progress
+                
+                final_contract["final_allowed"] = True
+                final_contract["planner_may_choose_final"] = True
+                final_contract.pop("reason", None)
+                contract["finalization_contract"] = final_contract
+                
+                contract["planner_may_choose_final"] = True
+                contract["planner_may_choose_block"] = False
+                
+                return {"ok": True, "violations": violations, "evidence_contract": contract}
+
             violations.append("block_not_allowed_by_evidence_contract")
             contract["required_next_progress"] = coverage_progress
             return {"ok": False, "violations": violations, "evidence_contract": contract}

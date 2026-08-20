@@ -173,7 +173,7 @@ def _terminal_command_repair(command: str) -> dict[str, Any] | None:
             "bad_command": raw,
             "auto_repair_available": False,
             "reason": "path_missing_drive",
-            "repairs": ["Use an absolute Windows path with drive, e.g. C:\\Users\\carmi\\AI\\services"],
+            "repairs": ["Use an absolute Windows path with drive, e.g. C:\\Users\\someo\\agentic-tool-loop\\services"],
             "terminal_environment_contract": terminal_environment_contract(),
         }
     if not repaired:

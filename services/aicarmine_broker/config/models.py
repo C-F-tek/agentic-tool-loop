@@ -116,7 +116,7 @@ def _resolved_path(value: Any,  env_name: str) -> Path:
     except OSError as exc:
         raise OSError(f"{env_name} OS error while resolving path {raw!r}: {exc}") from exc
 
-DEFAULT_PLANNER_MODEL = "Qwen_Qwen3.6-35B_v1:latest"
+DEFAULT_PLANNER_MODEL = "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
 DEFAULT_PLANNER_NUM_CTX = 262144
 
 def _default_prompt_char_budget(num_ctx_effective: int) -> int:
@@ -137,13 +137,13 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         else num_ctx_requested
     )
     real_repo = _resolved_path(
-        env_str("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project", env),
+        env_str("AICARMINE_REAL_REPO", r"C:\Users\someo\agentic-tool-loop", env),
         env_name="AICARMINE_REAL_REPO",
     )
     workspace = _resolved_path(
         env_str(
             "AICARMINE_VULKAN_WORKSPACE",
-            r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker",
+            r"C:\Users\someo\agentic-tool-loop\state\codex_bridge\agentic_loop_client\port-3579\workspace",
             env,
         ),
         env_name="AICARMINE_VULKAN_WORKSPACE",
@@ -184,7 +184,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         ),
         ollama_task_model=env_first(
             ("AICARMINE_OLLAMA_TASK_MODEL", "AICARMINE_VULKAN_BROKER_MODEL"),
-            "Qwen_Qwen3.6-35B_v1:latest",
+            "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest",
             env,
         ),
         ollama_keep_alive=env_first(
@@ -242,7 +242,7 @@ def load_broker_config_from_env(env: EnvMapping | None = None) -> BrokerConfig:
         lab_repo=_resolved_path(
             env_str(
                 "AICARMINE_LAB_REPO",
-                r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab",
+                r"C:\Users\someo\agentic-tool-loop",
                 env,
             ),
             env_name="AICARMINE_LAB_REPO",

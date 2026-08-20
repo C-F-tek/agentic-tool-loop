@@ -29,7 +29,7 @@ OLLAMA_TASK_URL = (
 OLLAMA_TASK_MODEL = (
     os.environ.get("AICARMINE_OLLAMA_TASK_MODEL")
     or os.environ.get("AICARMINE_VULKAN_BROKER_MODEL")
-    or "Qwen_Qwen3.6-35B_v1:latest"
+    or "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
 )
 OLLAMA_KEEP_ALIVE = (
     os.environ.get("AICARMINE_OLLAMA_KEEP_ALIVE")
@@ -46,7 +46,7 @@ PLANNER_MODEL = (
     os.environ.get("AICARMINE_AGENT_PLANNER_MODEL")
     or os.environ.get("AICARMINE_PLANNER_MODEL")
     or os.environ.get("AICARMINE_OLLAMA_PLANNER_MODEL")
-    or "Qwen_Qwen3.6-35B_v1:latest"
+    or "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
 )
 AGENTIC_PLANNER_ENABLED = os.environ.get("AICARMINE_AGENTIC_PLANNER_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 AGENTIC_FALLBACK_ONESHOT = os.environ.get("AICARMINE_AGENTIC_FALLBACK_ONESHOT", "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -70,9 +70,9 @@ AGENT_TERMINAL_STATUSES = {
     "cancelled",
 }
 
-LAB_REPO = Path(os.environ.get("AICARMINE_LAB_REPO", r"C:\Users\carmi\AI\lab-worktrees\blender-audio-project-lab")).resolve(strict=False)
-REAL_REPO = Path(os.environ.get("AICARMINE_REAL_REPO", r"C:\Users\carmi\ProjectsDir\blender-audio-project")).resolve(strict=False)
-WORKSPACE = Path(os.environ.get("AICARMINE_VULKAN_WORKSPACE", r"C:\Users\carmi\AI\qwen-agent-workspace\vulkan-broker")).resolve(strict=False)
+LAB_REPO = Path(os.environ.get("AICARMINE_LAB_REPO", r"C:\Users\someo\agentic-tool-loop")).resolve(strict=False)
+REAL_REPO = Path(os.environ.get("AICARMINE_REAL_REPO", r"C:\Users\someo\agentic-tool-loop")).resolve(strict=False)
+WORKSPACE = Path(os.environ.get("AICARMINE_VULKAN_WORKSPACE", r"C:\Users\someo\agentic-tool-loop\state\codex_bridge\agentic_loop_client\port-3579\workspace")).resolve(strict=False)
 
 AGENT_JOB_ROOT = Path(
     os.environ.get("AICARMINE_AGENT_JOB_ROOT", str(WORKSPACE / "agent-jobs"))
