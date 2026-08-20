@@ -54,7 +54,7 @@ except ImportError:
     EvidenceChunk = None
     ProposalChunk = None
     build_code_chunk_sequence = None
-    concat_code_chunks = None+++++++ REPLACE
+    concat_code_chunks = None
 
 SERVER_NAME = "aicarmine-codex-rag-mcp"
 SERVER_VERSION = "1.2.0"

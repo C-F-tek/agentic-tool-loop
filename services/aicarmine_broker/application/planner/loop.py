@@ -1356,7 +1356,7 @@ def run_agentic_planner_job(
             operational = evidence_contract.get("operational_notes")
             operational = operational if isinstance(operational, dict) else {}
             operational["next_instruction"] = next_instruction
-            evidence_contract["operational_notes"] = operationalù
+            evidence_contract["operational_notes"] = operational
     def append_repeat_guard_result(
         step_number: int,
         planner_decision: dict[str, Any],

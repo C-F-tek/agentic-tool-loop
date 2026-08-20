@@ -84,7 +84,7 @@ except ImportError:
     build_evidence_chunk_sequence = None
     concat_evidence_chunks = None
     build_proposal_chunk_sequence = None
-    concat_proposal_chunks = None+++++++ REPLACE
+    concat_proposal_chunks = None
 
 SERVER_NAME = "aicarmine-agentic-loop-client-mcp"
 SERVER_VERSION = "0.1.0"

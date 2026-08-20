@@ -1641,9 +1641,6 @@ def _planner_turn_memory(
     return _planner_turn_memory_impl(
         history,
         terminal_decision,
-        same_tool_artifact_payload=_same_tool_artifact_payload,
-        repo_read_item_full_content=_repo_read_item_full_content,
-        code_product_build_state_kind=CODE_PRODUCT_BUILD_STATE_KIND,
     )
 
 
@@ -3772,6 +3769,7 @@ def _should_retry_incomprehensible_planner_output(
         or "non_json" in reason.lower()
         or "no_json" in reason.lower()
         or "non-json" in reason.lower()
+        or "incomprehensible_repeat_required" in reason.lower()
     )
     if not retryable_reason:
         return False
@@ -3806,6 +3804,7 @@ def _is_unrecoverable_plain_text_planner_output(
         or "no_json" in reason
         or "degenerate" in reason
         or "timeout" in reason
+        or "incomprehensible_repeat_required" in reason
     )
     if not relevant_reason:
         return False
@@ -4862,9 +4861,19 @@ def _should_attempt_vulkan_repair(
 
     Expanded activation: also triggers on protocol-shaped text classification and
     final-quality violations (too_short / missing_workflow / generic_language / unverified_paths).
+    Also triggers for PLANNER_DEGENERATE_OUTPUT_NON_JSON block decisions requiring repair.
     """
     if _vulkan_repair_seen(history) >= 1:
         return False
+        
+    # Check for degenerate output non-json in validation guard summary or rejection signature
+    guard_summary = str(validation.get("summary") or "").lower()
+    if ("planner_degenerate_output_non_json" in guard_summary or 
+        "degenerate_output_non_json" in guard_summary or
+        "planner_block_requires_controller_classification:planner_degenerate_output_non_json" in guard_summary or
+        "planner_degenerate_output" in guard_summary):
+        return True
+        
     decision = decision if isinstance(decision, dict) else {}
     action = str(decision.get("action") or "").strip().lower()
     reason = str(decision.get("reason") or "")

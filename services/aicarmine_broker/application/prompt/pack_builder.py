@@ -48,6 +48,49 @@ def _base_tool_surface_reason(evidence_contract: Mapping[str, Any]) -> str:
     return str(surface_policy.get("reason") or "tool_surface_policy").strip() or "tool_surface_policy"
 
 
+def _decision_guide_instructions_from_contract(contract: Mapping[str, Any]) -> str:
+    """Inject dynamic decision guide instructions based on contract state."""
+    try:
+        from ...application.planner.decision_guide import get_decision_guidance, format_guidance_as_instructions
+        guidance = get_decision_guidance(dict(contract) if isinstance(contract, dict) else {})
+        return format_guidance_as_instructions(guidance)
+    except Exception:
+        return ""
+
+
+def _inject_decision_guide_into_operational_notes(evidence_contract: dict[str, Any]) -> dict[str, Any]:
+    """Inject decision guide instructions into operational_notes.next_instruction."""
+    try:
+        guidance_instructions = _decision_guide_instructions_from_contract(evidence_contract)
+        if not guidance_instructions:
+            return evidence_contract
+        
+        operational_notes = (
+            evidence_contract.get("operational_notes")
+            if isinstance(evidence_contract.get("operational_notes"), dict)
+            else {}
+        )
+        
+        # Inject the priority action and checklist into next_instruction
+        current_next_instruction = str(operational_notes.get("next_instruction") or "")
+        
+        # Prepend decision guide instructions if they indicate a specific priority action
+        if "PRIORITÀ_1_ESPLORAZIONE_OBBLIGATORIA" in guidance_instructions or "PRIORITÀ 1 (Esplorazione Obbligatoria)" in guidance_instructions:
+            operational_notes["next_instruction"] = f"{guidance_instructions}\n\n{current_next_instruction}"
+        elif "PRIORITÀ_2_SATURAZIONE_EVIDENZA" in guidance_instructions or "PRIORITÀ 2 (Saturazione Evidenza)" in guidance_instructions:
+            operational_notes["next_instruction"] = f"{guidance_instructions}\n\n{current_next_instruction}"
+        elif "PRIORITÀ_3_FINALIZZAZIONE" in guidance_instructions or "PRIORITÀ 3 (Finalizzazione)" in guidance_instructions:
+            operational_notes["next_instruction"] = f"{guidance_instructions}\n\n{current_next_instruction}"
+        elif "PRIORITÀ_4_BLOCCO" in guidance_instructions or "PRIORITÀ 4 (Blocco)" in guidance_instructions:
+            operational_notes["next_instruction"] = f"{guidance_instructions}\n\n{current_next_instruction}"
+        
+        evidence_contract["operational_notes"] = operational_notes
+    except Exception:
+        pass
+    
+    return evidence_contract
+
+
 def _allowed_actions_from_contract(evidence_contract: Mapping[str, Any]) -> list[str]:
     final_contract = (
         evidence_contract.get("finalization_contract")
@@ -437,6 +480,9 @@ class PromptPackBuilder:
                 if isinstance(evidence_for_prompt.get("micro_batch_contract"), dict)
                 else {}
             )
+            
+            # Inject decision guide into operational_notes
+            payload_evidence = _inject_decision_guide_into_operational_notes(evidence_for_prompt)
             micro_batch_allowed = bool(micro_batch_contract.get("allowed"))
             available_tool_names = _tool_names_from_available_tools_payload(
                 available_tools_for_payload if isinstance(available_tools_for_payload, Mapping) else {}

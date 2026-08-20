@@ -32,7 +32,7 @@ try:
 except ImportError:
     MemoryRecord = None
     AgentMicroTask = None
-    build_state_packet = None+++++++ REPLACE
+    build_state_packet = None
 
 SERVER_NAME = "aicarmine-project-memory-mcp"
 SERVER_VERSION = "0.1.0"
