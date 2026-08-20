@@ -2450,7 +2450,18 @@ def validate_planner_decision_against_evidence(
             if not scope_reads and not final_allowed:
                 violations.append(f"final_without_in_scope_concrete_read:{target_scope}")
         if (effective_repo_goal or semantic_audit_goal) and not final_answer.strip():
-            violations.append("final_empty_answer")
+            # If coverage is satisfied or cuda_rewrite_required is active, block final instead of allowing retry
+            coverage_satisfied = _minimum_read_coverage_satisfied()
+            planner_cuda_rewrite_required = bool(contract.get("planner_cuda_rewrite_required")) or bool(
+                contract.get("finalization_contract", {}).get("planner_cuda_rewrite_required")
+            )
+            if coverage_satisfied or planner_cuda_rewrite_required:
+                violations.append("final_empty_answer_with_sufficient_evidence_or_cuda_rewrite")
+                final_contract["final_allowed"] = False
+                final_contract["planner_may_choose_final"] = False
+                final_contract["reason"] = "final_empty_answer_with_sufficient_evidence_or_cuda_rewrite"
+            else:
+                violations.append("final_empty_answer")
         elif effective_repo_goal or semantic_audit_goal:
             deterministic_quality = _repo_analysis_final_answer_quality(final_answer, contract)
             contract["repo_analysis_final_deterministic_quality"] = deterministic_quality
