@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""
-MCP server for Codex RAG context.
+r"""
+MCP server for global RAG context indexing and search.
 
-This server is intentionally separate from the general aicarmine_tools MCP
-surface. It exposes direct RAG tools:
+This server is a global Cline tool that:
+- Accepts configurable search paths via tool arguments
+- Validates paths are under C:\Users\someo\
+- Auto-creates a new SQLite DB when the search path changes
+- Auto-builds the RAG index on path change
+- Supports FTS5 full-text search with optional reranking
 
-  aicarmine_rag_context
-  aicarmine_rag_index_status
-  aicarmine_rag_reindex
-
-Search reads an explicit SQLite/FTS5 index and optionally reranks candidates
-through the existing local OVMS reranker. Reindex writes only the RAG SQLite
-index and never calls OpenWebUI, the broker, or the general repo dispatcher.
+Exposed tools:
+  - aicarmine_rag_search: Search the RAG index
+  - aicarmine_rag_index_status: Inspect index status
+  - aicarmine_rag_reindex: Build/rebuild the RAG index
+  - aicarmine_rag_health: Health check
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,7 +25,6 @@ import sqlite3
 import subprocess
 import sys
 import time
-import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -40,10 +42,13 @@ from rag_index_repo import (
     build_index,
 )
 
-SERVER_NAME = "aicarmine-codex-rag-mcp"
-SERVER_VERSION = "1.2.0"
+SERVER_NAME = "aicarmine-rag-global"
+SERVER_VERSION = "2.0.0"
 STDIO_TRANSPORT = os.environ.get("AICARMINE_RAG_MCP_STDIO_TRANSPORT", "").strip().lower()
 DEBUG = os.environ.get("AICARMINE_RAG_MCP_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+# Global RAG DB root - stores one DB per unique search path
+RAG_DB_ROOT = Path(os.environ.get("AICARMINE_RAG_DB_ROOT") or str(Path.home() / "AI" / "state" / "codex_rag_global"))
 
 DEFAULT_RERANK_URL = "http://127.0.0.1:3550/v3/rerank"
 DEFAULT_READY_URL = "http://127.0.0.1:3550/v2/models/BAAI%2Fbge-reranker-v2-m3/ready"
@@ -51,6 +56,9 @@ DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 DEFAULT_RERANK_TIMEOUT_SECONDS = 30.0
 DEFAULT_RERANK_CANDIDATE_LIMIT = 12
 DEFAULT_RERANK_DOC_CHARS = 2500
+
+# Allowed base path for search directories
+ALLOWED_BASE_PATH = Path("C:\\Users\\someo")
 
 
 def _log(message: str) -> None:
@@ -119,60 +127,81 @@ def _env_path(name: str, default: str = "") -> Path | None:
     return Path(value).expanduser() if value else None
 
 
-def _default_db() -> Path:
-    home = Path(os.environ.get("USERPROFILE") or Path.home())
-    return home / "AI" / "state" / "codex_rag" / "code_rag.sqlite3"
-
-
-def _db_path() -> Path:
-    return _env_path("AICARMINE_RAG_DB") or _default_db()
-
-
-def _repo_root(args: dict[str, Any] | None = None) -> Path:
-    args = args or {}
-    value = (
-        str(args.get("repo") or "").strip()
-        or os.environ.get("AICARMINE_RAG_REPO", "").strip()
-        or os.environ.get("AICARMINE_LAB_REPO", "").strip()
-        or os.getcwd()
-    )
-    return Path(value).expanduser()
-
-
-def _parse_csv(value: Any, default: set[str]) -> set[str]:
-    if value is None:
-        return set(default)
-    text = str(value).strip()
-    if not text:
-        return set(default)
-    return {item.strip() for item in text.split(",") if item.strip()}
-
-
-def _git_candidate_count(root: Path) -> dict[str, Any]:
+def _validate_search_path(path_str: str) -> tuple[bool, str, Path]:
+    """Validate that the path is under C:\\Users\\someo\\ and not system paths."""
+    path = Path(path_str).expanduser().resolve()
+    
+    # Reject system paths
+    forbidden_prefixes = [
+        Path("C:\\Windows"),
+        Path("C:\\Program"),
+        Path("C:\\Users\\carmi"),
+        Path("C:\\ProgramData"),
+        Path("C:\\Windows\\.git"),
+    ]
+    
+    for prefix in forbidden_prefixes:
+        try:
+            path.relative_to(prefix)
+            return False, f"path '{path}' is under forbidden prefix {prefix}", path
+        except ValueError:
+            pass
+    
+    # Check if under allowed base
     try:
-        result = subprocess_run_git_candidate_count(root)
-        return {"ok": True, **result}
-    except Exception as exc:
-        return {"ok": False, "error": type(exc).__name__, "detail": str(exc)}
+        path.relative_to(ALLOWED_BASE_PATH)
+    except ValueError:
+        # Also check if the resolved path starts with C:\Users\someo
+        allowed_resolved = ALLOWED_BASE_PATH.resolve()
+        path_text = str(path).lower()
+        allowed_text = str(allowed_resolved).lower()
+        if not (path_text == allowed_text or path_text.startswith(allowed_text + "\\") or path_text.startswith(allowed_text + "/")):
+            return False, f"path '{path}' must be under {ALLOWED_BASE_PATH}", path
+    
+    if not path.exists():
+        return False, f"path '{path}' does not exist", path
+    
+    return True, str(path), path
 
 
-def subprocess_run_git_candidate_count(root: Path) -> dict[str, Any]:
-    import subprocess
+def _db_key_for_path(repo_path: Path) -> str:
+    """Generate a unique DB filename based on the resolved search path."""
+    hash_str = str(repo_path).lower()
+    h = hashlib.sha256(hash_str.encode("utf-8")).hexdigest()[:16]
+    return f"rag_{h}.sqlite3"
 
-    proc = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "git ls-files failed")
-    files = [item for item in proc.stdout.split("\0") if item]
-    return {
-        "repo": str(root),
-        "selector": "git ls-files --cached --others --exclude-standard",
-        "candidate_files": len(files),
-    }
+
+def _resolve_db_path(args: dict[str, Any]) -> Path:
+    """Resolve the DB path from args or auto-create based on search_path."""
+    explicit_db = args.get("db") or ""
+    if explicit_db.strip():
+        return Path(explicit_db).expanduser()
+    
+    # Auto-detect from search_path
+    search_path = args.get("search_path") or args.get("repo") or ""
+    if search_path.strip():
+        valid, msg, path = _validate_search_path(search_path)
+        if valid:
+            db_name = _db_key_for_path(path)
+            return RAG_DB_ROOT / db_name
+    
+    # Default fallback
+    return RAG_DB_ROOT / "rag_default.sqlite3"
+
+
+def _resolve_search_path(args: dict[str, Any]) -> tuple[bool, str, Path]:
+    """Resolve the search path from args."""
+    search_path = args.get("search_path") or args.get("repo") or ""
+    
+    if search_path.strip():
+        return _validate_search_path(search_path)
+    
+    # Try environment variable
+    env_path = os.environ.get("AICARMINE_RAG_REPO", "").strip()
+    if env_path:
+        return _validate_search_path(env_path)
+    
+    return False, "no search_path provided and no AICARMINE_RAG_REPO set", Path(".")
 
 
 def _connect_readonly(db: Path) -> sqlite3.Connection:
@@ -259,7 +288,7 @@ def _http_json(method: str, url: str, payload: Any | None = None, timeout: int =
 
 
 def _reranker_ready() -> dict[str, Any]:
-    url = os.environ.get("AICARMINE_RAG_RERANK_READY_URL", DEFAULT_READY_URL).strip() or DEFAULT_READY_URL
+    url = os.environ.get("AICARMINE_RAG_RERANK_URL", DEFAULT_RERANK_URL).strip() or DEFAULT_RERANK_URL
     try:
         value = _http_json("GET", url, timeout=10)
         return {"ok": True, "url": url, "result": value}
@@ -440,7 +469,6 @@ def _parse_rerank_results(value: Any) -> list[dict[str, Any]]:
 def _rerank(
     query: str,
     candidates: list[dict[str, Any]],
-    
     enabled: bool,
     candidate_limit: int,
     doc_chars: int,
@@ -565,11 +593,11 @@ def _rerank(
     return ranked, warnings, meta
 
 
-def _env_int(name: str, default: int,  low: int, high: int) -> int:
+def _env_int(name: str, default: int, low: int, high: int) -> int:
     return _safe_int(os.environ.get(name), default, low=low, high=high)
 
 
-def _env_float(name: str, default: float,  low: float, high: float) -> float:
+def _env_float(name: str, default: float, low: float, high: float) -> float:
     return _safe_float(os.environ.get(name), default, low=low, high=high)
 
 
@@ -578,7 +606,16 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
     if not query:
         return {"ok": False, "error": "missing query"}
 
-    db = Path(args.get("db") or _db_path()).expanduser()
+    db = Path(args.get("db") or _resolve_db_path(args)).expanduser()
+    
+    if not db.exists():
+        return {
+            "ok": False, 
+            "error": "db_not_found", 
+            "db": str(db),
+            "hint": "Use aicarmine_rag_reindex with search_path to build the index first"
+        }
+
     candidate_limit = _safe_int(args.get("candidate_limit"), 80, low=1, high=300)
     top_k = _safe_int(args.get("top_k"), 12, low=1, high=50)
     max_chunk_chars = _safe_int(args.get("max_chunk_chars"), 4000, low=400, high=20000)
@@ -607,9 +644,6 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
         low=1000,
         high=200_000,
     )
-
-    if not db.exists():
-        return {"ok": False, "error": "db_not_found", "db": str(db)}
 
     conn = _connect_readonly(db)
     try:
@@ -660,7 +694,7 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "ok": True,
-        "tool": "aicarmine_rag_context",
+        "tool": "aicarmine_rag_search",
         "operation": "search",
         "db": str(db),
         "query": query,
@@ -674,21 +708,27 @@ def _search(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _index_status(args: dict[str, Any]) -> dict[str, Any]:
-    db = Path(args.get("db") or _db_path()).expanduser()
-    repo = _repo_root(args).resolve()
+    db = Path(args.get("db") or _resolve_db_path(args)).expanduser()
+    
+    search_path = args.get("search_path") or args.get("repo") or ""
+    if search_path.strip():
+        valid, msg, repo = _validate_search_path(search_path)
+    else:
+        valid, msg, repo = False, "no search_path", Path(".")
+    
     status = _db_inspect(db)
-    rag_metadata = _safe_rag_metadata(repo, db, status)
+    rag_metadata = _safe_rag_metadata(repo, db, status) if valid else {"db": str(db), "error": msg}
+    
     return {
         "ok": bool(status.get("ok")),
         "tool": "aicarmine_rag_index_status",
         "db": str(db),
-        "repo_root": str(repo),
+        "search_path": str(repo) if valid else msg,
         "rag_metadata": rag_metadata,
         "current_commit": rag_metadata.get("current_commit", ""),
         "indexed_commit": rag_metadata.get("indexed_commit", ""),
         "stale": rag_metadata.get("stale", False),
         "db_status": status,
-        "git_surface": _git_candidate_count(repo),
         "defaults": {
             "source": SOURCE_GIT_DEFAULT,
             "mode": MODE_DELTA,
@@ -702,11 +742,32 @@ def _index_status(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _reindex(args: dict[str, Any]) -> dict[str, Any]:
-    db = Path(args.get("db") or _db_path()).expanduser()
-    repo = _repo_root(args).resolve()
+    # Resolve search path
+    search_path = args.get("search_path") or args.get("repo") or ""
+    if not search_path.strip():
+        return {"ok": False, "error": "missing search_path"}
+    
+    valid, msg, repo = _validate_search_path(search_path)
+    if not valid:
+        return {"ok": False, "error": f"invalid search_path: {msg}"}
+    
+    # Resolve DB path (auto-creates new DB for different paths)
+    db = Path(args.get("db") or _resolve_db_path(args)).expanduser()
+    
     source = str(args.get("source") or os.environ.get("AICARMINE_RAG_INDEX_SOURCE") or SOURCE_GIT_DEFAULT).strip().lower()
     mode = str(args.get("mode") or os.environ.get("AICARMINE_RAG_INDEX_MODE") or MODE_DELTA).strip().lower()
-    suffixes = _parse_csv(args.get("suffixes"), DEFAULT_SUFFIXES)
+    suffixes_raw = args.get("suffixes") or ""
+    if isinstance(suffixes_raw, str):
+        suffixes_text = suffixes_raw.strip()
+        if not suffixes_text:
+            suffixes = set(DEFAULT_SUFFIXES)
+        else:
+            suffixes = {item.strip() for item in suffixes_text.split(",") if item.strip()}
+    elif isinstance(suffixes_raw, set):
+        suffixes = suffixes_raw if suffixes_raw else set(DEFAULT_SUFFIXES)
+    else:
+        suffixes = set(DEFAULT_SUFFIXES)
+    
     max_file_bytes = _safe_int(args.get("max_file_bytes"), MAX_FILE_BYTES_DEFAULT, low=1, high=100_000_000)
     chunk_lines = _safe_int(args.get("chunk_lines"), CHUNK_LINES_DEFAULT, low=20, high=2000)
     chunk_chars = _safe_int(args.get("chunk_chars"), CHUNK_CHARS_DEFAULT, low=1000, high=200_000)
@@ -716,6 +777,9 @@ def _reindex(args: dict[str, Any]) -> dict[str, Any]:
     if mode not in {MODE_DELTA, MODE_FULL}:
         return {"ok": False, "error": f"unsupported mode: {mode}"}
 
+    # Ensure DB parent directory exists
+    db.parent.mkdir(parents=True, exist_ok=True)
+    
     result = build_index(
         repo_root=repo,
         db=db,
@@ -730,40 +794,16 @@ def _reindex(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": True,
         "tool": "aicarmine_rag_reindex",
+        "search_path": str(repo),
+        "db": str(db),
+        "db_created_new": not (result.get("files_indexed", 0) > 0),
         "selector": "git ls-files --cached --others --exclude-standard" if source == SOURCE_GIT_DEFAULT else "filesystem",
         "result": result,
     }
 
 
-def _handle_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
-    operation = str(arguments.get("operation") or "search").strip().lower()
-    db = Path(arguments.get("db") or _db_path()).expanduser()
-
-    if operation == "health":
-        inspect_result = _db_inspect(db)
-        repo = _repo_root(arguments).resolve()
-        rag_metadata = _safe_rag_metadata(repo, db, inspect_result)
-        return _tool_content(
-            {
-                "ok": bool(inspect_result.get("ok")),
-                "db": str(db),
-                "repo_root": str(repo),
-                "rag_metadata": rag_metadata,
-                "current_commit": rag_metadata.get("current_commit", ""),
-                "indexed_commit": rag_metadata.get("indexed_commit", ""),
-                "stale": rag_metadata.get("stale", False),
-                "db_status": inspect_result,
-                "reranker": _reranker_ready(),
-            }
-        )
-
-    if operation == "inspect":
-        return _tool_content(_db_inspect(db))
-
-    if operation == "search":
-        return _tool_content(_search(arguments))
-
-    return _tool_content({"ok": False, "error": f"unknown operation: {operation}"}, is_error=True)
+def _handle_search_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return _tool_content(_search(arguments))
 
 
 def _handle_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -775,15 +815,46 @@ def _handle_reindex_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     return _tool_content(result, is_error=not bool(result.get("ok")))
 
 
+def _handle_health_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    db = Path(arguments.get("db") or _resolve_db_path(arguments)).expanduser()
+    search_path = arguments.get("search_path") or arguments.get("repo") or ""
+    
+    if search_path.strip():
+        valid, msg, repo = _validate_search_path(search_path)
+    else:
+        valid, msg, repo = False, "no search_path", Path(".")
+    
+    inspect_result = _db_inspect(db)
+    rag_metadata = _safe_rag_metadata(repo, db, inspect_result) if valid else {"db": str(db), "error": msg}
+    
+    return _tool_content(
+        {
+            "ok": bool(inspect_result.get("ok")),
+            "server": SERVER_NAME,
+            "version": SERVER_VERSION,
+            "db": str(db),
+            "search_path": str(repo) if valid else msg,
+            "rag_metadata": rag_metadata,
+            "current_commit": rag_metadata.get("current_commit", ""),
+            "indexed_commit": rag_metadata.get("indexed_commit", ""),
+            "stale": rag_metadata.get("stale", False),
+            "db_status": inspect_result,
+            "reranker": _reranker_ready(),
+            "db_root": str(RAG_DB_ROOT),
+        }
+    )
+
+
 TOOL_SCHEMAS = [
     {
-        "name": "aicarmine_rag_context",
-        "description": "Search the Codex RAG SQLite/FTS5 index and optionally rerank candidates with the local BGE reranker.",
+        "name": "aicarmine_rag_search",
+        "description": "Search the RAG index. Requires search_path (under C:\\Users\\someo\\) and query. Auto-detects DB based on search_path.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string"},
-                "db": {"type": "string"},
+                "query": {"type": "string", "description": "Search query text"},
+                "search_path": {"type": "string", "description": "Path to search (must be under C:\\Users\\someo\\)"},
+                "db": {"type": "string", "description": "Optional: explicit DB path, otherwise auto-detected from search_path"},
                 "candidate_limit": {"type": "integer", "default": 80},
                 "top_k": {"type": "integer", "default": 12},
                 "max_chunk_chars": {"type": "integer", "default": 4000},
@@ -793,35 +864,53 @@ TOOL_SCHEMAS = [
                 "rerank_doc_chars": {"type": "integer", "default": DEFAULT_RERANK_DOC_CHARS},
                 "rerank_timeout_seconds": {"type": "number", "default": DEFAULT_RERANK_TIMEOUT_SECONDS},
             },
+            "required": ["query"],
             "additionalProperties": True,
         },
     },
     {
         "name": "aicarmine_rag_index_status",
-        "description": "Inspect the Codex RAG index, DB metadata, Git/.gitignore candidate surface, and reranker readiness.",
+        "description": "Inspect RAG index status. Requires search_path (under C:\\Users\\someo\\).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "repo": {"type": "string"},
-                "db": {"type": "string"},
+                "search_path": {"type": "string", "description": "Path to inspect (must be under C:\\Users\\someo\\)"},
+                "repo": {"type": "string", "description": "Alias for search_path"},
+                "db": {"type": "string", "description": "Optional: explicit DB path"},
             },
+            "required": ["search_path"],
             "additionalProperties": True,
         },
     },
     {
         "name": "aicarmine_rag_reindex",
-        "description": "Update the Codex RAG SQLite index. Default mode is delta over Git candidates: tracked plus untracked files not excluded by .gitignore.",
+        "description": "Build or rebuild the RAG index. Creates a new DB when search_path changes. Requires search_path (under C:\\Users\\someo\\).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "repo": {"type": "string"},
-                "db": {"type": "string"},
+                "search_path": {"type": "string", "description": "Path to index (must be under C:\\Users\\someo\\)"},
+                "repo": {"type": "string", "description": "Alias for search_path"},
+                "db": {"type": "string", "description": "Optional: explicit DB path, otherwise auto-generated from search_path"},
                 "source": {"type": "string", "enum": [SOURCE_GIT_DEFAULT, SOURCE_FILESYSTEM], "default": SOURCE_GIT_DEFAULT},
                 "mode": {"type": "string", "enum": [MODE_DELTA, MODE_FULL], "default": MODE_DELTA},
-                "suffixes": {"type": "string"},
+                "suffixes": {"type": "string", "description": "Comma-separated file extensions to index"},
                 "max_file_bytes": {"type": "integer", "default": MAX_FILE_BYTES_DEFAULT},
                 "chunk_lines": {"type": "integer", "default": CHUNK_LINES_DEFAULT},
                 "chunk_chars": {"type": "integer", "default": CHUNK_CHARS_DEFAULT},
+            },
+            "required": ["search_path"],
+            "additionalProperties": True,
+        },
+    },
+    {
+        "name": "aicarmine_rag_health",
+        "description": "Health check for the global RAG server.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "search_path": {"type": "string"},
+                "repo": {"type": "string"},
+                "db": {"type": "string"},
             },
             "additionalProperties": True,
         },
@@ -829,10 +918,10 @@ TOOL_SCHEMAS = [
 ]
 
 INSTRUCTIONS = (
-    "AI-Carmine RAG MCP. Use aicarmine_rag_context for codebase retrieval, "
-    "aicarmine_rag_index_status to inspect index freshness, and "
-    "aicarmine_rag_reindex to update the SQLite index from the Git/.gitignore "
-    "candidate surface."
+    "AI-Carmine Global RAG MCP. Use aicarmine_rag_search with search_path to query code, "
+    "aicarmine_rag_reindex to build the index from a path under C:\\Users\\someo\\, "
+    "aicarmine_rag_index_status to check freshness, and "
+    "aicarmine_rag_health for server status."
 )
 
 
@@ -866,9 +955,10 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
             name = str(params.get("name") or "")
             arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
             handlers = {
-                "aicarmine_rag_context": _handle_context_tool,
+                "aicarmine_rag_search": _handle_search_tool,
                 "aicarmine_rag_index_status": _handle_status_tool,
                 "aicarmine_rag_reindex": _handle_reindex_tool,
+                "aicarmine_rag_health": _handle_health_tool,
             }
             handler = handlers.get(name)
             if handler is None:
@@ -882,6 +972,8 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def main() -> int:
+    import traceback
+    
     while True:
         message = _read_message(sys.stdin.buffer)
         if message is None:

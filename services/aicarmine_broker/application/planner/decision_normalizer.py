@@ -331,9 +331,6 @@ def _try_native_tool_calls_fallback(raw_text: str) -> dict[str, Any]:
     2. Fall back to regex + raw_decode with context window
     3. Extract JSON boundaries explicitly if needed ({...} nesting)
     """
-    import json
-    import re
-    
     # Strategy 1: Strict JSON parse on full text (most reliable for valid JSON output)
     try:
         decoded = json.loads(str(raw_text or "").strip())

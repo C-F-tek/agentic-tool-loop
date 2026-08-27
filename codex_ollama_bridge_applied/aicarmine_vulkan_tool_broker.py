@@ -29,7 +29,7 @@ OLLAMA_TASK_URL = (
 OLLAMA_TASK_MODEL = (
     os.environ.get("AICARMINE_OLLAMA_TASK_MODEL")
     or os.environ.get("AICARMINE_VULKAN_BROKER_MODEL")
-    or "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
+    or "Qwen3-6-35B-A3B-UD-IQ2_M:latest"
 )
 OLLAMA_KEEP_ALIVE = (
     os.environ.get("AICARMINE_OLLAMA_KEEP_ALIVE")
@@ -46,7 +46,7 @@ PLANNER_MODEL = (
     os.environ.get("AICARMINE_AGENT_PLANNER_MODEL")
     or os.environ.get("AICARMINE_PLANNER_MODEL")
     or os.environ.get("AICARMINE_OLLAMA_PLANNER_MODEL")
-    or "Qwen-AgentWorld-35B-A3B-UD-IQ2_XXS-gguf:latest"
+    or "Qwen3-6-35B-A3B-UD-IQ2_M:latest"
 )
 AGENTIC_PLANNER_ENABLED = os.environ.get("AICARMINE_AGENTIC_PLANNER_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 AGENTIC_FALLBACK_ONESHOT = os.environ.get("AICARMINE_AGENTIC_FALLBACK_ONESHOT", "1").strip().lower() in {"1", "true", "yes", "on"}

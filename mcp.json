@@ -1,0 +1,536 @@
+{
+  "mcpServers": {
+    "aicarmine-codex-app": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_bridge_health",
+        "terminal_list_files",
+        "terminal_search_files",
+        "planner_scratchpad_write",
+        "runtime_sqlite_memory_write",
+        "aicarmine_repo_capabilities",
+        "aicarmine_repo_status",
+        "aicarmine_repo_tree",
+        "aicarmine_repo_list_files",
+        "aicarmine_repo_search",
+        "aicarmine_repo_rg_search",
+        "aicarmine_repo_fd_files",
+        "aicarmine_repo_read",
+        "aicarmine_repo_ast_grep_search",
+        "aicarmine_repo_ast_grep_dry_run",
+        "aicarmine_repo_tree_sitter_parse",
+        "aicarmine_repo_ctags_symbols",
+        "aicarmine_repo_jq_query",
+        "aicarmine_repo_propose_code_edit",
+        "aicarmine_memory_report"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-repo-search-det": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/repo_search_det_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_repo_search_det_health",
+        "aicarmine_repo_search_fd",
+        "aicarmine_repo_search_rg",
+        "aicarmine_repo_search_jq",
+        "aicarmine_repo_search_ast_grep",
+        "aicarmine_repo_search_ast_grep_dry_run",
+        "aicarmine_repo_search_tree_sitter_parse",
+        "aicarmine_repo_search_ctags"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-repo-validate": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/repo_validate_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_repo_validate_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-repo-code": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/repo_code_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_repo_code_health",
+        "aicarmine_repo_code_propose_edit",
+        "aicarmine_repo_code_unidiff_validate",
+        "aicarmine_repo_code_git_apply_check"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-git-readonly": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/git_readonly_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_git_readonly_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-project-memory": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/project_memory_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_project_memory_health",
+        "aicarmine_project_memory_search",
+        "aicarmine_project_memory_get",
+        "aicarmine_project_memory_audit_sources"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-sqlite-readonly": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/sqlite_readonly_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_sqlite_readonly_health",
+        "aicarmine_sqlite_readonly_list_databases",
+        "aicarmine_sqlite_readonly_schema"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-rag": {
+      "command": "python",
+      "args": [
+        "-u",
+        "c:\\Users\\someo\\agentic-tool-loop\\services\\codex_bridge\\rag_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": "c:\\Users\\someo\\agentic-tool-loop",
+        "AICARMINE_LAB_REPO": "c:\\Users\\someo\\agentic-tool-loop",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "c:\\Users\\someo\\agentic-tool-loop\\tools",
+        "AICARMINE_RAG_DB_ROOT": "C:\\Users\\someo\\AI\\state\\codex_rag_global"
+      },
+      "autoApprove": [
+        "aicarmine_rag_search",
+        "aicarmine_rag_index_status",
+        "aicarmine_rag_reindex",
+        "aicarmine_rag_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-job-artifact": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/job_artifact_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_job_artifact_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-job-view": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/job_view_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_job_view_health",
+        "aicarmine_job_view_list_views"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-codex-ops": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/ops_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_codex_ops_health",
+        "aicarmine_mcp_inventory_health",
+        "aicarmine_mcp_inventory_list_targets",
+        "aicarmine_service_state_health",
+        "aicarmine_service_state_ports",
+        "aicarmine_service_state_processes",
+        "aicarmine_service_state_logs"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-local-subagent": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/local_subagent_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_local_subagent_health",
+        "aicarmine_local_subagent_capabilities"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-agentic-loop-client": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/agentic_loop_client_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_agentic_loop_health",
+        "aicarmine_agentic_loop_capabilities",
+        "aicarmine_agentic_loop_ensure_reranker",
+        "aicarmine_agentic_loop_ensure_broker"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-ollama": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/ollama_subagent_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_ollama_subagent_health",
+        "aicarmine_ollama_subagent_list_models"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-batch": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/mcp_batch_proxy_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "health_check",
+        "mcp_batch_health",
+        "mcp_batch_list_servers"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-repo-state": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/repo_state_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_repo_state_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-refactor": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/refactor_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "refactor_health",
+        "git_list_tracked_files"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-network-monitor": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/network_monitor_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "network_monitor_health",
+        "network_list_interfaces"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-symbol-rag": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/symbol_rag_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_symbol_rag_health",
+        "aicarmine_symbol_rag_status"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-context-compressor": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/context_compressor_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_context_compressor_health",
+        "aicarmine_context_compressor_get_budget",
+        "aicarmine_context_compressor_get_context_usage"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-code-architect": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/code_architect_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_code_architect_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-test-coverage": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/test_coverage_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_test_coverage_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-performance-profiling": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/performance_profiling_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_performance_profiling_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-api-documentation": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/api_documentation_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_api_documentation_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    },
+    "aicarmine-lifecycle": {
+      "command": "python",
+      "args": [
+        "-u",
+        "services/codex_bridge/lifecycle_mcp_server.py"
+      ],
+      "env": {
+        "AICARMINE_CODEX_MCP_REPO_ROOT": ".",
+        "AICARMINE_LAB_REPO": ".",
+        "AICARMINE_REPO_MCP_MAX_TEXT_CHARS": "100000",
+        "AICARMINE_USEFUL_TOOLS_ROOT": "tools"
+      },
+      "autoApprove": [
+        "aicarmine_lifecycle_health"
+      ],
+      "promptBehavior": {
+        "disableTimeout": true
+      }
+    }
+  }
+}

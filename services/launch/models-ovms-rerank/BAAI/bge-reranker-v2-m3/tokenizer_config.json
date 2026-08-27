@@ -7,7 +7,7 @@
   "eos_token": "</s>",
   "is_local": false,
   "mask_token": "<mask>",
-  "model_max_length": 16000,
+  "model_max_length": 8192,
   "pad_token": "<pad>",
   "sep_token": "</s>",
   "sp_model_kwargs": {},

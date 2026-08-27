@@ -758,7 +758,6 @@ def _repo_content_analysis_summary(contract: dict[str, Any]) -> dict[str, Any]:
         if path.endswith(".py"):
             py_count += 1
             # Extract class names from preview
-            import re
             classes_found = re.findall(r'class\s+(\w+)', content_preview)
             python_classes.extend(classes_found)
             # Extract function names

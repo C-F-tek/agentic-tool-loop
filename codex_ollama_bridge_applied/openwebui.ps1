@@ -505,7 +505,7 @@ $null = Set-UserEnvValue "AICARMINE_VULKAN_TOOL_BROKER_URL" "http://127.0.0.1:35
 $null = Set-UserEnvValue "AICARMINE_VULKAN_AGENT_URL" "http://127.0.0.1:3572/vulkan/agent"
 
 $null = Set-UserEnvValue "AICARMINE_AGENT_PLANNER_URL" "http://127.0.0.1:11434/api/chat"
-$null = Set-UserEnvValue "AICARMINE_AGENT_PLANNER_MODEL" "ia-carmine-gpu1-qwen3-coder-30b-a3b-q2-tools-4k:latest"
+$null = Set-UserEnvValue "AICARMINE_AGENT_PLANNER_MODEL" "Qwen3-6-35B-A3B-UD-IQ2_M:latest"
 $null = Set-UserEnvValue "AICARMINE_AGENTIC_PLANNER_ENABLED" "1"
 $null = Set-UserEnvValue "AICARMINE_AGENTIC_PLANNER_NUM_CTX" "4096"
 $null = Set-UserEnvValue "AICARMINE_AGENTIC_PLANNER_NUM_PREDICT" "-1"
@@ -522,7 +522,7 @@ $env:AICARMINE_VULKAN_TOOL_BROKER_URL = "http://127.0.0.1:3571"
 $env:AICARMINE_VULKAN_AGENT_URL = "http://127.0.0.1:3572/vulkan/agent"
 
 $env:AICARMINE_AGENT_PLANNER_URL = "http://127.0.0.1:11434/api/chat"
-$env:AICARMINE_AGENT_PLANNER_MODEL = "ia-carmine-gpu1-qwen3-coder-30b-a3b-q2-tools-4k:latest"
+$env:AICARMINE_AGENT_PLANNER_MODEL = "Qwen3-6-35B-A3B-UD-IQ2_M:latest"
 $env:AICARMINE_AGENTIC_PLANNER_ENABLED = "1"
 $null = Set-UserEnvValue "AICARMINE_VULKAN_BRIDGE_TIMEOUT_SECONDS" "12000"
 $null = Set-UserEnvValue "AICARMINE_AGENT_RETURN_WAIT_SECONDS" "9000"
