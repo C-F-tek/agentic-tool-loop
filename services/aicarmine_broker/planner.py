@@ -5788,6 +5788,201 @@ def _sanitize_terminal_judge_provider_report(
     }
 
 
+def _extract_repo_read_paths_from_history(history: list[dict[str, Any]]) -> list[str]:
+    """Extract unique repo_read paths from history and artifacts."""
+    seen: set[str] = set()
+    paths: list[str] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        
+        # Check tool_result entries
+        tool_result = item.get("tool_result") if isinstance(item.get("tool_result"), dict) else {}
+        
+        # Also check decision entries (planner decisions can contain path info)
+        decision = item.get("decision") if isinstance(item.get("decision"), dict) else {}
+        
+        # Merge both sources - prefer tool_result but fall back to decision
+        effective_tool_result = tool_result or decision
+        
+        tool = str(effective_tool_result.get("tool") or "")
+        if tool == "repo_read":
+            # Try multiple possible locations for the path
+            args = effective_tool_result.get("arguments") if isinstance(effective_tool_result.get("arguments"), dict) else {}
+            
+            # Direct path field
+            direct_path = str(args.get("path") or args.get("paths") or "")
+            
+            # Path might also be at top level of tool_result
+            if not direct_path:
+                direct_path = str(tool_result.get("path") or decision.get("path") or "")
+            
+            # Items from repo_read results
+            items = tool_result.get("items") if isinstance(tool_result.get("items"), list) else []
+            for read_item in items:
+                if isinstance(read_item, dict):
+                    rp = str(read_item.get("path") or "")
+                    if rp and rp not in seen:
+                        seen.add(rp)
+                        paths.append(rp)
+            
+            if direct_path and direct_path not in seen:
+                seen.add(direct_path)
+                paths.append(direct_path)
+        
+        # Also check artifacts (inline evidence)
+        artifact = item.get("artifact") if isinstance(item.get("artifact"), dict) else {}
+        if isinstance(artifact, dict):
+            art_path = str(artifact.get("path") or artifact.get("repo_path") or "")
+            if art_path and art_path not in seen:
+                seen.add(art_path)
+                paths.append(art_path)
+    
+    return paths
+
+
+def _read_file_from_lab_repo(path: str, max_chars: int = 30000) -> tuple[str, dict[str, Any]]:
+    """Read a file from LAB_REPO and return (content, metadata)."""
+    meta: dict[str, Any] = {"source": "judge_fresh_read", "path": path}
+    try:
+        full = (LAB_REPO / path).resolve()
+        if not full.exists() or not full.is_file():
+            return "", {"error": "file_not_found", **meta}
+        with open(full, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        meta["line_count"] = content.count("\n") + 1
+        meta["size_bytes"] = len(content.encode("utf-8"))
+        if len(content) > max_chars:
+            content = content[:max_chars] + "\n...[truncated]"
+            meta["truncated"] = True
+        return content, meta
+    except Exception as exc:
+        return "", {"error": str(exc), **meta}
+
+
+def _extract_key_findings_from_verified_reads(verified_reads: list[dict], file_memory: list[dict]) -> list[dict]:
+    """Extract key findings from verified_content_reads and file_memory for partial analysis."""
+    findings = []
+    
+    # From verified_content_reads (up to 8 items)
+    for read in verified_reads[:8]:
+        if not isinstance(read, dict):
+            continue
+        path = str(read.get("path", ""))
+        line_count = read.get("line_count")
+        sha256 = read.get("sha256")
+        
+        finding = {"source": "verified_read", "path": path}
+        if line_count is not None:
+            finding["line_count"] = int(line_count) if line_count else 0
+        if sha256:
+            finding["sha256"] = str(sha256)[:16] + "..."
+        findings.append(finding)
+    
+    # From file_memory (compressed extracts with key_lines/content_excerpt)
+    for mem in file_memory[:6]:
+        if not isinstance(mem, dict):
+            continue
+        path = str(mem.get("path", ""))
+        key_lines = mem.get("key_lines") or []
+        content_excerpt = mem.get("content_excerpt") or ""
+        
+        finding = {
+            "source": "file_memory_extract",
+            "path": path,
+            "line_count": mem.get("line_count"),
+            "truncated": mem.get("truncated"),
+        }
+        if key_lines and isinstance(key_lines, list):
+            finding["key_lines_sample"] = [str(l)[:80] for l in key_lines[:3]]
+        elif content_excerpt:
+            finding["excerpt_preview"] = str(content_excerpt)[:120]
+        findings.append(finding)
+    
+    return findings
+
+
+def _assess_analysis_depth(reads: list[dict], memory_items: int) -> str:
+    """Assess analysis depth based on verified reads count and evidence richness."""
+    read_count = len(reads)
+    
+    if read_count >= 15 and memory_items >= 10:
+        return "comprehensive"
+    if read_count >= 10 and memory_items >= 6:
+        return "substantial"
+    if read_count >= 5 and memory_items >= 3:
+        return "moderate"
+    if read_count >= 3:
+        return "partial"
+    return "minimal"
+
+
+def _build_judge_partial_analysis_context(contract: dict[str, Any]) -> dict[str, Any]:
+    """Build partial analysis context from evidence contract.
+    
+    Returns a structured assessment of what the judge can produce when there's
+    sufficient evidence (verified_content_reads>=5 with non-empty key_lines/content_excerpt).
+    """
+    verified_reads = contract.get("verified_content_reads") if isinstance(contract.get("verified_content_reads"), list) else []
+    file_memory = contract.get("file_memory") if isinstance(contract.get("file_memory"), list) else []
+    
+    # Count total vs available (handles truncation scenarios)
+    total_verified = contract.get("verified_content_reads_count", len(verified_reads))
+    total_memory = contract.get("file_memory_count", len(file_memory))
+    
+    # Determine if we have enough for partial answer
+    has_enough_evidence = total_verified >= 5 or (len(verified_reads) >= 5 and any(
+        isinstance(r, dict) and (r.get("key_lines") or r.get("content_excerpt"))
+        for r in verified_reads[:8]
+    ))
+    
+    findings = _extract_key_findings_from_verified_reads(verified_reads, file_memory)
+    depth = _assess_analysis_depth(verified_reads, len(file_memory))
+    
+    return {
+        "can_produce_partial_answer": bool(has_enough_evidence),
+        "analysis_depth": depth,
+        "total_verified_read_paths": total_verified,
+        "available_verified_reads_for_analysis": len(verified_reads),
+        "total_file_memory_items": total_memory,
+        "available_file_memory_items": len(file_memory),
+        "key_findings": findings[:12],
+        "missing_sections": [],  # Judge will populate based on goal analysis
+    }
+
+
+def _build_judge_fresh_file_reads(
+    history: list[dict[str, Any]], artifacts: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Build fresh file reads for the judge from history paths and artifacts."""
+    paths = _extract_repo_read_paths_from_history(history)
+    # Also extract paths from artifacts
+    for art in (artifacts if isinstance(artifacts, list) else []):
+        if isinstance(art, dict):
+            p = str(art.get("path") or art.get("repo_path") or "")
+            if p and p not in paths:
+                paths.append(p)
+    
+    # Limit to top 10 most important files for the judge
+    paths = paths[:10]
+    
+    fresh_reads: list[dict[str, Any]] = []
+    for path in paths:
+        content, meta = _read_file_from_lab_repo(path, max_chars=30000)
+        if content:
+            fresh_reads.append({
+                "path": path,
+                "content": content,
+                **meta,
+            })
+    
+    return {
+        "fresh_read_count": len(fresh_reads),
+        "paths": [r["path"] for r in fresh_reads],
+        "reads": fresh_reads,
+    }
+
+
 def judge_blocked_job(
     job_id: str,
     root: Path,
@@ -5813,6 +6008,9 @@ def judge_blocked_job(
         per_item_limit=12000,
         total_limit=120000,
     )
+    # Fresh file reads: the judge now reads real file content from LAB_REPO
+    judge_fresh_reads = _build_judge_fresh_file_reads(history, artifacts)
+
     request_payload = {
         "schema": "blocked_needs_attention_judge_request.v1",
         "task": "diagnose_terminal_agentic_loop_without_reopening_it",
@@ -5831,12 +6029,14 @@ def judge_blocked_job(
             _executed_tool_rows(history)[-24:], text_limit=1600, list_limit=24
         ),
         "repo_read_evidence_windows": repo_read_views[:20],
+        "judge_fresh_file_reads": judge_fresh_reads,
         "final_quality": _prompt_clip_value(
             evidence_contract.get("repo_analysis_final_quality"),
             text_limit=2000,
             list_limit=20,
         ),
         "evidence_contract": _compact_vulkan_repair_evidence_contract(evidence_contract),
+        "partial_analysis_context": _build_judge_partial_analysis_context(evidence_contract),
         "tool_context_summary": {
             "artifact_count": len(artifacts),
             "history_rows": len(history),
@@ -5855,6 +6055,9 @@ def judge_blocked_job(
             "Distinguish bad final composition from contradictory controller state.",
             "Treat successful repo_read artifacts as evidence even when prompt previews were truncated.",
             "Produce an operational diagnosis for the operator, not a synthetic count summary.",
+            "When partial_analysis_context.can_produce_partial_answer is true AND analysis_depth >= 'moderate', produce a structured partial answer using verified_content_reads and file_memory as primary evidence. Do NOT claim complete coverage if you cannot verify it.",
+            "Partial answers MUST cite concrete paths from verified_content_reads or judge_fresh_file_reads. Never invent files, functions, or code ownership claims without citing actual content excerpts.",
+            "If can_produce_partial_answer is false (insufficient reads), focus on diagnosis only — do NOT attempt partial analysis.",
         ],
         "required_json_shape": {
             "decision": "blocked_with_diagnosis",
@@ -5865,6 +6068,15 @@ def judge_blocked_job(
             "operator_summary": "usable report",
             "recommended_patch_targets": ["repo-relative file or function"],
             "confidence": 0.0,
+            "partial_analysis": {
+                "_conditional": "omit when partial_analysis_context.can_produce_partial_answer is false OR analysis_depth < 'moderate'",
+                "depth_assessed": "minimal | partial | moderate | substantial | comprehensive",
+                "evidence_sources_used": ["verified_read_paths...", "fresh_file_paths..."],
+                "key_findings_summary": [{"path": "repo/path.py", "finding": "observation from content excerpt"}],
+                "coverage_gaps": ["unread sections/files"],
+                "confidence_estimate": 0.5,
+                "recommended_next_steps": ["specific queries or paths"]
+            }
         },
     }
     payload = {
@@ -5880,7 +6092,34 @@ def judge_blocked_job(
                     "You are the terminal judge lane of the same GPU1 planner model. "
                     "Read the terminal job evidence and diagnose why no validator-accepted "
                     "final was produced. You are not the main planner and cannot execute tools, "
-                    "reopen the loop, mark completed, or bypass the validator. Return strict JSON only."
+                    "reopen the loop, mark completed, or bypass the validator. Return strict JSON only.\n\n"
+                    "IMPORTANT: You will receive `judge_fresh_file_reads` containing real file content "
+                    "read directly from LAB_REPO. Use these fresh reads as primary evidence for your diagnosis. "
+                    "Analyze the actual file contents, not just summaries or truncated previews. "
+                    "Cite concrete file paths and quote specific content from the fresh reads in your diagnosis.\n\n"
+                    "--- PARTIAL ANSWAL EXTENSION ---\n\n"
+                    "PARTIAL ANALYSIS MODE:\n"
+                    "- When partial_analysis_context.can_produce_partial_answer is true AND analysis_depth >= 'moderate', "
+                        "you MUST produce a structured partial answer alongside your diagnosis.\n"
+                    "- Base your partial answer ONLY on verified_content_reads, file_memory extracts, and judge_fresh_file_reads.\n"
+                    "- NEVER claim complete coverage unless you have read ≥10 files with substantive key_lines/content_excerpt.\n"
+                    "- If can_produce_partial_answer is false OR analysis_depth < 'moderate', focus on diagnosis only.\n\n"
+                    "STRUCTURED PARTIAL OUTPUT FORMAT (when conditions met):\n"
+                    "{\n"
+                    '  "partial_analysis": {\n'
+                    '    "depth_assessed": "minimal | partial | moderate | substantial | comprehensive",\n'
+                    '    "evidence_sources_used": ["verified_read_paths...", "fresh_file_paths..."],\n'
+                    '    "key_findings_summary": [\n'
+                    '      {"path": "repo/path.py", "finding": "concrete observation from content excerpt"}\n'
+                    '    ],\n'
+                    '    "coverage_gaps": ["what sections/files are still unread or truncated"],\n'
+                    '    "confidence_estimate": 0.5,\n'
+                    '    "recommended_next_steps": ["specific repo_semantic_search queries or repo_read paths"]\n'
+                    '  }\n'
+                    "}\n\n"
+                    "CRITICAL CONSTRAINTS:\n"
+                    '- Do NOT invent file contents, function signatures, or code ownership claims without citing actual excerpts.\n'
+                    "- If you cannot produce a meaningful partial answer with the evidence available, omit the partial_analysis field entirely and focus on diagnosis."
                 ),
             },
             {
@@ -5965,6 +6204,13 @@ def judge_blocked_job(
             error=provider_error,
         )
 
+    # Attach fresh file reads to the judge report so OpenWebUI can use them
+    judge_report["fresh_file_reads"] = judge_fresh_reads
+    judge_report["fresh_file_reads_summary"] = (
+        f"Fresh file reads: {judge_fresh_reads.get('fresh_read_count', 0)} files read from LAB_REPO. "
+        f"Paths: {', '.join(judge_fresh_reads.get('paths', [])[:10])}"
+    )
+    
     result["terminal_judge_report"] = judge_report
     judge_path = root / "blocked_judge_report.json"
     judge_markdown_path = root / "blocked_judge_report.md"

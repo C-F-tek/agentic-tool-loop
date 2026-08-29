@@ -37,6 +37,9 @@ _COMPACT_VALUE_KEYS = (
 
 
 def _as_items(value: Any) -> list[Any]:
+    """Safely extract items from value, handling None gracefully."""
+    if value is None:
+        return []
     if isinstance(value, dict) and isinstance(value.get("items"), list):
         return list(value.get("items") or [])
     return list(value) if isinstance(value, list) else []

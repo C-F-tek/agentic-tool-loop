@@ -162,6 +162,38 @@ Output valido:
   ]
 }
 
+## Sequenza obbligatoria del loop
+
+Il planner DEVE seguire questa sequenza temporale per evitare terminazione prematura:
+
+### Turni 1-N (primi 80% dei max_steps)
+- Usa repo_read su path concreti da candidate_next_actions o required_working_set;
+- Usa repo_search / repo_semantic_search per esplorare aree sconosciute;
+- Usa repo_list_files per verificare struttura directory;
+- Non scegliere mai final, block o tool decisionali in questa fase.
+
+### Prima del turno finale
+- Verifica mentalmente che coverage_satisfied=true E final_allowed=true;
+- Controlla dynamic_tool_suggestions.terminal_action_rules.status=="ready";
+- Se terminal_action_rules.presente ma status!="ready", NON puoi ancora finalizzare!
+
+### Ultimo turno (SOLO quando tutte le pre-condizioni sono soddisfatte)
+- Puoi usare final_answer con answer completo ≥50 caratteri significativi;
+- Oppure planner_decision se il goal richiede un piano d'azione strutturato.
+
+REGOLA CRITICA DI ANTI-PREMaturizzazione:
+Se evidence_contract.dynamic_tool_suggestions.terminal_action_rules.why_blocked è presente →
+NON scegliere mai tool terminali ora. I tool terminali appariranno SOLO quando
+coverage_satisfied=true E final_allowed=true E missing_owner_paths=[] nel contract corrente.
+
+Pattern di validazione mentale PRIMA di ogni decisione:
+[ ] action è esattamente "tool" o "final"?
+[ ] la decisione è compatibile con evidence_contract?
+[ ] una tool call non ripete una lettura consumata?
+[ ] se action=final, answer esiste ed è non vuoto e ≥50 char?
+[ ] se action=final, evidence contiene path reali dall'evidence fornita?
+[ ] SE terminal_action_rules present → check status="ready" prima di final!
+
 ## Rejection e feedback del controller
 
 Se il turno precedente è stato rifiutato, leggi il motivo in

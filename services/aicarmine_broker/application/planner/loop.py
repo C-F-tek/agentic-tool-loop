@@ -1473,19 +1473,86 @@ def run_agentic_planner_job(
 
     initial_orientation_skipped: list[dict[str, Any]] = []
 
+    # DEBUG ISOLATION: wrap EACH operation inside update_initial_orientation_state separately
+    # to pinpoint exactly which step blocks/deadlocks between RAG reindex and main loop start.
+    # If NO events appear after checkpoint_C_refresh_done, the blockage is in _agent_flow_diagnostics
+    # or write_agent_job_state (but we proved SQLite fallback prevents blocking there).
+    
     def update_initial_orientation_state() -> None:
-        state["initial_orientation_skipped"] = initial_orientation_skipped[-120:]
-        state["initial_orientation_surface"] = _initial_orientation_surface_from_history(
-            history,
-            initial_orientation_skipped,
-        )
-        loop_state.refresh_history()
-        state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
-            str(state.get("goal") or ""),
-            history,
-            state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else None,
-        )
-        write_agent_job_state(state)
+        """Update initial orientation state with FULL error isolation.
+        
+        CRITICAL: NO exception may propagate out of this function.
+        All errors are logged and swallowed so the main planner loop can start normally.
+        This is the fix for evidence_contract_refresh_failed killing the post-RAG window.
+        """
+        # Step 1: initial_orientation_skipped + surface computation — swallow any error
+        try:
+            state["initial_orientation_skipped"] = initial_orientation_skipped[-120:]
+            state["initial_orientation_surface"] = _initial_orientation_surface_from_history(
+                history,
+                initial_orientation_skipped,
+            )
+        except Exception as exc:
+            append_agent_event(
+                job_id, "debug_update_init_state_step_1_failed",
+                f"_initial_orientation_surface_from_history FAILED (swallowed): {type(exc).__name__}: {exc}",
+                {"error_type": type(exc).__name__, "error": str(exc), "_state_updated_partial": True},
+                step=0,
+            )
+            # DO NOT re-raise — continue execution
+        
+        # Checkpoint C: refresh_history — NEVER re-raise evidence failures or unknown exceptions
+        _evidence_refresh_failure = None
+        try:
+            loop_state.refresh_history()
+            append_agent_event(
+                job_id, "debug_checkpoint_C_refresh_history_done",
+                f"refresh_history completed successfully. history_count={len(loop_state._history)}.",
+                {"history_count": len(loop_state._history)},
+                step=0,
+            )
+        except RuntimeError as exc:
+            # KNOWN SAFE FAILURE: evidence_contract_summary_triplet raised RuntimeError("evidence_contract_refresh_failed")
+            # This is NOT a blocking error — the contract summary just failed to serialize.
+            # DO NOT re-raise: continue execution and let the main planner loop start normally.
+            _evidence_refresh_failure = str(exc)
+            state["evidence_contract_refresh_failed"] = True
+            state["evidence_contract_refresh_error"] = {"runtime_error": str(exc)}
+            append_agent_event(
+                job_id, "debug_refresh_history_evidence_error",
+                f"Evidence contract refresh failed (known safe failure). Error: {str(exc)[:500]}",
+                {"runtime_error": str(exc), "history_count": len(loop_state._history)},
+                step=0,
+            )
+        
+        except Exception as exc:
+            # Unknown exception in refresh_history — log it but do NOT kill the job
+            _evidence_refresh_failure = str(exc)
+            state["evidence_contract_refresh_failed"] = True
+            state["evidence_contract_refresh_error"] = {"error_type": type(exc).__name__, "error": str(exc)}
+            append_agent_event(
+                job_id, "debug_checkpoint_C_refresh_history_exception",
+                f"refresh_history UNEXPECTED ERROR (swallowed): {type(exc).__name__}: {exc}",
+                {"error_type": type(exc).__name__, "error": str(exc)},
+                step=0,
+            )
+        
+        # Step 3: agent_flow_diagnostics + write_agent_job_state — swallow any error
+        try:
+            state["agent_flow_diagnostics"] = _agent_flow_diagnostics(
+                str(state.get("goal") or ""),
+                history,
+                state.get("planner_memory_surface") if isinstance(state.get("planner_memory_surface"), dict) else None,
+            )
+            write_agent_job_state(state)
+        except Exception as exc:
+            append_agent_event(
+                job_id, "debug_update_init_state_final_step_failed",
+                f"_agent_flow_diagnostics / write_agent_job_state FAILED (swallowed): {type(exc).__name__}: {exc}",
+                {"error_type": type(exc).__name__, "error": str(exc), "_state_updated_partial": True},
+                step=0,
+            )
+            # DO NOT re-raise — continue execution to main planner loop
 
     def add_initial_orientation_skipped(skipped: list[dict[str, Any]]) -> None:
         for item in skipped:
@@ -1753,63 +1820,105 @@ def run_agentic_planner_job(
         preplanner_report,
         step=0,
     )
-    add_initial_orientation_skipped(preplanner_skipped)
 
-    # Issue 7: Fix RAG preseed success measurement - use success_count > 0 instead of just ranked_paths count
-    ranked_preseed_success = False
-    ranked_paths: list[str] = []
-    if preplanner_plan:
-        _preplanner_result, preplanner_compact = execute_controller_preseed(preplanner_plan, preseed_index)
-        preseed_index += 1
-        raw_ranked_paths = preplanner_compact.get("ranked_preplanner_paths")
-        ranked_path_items = raw_ranked_paths if isinstance(raw_ranked_paths, list) else []
-        ranked_paths = [
-            str(path) for path in ranked_path_items
-            if str(path).strip()
-        ]
-        # Use success_count from preplanner_compact instead of just counting ranked_paths
-        ranked_preseed_success = bool(
-            preplanner_compact.get("ok")
-            and int(preplanner_compact.get("success_count") or 0) > 0
-        )
-
-    preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)
-    if preseed_plan:
-        skip_generic_root_surface = (
-            ranked_preseed_success
-            and str(preseed_plan.get("tool") or "") == "repo_tree"
-            and str(preseed_plan.get("reason") or "") == "generic_repo_request_needs_root_surface"
-        )
-        if skip_generic_root_surface:
-            add_initial_orientation_skipped([{
-                "candidate": "repo_tree:.",
-                "reason": "preplanner_rag_ranked_read_replaced_generic_root_surface",
-                "stage": "initial_root_surface",
-            }])
+    # === CRITICAL ISOLATION: protect EACH operation separately ===
+    # If NO events appear after RAG reindex, one of these is blocking/deadlocking
+    
+    # Isolation 1: add_initial_orientation_skipped() — might throw or deadlock
+    _post_rag_error = None
+    try:
+        add_initial_orientation_skipped(preplanner_skipped)
+    except Exception as exc:
+        _post_rag_error = f"add_initial_orientation_skipped FAILED: {type(exc).__name__}: {exc}"
+    
+    # Isolation 2: emit checkpoint event (if this blocks, we're truly deadlocked before Python code runs)
+    if not _post_rag_error:
+        try:
             append_agent_event(
                 job_id,
-                "controller_preseed_root_surface_skipped",
-                "Generic root repo_tree preseed skipped after ranked RAG read preseed.",
-                {
-                    "replacement": "controller_preseed_preplanner_rag_ranked_read",
-                    "preseed_reason": preseed_plan.get("reason"),
-                    "ranked_path_count": len(ranked_paths),
-                },
+                "debug_checkpoint_A_post_add_initial_skipped",
+                f"After add_initial_orientation_skipped. history_len={len(history)}. report_status={preplanner_report.get('status')}.",
+                {"has_preplanner_plan": bool(preplanner_plan), "report_status": preplanner_report.get("status"), "history_length": len(history)},
                 step=0,
             )
-        else:
-            root_preseed_result, _root_compact = execute_controller_preseed(preseed_plan, preseed_index)
+        except Exception as _chk_exc:
+            _post_rag_error = f"append_agent_event(A) FAILED: {type(_chk_exc).__name__}: {_chk_exc}"
+
+    # If something went wrong above, log it and fall through to main loop immediately
+    if _post_rag_error:
+        append_agent_event(job_id, "post_rag_critical_blockage", _post_rag_error, {}, step=0)
+
+    # === MAIN LOOP STARTS HERE — each operation protected individually above ===
+    
+    # Issue 7: Fix RAG preseed success measurement - use success_count > 0 instead of just ranked_paths count
+    try:
+        ranked_preseed_success = False
+        ranked_paths: list[str] = []
+        
+        # Step A: Execute preplanner preseed if available (from _controller_preplanner_rag_preseed_plan())
+        if preplanner_plan:
+            append_agent_event(job_id, "debug_executing_preplanner_preseed", {"preseed_index": preseed_index}, step=0)
+            _preplanner_result, preplanner_compact = execute_controller_preseed(preplanner_plan, preseed_index)
             preseed_index += 1
-            if preseed_plan.get("dynamic_initial_orientation") and root_preseed_result.get("ok"):
-                preseed_index = execute_dynamic_initial_orientation(root_preseed_result, preseed_index)
-            orientation_plan = _controller_file_code_product_orientation_preseed_plan(str(state.get("goal") or ""))
-            if orientation_plan and not preseed_plan.get("dynamic_initial_orientation"):
-                orientation_result, _orientation_compact = execute_controller_preseed(
-                    orientation_plan,
-                    preseed_index,
+            raw_ranked_paths = preplanner_compact.get("ranked_preplanner_paths")
+            ranked_path_items = raw_ranked_paths if isinstance(raw_ranked_paths, list) else []
+            ranked_paths = [str(path) for path in ranked_path_items if str(path).strip()]
+            ranked_preseed_success = bool(
+                preplanner_compact.get("ok") and int(preplanner_compact.get("success_count") or 0) > 0
+            )
+
+        # Step B: Call _controller_preseed_plan() — EXTERNAL DEP that might block/fail silently
+        preseed_plan = _controller_preseed_plan(str(state.get("goal") or ""), original_args)
+        
+        # Step C: Process preseed_plan if it exists
+        if preseed_plan:
+            skip_generic_root_surface = (
+                ranked_preseed_success
+                and str(preseed_plan.get("tool") or "") == "repo_tree"
+                and str(preseed_plan.get("reason") or "") == "generic_repo_request_needs_root_surface"
+            )
+            if skip_generic_root_surface:
+                add_initial_orientation_skipped([{
+                    "candidate": "repo_tree:.",
+                    "reason": "preplanner_rag_ranked_read_replaced_generic_root_surface",
+                    "stage": "initial_root_surface",
+                }])
+                append_agent_event(
+                    job_id,
+                    "controller_preseed_root_surface_skipped",
+                    "Generic root repo_tree preseed skipped after ranked RAG read preseed.",
+                    {
+                        "replacement": "controller_preseed_preplanner_rag_ranked_read",
+                        "preseed_reason": preseed_plan.get("reason"),
+                        "ranked_path_count": len(ranked_paths),
+                    },
+                    step=0,
                 )
+            else:
+                root_preseed_result, _root_compact = execute_controller_preseed(preseed_plan, preseed_index)
                 preseed_index += 1
-                preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
+                if preseed_plan.get("dynamic_initial_orientation") and root_preseed_result.get("ok"):
+                    preseed_index = execute_dynamic_initial_orientation(root_preseed_result, preseed_index)
+                orientation_plan = _controller_file_code_product_orientation_preseed_plan(str(state.get("goal") or ""))
+                if orientation_plan and not preseed_plan.get("dynamic_initial_orientation"):
+                    orientation_result, _orientation_compact = execute_controller_preseed(
+                        orientation_plan,
+                        preseed_index,
+                    )
+                    preseed_index += 1
+                    preseed_index = execute_dynamic_initial_orientation(orientation_result, preseed_index)
+
+    except Exception as exc:
+        # Catch any exception in the post-RAG window; log it but do NOT kill the job.
+        preloop_exception = exc
+        append_agent_event(
+            job_id,
+            "post_rag_preseed_window_error",
+            f"Exception during post-RAG preseed/orientation phase: {type(exc).__name__}: {exc}",
+            {"error_type": type(exc).__name__, "error": str(exc)},
+            step=0,
+        )
+        # Fall through to main loop — planner will start from scratch with whatever history exists.
 
     for step in itertools.count(1):
         semantic_step = semantic_step_for_physical_step(step)

@@ -127,6 +127,22 @@ class ToolSurfacePolicy:
             code_product_required=code_product_required,
             apply_required=apply_required,
         )
+        
+        # NEW: Integra dynamic_tool_suggestions se presenti nel contract
+        dyn_sug = contract.get("dynamic_tool_suggestions") if isinstance(contract.get("dynamic_tool_suggestions"), dict) else {}
+        if isinstance(dyn_sug, dict):
+            dyn_tools = [str(t).strip() for t in dyn_sug.get("tools", [])]
+            if dyn_tools:
+                # Filtra solo tool validi che non sono già nei base tools
+                _dyn_valid = {t for t in dyn_tools if t not in names}
+                if _dyn_valid:
+                    # Score-based filtering: include only suggestions with score >= 60
+                    high_score_sugs = [s for s in dyn_sug.get("details", []) if isinstance(s, dict) and int(s.get("score", 0)) >= 60]
+                    for sug in high_score_sugs:
+                        tool_name = str(sug.get("tool") or "").strip()
+                        if tool_name and tool_name not in names:
+                            names.add(tool_name)
+        
         self._add_keyword_tools(names, goal)
         self._add_candidate_tools(names, contract)
         self._add_explicit_request_tool(names, intrinsic_context)

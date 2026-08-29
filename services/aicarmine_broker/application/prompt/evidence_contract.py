@@ -41,6 +41,7 @@ EVIDENCE_PROMPT_KEEP_KEYS = (
     "forbidden_repeated_repo_read_paths",
     "read_admissible_paths",
     "validator_admissible_repo_read_paths",
+    "dynamic_tool_suggestions",
 )
 
 

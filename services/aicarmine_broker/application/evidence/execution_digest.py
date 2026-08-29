@@ -200,5 +200,27 @@ def execution_evidence_digest_text(
         parts.append("- raw planner output surfaced:")
         for raw in raw_outputs[:3]:
             parts.append("  - " + raw)
+    
+    # Include fresh file reads from the terminal judge
+    judge_report = result.get("terminal_judge_report") if isinstance(result.get("terminal_judge_report"), dict) else {}
+    fresh_reads = judge_report.get("fresh_file_reads") if isinstance(judge_report.get("fresh_file_reads"), dict) else {}
+    if isinstance(fresh_reads, dict) and fresh_reads.get("fresh_read_count", 0) > 0:
+        parts.append("- judge_fresh_file_reads:")
+        for read in fresh_reads.get("reads", [])[:10]:
+            path = str(read.get("path", ""))
+            line_count = read.get("line_count", "")
+            size_bytes = read.get("size_bytes", "")
+            truncated = " truncated=true" if read.get("truncated") else ""
+            meta = f"path={path} lines={line_count} chars={size_bytes}{truncated}"
+            parts.append(f"  - {meta}")
+        # Include a brief summary of fresh read content
+        for read in fresh_reads.get("reads", [])[:5]:
+            path = str(read.get("path", ""))
+            content = str(read.get("content", "")).strip()
+            if content:
+                preview = content[:300].replace("\n", " ")
+                if preview:
+                    parts.append(f"  - {path}: {preview}...")
+    
     text = "\n".join(parts)
     return text[:limit] if int(limit or 0) > 0 else text

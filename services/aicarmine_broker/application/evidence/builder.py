@@ -21,6 +21,7 @@ from aicarmine_broker.application.tool_surface.required_tool_call import (
     required_next_tool_call_satisfaction,
 )
 from aicarmine_broker.planner_core.cache import CACHEABLE_READ_TOOLS
+from aicarmine_broker.tool_contract import normalize_tool_name
 
 
 POST_WRITE_VALIDATION_TOOLS = frozenset({
@@ -1736,6 +1737,10 @@ class EvidenceBuilder:
         }
         for stale_status in stale_required_next_tool_calls:
             append_stale_required_call_marker(contract, stale_status)
+        # Initialize overlay_candidates early to prevent UnboundLocalError when
+        # the if-block at ~line-2308 is skipped (empty history / post-RAG reindex).
+        overlay_candidates: list[dict[str, Any]] | None = None
+        
         rewrite_latch_active = str(contract.get("final_rewrite_latch") or "").strip() in {
             "rewrite_required",
             "required_gap_only",
@@ -2179,6 +2184,62 @@ class EvidenceBuilder:
                 "Use prior evidence. If enough, final with concrete cited paths; otherwise choose a new evidence-bound tool."
             )
         overlay_required_route_status: dict[str, Any] = {}
+        
+        # NEW: Extract the actual tool name from the overlay required call so we can use
+        # correct decision paths instead of hardcoding "repo_read" for every case.
+        _overlay_tool_name = "repo_read"  # fallback default
+        _overlay_tool_args: dict[str, Any] = {}
+        if isinstance(latest_evidence_contract_overlay_required_call, dict):
+            _raw_tool = latest_evidence_contract_overlay_required_call.get("tool") or ""
+            if isinstance(_raw_tool, str) and _raw_tool.strip():
+                try:
+                    from ...tool_contract import normalize_tool_name as _normalize_tool_name
+                    from ..prompt.values import safe_text as _safe_text
+                    _overlay_tool_name = _normalize_tool_name(_safe_text(_raw_tool, limit=160))
+                    _overlay_tool_args = (latest_evidence_contract_overlay_required_call.get("arguments") or {}) if isinstance(latest_evidence_contract_overlay_required_call.get("arguments"), dict) else {}
+                except Exception:
+                    pass
+        
+        # Count how many history entries have this exact overlay tool being rejected
+        # without ever succeeding — prevents infinite blocking when discovery tools are stuck.
+        _stale_discovery_count = 0
+        if _overlay_tool_name in {
+            "repo_semantic_search", "repo_rg_search", "repo_search", "repo_list_files",
+        }:
+            for row in reversed(history if isinstance(history, list) else []):
+                if not isinstance(row, dict):
+                    continue
+                result = row.get("tool_result") if isinstance(row.get("tool_result"), dict) else {}
+                decision = row.get("decision") if isinstance(row.get("decision"), dict) else {}
+                is_rejection = False
+                if result and str(result.get("guard_type") or "").startswith("planner_cuda_rewrite"):
+                    is_rejection = True
+                elif result and str(result.get("summary") or "") == "repeated_identical_planner_rejection":
+                    is_rejection = True
+                rd = result.get("rejected_decision") if isinstance(result, dict) else {}
+                dd = decision.get("rejected_decision") if isinstance(decision, dict) else {}
+                check_row = rd if rd else (dd if dd else {})
+                if not isinstance(check_row, dict):
+                    check_row = decision if decision.get("action") == "continue_required" else {}
+                tool_match = normalize_tool_name(str(check_row.get("tool") or "")) == _overlay_tool_name
+                ok_true = result.get("ok") is True
+                if tool_match and not ok_true:
+                    _stale_discovery_count += 1
+        
+        # Auto-clear overlay when discovery tool was rejected >5 times without success.
+        if (
+            latest_evidence_contract_overlay
+            and _overlay_tool_name in {
+                "repo_semantic_search", "repo_rg_search", "repo_search", "repo_list_files",
+            }
+            and _stale_discovery_count >= 5
+        ):
+            contract["overlay_force_cleared"] = True
+            contract["overlay_clear_reason"] = (
+                f"Stale evidence_contract_overlay for {_overlay_tool_name} cleared after {_stale_discovery_count} identical rejections."
+            )
+            latest_evidence_contract_overlay = {}
+            latest_evidence_contract_overlay_required_call = {}
 
         if latest_evidence_contract_overlay_required_call:
             overlay_required_route_status = (
@@ -2197,9 +2258,9 @@ class EvidenceBuilder:
                     planner_scratchpad_window_signature=(
                         _planner_scratchpad_window_signature
                     ),
-                    decision_paths=lambda call_args: (
+                    decision_paths=lambda call_args, tool=_overlay_tool_name: (
                         _agentic_v2_decision_paths(
-                            "repo_read",
+                            tool,
                             call_args,
                         )
                     ),
@@ -2209,7 +2270,7 @@ class EvidenceBuilder:
         overlay_required_route_consumed = (
             overlay_required_route_status.get("satisfied") is True
         )
-
+        
         if overlay_required_route_consumed:
             append_stale_required_call_marker(
                 contract,
@@ -2241,6 +2302,12 @@ class EvidenceBuilder:
                     "repeating that tool call."
                 )
 
+            # NEW: Clear stale overlay when its required route has been satisfied
+            # by new history entries so it cannot block future planner decisions.
+            if overlay_required_route_consumed:
+                latest_evidence_contract_overlay = {}
+                latest_required_next_tool_call = None
+        
         if (
             latest_evidence_contract_overlay
             and not overlay_required_route_consumed
@@ -2285,61 +2352,66 @@ class EvidenceBuilder:
                 if overlay_progress:
                     contract["required_next_progress"] = overlay_progress
                 overlay_candidates = latest_evidence_contract_overlay.get("candidate_next_actions")
-                if isinstance(overlay_candidates, list) and overlay_candidates:
-                    contract["candidate_next_actions"] = overlay_candidates
-                if latest_required_next_tool_call:
-                    contract["required_next_tool_call"] = latest_required_next_tool_call
-                overlay_final_contract = (
-                    latest_evidence_contract_overlay.get("finalization_contract")
-                    if isinstance(latest_evidence_contract_overlay.get("finalization_contract"), dict)
-                    else {}
+        
+        # Propagate the threshold from overlay into contract for planner visibility.
+        if isinstance(contract.get("_overlay_max_retries"), int):
+            contract["_overlay_max_retries"] = contract.get("_overlay_max_retries")
+        if isinstance(overlay_candidates, list) and overlay_candidates:
+            contract["candidate_next_actions"] = overlay_candidates
+        if latest_required_next_tool_call:
+            contract["required_next_tool_call"] = latest_required_next_tool_call
+        
+        _overlay_final_contract = (
+            latest_evidence_contract_overlay.get("finalization_contract")
+            if isinstance(latest_evidence_contract_overlay.get("finalization_contract"), dict)
+            else {}
+        )
+        _final_contract = (
+            contract.get("finalization_contract")
+            if isinstance(contract.get("finalization_contract"), dict)
+            else {}
+        )
+        if _overlay_final_contract:
+            for key in (
+                "final_allowed",
+                "planner_may_choose_final",
+                "planner_may_choose_block",
+                "reason",
+                "planner_forced_terminal_block",
+                "planner_forced_terminal_block_reason",
+            ):
+                if key in _overlay_final_contract:
+                    _final_contract[key] = _overlay_final_contract.get(key)
+        if latest_evidence_contract_overlay.get("planner_may_choose_final") is False:
+            _final_contract["final_allowed"] = False
+            _final_contract["planner_may_choose_final"] = False
+            _final_contract.setdefault("reason", "planner_cuda_rewrite_required")
+        if "planner_may_choose_block" in latest_evidence_contract_overlay:
+            _final_contract["planner_may_choose_block"] = bool(
+                latest_evidence_contract_overlay.get("planner_may_choose_block")
+            )
+        if (
+            contract.get("final_rewrite_latch") in {
+                "rewrite_required",
+                "required_gap_only",
+                "terminal_block_required",
+            }
+        ):
+            _final_contract["final_allowed"] = False
+            _final_contract["planner_may_choose_final"] = False
+            if contract.get("final_rewrite_latch") == "terminal_block_required":
+                _final_contract["planner_may_choose_block"] = True
+                _final_contract.setdefault("planner_forced_terminal_block", True)
+                _final_contract.setdefault(
+                    "planner_forced_terminal_block_reason",
+                    "planner_cuda_rewrite_required_history_overlay",
                 )
-                final_contract = (
-                    contract.get("finalization_contract")
-                    if isinstance(contract.get("finalization_contract"), dict)
-                    else {}
-                )
-                if overlay_final_contract:
-                    for key in (
-                        "final_allowed",
-                        "planner_may_choose_final",
-                        "planner_may_choose_block",
-                        "reason",
-                        "planner_forced_terminal_block",
-                        "planner_forced_terminal_block_reason",
-                    ):
-                        if key in overlay_final_contract:
-                            final_contract[key] = overlay_final_contract.get(key)
-                if latest_evidence_contract_overlay.get("planner_may_choose_final") is False:
-                    final_contract["final_allowed"] = False
-                    final_contract["planner_may_choose_final"] = False
-                    final_contract["reason"] = final_contract.get("reason") or "planner_cuda_rewrite_required"
-                if "planner_may_choose_block" in latest_evidence_contract_overlay:
-                    final_contract["planner_may_choose_block"] = bool(
-                        latest_evidence_contract_overlay.get("planner_may_choose_block")
-                    )
-                if (
-                    contract.get("final_rewrite_latch") in {
-                        "rewrite_required",
-                        "required_gap_only",
-                        "terminal_block_required",
-                    }
-                ):
-                    final_contract["final_allowed"] = False
-                    final_contract["planner_may_choose_final"] = False
-                    if contract.get("final_rewrite_latch") == "terminal_block_required":
-                        final_contract["planner_may_choose_block"] = True
-                        final_contract.setdefault("planner_forced_terminal_block", True)
-                        final_contract.setdefault(
-                            "planner_forced_terminal_block_reason",
-                            "planner_cuda_rewrite_required_history_overlay",
-                        )
-                        contract["planner_may_choose_block"] = True
-                    else:
-                        final_contract["planner_may_choose_block"] = final_contract.get("planner_may_choose_block") is True
-                        contract["planner_may_choose_block"] = bool(final_contract.get("planner_may_choose_block"))
-                    final_contract.setdefault("reason", "final_rewrite_latch_active")
-                contract["finalization_contract"] = final_contract
+                contract["planner_may_choose_block"] = True
+            else:
+                _final_contract["planner_may_choose_block"] = _final_contract.get("planner_may_choose_block") is True
+                contract["planner_may_choose_block"] = bool(_final_contract.get("planner_may_choose_block"))
+            _final_contract.setdefault("reason", "final_rewrite_latch_active")
+        contract["finalization_contract"] = _final_contract
         proofed_candidates: list[dict[str, Any]] = []
         for action in contract.get("candidate_next_actions") or []:
             if not isinstance(action, dict):
@@ -2396,6 +2468,59 @@ class EvidenceBuilder:
                     "goal_requests_apply": bool(contract.get("goal_requests_apply")),
                 },
             ).to_contract()
+        
+        # Dynamic tool surface suggestions — calcola suggerimenti basati su stato del loop
+        try:
+            from aicarmine_broker.application.tool_surface.dynamic_controller import (
+                DynamicToolSurfaceController,
+            )
+            _dynamic_ctrl = DynamicToolSurfaceController()
+            _dyn_sugs = _dynamic_ctrl.suggest_tools(
+                goal=goal,
+                evidence_contract=contract,
+                history=history,
+            )
+            # Part B — Evidence Contract Inline Rules: aggiungi terminal_action_rules
+            # che spiega inline al modello QUANDO i tool terminali possono/manno essere usati.
+            is_terminal_ready, reasons_not_ready = _dynamic_ctrl._check_final_preconditions(
+                goal=goal, evidence_contract=contract, history=history
+            )
+            
+            dyn_suggestions = {
+                "schema": "planner_dynamic_tool_suggestion.v1",
+                "tools": [s.get("tool") for s in _dyn_sugs if isinstance(s, dict)],
+                "details": [_dyn_sugs[i] for i in range(min(len(_dyn_sugs), 4))],
+                "reason": f"Dynamic suggestion based on loop state ({len(_dyn_sugs)} suggestions)",
+            }
+            
+            # Aggiungi regole inline per l'uso dei tool terminali basate sullo stato reale del contract
+            if not is_terminal_ready and reasons_not_ready:
+                top_reasons = [r[:80] for r in reasons_not_ready][:3]
+                dyn_suggestions["terminal_action_rules"] = {
+                    "rule": (
+                        "I tool terminali/planning (final_answer, planner_decision) NON sono inclusi nei suggerimenti "
+                        "perché le pre-condizioni non sono soddisfatte."
+                    ),
+                    "why_blocked": top_reasons,
+                    "what_to_do_instead": (
+                        "Usa gli strumenti di ricerca/lettura presenti nella lista sopra. Quando coverage_satisfied=true "
+                        "e final_allowed=true, i tool terminali appariranno automaticamente."
+                    ),
+                }
+            else:
+                dyn_suggestions["terminal_action_rules"] = {
+                    "rule": (
+                        "Le pre-condizioni per i tool terminali SONO soddisfatte. Puoi procedere con final_answer o planner_decision."
+                    ),
+                    "status": "ready",
+                }
+            
+            contract["dynamic_tool_suggestions"] = dyn_suggestions
+        except Exception:
+            # Fallback silenzioso: se il modulo non è disponibile o fallisce,
+            # il planner continua con la policy statica esistente.
+            pass
+        
         contract = _apply_turn_surface_policy(contract)
         return contract
 
